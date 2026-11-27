@@ -26,9 +26,10 @@
 //! A filter that removes acts can leave the animation state machine waiting for one it never
 //! receives. The [`Watchdog`] watches for that on foot (the stunt area's acts are queued every tick
 //! the stick is held toward a side with no stunt area, and their replacement is the act the game
-//! itself queues at the same point when no turn is needed, so the watchdog never releases them): the filter normally acts in short bursts (a start,
-//! a stop), so when it has acted without a break for the locomotion tuning's `acts.watchdog_s` the
-//! watchdog lets every act through for `acts.release_s` and logs a warning.
+//! itself queues at the same point when no turn is needed, so the watchdog never releases them):
+//! the filter normally acts in short bursts (a start, a stop), so when it has acted without a break
+//! for the locomotion tuning's `acts.watchdog_s` the watchdog lets every act through for
+//! `acts.release_s` and logs a warning.
 
 use std::{ffi::CStr, sync::OnceLock, time::Duration};
 

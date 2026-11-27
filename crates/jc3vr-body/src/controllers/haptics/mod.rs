@@ -1,4 +1,5 @@
-//! Controller haptics: one vocabulary for every vibration the mod sends (`docs/mod/input/haptics.md`).
+//! Controller haptics: one vocabulary for every vibration the mod sends
+//! (`docs/mod/input/haptics.md`).
 //!
 //! - [`vocabulary`]: the named primitives (tick, click, bump, thud, buzz, hum, and tension) and the
 //!   shape each one plays with;
@@ -12,12 +13,13 @@
 //! A source calls [`play`], [`play_hands`], or [`play_scaled`] for a one-off cue and [`sustain`]
 //! each tick for a level. Any thread may call them: the cue is shaped from the settings, checked
 //! against the master switch, the controller scheme, and its category's switch, and handed to the
-//! mixer, a leaf lock.
-//! The VR frame loop calls [`mix`] once per rendered frame and plays what it returns.
+//! mixer, a leaf lock. The VR frame loop calls [`mix`] once per rendered frame and plays what it
+//! returns.
 //!
 //! [`vocabulary`]: jc3vr_input::haptics::vocabulary
 //! [`cues`]: jc3vr_input::haptics::cues
 //! [`mixer`]: jc3vr_input::haptics::mixer
+//! [`mix`]: jc3vr_input::haptics::output::mix
 
 pub mod rumble;
 pub mod shot;

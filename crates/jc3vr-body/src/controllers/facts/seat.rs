@@ -1,6 +1,6 @@
 //! Whether the player rides in or stands in a seat the grapple fires from: the game's own tests,
-//! which the seat grapple (`grapple::seat`) and the systems below it (the aim, the hand
-//! bodies) read alike.
+//! which the seat grapple (the grapple crate's `grapple::seat`) and the systems below it (the aim,
+//! the hand bodies) read alike.
 //!
 //! Both tests read only the game's state, so they live here rather than behind a published copy:
 //! every reader asks the game at the moment of the read, as the seat grapple does.

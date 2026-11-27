@@ -100,7 +100,7 @@ pub(crate) unsafe fn stabilize(
         && !traversing;
     // In the headset the procedural body's hand-over table says who moves the body, read with the
     // anchor's own history; the movement task's stamp it reads is written only then. Elsewhere the
-    // mode alone decides, as it always has.
+    // mode alone decides.
     let mut tracker = STATE.lock().tracker;
     let mut airborne = false;
     let case = (controllers_enabled && source() == Source::Vr).then(|| {

@@ -1,10 +1,10 @@
 //! The airframe a grapple reel arriving at a helicopter's door side was attached to, as the
 //! grapple's lock publishes it for the vehicles.
 //!
-//! The lock's arrival detour writes it in the world update as the reel reaches the door side
-//! (`grapple::physical::lock`), with the moment it arrived; a reader on a later input tick judges
-//! its freshness from that moment. The latch holds until the next arrival or until a reader clears
-//! it.
+//! The lock's arrival detour writes it in the world update as the reel reaches the door side (the
+//! grapple crate's `grapple::physical::lock`), with the moment it arrived; a reader on a later input
+//! tick judges its freshness from that moment. The latch holds until the next arrival or until a
+//! reader clears it.
 
 use jc3vr_core::published::{Published, Stage, Stamp};
 

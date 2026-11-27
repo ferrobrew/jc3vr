@@ -1,8 +1,8 @@
 //! The comfort fade: a full-screen darkening of the headset's view, shared by the head-through-
-//! geometry probe, the push-back at walls, and the seat transitions. Each source sets a target level; the fade eases toward
-//! the darkest target at the configured rates, and hands the level to the VR blit
-//! ([`jc3vr_view::vr::set_fade_level`]), which scales the image by `1 - level` as it copies each eye
-//! into the swapchain.
+//! geometry probe, the push-back at walls, and the seat transitions. Each source sets a target
+//! level; the fade eases toward the darkest target at the tuned rates, and hands the level to the VR
+//! blit ([`jc3vr_view::vr::set_fade_level`]), which scales the image by `1 - level` as it copies
+//! each eye into the swapchain.
 //!
 //! The engine has its own screen fade (the post-effect fade quad), but the game drives it for its
 //! own transitions (loading, teleports, cutscenes), and a second writer would fight them. The blit

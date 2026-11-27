@@ -173,7 +173,8 @@ pub fn action(mode: SeatTransition, event: SeatEvent, hold_s: f32) -> SeatAction
     }
 }
 
-/// The state names of each phase, from the state names of Rico's base animation graph (`rico_base`), the graph the body rule system runs. No name is in two phases.
+/// The state names of each phase, from the state names of Rico's base animation graph
+/// (`rico_base`), the graph the body rule system runs. No name is in two phases.
 pub const PHASE_STATES: [(SeatPhase, &[&str]); 4] = [
     (SeatPhase::Locked, LOCKED),
     (SeatPhase::Shuffle, SHUFFLE),

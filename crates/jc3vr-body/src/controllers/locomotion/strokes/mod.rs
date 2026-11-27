@@ -21,8 +21,9 @@
 //!   input tick ([`take_turn`]) and adds it to the heading the right stick owns.
 //!
 //! A hand is in the water when it is below the head by
-//! [`StrokeTuning::water_below_eyes_m`](model::StrokeTuning::water_below_eyes_m), or anywhere underwater. A hand holding a gun strokes
-//! nothing. Each stroke that catches the water knocks its hand.
+//! [`StrokeTuning::water_below_eyes_m`](model::StrokeTuning::water_below_eyes_m), or anywhere
+//! underwater. A hand holding a gun strokes nothing. Each stroke that catches the water knocks its
+//! hand.
 
 pub mod model;
 #[cfg(test)]

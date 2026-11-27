@@ -2,16 +2,15 @@
 //!
 //! Lining up places a marker in the world, a fixed distance straight ahead of the head, which the
 //! overlay draws. The player holds the gun so that its sights sit on the marker and captures, from
-//! the debug UI's sight tool or with the capture chord (both grips held and the dominant A pressed, on
-//! foot, while the marker is placed). The capture solves the sight offset that makes the held
+//! the debug UI's sight tool or with the capture chord (both grips held and the dominant A pressed,
+//! on foot, while the marker is placed). The capture solves the sight offset that makes the held
 //! weapon's sight line, at its current angles, pass through the marker, and stores it as the
 //! weapon's entry in the config's sight table, which takes precedence over the embedded table.
 //!
 //! The solve keeps the angles, so an offset captured with a wrong pitch is right at the marker's
 //! distance only; the offset is the point on the line directly above or below the muzzle, the
-//! embedded table's convention. The config has no load path, so a tuned entry lasts until the
-//! payload unloads; [`json_line`] renders it in the table's line format for pasting back into
-//! `tools/sights/sights.json`.
+//! embedded table's convention. A tuned entry is saved with the settings, and [`json_line`] renders
+//! it in the table's line format for pasting back into `tools/sights/sights.json`.
 //!
 //! Requests from the UI and the chord are serviced on the next aim update ([`service`]), which has
 //! the gun's fire point and the head in the world; a request that waits longer than a few ticks

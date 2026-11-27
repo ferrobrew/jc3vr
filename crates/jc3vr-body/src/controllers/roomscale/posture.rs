@@ -220,10 +220,11 @@ impl Thresholds {
 ///   sits once the head stays below [`Thresholds::sit_below_m`] for `sit_after_s`, which is long so
 ///   that a crouch behind cover stays a physical crouch.
 /// - The standing player's head must stay at a chair's height for that: steady, within
-///   [`steady_band_m`](AutoPostureTuning::steady_band_m) of where the dwell started, and above [`Thresholds::floor_below_m`]. A head
-///   that moves further starts the dwell again from where it is, and a head at floor level does not
-///   count: a standing player who got down onto the floor of the play area (sitting on it, kneeling)
-///   stays standing, so the head keeps its true height and the body sits on the ground under it.
+///   [`steady_band_m`](AutoPostureTuning::steady_band_m) of where the dwell started, and above
+///   [`Thresholds::floor_below_m`]. A head that moves further starts the dwell again from where it
+///   is, and a head at floor level does not count: a standing player who got down onto the floor of
+///   the play area (sitting on it, kneeling) stays standing, so the head keeps its true height and
+///   the body sits on the ground under it.
 ///
 /// The controllers' heights are not used: a crouching player's hands sit as low as a seated one's.
 #[derive(Debug, Copy, Clone, PartialEq)]

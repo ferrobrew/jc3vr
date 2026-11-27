@@ -1,6 +1,6 @@
-//! The raycast fallback for the world markers' surface placement (`hud::world_markers`):
-//! markers the render thread could not sample the scene depth for (no recent depth result) get a
-//! physics raycast from the head toward their world point instead.
+//! The raycast fallback for the world markers' surface placement (the HUD crate's
+//! `hud::world_markers`): markers the render thread could not sample the scene depth for (no recent
+//! depth result) get a physics raycast from the head toward their world point instead.
 //!
 //! The casts run on the game thread in the player aim's simulation update, outside the physics
 //! step, as the player aim's own raycast does ([`crate::controllers::aim::raycast`]); the render

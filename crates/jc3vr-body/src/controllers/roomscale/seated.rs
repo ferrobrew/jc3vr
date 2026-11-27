@@ -115,9 +115,9 @@ impl SeatedReference {
     }
 
     /// Advance by one seated frame: seed the reference if it has none, sample `head_height` (the
-    /// head above the STAGE floor, when located), and let the adaptive baseline move it. `calibrated`
-    /// is the player's calibrated seated eye height; a change to it restarts the reference from it. `dt` is
-    /// the time since the last frame, seconds.
+    /// head above the STAGE floor, when located), and let the adaptive baseline move it.
+    /// `calibrated` is the player's calibrated seated eye height; a change to it restarts the
+    /// reference from it. `dt` is the time since the last frame, seconds.
     pub fn update(
         &mut self,
         head_height: Option<f32>,

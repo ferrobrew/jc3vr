@@ -76,9 +76,9 @@ pub struct HandControls {
     /// Whether the hand moves slowly enough for a closed fist to take what it comes to
     /// ([`crate::controllers::grab::latch`]).
     pub grab_slow: bool,
-    /// Whether the snatch holds the hand's grip for its catch while its line is out
-    /// (the snatch's `reserved_hands`): a press closes the hand on nothing, and
-    /// it takes nothing and drives no game action.
+    /// Whether the snatch holds the hand's grip for its catch while its line is out (the snatch's
+    /// `reserved_hands`): a press closes the hand on nothing, and it takes nothing and drives no
+    /// game action.
     pub catch_reserved: bool,
 }
 
@@ -148,8 +148,9 @@ pub struct GrappleContext {
     /// the button is the lock's. Were the wind-up's presses the game's, a press held into the reel
     /// would be the game's dual tether hold, whose release replaces the reel's line.
     pub reeling: bool,
-    /// The seat grapple stands in for the game's (`grapple::seat::stands_in`): the
-    /// button's fire is the seat grapple's.
+    /// The seat grapple stands in for the game's
+    /// ([`stands_in`](crate::controllers::facts::seat::stands_in)): the button's fire is the seat
+    /// grapple's.
     pub seated: bool,
 }
 

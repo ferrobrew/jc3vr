@@ -38,7 +38,7 @@ pub struct OverlayConfig {
     pub body_estimate: bool,
     /// Mark each gun docked on a socket of the body where its placement puts it, with a line along
     /// its barrel, green while its model is shown and red while hidden
-    /// (`controllers::weapons::inventory::docked_view`).
+    /// (the weapons crate's `controllers::weapons::inventory::docked_view`).
     pub docked_guns: bool,
 }
 

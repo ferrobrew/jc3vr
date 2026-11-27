@@ -7,9 +7,9 @@
 //! - a pre-call detour on [`RumbleManager::SpawnRumble`], which every one-off rumble goes through
 //!   (the weapon fire rumble, the player's damage rumbles, collisions, animation track messages and
 //!   melee hits, the reel-in kick, the force pulse, and the event-driven rumbles), picks out a
-//!   weapon's own fire rumble inside a shot of the gun held in a hand
-//!   (the weapon handling marks the shot, [`crate::controllers::haptics::shot`]) and plays it on that hand as
-//!   [`Event::Shot`], raised by the shot's recoil kick. It always lets the game's own call
+//!   weapon's own fire rumble inside a shot of the gun held in a hand (the weapon handling marks
+//!   the shot, [`crate::controllers::haptics::shot`]) and plays it on that hand as [`Event::Shot`],
+//!   raised by the shot's recoil kick. It always lets the game's own call
 //!   through, since the effect it starts still needs to exist for the game's own per-frame sum
 //!   below;
 //! - a pre-call detour on [`Gamepad::SetMotorValue`] sees the result of that sum: the manager's

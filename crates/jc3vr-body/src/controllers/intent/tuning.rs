@@ -1,6 +1,6 @@
 //! The controls' tuning, read from the shipped `tuning/controls.toml` ([`CONTROLS`]): the bindings'
-//! thresholds and chord timings, the held actions' analog press, the mode detection's debounce, the game rumble's forward, and the
-//! world-space overlay's drawing.
+//! thresholds and chord timings, the held actions' analog press, the mode detection's debounce, the
+//! game rumble's forward, and the world-space overlay's drawing.
 
 use jc3vr_core::{
     config::{Invalid, nonnegative, positive, range},

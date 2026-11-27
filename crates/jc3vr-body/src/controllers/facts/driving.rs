@@ -3,9 +3,9 @@
 //! driven seat ([`publish`]), which the frame half of the pose composition eases toward and adds
 //! to the composed cockpit position ([`advance`]).
 //!
-//! The vehicle handling measures the seat and derives the correction
-//! (`vehicles::driving_view`). A correction the input tick stopped publishing
-//! goes stale, and the view eases back.
+//! The vehicle handling measures the seat and derives the correction (the vehicles crate's
+//! `vehicles::driving_view`). A correction the input tick stopped publishing goes stale, and the
+//! view eases back.
 
 use body_rig::math::smooth::smoothstep;
 use glam::Vec3;

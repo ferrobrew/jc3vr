@@ -17,8 +17,8 @@
 //! - [`view_follow`] has that held view follow Rico's animated head through a ragdoll, a get-up, a
 //!   death, and a landing that carries the head well away from the root.
 //!
-//! The legs still play the game's clips; only where the body goes, and where the view sits, no
-//! longer come from them.
+//! The legs still play the game's clips; only where the body goes, and where the view sits, do not
+//! come from them.
 //!
 //! In water, [`strokes`] swims the body by the arms alongside the stick.
 

@@ -11,11 +11,11 @@
 //! - [`crouch`]: whether the character counts as crouched, and the capsule's proxy-state rules;
 //! - [`seat`]: the seat-transition phases and modes.
 //!
-//! The frame half runs once per rendered VR frame from the pose composition
-//! ([`compose_cockpit`], called by [`jc3vr_view::vr::begin_render_frame`] on the game thread, after the
-//! simulation tick and before the render update): it resolves the posture, remaps the head height,
-//! hands the cockpit to the rig's frame half for the shift, tracks the seat phase, and advances the
-//! fade. It publishes what the simulation half needs ([`FrameShared`]).
+//! The frame half runs once per rendered VR frame from the pose composition ([`compose_cockpit`],
+//! called by [`jc3vr_view::vr::begin_render_frame`] on the game thread, after the simulation tick
+//! and before the render update): it resolves the posture, remaps the head height, hands the
+//! cockpit to the rig's frame half for the shift, tracks the seat phase, and advances the fade. It
+//! publishes what the simulation half needs ([`FrameShared`]).
 //!
 //! Everything here needs the headset: it runs only while the VR source owns the head pose, and each
 //! part is behind its own toggle in [`RoomscaleConfig`] (the head height behind

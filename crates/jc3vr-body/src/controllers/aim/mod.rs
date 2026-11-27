@@ -13,8 +13,8 @@
 //!   grapple ray onto the valid grapple target nearest it before the game's targeting runs;
 //! - [`sights`]: each weapon's sight correction, looked up from the config and the embedded sight
 //!   table, and the in-headset tool that tunes it;
-//! - [`hooks`]: what the aim hands the weapon handling and the hand bodies above it, and asks of
-//!   them, through the table they register.
+//! - [`hooks`](mod@hooks): what the aim hands the weapon handling and the hand bodies above it, and
+//!   asks of them, through the table they register.
 //!
 //! Everything runs from the player aim control's post-simulation update ([`update_post_sim`]), the
 //! simulation-phase update where the game casts its own aim ray. Before the update, the hands are
@@ -25,9 +25,8 @@
 //! the hands in the world: the grips for the grenade and C4 throws, and the dominant hand's aim
 //! point for the game's own grenade throw.
 //!
-//! Both parts act only under the controller scheme, in gameplay, and for a tracked hand, each behind
-//! its toggle in [`AimConfig`](crate::controllers::aim::config::AimConfig); otherwise the game aims as it
-//! always does.
+//! The gun aim and the grapple aim act only under the controller scheme, in gameplay, and for a
+//! tracked hand; otherwise the game aims as it always does.
 
 pub mod assist;
 pub mod config;
@@ -135,13 +134,14 @@ pub struct GrappleAim {
     /// Whether firing now would attach: the game holds a valid grapple target in range.
     pub valid: bool,
     /// Whether the target is an object rather than world geometry, so that a tether pulls it. A
-    /// best guess at the plan's "targets that support tethering", not yet checked in play.
+    /// best guess at the plan's "targets that support tethering", unverified in play.
     pub tetherable: bool,
     /// Whether [`point`](Self::point) is current: the game's targeting ran (the game takes the
     /// grapple's fire), or the seat grapple cast its own ray. While it is not, the point may be
     /// stale, and nothing is drawn at it.
     pub current: bool,
-    /// The aim is the seat grapple's (`grapple::seat`), cast by the mod in a vehicle seat.
+    /// The aim is the seat grapple's (the grapple crate's `grapple::seat`), cast by the mod in a
+    /// vehicle seat.
     pub seat: bool,
     /// The aim assist's turn of the ray onto a grapple target, when it made one.
     pub assist: Option<GrappleAssist>,
@@ -322,8 +322,6 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
 
 /// Decide whether the aim acts this update and compose the hands into the world.
 fn begin() -> Result<TickHands, AimIdle> {
-    // The hands are composed even with both the gun and the grapple aim off: the grenade and C4
-    // throws follow them too.
     if !scheme::enabled() {
         return Err(AimIdle::Disabled);
     }
@@ -557,9 +555,9 @@ fn grapple_readout(
     }
 }
 
-/// The seat grapple's readout (`grapple::seat`): the off-hand's ray cast by the mod, the
-/// game's targeting not running in a seat, valid while it hits something within the grapple's
-/// range `range_m`.
+/// The seat grapple's readout (the grapple crate's `grapple::seat`): the off-hand's ray cast by the
+/// mod, the game's targeting not running in a seat, valid while it hits something within the
+/// grapple's range `range_m`.
 fn seat_readout(ray: Ray, hit: Option<RayHit>, range_m: f32) -> GrappleAim {
     let in_range = hit.filter(|hit| hit.distance <= range_m);
     GrappleAim {

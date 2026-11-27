@@ -23,14 +23,15 @@
 //! 3. Seated in a vehicle, including the entry and exit animations: [`Mode::Vehicle`]. The attach
 //!    state is a state-machine predicate, so it outranks the raw state bits an ejection or an exit
 //!    passes through.
-//! 4. Grapple traversal: the gameplay mode (on foot or airborne) holds, and the traversal is flagged.
+//! 4. Grapple traversal: the gameplay mode (on foot or airborne) holds, and the traversal is
+//!    flagged.
 //! 5. to 7. The wingsuit, the parachute, and falling: [`Mode::Airborne`].
 //! 8. and 9. Swimming and everything else: [`Mode::OnFoot`].
 //!
 //! A change between gameplay modes must persist for the controls tuning's `mode.debounce_ticks`
-//! ticks before it takes effect, so a one-tick flicker during an animation blend does not switch the action set.
-//! Entering and leaving the UI is immediate: the UI signals do not flicker, and a late switch would
-//! send a menu press to the gameplay bindings.
+//! ticks before it takes effect, so a one-tick flicker during an animation blend does not switch
+//! the action set. Entering and leaving the UI is immediate: the UI signals do not flicker, and a
+//! late switch would send a menu press to the gameplay bindings.
 
 use jc3gi::{
     character::character::Character,
@@ -155,7 +156,7 @@ pub enum VehicleClass {
     Plane,
     Motorcycle,
     Car,
-    /// Boats and jetskis, which share one class until the jetski discriminator is pinned.
+    /// Boats and jetskis, which share one class: no jetski discriminator is bound.
     Sea,
     /// The mech: it walks on the car's stick actions and has its own punch, jump, and weapons.
     Mech,

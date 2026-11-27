@@ -31,7 +31,7 @@ impl Default for StickConfig {
 pub static LOCOMOTION_CONFIG: ConfigSlot<LocomotionConfig> =
     ConfigSlot::new("controllers.locomotion");
 
-/// On-foot stick locomotion. Turning is configured in `headpose.vr_turn` (see the module docs).
+/// On-foot stick locomotion. Turning is configured in `headpose.vr_turn`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocomotionConfig {

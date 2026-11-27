@@ -115,10 +115,6 @@ pub fn tick(active: bool) {
     );
 }
 
-/// The grapple's target highlight: a ring on the target while the game holds a valid target in
-/// range, lying on the surface when the off-hand's own ray hit it there, with a centre dot and its
-/// own colour for a target a tether pulls, and a wider, thin outer ring while the aim assist turned
-/// the ray onto it.
 /// The grapple's aim point as an anchor between its last two sim ticks' points
 /// ([`Anchor::Ticked`]), called once for each aim update: the point is measured once a tick, and
 /// from a moving vehicle a point drawn where the tick left it slid back by up to a tick's travel
@@ -139,6 +135,10 @@ fn ticked_grapple_point(point: Vec3) -> Anchor {
 /// The grapple's aim point on the tick before last and the last tick.
 static GRAPPLE_TICKS: Mutex<(Option<Vec3>, Option<Vec3>)> = Mutex::new((None, None));
 
+/// The grapple's target highlight: a ring on the target while the game holds a valid target in
+/// range, lying on the surface when the off-hand's own ray hit it there, with a centre dot and its
+/// own colour for a target a tether pulls, and a wider, thin outer ring while the aim assist turned
+/// the ray onto it.
 pub(crate) fn grapple_highlight(
     g: &GrappleAim,
     at: Anchor,

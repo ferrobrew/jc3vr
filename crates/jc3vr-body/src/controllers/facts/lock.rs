@@ -1,9 +1,9 @@
 //! Whether the physical grapple holds a lock, as the grapple publishes it for the body and the
 //! weapon handling.
 //!
-//! The lock writes it as it takes the line and as it lets go (`grapple::physical::lock`), so a
-//! reader sees the lock's own state, not a copy a tick old. The fact is published while the lock
-//! holds and withdrawn when it lets go.
+//! The lock writes it as it takes the line and as it lets go (the grapple crate's
+//! `grapple::physical::lock`), so a reader sees the lock's own state, not a copy a tick old. The
+//! fact is published while the lock holds and withdrawn when it lets go.
 
 use jc3vr_core::published::{Published, Stage};
 

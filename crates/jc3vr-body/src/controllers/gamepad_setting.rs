@@ -1,7 +1,6 @@
 //! The gamepad-semantics pin: while the controller scheme is in effect, the game's "the gamepad is
 //! the active input device" setting
-//! ([`SettingType::EPCUseGamepad`](jc3gi::settings_manager::SettingType::EPCUseGamepad)) is held at
-//! the gamepad's value.
+//! ([`SettingType::EPCUseGamepad`]) is held at the gamepad's value.
 //!
 //! The game sets the value from the frame's device events. The controllers inject at the action
 //! level and produce no device events, so without the pin the value stays at whatever device the
@@ -48,9 +47,9 @@ impl SettingPin {
     /// any.
     ///
     /// While `active`, the pin remembers the value to restore and holds [`GAMEPAD`]. A value other
-    /// than [`GAMEPAD`] while pinned can only be the game's own write from a keyboard or mouse event,
-    /// so it becomes the value to restore. Once inactive, the remembered value is restored if the
-    /// setting still holds the pinned value.
+    /// than [`GAMEPAD`] while pinned can only be the game's own write from a keyboard or mouse
+    /// event, so it becomes the value to restore. Once inactive, the remembered value is restored
+    /// if the setting still holds the pinned value.
     pub fn step(&mut self, active: bool, current: i32) -> Option<i32> {
         if active {
             if self.saved.is_none() || current != GAMEPAD {
@@ -74,7 +73,7 @@ pub fn status() -> SettingStatus {
 }
 
 /// Hold or restore the setting for this input tick. Called from the input tick's game stage
-/// (`controllers::bindings::stage::game_stage`), on the game thread outside the input
+/// (the gameplay crate's `controllers::bindings::stage`), on the game thread outside the input
 /// job, so the write never overlaps the settings manager's own update.
 pub fn input_tick() {
     let active = scheme::enabled() && scheme::is_controllers();

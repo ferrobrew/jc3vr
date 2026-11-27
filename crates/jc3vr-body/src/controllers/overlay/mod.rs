@@ -26,7 +26,7 @@
 //! [`resolve`]: jc3vr_view::controllers::overlay::resolve
 //! [`inputs`]: jc3vr_view::controllers::overlay::inputs
 //!
-//! The game's own HUD reticles, hidden while the hands aim, are the HUD's
+//! The game's own HUD reticles, hidden while the hands aim, are the HUD crate's
 //! (`hud::game_reticle`).
 //!
 //! The overlay draws at the end of `RenderEngine::PostDraw`, onto the eye's final back buffer

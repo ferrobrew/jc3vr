@@ -131,8 +131,8 @@ impl HeightFilter {
 
     /// Follow the root height `raw` for one tick of `dt` seconds. `supported` says the body stands
     /// on the ground this tick. Off it, what the smoothing still hides winds down to nothing over
-    /// the locomotion tuning's `height.release_s`, so leaving the ground never jumps the view; a change beyond the snap distance
-    /// (a drop, a teleport) passes at once.
+    /// the locomotion tuning's `height.release_s`, so leaving the ground never jumps the view; a
+    /// change beyond the snap distance (a drop, a teleport) passes at once.
     pub fn step(&mut self, raw: f32, dt: f32, supported: bool) -> HeightPair {
         let previous = self.last.unwrap_or(raw);
         let current = self.advance(raw, dt, supported);

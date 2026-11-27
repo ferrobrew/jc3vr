@@ -3,10 +3,10 @@
 //! and the physical hands.
 //!
 //! The vehicle handling registers one [`MountedSource`] at install
-//! ([`crate::contributions::BodyContributions::mounted`]), a table of its own query functions, and every read here calls through it. The reads are live:
-//! the per-weapon update reads the mounted gun on the worker threads between the vehicle
-//! handling's writes, lock-free for every character's weapons, so a per-tick copy would add a
-//! hop the direct read never had.
+//! ([`crate::contributions::BodyContributions::mounted`]), a table of its own query functions, and
+//! every read here calls through it. The reads are live: the per-weapon update reads the mounted
+//! gun on the worker threads between the vehicle handling's writes, lock-free for every character's
+//! weapons, so a per-tick copy would add a hop the direct read never had.
 //!
 //! Reading before the source is registered is a programming error and panics; the install
 //! registers it before any hook is enabled. The handle holds are a published fact

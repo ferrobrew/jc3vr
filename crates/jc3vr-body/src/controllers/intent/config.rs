@@ -51,8 +51,8 @@ pub fn panel_chord_window_s() -> f32 {
     CONTROLS.get().bindings.panel_chord_window_s
 }
 
-/// The controller-to-game bindings (see the `bindings` module), which inject only under the
-/// controller scheme while a controller is active.
+/// The controller-to-game bindings (the gameplay crate's `controllers::bindings`), which inject
+/// only under the controller scheme while a controller is active.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BindingsConfig {

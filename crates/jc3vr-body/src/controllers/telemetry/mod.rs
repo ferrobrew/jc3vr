@@ -5,8 +5,8 @@
 //!
 //! The refusals, forces, injected actions, and haptic cues are [`notes`]; a throw's or a release's
 //! moment is [`moments`]; the grounded rig's frames are [`rig`]; and the arm joints of the drawn
-//! body are [`drawn_arms`]. The samplers that read the game's state on their own schedule are
-//! `diagnostics`'s.
+//! body are [`drawn_arms`]. The samplers that read the game's state on their own schedule are the
+//! tooling crate's `diagnostics`.
 
 mod drawn_arms;
 mod moments;

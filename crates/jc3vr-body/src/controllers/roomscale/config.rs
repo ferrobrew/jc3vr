@@ -1,7 +1,8 @@
-//! Posture and roomscale: the player's posture, the head fade, and the seat transitions.
-//! The automatic posture's detection, the seated eye reference, the crouch, and the comfort fade's timing are
-//! fixed in their modules under [`crate::controllers::roomscale`]. The chase that walks the body
-//! after the head is the rig's ([`crate::controllers::body::rig::config::ChaseConfig`]).
+//! Posture and roomscale: the player's posture, the head fade, and the seat transitions. The
+//! automatic posture's detection, the seated eye reference, the crouch, and the comfort fade's
+//! timing are fixed in their modules under [`crate::controllers::roomscale`]. The step drive that
+//! walks the body after the head is the rig's
+//! ([`crate::controllers::body::rig::config::StepsConfig`]).
 
 use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
@@ -38,7 +39,8 @@ impl Default for DrivingViewConfig {
 
 /// Posture and roomscale locomotion (see [`crate::controllers::roomscale`]). These act on the
 /// headset alone, controllers or not, and default on as part of the full gameplay preset. The head
-/// height itself is remapped only under [`BodyRemapConfig::remap_head`].
+/// height itself is remapped only under
+/// [`BodyRemapConfig::remap_head`](crate::controllers::body::config::BodyRemapConfig::remap_head).
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RoomscaleConfig {
@@ -69,13 +71,13 @@ impl Default for RoomscaleConfig {
 /// The player's posture.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Posture {
-    /// Seated or standing by the head's height above the floor
-    /// (the roomscale tuning's `posture`), seated until the
-    /// head has been located.
+    /// Seated or standing by the head's height above the floor (the roomscale tuning's
+    /// `posture`), seated until the head has been located.
     #[default]
     Auto,
-    /// The seated eye reference ([`crate::controllers::roomscale::seated`]) maps to the character's standing eye
-    /// height, the body does not follow the head about the room, and a button toggles crouching.
+    /// The seated eye reference ([`crate::controllers::roomscale::seated`]) maps to the character's
+    /// standing eye height, the body does not follow the head about the room, and a button toggles
+    /// crouching.
     Seated,
     /// STAGE space: the true floor height, physical crouching, and the body following the head
     /// about the room. A saved `Roomscale` loads as this.
@@ -115,8 +117,8 @@ pub enum SeatTransition {
     /// Fade out when the entry animation takes the camera, and fade in seated once the re-based
     /// view has settled. The exit also plays behind a fade.
     Fade,
-    /// Keep the head anchored through the whole animation with nothing hidden. The default until
-    /// the other modes are proven, because it is the mod's existing behaviour.
+    /// Keep the head anchored through the whole animation with nothing hidden. The default, because
+    /// the other modes are unproven in play.
     #[default]
     Ride,
 }
