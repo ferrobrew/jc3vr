@@ -531,16 +531,18 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 /// reporting whether it did; `false` means the caller must submit the draw itself, once, unchanged.
 ///
 /// An indirect draw carries its vertex/instance counts in a GPU buffer, so it can be neither
-/// instance-doubled (the promotion [`draw_indexed_detour`] applies to a patched shader) nor rewritten
-/// -- the arguments are submitted verbatim, twice. What the mod controls is the viewport, and that is
-/// the whole defect: left alone, the draw inherits whatever the previous draw left bound, which under the collapse is dominated by [`CollapseViewport::Full`]. Rasterising
-/// `cb0`'s per-eye off-axis projection into the full double-wide viewport stretches the geometry 2x
-/// horizontally about the target centre, and a 2x horizontal stretch is a 2x horizontal *motion* gain
-/// -- the near terrain patches and foliage sliding across the screen as the camera turns. Pinning each
-/// submission to its eye's half is the same deal the unpatched `DrawIndexed` path takes:
-/// present and correctly sized in both eyes, with no parallax, since `cb0` stays eye 0's. The
-/// exception is a pipeline carrying a pinned-eye shader (the terrain patch system's): for it `cb13` is
-/// pinned to each eye in turn ([`Cb13EyePin`]), which gives each submission that eye's view.
+/// instance-doubled (the promotion [`draw_indexed_detour`] applies to a patched shader) nor
+/// rewritten -- the arguments are submitted verbatim, twice. What the mod controls is the viewport,
+/// and that is the whole defect: left alone, the draw inherits whatever the previous draw left
+/// bound, which under the collapse is dominated by [`CollapseViewport::Full`]. Rasterising `cb0`'s
+/// per-eye off-axis projection into the full double-wide viewport stretches the geometry 2x
+/// horizontally about the target centre, and a 2x horizontal stretch is a 2x horizontal *motion*
+/// gain -- the near terrain patches and foliage sliding across the screen as the camera turns.
+/// Pinning each submission to its eye's half is the same deal the unpatched `DrawIndexed` path
+/// takes: present and correctly sized in both eyes, with no parallax, since `cb0` stays eye 0's.
+/// The exception is a pipeline carrying a pinned-eye shader (the terrain patch system's): for it
+/// `cb13` is pinned to each eye in turn ([`Cb13EyePin`]), which gives each submission that eye's
+/// view.
 ///
 /// Declines outside the collapse and the G-buffer range (elsewhere there is no eye split to inherit),
 /// inside a block-level per-eye re-issue (which has already pinned the viewport for this eye

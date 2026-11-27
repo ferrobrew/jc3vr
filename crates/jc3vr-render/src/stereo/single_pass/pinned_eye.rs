@@ -2,12 +2,13 @@
 //!
 //! Some pipelines have no way to learn which eye they are drawing. The terrain patch system's
 //! tessellated draws build clip in the domain shader, and their vertex shaders fill the whole
-//! `TEXCOORD3` interpolant, so there is no free lane to ride an eye index through the hull stage; its
-//! GPU-indirect basemesh draws use vertex shaders that already consume `SV_InstanceID`. Neither can be
-//! instance-doubled, so both are drawn once per eye, and with their shaders left alone both eyes of
-//! that re-issue would be drawn from the centred camera. `dxbc_stereo::reproject_pinned_eye` rewrites such a shader to read
-//! `cb13`'s first eye slot unconditionally, and every per-eye re-issue that finds one bound pins both
-//! slots to the eye it is drawing, the same pin the already-instanced re-issue uses.
+//! `TEXCOORD3` interpolant, so there is no free lane to ride an eye index through the hull stage;
+//! its GPU-indirect basemesh draws use vertex shaders that already consume `SV_InstanceID`. Neither
+//! can be instance-doubled, so both are drawn once per eye, and with their shaders left alone both
+//! eyes of that re-issue would be drawn from the centred camera.
+//! `dxbc_stereo::reproject_pinned_eye` rewrites such a shader to read `cb13`'s first eye slot
+//! unconditionally, and every per-eye re-issue that finds one bound pins both slots to the eye it
+//! is drawing, the same pin the already-instanced re-issue uses.
 //!
 //! A pinned shader is identified by a private-data tag on the D3D object, set where the shader is
 //! created, so the mark lives and dies with the shader and needs no pointer bookkeeping.

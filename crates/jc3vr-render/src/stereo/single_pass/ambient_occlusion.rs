@@ -8,18 +8,18 @@
 //! far across the view horizontally, taps near the seam read the other eye's depth, and the right
 //! eye's spiral rotation and quad parity are offset by the eye's width.
 //!
-//! [`dxbc_stereo::localize_ambient_occlusion`] rewrites the pass's pixel shaders so each half computes
-//! what an eye-sized target computes, reading the basis and rotation rows of the eye its pixel falls in
-//! from a mod-owned pixel constant buffer. This module builds those rows from each eye's projection
-//! and pose, exactly as the block derives them from an eye's render context, and binds the buffer for
-//! the length of the block. Under `single_pass.ssao_exact_sampling` the shader works in each eye's own
-//! screen UV, so the basis is the eye's as the engine builds it; otherwise it works in the
-//! double-wide UV, and the basis's horizontal terms are remapped onto the eye's half. The rest of the block needs nothing per eye: the linear-depth pack and its
-//! mips are per pixel, the blur steps one target texel whatever the width, the temporal resolve is
-//! seeded fresh on every stereo frame (`hooks/graphics_engine/screen/ssao.rs`), and the composite
-//! upsamples by the screen UV. Only at the seam do the blur's outer taps and the composite's bilinear
-//! footprint reach the other eye, so their shaders are rewritten to clamp those samples to the eye's
-//! half.
+//! [`dxbc_stereo::localize_ambient_occlusion`] rewrites the pass's pixel shaders so each half
+//! computes what an eye-sized target computes, reading the basis and rotation rows of the eye its
+//! pixel falls in from a mod-owned pixel constant buffer. This module builds those rows from each
+//! eye's projection and pose, exactly as the block derives them from an eye's render context, and
+//! binds the buffer for the length of the block. Under `single_pass.ssao_exact_sampling` the shader
+//! works in each eye's own screen UV, so the basis is the eye's as the engine builds it; otherwise
+//! it works in the double-wide UV, and the basis's horizontal terms are remapped onto the eye's
+//! half. The rest of the block needs nothing per eye: the linear-depth pack and its mips are per
+//! pixel, the blur steps one target texel whatever the width, the temporal resolve is seeded fresh
+//! on every stereo frame (`hooks/graphics_engine/screen/ssao.rs`), and the composite upsamples by
+//! the screen UV. Only at the seam do the blur's outer taps and the composite's bilinear footprint
+//! reach the other eye, so their shaders are rewritten to clamp those samples to the eye's half.
 //!
 //! The rewrite is baked into the bytecode when the engine creates the shader, so it is only right
 //! while the collapse is live; the debug UI requests a shader reload when the switch changes, and the

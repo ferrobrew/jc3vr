@@ -165,11 +165,12 @@ pub fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS a
     Some(std::array::from_fn(|row| rows[row]))
 }
 
-/// Whether single-pass rendering should actually run this frame: the master switch is on, a VR
-/// session is running, the device supports viewport routing, and the draw-path COM detours did not
-/// fail to install. The VS-substitution and cb13 paths gate on this; when it is false the double-draw path is left
-/// untouched. The shader set follows it: the frame driver re-creates the shaders whenever it
-/// changes ([`crate::hooks::graphics_engine::shader::reconcile_single_pass`]).
+/// Whether single-pass rendering should actually run this frame: the frame's config snapshot has the
+/// master switch on with a VR session running (one flag, latched together), the device supports
+/// viewport routing, and the draw-path COM detours did not fail to install. The VS-substitution and
+/// cb13 paths gate on this; when it is false the double-draw path is left untouched. The shader set
+/// follows it: the frame driver re-creates the shaders whenever it changes
+/// ([`crate::hooks::graphics_engine::shader::reconcile_single_pass`]).
 pub fn active() -> bool {
     // Go inert the instant eject begins: the render thread keeps running through the whole teardown,
     // so an ungated single-pass path would race the hook uninstall and the D3D-resource release (see
@@ -736,7 +737,8 @@ static RANGE_TORN_TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 thread_local! {
     /// Set by the `CreateVertexProgram` hook right before the engine creates the D3D shader from a
-    /// substituted (patched) blob, so `shader_detours::create_vertex_shader_detour` knows the next shader is patched.
+    /// substituted (patched) blob, so `shader_detours::create_vertex_shader_detour` knows the next
+    /// shader is patched.
     ///
     /// Thread-local, not a global: `ID3D11Device` is free-threaded and JC3 streams resources off the
     /// render thread, so a loader thread's flag would otherwise tag whatever shader a *different*
@@ -746,15 +748,16 @@ thread_local! {
     static PATCH_PENDING: Cell<bool> = const { Cell::new(false) };
 
     /// The engine name of the shader [`PATCH_PENDING`] refers to, carried alongside it so
-    /// `shader_detours::create_vertex_shader_detour` can record the name against the `ID3D11VertexShader` it gets
-    /// back. The D3D layer never sees the name, and the shader pointer is the only identity the
-    /// draw-time paths have, so this is the one point where the two can be joined.
+    /// `shader_detours::create_vertex_shader_detour` can record the name against the
+    /// `ID3D11VertexShader` it gets back. The D3D layer never sees the name, and the shader pointer
+    /// is the only identity the draw-time paths have, so this is the one point where the two can be
+    /// joined.
     static PATCH_PENDING_NAME: Cell<Option<String>> = const { Cell::new(None) };
 
     /// Set by the `CreateVertexProgram` hook right before the engine creates the D3D shader from a
-    /// pinned-eye rewrite, so `shader_detours::create_vertex_shader_detour` tags it instead of recording it as
-    /// patched: its draws must keep their per-eye submission. Thread-local for the same reason as
-    /// [`PATCH_PENDING`].
+    /// pinned-eye rewrite, so `shader_detours::create_vertex_shader_detour` tags it instead of
+    /// recording it as patched: its draws must keep their per-eye submission. Thread-local for the
+    /// same reason as [`PATCH_PENDING`].
     static PIN_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 

@@ -2,12 +2,12 @@
 //!
 //! Each volume (`CRenderBlockAOBox`, drawn with the `aobox` or `aosphere` pixel shader in
 //! `RP_AO_VOLUMES`) maps the scene under it into the box's own space through a matrix its `Draw`
-//! builds from the render context's camera, from the depth sampled at the screen UV its vertex shader
-//! interpolates. Under the collapse the render context's camera is the centred one and the depth
-//! texture spans both eyes, so each eye's half sampled the depth of the wrong place (the left half of
-//! an eye reads the left eye's depth stretched across the whole eye, the right half the right eye's)
-//! and mapped it through the wrong camera. In a lit tunnel that is a sharp edge down the middle of
-//! each eye and occlusion wedges where no box is.
+//! builds from the render context's camera, from the depth sampled at the screen UV its vertex
+//! shader interpolates. Under the collapse the render context's camera is the centred one and the
+//! depth texture spans both eyes, so left alone each eye's half samples the depth of the wrong
+//! place (the left half of an eye reads the left eye's depth stretched across the whole eye, the
+//! right half the right eye's) and maps it through the wrong camera. In a lit tunnel that is a
+//! sharp edge down the middle of each eye and occlusion wedges where no box is.
 //!
 //! The `aobox` vertex shader takes the reprojection, so the draw is instance-doubled and each eye's
 //! half rasterizes the volume from that eye. [`dxbc_stereo::localize_ambient_occlusion_volume`]

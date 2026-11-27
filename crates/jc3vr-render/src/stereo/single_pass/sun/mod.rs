@@ -275,7 +275,7 @@ thread_local! {
     static UPLOAD_OBSERVATION: RefCell<Option<UploadObservation>> = const { RefCell::new(None) };
 }
 
-/// Whether the sun pass may be re-issued: collapsed, inside the camera-scene range, not already
+/// Whether the sun pass may be re-issued: collapsed, inside the G-buffer range, not already
 /// inside a per-eye re-issue, and with this frame's per-eye state published. Split out so the mode,
 /// nesting, and state combinations are testable without the engine state they read.
 fn reissue_ready(collapsed: bool, in_range: bool, nested: bool, state_ready: bool) -> bool {

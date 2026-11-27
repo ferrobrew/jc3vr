@@ -3,12 +3,12 @@
 //!
 //! [`RenderBlockTypeLights::Setup`](jc3gi::graphics_engine::render_block::RenderBlockTypeLights::Setup)
 //! stages the sprite vertex shader's inverse screen width as one over the width of the render
-//! context's back-buffer texture, which under the double-wide collapse is both eyes' width. The shader
-//! multiplies a sprite's pixel size by it to get the sprite's horizontal extent in clip units. With
-//! the sprites routed to the eye halves (the `lightsource*` reprojection and the promotion of their
-//! non-indexed draw), clip units span one eye, so left alone every sprite comes out half as wide as
-//! in an eye-sized render. For the length of the call, the upload is rewritten to one over the width of the
-//! eye half the collapse splits the bound target into.
+//! context's back-buffer texture, which under the double-wide collapse is both eyes' width. The
+//! shader multiplies a sprite's pixel size by it to get the sprite's horizontal extent in clip
+//! units. With the sprites routed to the eye halves (the `lightsource*` reprojection and the
+//! promotion of their non-indexed draw), clip units span one eye, so left alone every sprite comes
+//! out half as wide as in an eye-sized render. For the length of the call, the upload is rewritten
+//! to one over the width of the eye half the collapse splits the bound target into.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

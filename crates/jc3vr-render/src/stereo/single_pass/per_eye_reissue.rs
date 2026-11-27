@@ -282,9 +282,10 @@ pub(crate) enum BoundVsGate {
     Checked,
     /// Run regardless. For a block whose shaders are declined at creation while its own flag is on
     /// ([`baked_cb_block_owns_vs`], a decline both creation paths honour), so none of them can be
-    /// patched -- and where the check would be wrong anyway: it reads the shader bound by the *previous* draw, since the block binds its own
-    /// inside the `Draw` being wrapped. A bark block drawn between two patched model draws would stand
-    /// down on the neighbour's shader and lose its parallax.
+    /// patched -- and where the check would be wrong anyway: it reads the shader bound by the
+    /// *previous* draw, since the block binds its own inside the `Draw` being wrapped. A bark block
+    /// drawn between two patched model draws would stand down on the neighbour's shader and lose
+    /// its parallax.
     Owned,
 }
 

@@ -34,10 +34,10 @@
 //!
 //! [`dxbc_stereo::localize_velocity`] reads the same boundary, and two rows after it, to write the
 //! velocity pass's motion vectors in each eye's screen space: in an eye-split pass the rows map a
-//! pixel position to the clip space of the eye whose half it lies in, and carry each eye's map from the render camera's previous clip space to its own (the `M_eye` the
-//! `cb13` reprojection reads, corrected for the camera's previous projection), which the previous
-//! position is taken through; everywhere else they are zero, which leaves the engine's vectors as
-//! they are.
+//! pixel position to the clip space of the eye whose half it lies in, and carry each eye's map from
+//! the render camera's previous clip space to its own (the `M_eye` the `cb13` reprojection reads,
+//! corrected for the camera's previous projection), which the previous position is taken through;
+//! everywhere else they are zero, which leaves the engine's vectors as they are.
 //!
 //! The split fullscreen passes and the water's per-eye draws need nothing extra: each of their pixels
 //! lies in the half of the eye whose rows `eye_globals` stages for it, and that eye's slot holds the
