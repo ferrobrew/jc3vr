@@ -1,6 +1,6 @@
 //! The body's sockets as the grip model names them: the places on Rico's body a weapon docks, and
 //! the size classes each takes. Which sockets the body has and which a weapon goes to are the
-//! loadout's (`controllers::loadout`). Pure.
+//! loadout's (the weapons crate's `controllers::loadout`). Pure.
 //!
 //! One notion covers the holster sites and the carried weapons' sockets: the two hips, the two
 //! shoulders (where the game docks its two-handed slot's weapon, on the right, and its special

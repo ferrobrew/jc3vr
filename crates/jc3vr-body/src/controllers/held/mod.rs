@@ -4,14 +4,14 @@
 //! which the systems below the weapon handling (the hands, and the aim) read it.
 //!
 //! The weapon handling registers one [`HeldSource`] at install
-//! ([`crate::contributions::BodyContributions::held`]), a table of its own query functions, and every read here calls through it. The reads are live: each one
-//! reads the weapon handling's state at the moment of the call, exactly as a direct call into the
-//! weapon handling would, so a reader on the render thread or inside the inventory's placement
-//! pass sees the same values it always did. A per-tick copy would not do: the slide and snap
+//! ([`crate::contributions::BodyContributions::held`]), a table of its own query functions, and
+//! every read here calls through it. The reads are live: each one reads the weapon handling's state
+//! at the moment of the call, so a reader on the render thread or inside the inventory's placement
+//! pass sees the weapon handling's current values. A per-tick copy would not do: the slide and snap
 //! progress are sampled at the read, and the render-time readers run between ticks.
 //!
-//! Reading before the source is registered is a programming error and panics; the controllers'
-//! install registers it before any hook is enabled.
+//! Reading before the source is registered is a programming error and panics; the install
+//! registers it before any hook is enabled.
 //!
 //! - [`armed_hand_of`]: the hand a weapon is armed in;
 //! - [`armed_weapon`]: the weapon armed in a hand, as the native object a character holds;

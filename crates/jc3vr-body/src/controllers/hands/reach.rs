@@ -42,9 +42,8 @@ use crate::controllers::{
     hands::tuning::HANDS,
 };
 
-/// The arm-reach tuning, the hands tuning's `reach` section
-/// ([`HANDS`](crate::controllers::hands::tuning::HANDS)). Each part acts only under the controller
-/// scheme with the hand IK or the late update on.
+/// The arm-reach tuning, the hands tuning's `reach` section ([`HANDS`]). Each part acts only under
+/// the controller scheme.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReachTuning {

@@ -152,8 +152,8 @@ unsafe fn late_update_part(
         return;
     }
     let local = ik::local_character();
-    // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
     let owned = held::holder(address).is_some();
+    // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
     if local == 0 || (weapon.m_User[0] as usize != local && !owned) {
         return;
     }

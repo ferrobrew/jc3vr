@@ -6,23 +6,24 @@
 //! a hand must come, how it ranks ([`Tier`]), and its marker ([`Mark`]). Each subsystem only
 //! provides its targets on the input tick and consumes the grabs of the targets it owns:
 //!
-//! - the weapon handling (`controllers::weapons`): the sockets and pouches on the body, the
-//!   held gun's parts, the guns in the world without a body (in characters' hands, on racks, in
-//!   lockers), the grenade's pin, a live grenade, a magazine in the world, and the carried weapons'
-//!   sockets;
-//! - the vehicle handling (`vehicles`): the driver's controls, the cockpit's
+//! - the weapon handling (the weapons crate's `controllers::weapons`): the sockets and pouches on
+//!   the body, the held gun's parts, the guns in the world without a body (in characters' hands,
+//!   on racks, in lockers), the grenade's pin, a live grenade, a magazine in the world, and the
+//!   carried weapons' sockets;
+//! - the vehicle handling (the vehicles crate's `vehicles`): the driver's controls, the cockpit's
 //!   buttons, the parachute's handles, and the mounted gun's handles;
-//! - the physical hands (`controllers::physical_hands`): what each hand's reach found in
-//!   the world (an object, a weapon, a door, a character), the vehicles' doors near the hands, a
-//!   surface to climb, and the helicopter the player hangs from.
+//! - the physical hands (the physical crate's `controllers::physical_hands`): what each hand's
+//!   reach found in the world (an object, a weapon, a door, a character), the vehicles' doors near
+//!   the hands, a surface to climb, and the helicopter the player hangs from;
+//! - the grapple crate: the snatch's remote targets (`controllers::snatch`) and the held line
+//!   (`grapple::line_grab`).
 //!
 //! [`tick`] gathers them, resolves each hand ([`resolve`]): of the targets a hand is within reach
 //! of, the one whose grab point is nearest wins, with the fallbacks (a surface to climb, the
 //! helicopter to hang from, a reach margin) taken only when nothing else is, and a remote target
-//! for the grapple's snatch (`controllers::snatch`) only when not even those are. It
-//! publishes the
-//! result for the readouts and the markers ([`markers`]), and logs each grip press with what the
-//! hand was within reach of and why the others lost. The grip takes the chosen target through
+//! for the grapple's snatch only when not even those are. It publishes the result for the
+//! readouts and the markers ([`markers`]), and logs each grip press with what the hand was within
+//! reach of and why the others lost. The grip takes the chosen target through
 //! [`latch::GripLatch`], continuously while it is held, and lets go of what it took when it opens;
 //! a held thing over a socket that fits it docks there ([`resolve::dock_target`]).
 

@@ -4,12 +4,13 @@
 //! The finger curls publish the hand's proportions once per tick they write the fingers
 //! ([`publish_geometry`]): each finger's root and its bones' lengths, in the palm's frame, read
 //! from the animated bones. The holding source then sweeps each finger in the world
-//! ([`fit_contacts`]) through the same bend the curls give it ([`pose`](crate::controllers::fingers::pose)):
-//! from straight toward a fist in the contact tuning's `sweep_steps` steps, casting the chord the
-//! fingertip and the middle joint each move along over a step. The first chord that meets the held body ends the
-//! finger's sweep at the curl where it met it; a finger that meets nothing keeps the pose's own
-//! curl. A cast that meets something else (the hand's own body, the world) is passed over, so a
-//! finger is never stopped short by what it is not holding.
+//! ([`fit_contacts`]) through the same bend the curls give it
+//! ([`pose`](crate::controllers::fingers::pose)): from straight toward a fist in the contact
+//! tuning's `sweep_steps` steps, casting the chord the fingertip and the middle joint each move
+//! along over a step. The first chord that meets the held body ends the finger's sweep at the curl
+//! where it met it; a finger that meets nothing keeps the pose's own curl. A cast that meets
+//! something else (the hand's own body, the world) is passed over, so a finger is never stopped
+//! short by what it is not holding.
 //!
 //! The casts are bounded: the contact tuning's `fingers_per_tick` fingers of a hand are swept per
 //! tick, so a fresh hold is fitted over a few ticks, and a fitted hold is swept again only every
@@ -99,8 +100,7 @@ pub struct FitTarget {
 /// The contact fit of `hand` on `target`: each finger's curl where it meets the body, `None` for a
 /// finger that met nothing or is not swept yet; `None` as a whole before the finger curls have
 /// published the hand's proportions. Sweeps at most the contact tuning's `fingers_per_tick` fingers
-/// with `cast`,
-/// which casts the chord between two world points and reports the first hit.
+/// with `cast`, which casts the chord between two world points and reports the first hit.
 pub fn fit_contacts(
     hand: Hand,
     target: FitTarget,

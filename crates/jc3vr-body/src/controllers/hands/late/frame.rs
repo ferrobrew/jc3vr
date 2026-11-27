@@ -86,9 +86,9 @@ pub struct DrawnHand {
 /// grip and the aim carried on it as the controller holds them. Anything placed in a hand or
 /// anchored to it at render time takes these rather than the controller's own render-time poses,
 /// so it stays on the hand where the hand falls short of the controller: an arm that cannot reach,
-/// a hand blending to or from the animation. A hand the correction does not apply to is drawn where the tick solved it;
-/// one the IK did not drive this tick takes the controller's render-time pose. `None` for an inert
-/// or untracked hand.
+/// a hand blending to or from the animation. A hand the correction does not apply to is drawn where
+/// the tick solved it; one the IK did not drive this tick takes the controller's render-time pose.
+/// `None` for an inert or untracked hand.
 pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
     let frame = FRAME.get().flatten();
     frame.map_or([None; 2], |frame| {

@@ -250,9 +250,9 @@ pub fn dock_target(
         .map(|r| r.volume)
 }
 
-/// The target `hand`, with its drawn grip at `grip`, may take that is nearest to coming within its reach without
-/// being there, and how far outside its reach the hand is, metres: for the log of a press that
-/// took nothing. Only a target with a reach around a grab point can be missed.
+/// The target `hand`, with its drawn grip at `grip`, may take that is nearest to coming within its
+/// reach without being there, and how far outside its reach the hand is, metres: for the log of a
+/// press that took nothing. Only a target with a reach around a grab point can be missed.
 pub fn nearest_miss(
     hand: Hand,
     targets: &[GripTarget],

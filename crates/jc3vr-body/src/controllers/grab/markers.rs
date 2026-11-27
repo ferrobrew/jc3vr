@@ -4,9 +4,10 @@
 //! Each target's marker takes its kind's colour ([`colour`]) and its own style ([`MarkStyle`]),
 //! and shows as its [`Shown`] says: faint while no hand is within reach of it, brighter once one
 //! is, brightest and a little larger on the target a squeeze would take, and solid while a hand
-//! holds it. A marker on a surface lies on it ([`Mark::normal`]). A marker with a label
-//! ([`Mark::label`]) has it drawn above it by the HUD (`hud::mark_labels`, from
-//! [`published_labels`]) while a hand is at it.
+//! holds it. A marker on a surface lies on it
+//! ([`Mark::normal`](crate::controllers::grab::Mark::normal)). A marker with a label
+//! ([`Mark::label`](crate::controllers::grab::Mark::label)) has it drawn above it by the HUD
+//! (`hud::mark_labels`, from [`published_labels`]) while a hand is at it.
 //!
 //! Every marker is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): a point
 //! that rides with the player to the render-time head, one on a held gun to its hand's render-time

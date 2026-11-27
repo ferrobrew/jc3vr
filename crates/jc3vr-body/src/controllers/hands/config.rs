@@ -49,7 +49,7 @@ pub struct GripOffset {
 }
 
 impl GripOffset {
-    /// A best guess for the Valve Index controller, not yet fitted in the headset: the wrist a few
+    /// A best guess for the Valve Index controller, not fitted in the headset: the wrist a few
     /// centimetres behind and to the back-of-hand side of the grip centre, and the handle tilted
     /// toward the fingers as a power grip holds it.
     pub const INDEX_BEST_GUESS: GripOffset = GripOffset {

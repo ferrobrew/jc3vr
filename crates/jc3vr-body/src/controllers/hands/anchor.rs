@@ -13,18 +13,18 @@
 //!   from a reel) latches whatever that aim points at. Turned with the fist, the aim would point
 //!   off the controller by the angle between the grip's axis and the aim's, about a right angle's
 //!   worth on some controllers, and the second grapple would fly where the player never pointed.
-//! - **Driving the hang.** The game's own stick-driven swing on a hang is switched off in this
-//!   build, so the stick does nothing to a hanging character beyond picking the hang jump's
-//!   direction. The hand drives the hang instead: the hand is fixed to the line, so moving it
-//!   relative to the head moves the body the other way. A post-call detour on the hang task
+//! - **Driving the hang.** The game's own stick-driven swing on a hang is switched off, so the
+//!   stick does nothing to a hanging character beyond picking the hang jump's direction. The hand
+//!   drives the hang instead: the hand is fixed to the line, so moving it relative to the head
+//!   moves the body the other way. A post-call detour on the hang task
 //!   ([`NStateTask_GrapplingHangTask::Update`]) measures the grapple hand's horizontal displacement
 //!   from where it was when the hang began, relative to the head, and pushes the hang body at the
 //!   hips with an impulse against it ([`swing_impulse`]), scaled against the game's own continuous
 //!   swing so that the feel matches what the designers tuned. The hand's motion pumps the swing on
 //!   top, through the pump the grapple registers
-//!   ([`crate::contributions::BodyContributions::hang_pump`]): while the hand moves
-//!   relative to the head, the body is pushed against the motion, and the hold and the pump
-//!   together are capped per hang tick.
+//!   ([`crate::contributions::BodyContributions::hang_pump`]): while the hand moves relative to the
+//!   head, the body is pushed against the motion, and the hold and the pump together are capped
+//!   per hang tick.
 //!
 //! The line's attach point is read once per input tick ([`input_tick`]), which also pulses the
 //! grapple hand when the hook leaves the gauntlet and when it attaches.
@@ -66,8 +66,8 @@ use crate::{
 
 /// The grapple's pump of the hang swing by the grapple hand's motion relative to the head, which
 /// the hang task's detour adds to the hold
-/// ([`crate::contributions::BodyContributions::hang_pump`]). Each function takes the
-/// game's own continuous stick swing at full deflection as `full_impulse`.
+/// ([`crate::contributions::BodyContributions::hang_pump`]). Each function takes the game's own
+/// continuous stick swing at full deflection as `full_impulse`.
 #[derive(Clone, Copy)]
 pub struct HangPump {
     /// The hand's smoothed velocity: the previous estimate, a new sample, and the seconds between
@@ -129,8 +129,8 @@ pub(crate) fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
 /// [`Hand::index`], `head` the head's cockpit pose, and `world_scale` the VR world scale.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32) {
     let status = body_frame::tiers();
-    // The mounted guns anchor the hands too, to their handles
-    // (the gameplay crate's `vehicles::apply`), which the line must not turn.
+    // The mounted guns anchor the hands too, to their handles (the vehicles crate's
+    // `vehicles::apply`), which the line must not turn.
     let mounted = status.state == Some(tiers::TierState::MountedGun);
     let weights = status.anchor_weights;
     if mounted || weights.iter().all(|w| *w <= 0.0) {
@@ -176,7 +176,7 @@ pub fn status() -> AnchorStatus {
 
 /// Read the grapple line for the tick, and pulse the grapple hand when the hook leaves the gauntlet
 /// or attaches. Called from the game stage while the controllers are enabled, with the hand the
-/// roles follow ([`scheme::acting_hand`](crate::controllers::scheme::acting_hand)).
+/// roles follow ([`scheme::acting_hand`]).
 ///
 /// # Safety
 ///

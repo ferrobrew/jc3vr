@@ -5,9 +5,9 @@
 //! All of it is in Rico's model space.
 //!
 //! - The torso bends after the head: the spine joints turn, each by its share (the presentation
-//!   tuning's `solve.spine_shares`), so that the head's joint swings toward where the head has moved to, by
-//!   the procedural torso's weight ([`chain_swing`]). The bend turns the spine about its base; it
-//!   does not lengthen or shorten it.
+//!   tuning's `solve.spine_shares`), so that the head's joint swings toward where the head has
+//!   moved to, by the procedural torso's weight ([`chain_swing`]). The bend turns the spine about
+//!   its base; it does not lengthen or shorten it.
 //! - The head takes the head's whole motion: it turns by the head's turn since the ticks, about its
 //!   own joint, and whatever of the head's travel the spine's bend did not cover moves it, up to
 //!   `solve.max_head_residual_m`.
@@ -364,11 +364,11 @@ fn clavicle_edit(torso: Mat4, arm: &ArmJoints, hand: Mat4, stretch: bool) -> Mat
 }
 
 /// The upper arm's, the forearm's, and the hand's edits of one arm whose shoulder rides `torso`,
-/// solved to the hand moved by `hand`, and its elbow pole where `rule` gives one. A hand further from the shoulder than the arm reaches, with
-/// the forearm stretched as far as it may, is drawn at that reach along the line to it: within one
-/// tick the body can move against the hands further than the arm covers (a throw and a fall at
-/// once), and the hand falling short keeps it on the end of the forearm rather than leaving the
-/// forearm behind.
+/// solved to the hand moved by `hand`, and its elbow pole where `rule` gives one. A hand further
+/// from the shoulder than the arm reaches, with the forearm stretched as far as it may, is drawn at
+/// that reach along the line to it: within one tick the body can move against the hands further
+/// than the arm covers (a throw and a fall at once), and the hand falling short keeps it on the end
+/// of the forearm rather than leaving the forearm behind.
 fn arm_edits(
     torso: Mat4,
     arm: &ArmJoints,

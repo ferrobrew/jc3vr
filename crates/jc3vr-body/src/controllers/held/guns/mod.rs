@@ -8,8 +8,8 @@
 //!   hands, the rigid grip, and the foregrip read ([`physical_hands`], [`deviation`],
 //!   [`take_support_break`], [`mass`], [`carried_mass`]), and the readout ([`status`]);
 //! - the support and weight targets the weapon handling composes for the held guns, registered
-//!   once at install ([`crate::contributions::BodyContributions::gun_targets`]) and applied by the hand bodies' drive
-//!   ([`apply_targets`]);
+//!   once at install ([`crate::contributions::BodyContributions::gun_targets`]) and applied by the
+//!   hand bodies' drive ([`apply_targets`]);
 //! - [`HeftClass`]: the weight class a weapon's tuning comes from.
 //!
 //! The step counts the publication's age in physics steps ([`crate::controllers::physics::steps`])

@@ -8,19 +8,18 @@
 //! - [`HandTier::Free`]: the hand follows its controller;
 //! - [`HandTier::ActionRuns`]: the game plays the action (a reload's timer and the weapon model's
 //!   own magazine and bolt animation, a draw, a holster) while the hand stays on its controller;
-//!   the weapon handling holds the fire inputs back for the action's duration
-//!   (`controllers::weapons`);
+//!   the weapon handling holds the fire inputs back for the action's duration (the weapons crate's
+//!   `controllers::weapons`);
 //! - [`HandTier::Anchored`]: the hand is attached to a world point, and its movement drives the
 //!   game. It is built for the grapple states and the mounted guns ([`TierState::anchor_built`]):
 //!   the grapple hand holds the line ([`crate::controllers::hands::anchor`]), and while hanging its
 //!   displacement swings the character. A grapple hand that holds anything (a gun, wielded or
 //!   armed there, a prop, a grenade, or a charge, as the loadout table has it) stays free instead,
 //!   so that what it holds stays where the controller puts it rather than going onto the line; on a
-//!   mounted gun both hands hold the handles, and their
-//!   positions aim the gun (`vehicles::mounted`). A state assigned the tier
-//!   where it is not built yields. The physical vehicle controls anchor a holding hand within the
-//!   seated state's free tier (`vehicles::physical`), because a hand holds a
-//!   control only while the player grips it;
+//!   mounted gun both hands hold the handles, and their positions aim the gun (the vehicles
+//!   crate's `vehicles::mounted`). A state assigned the tier where it is not built yields. The
+//!   physical vehicle controls anchor a holding hand within the seated state's free tier
+//!   (`vehicles::physical`), because a hand holds a control only while the player grips it;
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
 //!   the hands tuning's `tiers.yield_blend_s` and back over `tiers.return_blend_s`.
 //!
@@ -221,8 +220,8 @@ pub struct HandTierTable {
 }
 
 impl HandTierTable {
-    /// The plan of record's starting assignments. Driving with stick bindings is free; physical
-    /// vehicle controls, which anchor the hands, are opt-in and come later.
+    /// The plan of record's assignments. Driving is free: the physical vehicle controls anchor a
+    /// holding hand within it.
     pub const PLAN: HandTierTable = HandTierTable {
         on_foot: HandTier::Free,
         grapple_reel: HandTier::Anchored,
@@ -299,8 +298,8 @@ pub struct TierSignals {
 
 /// Classify the tick's state, highest priority first: a cutscene, then the body being thrown
 /// about, then the vehicle states, the scripted actions, the traversal and flight states, a weapon
-/// action, and finally on foot. `None` while a menu is up or the character is unreadable: the previous state
-/// holds.
+/// action, and finally on foot. `None` while a menu is up or the character is unreadable: the
+/// previous state holds.
 pub fn classify(signals: &TierSignals) -> Option<TierState> {
     if signals.detection.mode == Mode::Ui {
         return None;
@@ -477,9 +476,9 @@ impl TierConfig {
 
 /// Fold one tick into the section: a new state (or the held one) assigns each hand its tier, and
 /// the weights step toward the tiers' targets. `mounted_anchor` is the mounted guns' own anchor
-/// switch; the grapple states always anchor. `holding` says which hands hold
-/// something, indexed by [`Hand::index`]: a grapple hand holding anything stays free rather than
-/// taking the line, so that what it holds stays where the controller puts it.
+/// switch; the grapple states always anchor. `holding` says which hands hold something, indexed by
+/// [`Hand::index`]: a grapple hand holding anything stays free rather than taking the line, so
+/// that what it holds stays where the controller puts it.
 pub fn advance(
     previous: TierFrame,
     state: Option<TierState>,

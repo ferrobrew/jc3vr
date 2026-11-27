@@ -48,7 +48,7 @@ pub(crate) fn interpolate_attached(parent: [Mat4; 2], attachment: [Mat4; 2], t: 
 
 /// `d` with its translation shortened so that it carries `wrist` no further than `max_stretch`
 /// forearm lengths from `elbow`: the farthest the forearm's palette edit stretches to meet the
-/// hand ([`crate::controllers::hands::palette::MAX_FOREARM_STRETCH`]). Past it, the forearm would
+/// hand (the hands tuning's `reach.max_forearm_stretch`). Past it, the forearm would
 /// stop short and the hand would be drawn detached from the arm, its skin stretched across the gap.
 /// `d`'s turn is kept; a degenerate arm or a non-finite input leaves `d` as it is.
 pub(crate) fn keep_on_forearm(d: Pose, elbow: Vec3, wrist: Vec3, max_stretch: f32) -> Pose {

@@ -107,7 +107,7 @@ pub struct ElbowTuning {
     pub(crate) palm_fade_span: f32,
 }
 
-/// The render-time re-solve ([`solve`](crate::controllers::presentation::solve)).
+/// The render-time re-solve ([`solve`](mod@crate::controllers::presentation::solve)).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SolveTuning {

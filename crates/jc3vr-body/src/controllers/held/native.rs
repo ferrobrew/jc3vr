@@ -1,6 +1,6 @@
 //! The native weapon object's accessors: the weapon behind a `CGameObject` subobject and the
-//! subobject of a weapon, and the guns in its gun list. Pure pointer reads, shared by the hands' render-time late update and the
-//! weapon handling.
+//! subobject of a weapon, and the guns in its gun list. Pure pointer reads, shared by the hands'
+//! render-time late update and the weapon handling.
 
 use std::ptr::NonNull;
 

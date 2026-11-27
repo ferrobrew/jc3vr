@@ -668,7 +668,8 @@ unsafe fn snap_start(character: &Character, start: SnapStart) -> Option<Pose> {
 /// The right hand's grip ([`pick_right_grip`]), from its own canonical grip `own` and the left
 /// hand's mirrored onto the right wrist, which is cached per animation controller: the game's own
 /// animation turns the right attach bone away from its bind pose for every gun, the dual-wield
-/// pair's right pistol included. Records the choice for the readout. `None` when the left hand's bones do not resolve.
+/// pair's right pistol included. Records the choice for the readout. `None` when the left hand's
+/// bones do not resolve.
 unsafe fn right_grip(
     character: &Character,
     controller: &AnimationController,

@@ -3,18 +3,18 @@
 //! A press takes the target the hand is in reach of. A press with nothing in reach closes the hand
 //! into a fist when no game action reads that grip, and the fist keeps looking for a moment: it
 //! takes the first target the hand comes to within the grab tuning's `reach.fist_window_s` of
-//! closing, or later while
-//! the hand moves slowly, so that a hand closed in the air and then laid on a handle takes it. A
-//! fist that stays closed and moves fast stays a fist: a punch does not take what it strikes,
-//! which the hand bodies deal as a blow instead, and a fist swung past the hip draws nothing. A
-//! press with nothing in reach on a grip a game action reads (a vehicle's weapon, the wingsuit's
-//! secondary weapon) drives that action for the whole press. A fist never takes a remote target:
-//! only a press aimed at it does. Past its window a fist takes nothing on the body either: the hand
-//! is slow against the room while the body swings under it (a grapple swing, a landing), and a
-//! fist closed on the grapple line drew a holstered gun twice on the 14 November take, then threw
-//! it when the hand let go of the line. Whatever the press took, it holds until the hand opens
-//! ([`ClosedHand`](crate::controllers::intent::controls::ClosedHand)), which on a force-sensing
-//! grip can be after the press itself ends. A fist or a game action ends with the press.
+//! closing, or later while the hand moves slowly, so that a hand closed in the air and then laid on
+//! a handle takes it. A fist that stays closed and moves fast stays a fist: a punch does not take
+//! what it strikes, which the hand bodies deal as a blow instead, and a fist swung past the hip
+//! draws nothing. A press with nothing in reach on a grip a game action reads (a vehicle's weapon,
+//! the wingsuit's secondary weapon) drives that action for the whole press. A fist never takes a
+//! remote target: only a press aimed at it does. Past its window a fist takes nothing on the body
+//! either: the hand is slow against the room while the body swings under it (a grapple swing, a
+//! landing), and a fist closed on the grapple line drew a holstered gun twice on the 14 November
+//! take, then threw it when the hand let go of the line. Whatever the press took, it holds until
+//! the hand opens ([`ClosedHand`](crate::controllers::intent::controls::ClosedHand)), which on a
+//! force-sensing grip can be after the press itself ends. A fist or a game action ends with the
+//! press.
 
 use crate::controllers::{
     grab::{GrabVolume, Tier, tuning::GRAB},

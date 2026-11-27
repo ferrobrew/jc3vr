@@ -20,6 +20,8 @@
 //! - [`parts`]: the render-time late update of a held gun's separate model parts (its magazine,
 //!   slide, or spinning barrel);
 //! - [`palette`]: the pure palette-entry math of the late update;
+//! - [`stages`]: the hand composition's stage table, filled by the systems that own its poses;
+//! - [`config`]: the hands' settings, the wrist-to-grip offset;
 //! - [`tuning`]: the tuning, read from the shipped `tuning/hands.toml`.
 //!
 //! Everything here is inert unless the controller scheme is in effect and the hand's controller is
@@ -104,14 +106,14 @@ impl HandSettings {
 
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. The
-/// controllers' poses are composed with every stage of the hand composition
-/// ([`stages`]): a hand on a physical vehicle control or a mounted gun's handle holds
-/// it; while the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed
-/// pose through the shared support and weight targets, and a long gun held in one hand sags,
-/// trails, and sways. Physical guns use the same weighted target before their residual body
-/// correction, without adding synthetic recoil or wall-probe displacement. A kinematic gun hand
-/// carries its recoil offset; a palm pressed into a surface is held at it, and a hand body's hand
-/// is drawn at its body; and an anchored grapple hand holds the line ([`anchor::apply`]).
+/// controllers' poses are composed with every stage of the hand composition ([`stages`]): a hand
+/// on a physical vehicle control or a mounted gun's handle holds it; while the off-hand holds a
+/// two-handed weapon's foregrip, the hands are in the two-handed pose through the shared support
+/// and weight targets, and a long gun held in one hand sags, trails, and sways. Physical guns use
+/// the same weighted target before their residual body correction, without adding synthetic recoil
+/// or wall-probe displacement. A kinematic gun hand carries its recoil offset; a palm pressed into
+/// a surface is held at it, and a hand body's hand is drawn at its body; and an anchored grapple
+/// hand holds the line ([`anchor::apply`]).
 pub(crate) fn active_hands() -> Option<ActiveHands> {
     compose_active_hands(DrawTime::Tick)
 }

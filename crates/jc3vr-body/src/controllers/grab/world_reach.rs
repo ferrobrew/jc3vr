@@ -1,7 +1,7 @@
 //! What the physical hands' reach found in the world, as the grip targets carry it: the object and
 //! body a hand reached, what kind of thing it is (a loose or hinged object, a weapon, a vehicle's
 //! door, or a character), and the offer of a latched door that the controls summary checks. The
-//! physical hands find and act on them (`controllers::physical_hands`). Pure.
+//! physical hands find and act on them (the physical crate's `controllers::physical_hands`). Pure.
 
 use std::num::NonZeroUsize;
 
@@ -94,7 +94,8 @@ pub enum SeatAccess {
         /// How far the door stands open, degrees.
         open_deg: f32,
     },
-    /// Through a window of the vehicle the glass brought down (`controllers::physical_hands::characters::pane`).
+    /// Through a window of the vehicle the glass brought down (the physical crate's
+    /// `controllers::physical_hands::characters::pane`).
     Pane,
     /// An exposed motorcycle occupant, who needs no door.
     Exposed,

@@ -42,9 +42,9 @@ pub struct PoleInput {
 }
 
 /// The direction the elbow of the arm on `side` points from the line from its shoulder to its
-/// wrist: a unit vector square to that line. `palm_weight` is the little finger's pull
-/// (the presentation tuning's `elbow.palm_weight`). `None` for a degenerate arm: the wrist on the shoulder, the
-/// shoulders on one vertical line, or non-finite inputs.
+/// wrist: a unit vector square to that line. `palm_weight` is the little finger's pull (the
+/// presentation tuning's `elbow.palm_weight`). `None` for a degenerate arm: the wrist on the
+/// shoulder, the shoulders on one vertical line, or non-finite inputs.
 pub fn pole(input: &PoleInput, side: Side, palm_weight: f32) -> Option<Vec3> {
     let up = input.up.try_normalize()?;
     let out = across(input.shoulder - input.other_shoulder, up).try_normalize()?;
