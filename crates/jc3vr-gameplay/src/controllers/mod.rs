@@ -64,11 +64,11 @@ pub use config::ControllersConfig;
 /// once ([`jc3vr_body::contributions::register`]); it and the other registrations report the
 /// contributions they leave missing to `check`.
 pub fn install(check: &mut RegistrationCheck) -> Result<(), RegistrationError> {
-    jc3vr_grapple::register();
     register_head_pose::register(check);
     register_vr_frame::register();
     register_render::register();
     let mut body = BodyContributions::default();
+    jc3vr_grapple::register(&mut body);
     register_hands::register(&mut body);
     register_aim::register(&mut body);
     register_below::register(&mut body, check);
@@ -106,6 +106,7 @@ mod tests {
     fn the_registrations_fill_every_body_contribution() {
         let mut check = RegistrationCheck::new();
         let mut body = BodyContributions::default();
+        jc3vr_grapple::register(&mut body);
         register_hands::register(&mut body);
         register_aim::register(&mut body);
         register_below::register(&mut body, &mut check);

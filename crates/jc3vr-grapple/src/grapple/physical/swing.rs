@@ -1,7 +1,8 @@
 //! The hang swing's pump: the grapple hand's motion relative to the head pushes a hanging
 //! character the other way, as a body hanging from a rope moves against the hand that holds it.
 //! Pure; the hang task's detour in the hands' anchor applies it with the hold that the hand's
-//! displacement drives, through [`HANG_PUMP`], which the controllers' install registers there.
+//! displacement drives, through [`HANG_PUMP`], which the grapple's registration fills there
+//! ([`crate::register`]).
 //!
 //! The hold pushes for as long as the hand stays off where it took the line, like a stick held
 //! over. The pump pushes only while the hand moves, so pulling the hand back as the body swings
@@ -16,7 +17,7 @@ use jc3vr_body::controllers::hands::anchor::HangPump;
 use crate::grapple::{physical::config::SwingTuning, tuning::GRAPPLE};
 
 /// The pump as the hands' anchor calls it, with the fixed tuning.
-pub const HANG_PUMP: HangPump = HangPump {
+pub(crate) const HANG_PUMP: HangPump = HangPump {
     smooth_velocity: anchor_smooth_velocity,
     impulse: anchor_pump_impulse,
     combine: anchor_combine,
