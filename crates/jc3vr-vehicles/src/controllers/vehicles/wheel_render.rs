@@ -17,7 +17,7 @@
 //! [`Vehicle::UpdateRender_ModelMatrices`]: jc3gi::vehicle::vehicle::Vehicle::UpdateRender_ModelMatrices
 //! [`PartInstance::m_RootSpaceTransform`]: jc3gi::vehicle::parts::PartInstance::m_RootSpaceTransform
 
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -25,6 +25,7 @@ use jc3gi::{
     types::math::Matrix4,
     vehicle::{parts::PartInstance, vehicle::Vehicle},
 };
+use jc3vr_core::published::Counter;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -75,7 +76,7 @@ pub fn publish_controls(wheel: Option<(RenderWheel, f32)>, native: Option<(Rende
 
 /// How many render updates drew the wheel turned, for the debug UI.
 pub fn turned() -> u64 {
-    TURNED.load(Ordering::Relaxed)
+    TURNED.get()
 }
 
 /// The published wheel's vehicle, or zero: the detour's lock-free first test.
@@ -84,7 +85,7 @@ static VEHICLE: AtomicUsize = AtomicUsize::new(0);
 /// The published wheel and its angle. Only [`publish`] and the detour take it, each for a copy.
 static SLOT: Mutex<Option<(RenderWheel, Mat4)>> = Mutex::new(None);
 
-static TURNED: AtomicU64 = AtomicU64::new(0);
+static TURNED: Counter = Counter::new();
 
 #[detour(address = jc3gi::vehicle::vehicle::Vehicle::UpdateRender_ModelMatrices_ADDRESS)]
 fn update_render_model_matrices(this: *mut Vehicle, transform: *const Matrix4, dtf: f32) {
@@ -111,7 +112,7 @@ fn update_render_model_matrices(this: *mut Vehicle, transform: *const Matrix4, d
     if let Some((part, saved)) = restore {
         // SAFETY: as above; the part is the one just turned.
         unsafe { (*part).m_RootSpaceTransform = saved };
-        TURNED.fetch_add(1, Ordering::Relaxed);
+        TURNED.bump();
     }
 }
 

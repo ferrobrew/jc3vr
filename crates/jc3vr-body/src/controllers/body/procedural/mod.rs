@@ -165,11 +165,6 @@ pub fn torso_keep_out(to_world: Mat4) -> Option<TorsoKeepOut> {
     arm_context().map(|arms| arms.keep_out.to_world(to_world))
 }
 
-/// The last gate's status.
-pub fn status() -> ProceduralStatus {
-    STATE.lock().status
-}
-
 /// The last gate's status, copied out after the gate let go of its state, so a reader never waits
 /// on a gate in progress. A leaf lock, so any thread may read it.
 pub fn published_status() -> ProceduralStatus {

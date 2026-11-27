@@ -14,7 +14,6 @@
 //!
 //! [`NAirMovement_UpdateStdLookSteering`]: jc3gi::input::parachute::NAirMovement_UpdateStdLookSteering
 
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -29,6 +28,7 @@ use jc3vr_body::{
     },
     hooks::input::locomotion::head_decoupled,
 };
+use jc3vr_core::published::Counter;
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -37,7 +37,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// How often the look-steer was removed, for the debug UI.
 pub fn suppressions() -> u64 {
-    SUPPRESSIONS.load(Ordering::Relaxed)
+    SUPPRESSIONS.get()
 }
 
 #[detour(address = jc3gi::input::parachute::NAirMovement_UpdateStdLookSteering_ADDRESS)]
@@ -60,7 +60,7 @@ fn update_std_look_steering(
     }
     if let Some(out) = unsafe { out.as_mut() } {
         out.data = [0.0; 3];
-        SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
+        SUPPRESSIONS.bump();
     }
 }
 
@@ -80,4 +80,4 @@ fn should_suppress() -> bool {
     flying && unsafe { Character::GetLocalPlayerCharacter().as_ref() }.is_some_and(head_decoupled)
 }
 
-static SUPPRESSIONS: AtomicU64 = AtomicU64::new(0);
+static SUPPRESSIONS: Counter = Counter::new();

@@ -15,12 +15,13 @@
 //! ([`jc3vr_weapons::controllers::weapons::recoil`]).
 
 use std::{
-    sync::atomic::{AtomicU8, AtomicU64, Ordering},
+    sync::atomic::{AtomicU8, Ordering},
     time::Instant,
 };
 
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::haptics;
+use jc3vr_core::published::Counter;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_weapons::controllers::weapons::recoil::Spring;
 use parking_lot::Mutex;
@@ -29,7 +30,7 @@ use crate::controllers::vehicles::tuning::VEHICLES;
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
 pub(crate) fn on_shot() {
-    SHOTS.fetch_add(1, Ordering::Relaxed);
+    SHOTS.bump();
     {
         let mut kick = KICK.lock();
         let now = Instant::now();
@@ -81,7 +82,7 @@ pub(super) fn set_holds(holds: [bool; 2]) {
 
 /// Shots of the mounted gun that kicked the handles, since the payload loaded.
 pub fn shots() -> u64 {
-    SHOTS.load(Ordering::Relaxed)
+    SHOTS.get()
 }
 
 struct Kick {
@@ -97,7 +98,7 @@ static KICK: Mutex<Kick> = Mutex::new(Kick {
     at: None,
 });
 static HOLDS: AtomicU8 = AtomicU8::new(0);
-static SHOTS: AtomicU64 = AtomicU64::new(0);
+static SHOTS: Counter = Counter::new();
 
 fn advance(kick: &mut Kick, now: Instant) {
     if let Some(at) = kick.at {

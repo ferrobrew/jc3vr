@@ -16,10 +16,11 @@
 //! [`VehicleAimBlendState::UpdateSamplers`]: jc3gi::aim::aim::VehicleAimBlendState::UpdateSamplers
 //! [`PlayerAimControl::m_AimPos`]: jc3gi::aim::aim::PlayerAimControl::m_AimPos
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
 use jc3vr_body::controllers::{mode::VehicleSeat, scheme};
+use jc3vr_core::published::Counter;
 use jc3vr_input::frame::Hand;
 
 /// The passenger aim's readout.
@@ -36,8 +37,8 @@ pub struct PassengerStatus {
 pub fn status() -> PassengerStatus {
     PassengerStatus {
         aiming: AIMING.load(Ordering::Relaxed),
-        updates: UPDATES.load(Ordering::Relaxed),
-        starts: STARTS.load(Ordering::Relaxed),
+        updates: UPDATES.get(),
+        starts: STARTS.get(),
     }
 }
 
@@ -72,11 +73,11 @@ fn aim_point(
 pub fn note(aiming: bool) {
     let was = AIMING.swap(aiming, Ordering::Relaxed);
     if aiming {
-        UPDATES.fetch_add(1, Ordering::Relaxed);
+        UPDATES.bump();
     }
     if aiming != was {
         if aiming {
-            STARTS.fetch_add(1, Ordering::Relaxed);
+            STARTS.bump();
         }
         tracing::info!(
             target: "controllers",
@@ -87,8 +88,8 @@ pub fn note(aiming: bool) {
 }
 
 static AIMING: AtomicBool = AtomicBool::new(false);
-static UPDATES: AtomicU64 = AtomicU64::new(0);
-static STARTS: AtomicU64 = AtomicU64::new(0);
+static UPDATES: Counter = Counter::new();
+static STARTS: Counter = Counter::new();
 
 #[cfg(test)]
 mod tests {

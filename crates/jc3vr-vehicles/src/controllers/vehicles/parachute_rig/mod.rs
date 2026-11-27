@@ -19,7 +19,7 @@ use jc3gi::{
     types::math::Matrix4,
 };
 use jc3vr_body::controllers::hands::ik;
-use jc3vr_core::published::{Published, Stage, Stamp, Window};
+use jc3vr_core::published::{Counter, Published, Stage, Stamp, Window};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
@@ -74,7 +74,7 @@ pub(super) fn centres(active: bool, cockpit: &CockpitTransform) -> [Option<Vec3>
 
 /// Handles put back on their links since the payload loaded.
 pub fn handles_unplaced() -> u64 {
-    UNPLACED.load(Ordering::Relaxed)
+    UNPLACED.get()
 }
 
 /// Which handles to put back, given the holds the handle controls published recently, if any: the
@@ -159,7 +159,7 @@ fn sync_bones(
         {
             // SAFETY: the controller belongs to this sync and no borrow crosses the native call.
             unsafe { bones.unplace(&mut *controller, joints) };
-            UNPLACED.fetch_add(1, Ordering::Relaxed);
+            UNPLACED.bump();
         }
     }
     if let (Some(generation), Some(world)) = (request, world) {
@@ -424,7 +424,7 @@ const ATTACH_NAMES: [&str; 2] = ["LeftHandleAttach", "RightHandleAttach"];
 const HAND_ATTACH_NAMES: [&str; 2] = ["LeftHandAttach2", "RightHandAttach2"];
 
 static HOLDS: Published<[bool; 2]> = Published::new(Stage::InputGame);
-static UNPLACED: AtomicU64 = AtomicU64::new(0);
+static UNPLACED: Counter = Counter::new();
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static NATIVE: Mutex<NativeState> = Mutex::new(NativeState {
     owner: None,
