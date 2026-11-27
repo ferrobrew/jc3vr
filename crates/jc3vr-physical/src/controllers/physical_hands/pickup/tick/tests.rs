@@ -3,11 +3,13 @@ use std::num::NonZeroUsize;
 use glam::Quat;
 use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{
+    clock::TimeScale,
     grab::world_reach::{CharacterTarget, DoorTarget},
-    physics::rigid::BodyPose,
+    physics::{rigid::BodyPose, tuning::PHYSICS},
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
+use tracking_format::event::WorldMotion;
 
 use super::*;
 use crate::controllers::physical_hands::{
@@ -19,6 +21,8 @@ struct FakeBodies {
     body: bodies::BodyState,
     calls: Vec<&'static str>,
     driven: Option<Velocities>,
+    /// What every release reads, wherever it is let go.
+    released: ReleaseMotion,
 }
 
 impl BodyEngine for FakeBodies {
@@ -34,6 +38,10 @@ impl BodyEngine for FakeBodies {
         self.calls.push("drive");
         self.driven = Some(velocities);
         Ok(())
+    }
+    fn release(&mut self, _: Hand, _: Vec3, _: f64) -> ReleaseMotion {
+        self.calls.push("release");
+        self.released
     }
 }
 
@@ -116,6 +124,9 @@ fn a_fixture_activation_refusal_stops_before_reading_or_taking_the_body() {
         fn drive(&mut self, _: &Held, _: Velocities) -> Result<(), PhysicsError> {
             panic!("a refused fixture must not be driven");
         }
+        fn release(&mut self, _: Hand, _: Vec3, _: f64) -> ReleaseMotion {
+            panic!("a refused fixture is never let go");
+        }
     }
     let mut state = PickupState::new();
     state.input_at = Some(Stamp::now());
@@ -151,6 +162,7 @@ fn a_second_holder_inherits_carry_or_a_preserved_joint_in_the_production_tick() 
             body: body(),
             calls: Vec::new(),
             driven: None,
+            released: ReleaseMotion::REST,
         };
         let outcome = run(&mut state, true, &mut fake);
         assert_eq!(state.held.map(|h| h.unwrap().joined), [joined; 2]);
@@ -197,6 +209,7 @@ fn latch_handoff_tear_and_regrab_keep_one_body_mode_in_the_production_tick() {
             body: body(),
             calls: Vec::new(),
             driven: None,
+            released: ReleaseMotion::REST,
         };
         let outcome = run(&mut state, true, &mut fake);
         assert_eq!(state.held.map(|h| h.unwrap().joined), [initially_joined; 2]);
@@ -215,6 +228,7 @@ fn latch_handoff_tear_and_regrab_keep_one_body_mode_in_the_production_tick() {
         body: body(),
         calls: Vec::new(),
         driven: None,
+        released: ReleaseMotion::REST,
     };
     let outcome = run(&mut state, true, &mut fake);
     assert_eq!(state.held.map(|h| h.unwrap().joined), [false; 2]);
@@ -312,6 +326,7 @@ fn a_carried_object_the_hands_can_lift_takes_on_the_characters_jump() {
             },
             calls: Vec::new(),
             driven: None,
+            released: ReleaseMotion::REST,
         };
         let config = PickupTuning {
             carrier_motion_share: share,
@@ -398,6 +413,7 @@ fn ticks_held(held: Held, lag: Vec3, velocity: Vec3, limit: usize) -> (usize, Ti
         },
         calls: Vec::new(),
         driven: None,
+        released: ReleaseMotion::REST,
     };
     let moved = PalmMotion {
         pose: Pose {
@@ -440,6 +456,7 @@ fn ragdoll_contacts_share_the_retained_assembly_and_join_when_the_hand_has_a_bod
             body: body(),
             calls: Vec::new(),
             driven: None,
+            released: ReleaseMotion::REST,
         };
         assert_eq!(
             assembly_mass_share(&state.held, &first, if same_body { 2 } else { 1 }),
@@ -479,6 +496,7 @@ fn a_joined_ragdoll_hold_persists_and_keeps_its_scoped_joint() {
         body: body(),
         calls: Vec::new(),
         driven: None,
+        released: ReleaseMotion::REST,
     };
     for tick in 0..90 {
         let rise = Vec3::Y * 0.5 * tick as f32 / 90.0;
@@ -574,75 +592,51 @@ fn a_ragdoll_carry_is_scoped_stronger_and_shares_one_assembly_between_hands() {
     ));
 }
 
-#[test]
-fn a_released_ragdoll_leaves_at_the_hands_velocity_at_its_grab_point() {
-    let body = body();
-    let grip = Grip::of(
-        Pose {
-            position: Vec3::ZERO,
-            orientation: Quat::IDENTITY,
+/// A release of the hand's motion `linear` and `angular` with the player's `carried` movement.
+fn released(linear: Vec3, angular: Vec3, carried: Vec3) -> ReleaseMotion {
+    ReleaseMotion {
+        world: WorldMotion {
+            linear: linear + carried,
+            angular,
         },
-        body.pose,
-        Vec3::ZERO,
-    );
+        inherited: WorldMotion {
+            linear: carried,
+            angular: Vec3::ZERO,
+        },
+        source: ReleaseSource::TimestampedHandHistory,
+        history_age_s: Some(0.0),
+        time_scale: TimeScale::REAL,
+    }
+}
+
+#[test]
+fn a_thrown_object_leaves_with_the_one_release_and_the_hands_spin() {
     let held = Held {
-        grip,
         mass_kg: 100.0,
         ..held(false, HeldKind::Ragdoll)
     };
-    let moving = PalmMotion {
-        velocity: Vec3::new(1.0, 2.0, -3.0),
-        ..palm()
-    };
-    let (speed, velocities) =
-        release_velocities(&held, &body, &moving, PICKUP.get(), HandStrength::full()).unwrap();
-    assert!((velocities.linear - moving.velocity).length() < 1e-4);
-    assert!((speed - moving.velocity.length()) < 1e-4);
-    assert_eq!(velocities.angular, Vec3::ZERO);
-    // The body keeps its spin, and the grab point still leaves at the hand's velocity.
-    let anchor = Vec3::new(0.3, 0.0, 0.0);
-    let spinning = bodies::BodyState {
-        velocities: Velocities {
-            linear: Vec3::ZERO,
-            angular: Vec3::Y * 2.0,
-        },
-        ..body
-    };
-    let held = Held {
-        grip: Grip::of(
-            Pose {
-                position: Vec3::ZERO,
-                orientation: Quat::IDENTITY,
-            },
-            body.pose,
-            anchor,
-        ),
+    let release = released(Vec3::new(1.0, 2.0, -3.0), Vec3::Y * 2.0, Vec3::X * 30.0);
+    let (speed, velocities) = release_velocities(&held, &release, HandStrength::full()).unwrap();
+    assert_eq!(velocities.linear, release.thrown().linear);
+    assert_eq!(velocities.angular, Vec3::Y * 2.0);
+    assert_eq!(speed, release.thrown().linear.length());
+    // The carried 30 m/s passes; only the hand's share is held to the one cap.
+    let flung = released(Vec3::NEG_Z * 100.0, Vec3::ZERO, Vec3::X * 30.0);
+    let (_, velocities) = release_velocities(&held, &flung, HandStrength::full()).unwrap();
+    let hand = velocities.linear - Vec3::X * 30.0;
+    assert!((hand.length() - PHYSICS.get().release.max_hand_mps).abs() < 1e-3);
+    // What one hand cannot lift, and a release with no motion to give, keep their velocity.
+    let heavy = Held {
+        mass_kg: 600.0,
+        kind: HeldKind::Prop,
         ..held
     };
-    let (_, velocities) = release_velocities(
-        &held,
-        &spinning,
-        &moving,
-        PICKUP.get(),
-        HandStrength::full(),
-    )
-    .unwrap();
-    assert_eq!(velocities.angular, Vec3::Y * 2.0);
-    let at_anchor = velocities.linear + velocities.angular.cross(anchor - body.pose.centre);
-    assert!((at_anchor - moving.velocity).length() < 1e-4);
-    // What one hand cannot lift keeps its velocity instead of being thrown.
     assert_eq!(
-        release_velocities(
-            &Held {
-                mass_kg: 600.0,
-                kind: HeldKind::Prop,
-                ..held
-            },
-            &body,
-            &moving,
-            PICKUP.get(),
-            HandStrength::full(),
-        ),
+        release_velocities(&heavy, &release, HandStrength::full()),
+        None
+    );
+    assert_eq!(
+        release_velocities(&held, &ReleaseMotion::REST, HandStrength::full()),
         None
     );
 }
@@ -670,27 +664,24 @@ fn a_joined_ragdoll_release_unjoins_and_throws_with_the_hand() {
         ..held(true, HeldKind::Ragdoll)
     });
     state.requests[0] = Some(Request::Release);
-    let moving = PalmMotion {
-        velocity: Vec3::new(0.0, 0.0, -6.0),
-        ..palm()
-    };
     let mut fake = FakeBodies {
         body: body(),
         calls: Vec::new(),
         driven: None,
+        released: released(Vec3::new(0.0, 0.0, -6.0), Vec3::ZERO, Vec3::ZERO),
     };
     state.input_at = Some(Stamp::now());
     let inputs = TickInputs {
-        palms: [Some(moving), None],
+        palms: [None, None],
         ..inputs(true)
     };
     let outcome = unsafe { tick_with(&mut state, inputs, PICKUP.get(), &mut fake) };
     assert_eq!(state.held[0], None);
     assert!(outcome.released[0]);
-    assert_eq!(fake.calls, ["read", "unjoin", "drive"]);
+    assert_eq!(fake.calls, ["read", "release", "unjoin", "drive"]);
     assert_eq!(outcome.throw, Some(6.0));
     let thrown = outcome.thrown[0].unwrap();
-    assert!((thrown.linear - moving.velocity).length() < 1e-4);
+    assert!((thrown.linear - Vec3::new(0.0, 0.0, -6.0)).length() < 1e-4);
 }
 
 #[test]
@@ -711,6 +702,7 @@ fn a_falling_anatomical_contact_converges_only_within_the_soft_hold_force_budget
             body: fallen,
             calls: Vec::new(),
             driven: None,
+            released: ReleaseMotion::REST,
         };
         state.input_at = Some(Stamp::now());
         let outcome = unsafe {
@@ -834,6 +826,7 @@ fn two_hands_on_a_joined_heavy_object_pull_as_a_carry_of_it_would() {
         },
         calls: Vec::new(),
         driven: None,
+        released: ReleaseMotion::REST,
     };
     state.input_at = Some(Stamp::now());
     let palms = ends.map(|end| {
@@ -893,6 +886,7 @@ fn a_hold_that_ends_takes_its_strain_with_it() {
         body: body(),
         calls: Vec::new(),
         driven: None,
+        released: ReleaseMotion::REST,
     };
     let endings: [fn(&mut PickupState) -> TickInputs; 2] = [
         // The hand stops being tracked.
@@ -946,6 +940,7 @@ fn a_tear_judges_the_other_hand_with_the_strength_left() {
         },
         calls: Vec::new(),
         driven: None,
+        released: ReleaseMotion::REST,
     };
     let at = |position| {
         Some(PalmMotion {

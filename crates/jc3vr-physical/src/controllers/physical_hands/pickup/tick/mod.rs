@@ -8,14 +8,17 @@ use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
-    physics::{bodies, error::PhysicsError, rigid::Velocities},
+    physics::{
+        bodies,
+        error::PhysicsError,
+        release,
+        release::{ReleaseMotion, ReleaseSource},
+        rigid::Velocities,
+    },
     telemetry::{Released, Thrown, note_release, note_throw},
 };
 use jc3vr_core::published::Stamp;
-use jc3vr_input::{
-    frame::{Hand, Pose},
-    motion::shaped_release,
-};
+use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::physical_hands::{
     carry_collision, characters,
@@ -360,7 +363,8 @@ unsafe fn tick_with(
                     // A joined object leaves with the velocity the hand gave it, except a
                     // ragdoll, which the last hand throws as a carried one is thrown.
                     if held.throws_on_release(shared) {
-                        match throw(engine, &held, palms[i], config, strength) {
+                        let since_s = state.held_since[i];
+                        match throw(engine, hand, &held, since_s, strength) {
                             Ok(Some((speed, velocities))) => {
                                 outcome.throw = Some(speed);
                                 outcome.thrown[i] = Some(velocities);
@@ -874,6 +878,9 @@ trait BodyEngine {
     fn read(&mut self, body: u32, object: NonZeroUsize) -> Result<bodies::BodyState, PhysicsError>;
     fn release_joints(&mut self, held: &Held);
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), PhysicsError>;
+    /// The motion of the point `at` that `hand` lets go of, held since `since_s` (display time)
+    /// ([`release::at`]).
+    fn release(&mut self, hand: Hand, at: Vec3, since_s: f64) -> ReleaseMotion;
     /// Whether the held body rests against the player's own drawn torso
     /// ([`drawn_body::rests_against`]).
     fn rests_against_player(&mut self, _body: u32) -> bool {
@@ -896,6 +903,9 @@ impl BodyEngine for NativeBodies {
     }
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), PhysicsError> {
         unsafe { bodies::drive(held.body, held.object, velocity) }
+    }
+    fn release(&mut self, hand: Hand, at: Vec3, since_s: f64) -> ReleaseMotion {
+        release::at(hand, at, since_s)
     }
     fn rests_against_player(&mut self, body: u32) -> bool {
         unsafe { drawn_body::rests_against(body) }
@@ -1177,54 +1187,41 @@ fn can_throw(held: &Held, strength: HandStrength) -> bool {
     mass.is_finite() && mass > 0.0 && mass * GRAVITY_MPS2 <= carry_force_n(held.kind, strength)
 }
 
-/// The velocities `held` leaves with when the palm lets go of it at its grab point, and the speed
-/// of the throw: the palm's velocity at the grab point, scaled and capped, and the body's spin,
-/// with the linear velocity corrected so that the grab point leaves at the palm's velocity.
-/// `None` when the hold cannot throw what it holds.
+/// The velocities `held` leaves with when the hand lets go of it, and the speed of the throw: the
+/// one release everything a hand lets go of takes ([`release::at`]), at the body's centre of mass,
+/// with the hand's spin. `None` when the hold cannot throw what it holds, or when the release has
+/// no motion to give (the rig's was not fresh), so the body keeps the velocity it has.
 fn release_velocities(
     held: &Held,
-    body: &bodies::BodyState,
-    palm: &PalmMotion,
-    config: &PickupTuning,
+    release: &ReleaseMotion,
     strength: HandStrength,
 ) -> Option<(f32, Velocities)> {
-    if !can_throw(held, strength) {
+    if !can_throw(held, strength) || release.source == ReleaseSource::UnavailableAtRelease {
         return None;
     }
-    let anchor = held.grip.anchor(body.pose);
-    let point = shaped_release(
-        palm.point_velocity(anchor),
-        Vec3::ZERO,
-        config.throw_shape(),
-    );
-    let spin = body.velocities.angular;
-    let linear = (point - spin.cross(anchor - body.pose.centre))
-        .clamp_length_max(config.max_throw_speed_mps.max(0.0));
+    let thrown = release.thrown();
     Some((
-        point.length(),
+        thrown.linear.length(),
         Velocities {
-            linear,
-            angular: spin,
+            linear: thrown.linear,
+            angular: thrown.angular,
         },
     ))
 }
 
-/// Let go of `held` from the palm `palm`, and return the throw's speed: the grab point leaves with
-/// the palm's velocity at it, scaled and capped, and the body keeps its spin. An object one hand
-/// cannot lift, or one let go by an untracked hand, keeps the velocity it has. The joint ends
-/// before the velocity is written, so it cannot hold the body back.
+/// Let go of `held` from `hand`, held since `since_s` (display time), and return the throw's speed
+/// ([`release_velocities`]). An object one hand cannot lift keeps the velocity it has. The joint
+/// ends before the velocity is written, so it cannot hold the body back.
 fn throw(
     engine: &mut impl BodyEngine,
+    hand: Hand,
     held: &Held,
-    palm: Option<PalmMotion>,
-    config: &PickupTuning,
+    since_s: f64,
     strength: HandStrength,
 ) -> Result<Option<(f32, Velocities)>, PhysicsError> {
     let body = engine.read(held.body, held.object)?;
-    let Some(palm) = palm else {
-        return Ok(None);
-    };
-    let Some((speed, velocities)) = release_velocities(held, &body, &palm, config, strength) else {
+    let release = engine.release(hand, body.pose.centre, since_s);
+    let Some((speed, velocities)) = release_velocities(held, &release, strength) else {
         return Ok(None);
     };
     engine.release_joints(held);

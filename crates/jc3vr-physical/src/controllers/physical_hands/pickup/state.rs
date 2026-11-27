@@ -12,7 +12,10 @@ use jc3vr_body::controllers::{
     },
 };
 use jc3vr_core::published::Stamp;
-use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    motion,
+};
 
 use crate::controllers::physical_hands::{
     carry_collision::{Assembly, Subject},
@@ -32,6 +35,9 @@ pub(crate) struct PickupState {
     /// Each hand's hold. A hold is set, replaced, or ended through [`Self::set_held`] or
     /// [`Self::take_held`], which end its strain with it.
     pub(crate) held: [Option<Held>; 2],
+    /// The display time each hand took what it holds, from which its throw reads the hand's
+    /// history ([`jc3vr_body::controllers::physics::release::at`]).
+    pub(crate) held_since: [f64; 2],
     /// Each hand's grip on a latched door, before the latch gives.
     pub(crate) latches: [Option<Latch>; 2],
     pub(crate) doors: [Option<TearGrip>; 2],
@@ -60,6 +66,7 @@ impl PickupState {
     pub(crate) const fn new() -> Self {
         Self {
             held: [None; 2],
+            held_since: [f64::NEG_INFINITY; 2],
             latches: [None; 2],
             doors: [None; 2],
             seizes: [None; 2],
@@ -79,6 +86,9 @@ impl PickupState {
     /// Set, replace, or end the hold of the hand at `index`, and with it the hand's strain: a new
     /// hold of the same body starts fresh rather than inheriting a caught hold's stuck time.
     pub(crate) fn set_held(&mut self, index: usize, held: Option<Held>) {
+        if held.is_some_and(|new| self.held[index].is_none_or(|old| !old.same(&new))) {
+            self.held_since[index] = motion::latest_time().unwrap_or(f64::NEG_INFINITY);
+        }
         self.held[index] = held;
         self.strains[index] = None;
     }
@@ -169,6 +179,7 @@ impl PickupState {
     pub(crate) fn has_interaction(&self, hand: Hand) -> bool {
         let Self {
             held,
+            held_since: _,
             latches,
             doors,
             seizes,

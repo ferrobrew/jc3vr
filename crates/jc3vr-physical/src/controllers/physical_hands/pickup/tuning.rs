@@ -1,12 +1,11 @@
 //! The pickups' tuning, read from the shipped `tuning/pickup.toml` ([`PICKUP`]): the reach, the
-//! weight limits, the drive toward the hand, the tearing away, and the throw. The hand's strength
+//! weight limits, the drive toward the hand, and the tearing away. The hand's strength
 //! on what it holds is the hand bodies' ([`HandStrength`]).
 
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
-use jc3vr_input::motion::ReleaseShape;
 use serde::Deserialize;
 
 use crate::controllers::physical_hands::physics::tuning::PHYSICS;
@@ -59,10 +58,6 @@ pub struct PickupTuning {
     /// covers only the hands' motion relative to the body. One carries the object along whatever
     /// its weight within the hands' lift; its weight still shows as the drive's sag.
     pub carrier_motion_share: f32,
-    /// The released object's velocity as a share of the hand's.
-    pub throw_scale: f32,
-    /// The fastest throw, metres per second.
-    pub max_throw_speed_mps: f32,
     /// The heaviest articulated object a hand takes hold of, kilograms: a body joined to the world
     /// or another body by a constraint, such as a hinged gate, a hatch, or a lever, is taken
     /// whatever its weight up to this, since the constraint carries it.
@@ -147,16 +142,6 @@ impl HandStrength {
     }
 }
 
-impl PickupTuning {
-    /// How a released object's velocity is shaped from the palm's at its grab point.
-    pub fn throw_shape(&self) -> ReleaseShape {
-        ReleaseShape {
-            scale: self.throw_scale,
-            max_speed_mps: self.max_throw_speed_mps,
-        }
-    }
-}
-
 impl Tuning for PickupTuning {
     fn validate(&self) -> Result<(), Invalid> {
         positive("reach_m", self.reach_m, 2.0)?;
@@ -186,8 +171,6 @@ impl Tuning for PickupTuning {
         nonnegative("stuck_speed_mps", self.stuck_speed_mps, 100.0)?;
         nonnegative("stuck_s", self.stuck_s, 60.0)?;
         range("carrier_motion_share", self.carrier_motion_share, 0.0, 1.0)?;
-        nonnegative("throw_scale", self.throw_scale, 10.0)?;
-        nonnegative("max_throw_speed_mps", self.max_throw_speed_mps, 1000.0)?;
         positive(
             "max_articulated_mass_kg",
             self.max_articulated_mass_kg,
