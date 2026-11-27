@@ -86,12 +86,16 @@ const SEED: [u8; 16] = [
 
 static PATCHED: AtomicUsize = AtomicUsize::new(0);
 /// The number of screen-space decal permutations whose depth fetch has been biased since injection --
-/// twelve per bundle load. Read on eject to decide whether the pristine shaders need restoring.
+/// twelve per bundle load.
 static SSDECAL_BIASED: AtomicUsize = AtomicUsize::new(0);
 /// How many composite permutations have had their screen overlays mapped per eye this session.
 static OVERLAYS_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
 /// How many composite permutations have had their bloom lookups kept per eye this session.
 static BLOOM_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
+/// The fragment programs the engine was handed a rewritten blob for since injection, whichever
+/// rewrite produced it. Counted where the blob is handed over rather than in each rewrite, so a new
+/// fragment rewrite is covered by the eject restore without being listed anywhere.
+static FRAGMENT_PROGRAMS_REPLACED: AtomicUsize = AtomicUsize::new(0);
 static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// The state the live shader set was created under by the last reload, or `None` before the first
 /// reload, after a failed one, or when the configuration changed while the shaders were being
@@ -452,6 +456,9 @@ fn create_fragment_program(
         }
     }
 
+    if saved.is_some() {
+        FRAGMENT_PROGRAMS_REPLACED.fetch_add(1, Ordering::Relaxed);
+    }
     let result = CREATE_FRAGMENT_PROGRAM.get().unwrap().call(device, params);
     if rewrote_velocity
         && unsafe { result.as_ref() }
@@ -769,12 +776,11 @@ pub fn reload_now() -> Result<(), ReloadError> {
 pub fn restore_original_shaders_on_eject() {
     // Every substitution the mod makes has to be represented here, or a session that made only that
     // kind of substitution ejects without a bounce (a terrain-only session, for one, would leave a
-    // domain shader reading a `cb13` nothing binds any more).
+    // domain shader reading a `cb13` nothing binds any more). Every fragment rewrite is covered by
+    // the one replacement count.
     let (hull_forwarded, domain_reprojected) = crate::stereo::single_pass::terrain_counts();
     let patched_anything = crate::stereo::single_pass::has_patched_shaders()
-        || patched_count() > 0
-        || SSDECAL_BIASED.load(Ordering::Relaxed) > 0
-        || OVERLAYS_LOCALIZED.load(Ordering::Relaxed) > 0
+        || FRAGMENT_PROGRAMS_REPLACED.load(Ordering::Relaxed) > 0
         || hull_forwarded > 0
         || domain_reprojected > 0;
     if !patched_anything {
