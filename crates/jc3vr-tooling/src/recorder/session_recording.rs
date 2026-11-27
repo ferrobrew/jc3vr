@@ -15,6 +15,7 @@ use parking_lot::Mutex;
 use crate::{
     director::markers,
     recorder::{self, HostState, RECORDER_CONFIG},
+    tuning::TOOLING,
 };
 
 /// The pair's state for the debug UI.
@@ -86,7 +87,8 @@ pub(crate) fn poll() {
         *STARTED_AT.lock() = None;
         return;
     }
-    if !should_degrade(status.host.as_ref(), started.elapsed()) {
+    let grace = Duration::from_millis(TOOLING.get().recording.capture_host_grace_ms);
+    if !should_degrade(status.host.as_ref(), started.elapsed(), grace) {
         return;
     }
     drop(status);
@@ -102,13 +104,10 @@ pub(crate) fn poll() {
 }
 
 /// Whether a video take that has not connected yet should give up and leave the tracking half
-/// running.
-fn should_degrade(host: Option<&HostState>, elapsed: Duration) -> bool {
-    host == Some(&HostState::Waiting) && elapsed >= CAPTURE_HOST_GRACE
+/// running, once it has waited `grace`.
+fn should_degrade(host: Option<&HostState>, elapsed: Duration, grace: Duration) -> bool {
+    host == Some(&HostState::Waiting) && elapsed >= grace
 }
-
-/// How long a session recording waits for the capture host before it records tracking only.
-const CAPTURE_HOST_GRACE: Duration = Duration::from_millis(1500);
 
 static STAMP: Mutex<Option<String>> = Mutex::new(None);
 static STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
@@ -120,17 +119,16 @@ mod tests {
 
     #[test]
     fn a_waiting_host_degrades_only_after_the_grace_period() {
-        assert!(should_degrade(
-            Some(&HostState::Waiting),
-            CAPTURE_HOST_GRACE
-        ));
+        let grace = Duration::from_millis(TOOLING.get().recording.capture_host_grace_ms);
+        assert!(should_degrade(Some(&HostState::Waiting), grace, grace));
         assert!(!should_degrade(
             Some(&HostState::Waiting),
-            CAPTURE_HOST_GRACE - Duration::from_millis(1)
+            grace - Duration::from_millis(1),
+            grace
         ));
         for host in [HostState::Starting, HostState::Finishing, HostState::Closed] {
-            assert!(!should_degrade(Some(&host), Duration::from_secs(10)));
+            assert!(!should_degrade(Some(&host), Duration::from_secs(10), grace));
         }
-        assert!(!should_degrade(None, Duration::from_secs(10)));
+        assert!(!should_degrade(None, Duration::from_secs(10), grace));
     }
 }

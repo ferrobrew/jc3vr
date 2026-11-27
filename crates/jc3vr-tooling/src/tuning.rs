@@ -1,6 +1,7 @@
 //! The tooling's tuning, read from the shipped `tuning/tooling.toml` ([`TOOLING`]): the directing
 //! tools' teleport reach and time-scale ladder, the tracking recording's body and body-state
-//! samplers, and the visual stage's arrival dwell.
+//! samplers, the session recording's wait for the capture host, and the visual stage's arrival
+//! dwell.
 
 use std::fmt::Display;
 
@@ -22,6 +23,7 @@ pub struct ToolingTuning {
     pub director: DirectorTuning,
     pub bodies: BodiesTuning,
     pub body_state: BodyStateTuning,
+    pub recording: RecordingTuning,
     pub stage: StageTuning,
 }
 
@@ -33,6 +35,12 @@ impl Tuning for ToolingTuning {
             "body_state.repeat_after_s",
             self.body_state.repeat_after_s,
             600.0,
+        )?;
+        count(
+            "recording.capture_host_grace_ms",
+            self.recording.capture_host_grace_ms,
+            1,
+            600_000,
         )?;
         count("stage.arrived_frames", self.stage.arrived_frames, 1, 600)
     }
@@ -104,6 +112,15 @@ impl BodiesTuning {
 pub struct BodyStateTuning {
     /// How long an unchanged state goes before a note repeats it, seconds.
     pub(crate) repeat_after_s: f32,
+}
+
+/// The session recording ([`crate::recorder::session_recording`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordingTuning {
+    /// How long a session recording waits for the capture host to connect before it records
+    /// tracking only, milliseconds.
+    pub(crate) capture_host_grace_ms: u64,
 }
 
 /// The visual stage (`crate::testing::stage`).

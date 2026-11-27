@@ -6,6 +6,11 @@
 countdown_ms = 3000
 sample_window_ms = 1000
 min_samples = 5
+eye_height_m = [1.0, 2.3]
+seated_eye_height_m = [0.7, 1.5]
+arm_span_m = [1.2, 2.4]
+arm_span_min_ratio = 0.85
+arm_span_flag_ratio = 1.15
 
 [firm_ragdoll]
 blend_in_s = 0.15

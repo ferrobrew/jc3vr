@@ -624,6 +624,12 @@ pub struct GrabHintTuning {
     pub stale_ms: u64,
     /// The hint's fade in and out, seconds.
     pub(crate) fade_s: f32,
+    /// How much stronger than the blurred coverage the halo behind a hint's icons and labels is,
+    /// so it is dense next to the marks and fades out over its reach. The lost-weapon markers and
+    /// the tags are painted with the same halo.
+    pub(crate) halo_gain: f32,
+    /// The opacity of the weapon coming out in a swap hint, against the weapon going in at full.
+    pub(crate) outgoing_opacity: f32,
 }
 
 impl GrabHintTuning {
@@ -638,7 +644,14 @@ impl GrabHintTuning {
         nonnegative("grab_hint.gap", self.gap, 1.0)?;
         nonnegative("grab_hint.spread", self.spread, 2.0)?;
         millis("grab_hint.stale_ms", self.stale_ms)?;
-        nonnegative("grab_hint.fade_s", self.fade_s, 10.0)
+        nonnegative("grab_hint.fade_s", self.fade_s, 10.0)?;
+        positive("grab_hint.halo_gain", self.halo_gain, 20.0)?;
+        range(
+            "grab_hint.outgoing_opacity",
+            self.outgoing_opacity,
+            0.0,
+            1.0,
+        )
     }
 }
 

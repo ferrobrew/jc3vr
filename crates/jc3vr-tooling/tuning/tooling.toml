@@ -1,5 +1,5 @@
 # The tooling's tuning: `ToolingTuning` in `src/tuning.rs`, whose fields say what each value does.
-# Every key is required and no other is accepted. Lengths are metres and times seconds.
+# Every key is required and no other is accepted. Lengths are metres and times seconds, or milliseconds where the key ends in `_ms`.
 
 [director]
 instant_teleport_range_m = 400.0
@@ -16,6 +16,9 @@ rest_speed_sq = 1.0e-6
 
 [body_state]
 repeat_after_s = 5.0
+
+[recording]
+capture_host_grace_ms = 1500
 
 [stage]
 arrived_frames = 60

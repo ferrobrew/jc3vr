@@ -228,6 +228,10 @@ pub struct RuntimeTuning {
     /// How old the live tracking publication may be and still count as available to the diagnostic
     /// readouts, milliseconds ([`crate::vr::live_tracking`]).
     pub(crate) diagnostic_max_age_ms: u64,
+    /// How many frames to wait for a requested deferred resize to be serviced before treating it as
+    /// a fault ([`crate::vr::resolution`]). The engine services a resize in the very next draw
+    /// prologue, so this is a generous ceiling that only trips on a stuck or faulted resize.
+    pub(crate) resize_service_timeout_frames: u32,
 }
 
 /// The analog thresholds of the derived presses ([`crate::vr::input::config`]).
@@ -397,6 +401,12 @@ impl Tuning for ViewTuning {
         millis(
             "runtime.diagnostic_max_age_ms",
             self.runtime.diagnostic_max_age_ms,
+        )?;
+        range(
+            "runtime.resize_service_timeout_frames",
+            self.runtime.resize_service_timeout_frames as f32,
+            1.0,
+            36_000.0,
         )?;
 
         let press = &self.press;

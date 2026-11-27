@@ -1,7 +1,10 @@
 //! The body dimensions derived from what the headset measures, and the bounds a measurement must
 //! fall within.
 
-use crate::controllers::body::{BodyDimensions, InvalidDimension};
+use crate::controllers::body::{
+    BodyDimensions, InvalidDimension,
+    tuning::{BODY, CalibrationTuning},
+};
 
 /// Standing eye height as a fraction of standing height.
 pub(crate) const EYE_HEIGHT_RATIO: f32 = 0.933;
@@ -27,23 +30,10 @@ pub(crate) const GRIP_TO_FINGERTIP_SHARE: f32 = 0.7;
 /// it from the span ([`height_from_grip_span`]).
 pub(crate) const ARM_SPAN_HEIGHT_RATIO: f32 = 1.0;
 
-/// The standing eye heights a calibration accepts, metres. Outside this, the player is most likely
-/// seated or the runtime's floor is wrong.
-pub(crate) const EYE_HEIGHT_RANGE: (f32, f32) = (1.0, 2.3);
-/// The seated eye heights a calibration accepts, metres: from a low sofa to a tall stool. Above
-/// this, the player is most likely standing.
-pub(crate) const SEATED_EYE_HEIGHT_RANGE: (f32, f32) = (0.7, 1.5);
-/// The arm spans a calibration accepts, metres, whatever the height.
-pub(crate) const ARM_SPAN_RANGE: (f32, f32) = (1.2, 2.4);
-/// The shortest arm span a calibration accepts, as a fraction of the height. An adult's span is
-/// within a few percent of their height, so a shorter one means the arms were not spread. There is
-/// no upper bound relative to the height: the grip span cannot exceed the arms, so a span well over
-/// the height means the height is low (the eye height was measured seated), not the arms long, and
-/// the review flags it instead ([`span_out_of_proportion`]).
-pub(crate) const ARM_SPAN_MIN_RATIO: f32 = 0.85;
-/// The arm span, as a fraction of the height, above which the review flags the two as out of
-/// proportion.
-pub(crate) const ARM_SPAN_FLAG_RATIO: f32 = 1.15;
+/// The calibration's accepted ranges and flags.
+fn calibration() -> &'static CalibrationTuning {
+    &BODY.get().calibration
+}
 
 /// What the headset measured from a standing player.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -68,23 +58,23 @@ pub(crate) struct SeatedMeasurements {
 /// Why measurements cannot describe a body.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CalibrationError {
-    /// The eye height is below [`EYE_HEIGHT_RANGE`], or not a number.
+    /// The eye height is below the tuning's `eye_height_m`, or not a number.
     EyeHeightTooLow(f32),
-    /// The eye height is above [`EYE_HEIGHT_RANGE`].
+    /// The eye height is above the tuning's `eye_height_m`.
     EyeHeightTooHigh(f32),
-    /// The seated eye height is below [`SEATED_EYE_HEIGHT_RANGE`], or not a number.
+    /// The seated eye height is below the tuning's `seated_eye_height_m`, or not a number.
     SeatedEyeHeightTooLow(f32),
-    /// The seated eye height is above [`SEATED_EYE_HEIGHT_RANGE`].
+    /// The seated eye height is above the tuning's `seated_eye_height_m`.
     SeatedEyeHeightTooHigh(f32),
     /// The seated eyes are not below the standing eyes of the height set for the player.
     SeatedAboveStanding {
         seated_eye_height: f32,
         eye_height: f32,
     },
-    /// The arm span is below [`ARM_SPAN_RANGE`] or [`ARM_SPAN_MIN_RATIO`] of the height, or not a
+    /// The arm span is below the tuning's `arm_span_m` or the tuning's `arm_span_min_ratio` of the height, or not a
     /// number: the arms were not spread.
     ArmsNotSpread { arm_span: f32, height: f32 },
-    /// The arm span is above [`ARM_SPAN_RANGE`]: a tracking error, since no arm reaches that far.
+    /// The arm span is above the tuning's `arm_span_m`: a tracking error, since no arm reaches that far.
     ArmSpanTooLong(f32),
     /// A derived dimension failed validation. The ranges above rule this out; it is kept so that a
     /// change to the ratios cannot save an impossible body.
@@ -98,22 +88,22 @@ impl std::fmt::Display for CalibrationError {
             CalibrationError::EyeHeightTooLow(eye) => write!(
                 f,
                 "an eye height of {eye:.2} m is below the {:.1} m minimum",
-                EYE_HEIGHT_RANGE.0
+                calibration().eye_height_m.0
             ),
             CalibrationError::EyeHeightTooHigh(eye) => write!(
                 f,
                 "an eye height of {eye:.2} m is above the {:.1} m maximum",
-                EYE_HEIGHT_RANGE.1
+                calibration().eye_height_m.1
             ),
             CalibrationError::SeatedEyeHeightTooLow(eye) => write!(
                 f,
                 "a seated eye height of {eye:.2} m is below the {:.1} m minimum",
-                SEATED_EYE_HEIGHT_RANGE.0
+                calibration().seated_eye_height_m.0
             ),
             CalibrationError::SeatedEyeHeightTooHigh(eye) => write!(
                 f,
                 "a seated eye height of {eye:.2} m is above the {:.1} m maximum",
-                SEATED_EYE_HEIGHT_RANGE.1
+                calibration().seated_eye_height_m.1
             ),
             CalibrationError::SeatedAboveStanding {
                 seated_eye_height,
@@ -132,7 +122,7 @@ impl std::fmt::Display for CalibrationError {
             CalibrationError::ArmSpanTooLong(arm_span) => write!(
                 f,
                 "an arm span of {arm_span:.2} m is above the {:.1} m maximum",
-                ARM_SPAN_RANGE.1
+                calibration().arm_span_m.1
             ),
             CalibrationError::Invalid(e) => write!(f, "{e}"),
         }
@@ -161,31 +151,31 @@ pub(crate) fn height_from_grip_span(grip_span: f32) -> f32 {
 
 /// The shortest arm span a calibration accepts for a player of `height`.
 pub(crate) fn min_arm_span(height: f32) -> f32 {
-    (ARM_SPAN_MIN_RATIO * height).max(ARM_SPAN_RANGE.0)
+    (calibration().arm_span_min_ratio * height).max(calibration().arm_span_m.0)
 }
 
 /// Whether `body`'s arm span is so far over its height that the height is most likely wrong.
 pub fn span_out_of_proportion(body: &BodyDimensions) -> bool {
-    body.arm_span > ARM_SPAN_FLAG_RATIO * body.height
+    body.arm_span > calibration().arm_span_flag_ratio * body.height
 }
 
-/// Check a standing eye height against [`EYE_HEIGHT_RANGE`].
+/// Check a standing eye height against the tuning's `eye_height_m`.
 pub fn check_eye_height(eye_height: f32) -> Result<(), CalibrationError> {
-    if eye_height > EYE_HEIGHT_RANGE.1 {
+    if eye_height > calibration().eye_height_m.1 {
         return Err(CalibrationError::EyeHeightTooHigh(eye_height));
     }
-    if eye_height.is_nan() || eye_height < EYE_HEIGHT_RANGE.0 {
+    if eye_height.is_nan() || eye_height < calibration().eye_height_m.0 {
         return Err(CalibrationError::EyeHeightTooLow(eye_height));
     }
     Ok(())
 }
 
-/// Check a seated eye height against [`SEATED_EYE_HEIGHT_RANGE`].
+/// Check a seated eye height against the tuning's `seated_eye_height_m`.
 pub fn check_seated_eye_height(seated_eye_height: f32) -> Result<(), CalibrationError> {
-    if seated_eye_height > SEATED_EYE_HEIGHT_RANGE.1 {
+    if seated_eye_height > calibration().seated_eye_height_m.1 {
         return Err(CalibrationError::SeatedEyeHeightTooHigh(seated_eye_height));
     }
-    if seated_eye_height.is_nan() || seated_eye_height < SEATED_EYE_HEIGHT_RANGE.0 {
+    if seated_eye_height.is_nan() || seated_eye_height < calibration().seated_eye_height_m.0 {
         return Err(CalibrationError::SeatedEyeHeightTooLow(seated_eye_height));
     }
     Ok(())
@@ -254,7 +244,7 @@ fn proportions(
     grip_span: f32,
 ) -> Result<BodyDimensions, CalibrationError> {
     let arm_span = arm_span_from_grip_span(grip_span, height);
-    if arm_span > ARM_SPAN_RANGE.1 {
+    if arm_span > calibration().arm_span_m.1 {
         return Err(CalibrationError::ArmSpanTooLong(arm_span));
     }
     if arm_span.is_nan() || arm_span < min_arm_span(height) {
@@ -418,7 +408,7 @@ mod tests {
         })
         .unwrap();
         body.validate().unwrap();
-        assert!(body.arm_span > ARM_SPAN_FLAG_RATIO * body.height);
+        assert!(body.arm_span > calibration().arm_span_flag_ratio * body.height);
         assert!(span_out_of_proportion(&body));
         assert!(!span_out_of_proportion(&derive(player()).unwrap()));
     }
@@ -531,8 +521,8 @@ mod tests {
     #[test]
     fn every_accepted_measurement_derives_a_valid_body() {
         let heights = (0..26)
-            .map(|i| EYE_HEIGHT_RANGE.0 + i as f32 * 0.05)
-            .chain([EYE_HEIGHT_RANGE.1]);
+            .map(|i| calibration().eye_height_m.0 + i as f32 * 0.05)
+            .chain([calibration().eye_height_m.1]);
         for eye_height in heights {
             let height = height_from_eye_height(eye_height);
             for i in 0..=30 {
@@ -547,7 +537,7 @@ mod tests {
                         assert!(arm_span < min_arm_span(height))
                     }
                     Err(CalibrationError::ArmSpanTooLong(_)) => {
-                        assert!(arm_span > ARM_SPAN_RANGE.1)
+                        assert!(arm_span > calibration().arm_span_m.1)
                     }
                     Err(other) => panic!("{other}"),
                 }

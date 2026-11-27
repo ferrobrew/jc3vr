@@ -41,10 +41,10 @@
 //!
 //! ## Failure handling
 //!
-//! If the request is not serviced within [`SERVICE_TIMEOUT_FRAMES`], comes back at the wrong size, or
-//! the Win32 window rect changes across the resize, native resolution is disabled at runtime
-//! (`vr.native_resolution = false`, logged) and the original size is restored; the mod continues at
-//! desktop resolution. Never crashes, never wedges.
+//! If the request is not serviced within the runtime tuning's `resize_service_timeout_frames`,
+//! comes back at the wrong size, or the Win32 window rect changes across the resize, native
+//! resolution is disabled at runtime (`vr.native_resolution = false`, logged) and the original size
+//! is restored; the mod continues at desktop resolution. Never crashes, never wedges.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -54,12 +54,10 @@ use jc3gi::{
 use jc3vr_core::{config::disable_automatically, switch};
 use parking_lot::Mutex;
 
-use crate::vr::{VR_CONFIG, back_buffer, participants::resize_observer};
-
-/// How many frames to wait for a requested deferred resize to be serviced before treating it as a
-/// fault. A resize is serviced in the very next `Draw` prologue, so this is a generous ceiling that
-/// only trips on a genuinely stuck or faulted resize.
-const SERVICE_TIMEOUT_FRAMES: u32 = 240;
+use crate::{
+    tuning::VIEW,
+    vr::{VR_CONFIG, back_buffer, participants::resize_observer},
+};
 
 /// The engine's display size as [`apply_native_resolution`] last read it, [`pack`]ed.
 static ENGINE_SIZE: AtomicU64 = AtomicU64::new(0);
@@ -180,7 +178,7 @@ pub fn apply_native_resolution() {
                     pending.frames,
                 );
             }
-            if pending.frames > SERVICE_TIMEOUT_FRAMES {
+            if pending.frames > VIEW.get().runtime.resize_service_timeout_frames {
                 tracing::error!(
                     target: "vr",
                     requested_width = pending.target.0,

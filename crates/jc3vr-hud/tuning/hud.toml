@@ -119,6 +119,8 @@ gap = 0.03
 spread = 0.45
 stale_ms = 250
 fade_s = 0.1
+halo_gain = 2.5
+outgoing_opacity = 0.5
 
 [game_reticle]
 aim_max_age_ms = 250

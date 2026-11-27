@@ -11,6 +11,7 @@ use crate::hud::{
     game_icons::Image,
     label::{self, Coverage},
     palette::{self, premultiply_linear as premultiply},
+    tuning::HUD,
 };
 
 /// The cell an icon is fitted into, texels: the size of the game's weapon icons.
@@ -60,7 +61,12 @@ pub(crate) fn swap(incoming: &Image, outgoing: &Image, label: &str) -> Vec<u8> {
     let (width, height) = SWAP_TEXELS;
     let mut canvas = Canvas::clear(width, height);
     canvas.label(label, width / 2);
-    canvas.icon(outgoing, PAD, LABEL_ROW + PAD, OUTGOING_OPACITY);
+    canvas.icon(
+        outgoing,
+        PAD,
+        LABEL_ROW + PAD,
+        HUD.get().grab_hint.outgoing_opacity,
+    );
     canvas.arrow(PAD + ICON_TEXELS.0, LABEL_ROW + PAD + ICON_TEXELS.1 / 2);
     canvas.icon(
         incoming,
@@ -100,9 +106,6 @@ pub(crate) const LABEL_PX: f32 = 26.0;
 /// The arrow's cell width, texels.
 const ARROW_W: u32 = 64;
 
-/// The outgoing weapon's opacity in a swap.
-const OUTGOING_OPACITY: f32 = 0.5;
-
 /// Straight RGBA colours in 0 to 1, premultiplied when painted.
 const ARROW: [f32; 4] = palette::linear(palette::TEXT);
 const LABEL: [f32; 4] = palette::linear(palette::TEXT);
@@ -110,10 +113,6 @@ const HALO: [f32; 4] = palette::linear(palette::HALO);
 
 /// The halo's reach around what it surrounds, texels: the radius of each of its box blurs.
 const HALO_RADIUS: u32 = 4;
-
-/// How much stronger than the blurred coverage the halo is, so it is dense next to the marks and
-/// fades out over its reach.
-const HALO_GAIN: f32 = 2.5;
 
 /// The arrow's shape, texels: the shaft's half thickness, the head's length and half height, and
 /// the margin to the arrow cell's edges.
@@ -170,12 +169,13 @@ impl Canvas {
         let mut blurred = box_blur(&alpha, self.width, self.height, HALO_RADIUS);
         blurred = box_blur(&blurred, self.width, self.height, HALO_RADIUS);
         let halo = premultiply(HALO);
+        let gain = HUD.get().grab_hint.halo_gain;
         let texels = self
             .texels
             .iter()
             .zip(blurred)
             .map(|(texel, strength)| {
-                let under = halo.map(|c| c * (strength * HALO_GAIN).min(1.0));
+                let under = halo.map(|c| c * (strength * gain).min(1.0));
                 let keep = 1.0 - texel[3];
                 std::array::from_fn(|i| texel[i] + under[i] * keep)
             })
