@@ -2,7 +2,7 @@
 
 While the reel carries Rico toward the hook, the player can lock the line's length and swing from it. Holding the grapple button during the reel locks the line, pulling the grapple hand back shortens it, a yank resumes the reel, and letting go of the button lets go of the line, so Rico flies on with his momentum. The line is a spring measured against the hook point's own motion, so a lock onto a moving vehicle or a helicopter keeps Rico at a mostly fixed offset from it, and the target feels the pull back.
 
-The code is `grapple::physical::lock` in `jc3vr-grapple`, with the rope in `grapple::rope` and the button's gestures in `controllers::grapple_button`. The tuning is the `lock` section of `crates/jc3vr-grapple/tuning/grapple.toml` (`LockTuning` documents each key, [tuning.md](../tuning.md)). The engine side is [grapple-pipeline.md, "The reel's motion and endings"](../../engine/gameplay/grapple-pipeline.md). The lock acts only under the controller scheme and has no switch.
+The code is `grapple::physical::lock` in `jc3vr-grapple`, with the rope in `grapple::rope` and the button's gestures in `controllers::grapple_button`. The tuning is the `lock` section of `crates/jc3vr-grapple/tuning/grapple.toml` (`LockTuning` documents each key, [tuning.md](../tuning.md)). The engine side is [grapple-pipeline.md, "The reel"](../../engine/gameplay/grapple-pipeline.md#the-reel). The lock acts only under the controller scheme and has no switch.
 
 ## The button
 
