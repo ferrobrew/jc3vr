@@ -29,7 +29,7 @@ jc3vr_core::tuning_file! {
 pub struct GrappleTuning {
     pub comfort: ComfortTuning,
     pub line: LineReach,
-    pub rope: RopeFloorTuning,
+    pub(crate) rope: RopeFloorTuning,
     pub seat: SeatTuning,
     pub lock: LockTuning,
     pub physical: PhysicalGrappleTuning,
@@ -51,24 +51,24 @@ pub struct ComfortTuning {
     pub release_s: f32,
     /// How long the post-reel yaw handoff may hold the view while the body turns toward it,
     /// seconds, before falling back to the blend release (the body can be blocked from turning).
-    pub handoff_timeout_s: f32,
+    pub(crate) handoff_timeout_s: f32,
     /// The heading convergence below which the post-reel yaw handoff completes, degrees.
-    pub handoff_converged_deg: f32,
+    pub(crate) handoff_converged_deg: f32,
     /// How long a pending yaw-handoff heading stays valid awaiting an on-foot tick, seconds.
-    pub retarget_fresh_s: f32,
+    pub(crate) retarget_fresh_s: f32,
     /// The change in one tick of the head anchor's offset from the root beyond which the change
     /// is treated as a landing or attach snap and absorbed, metres. The snap moves the head half a
     /// metre to a metre and a half against the root in one tick; a clip's own motion moves it a
     /// few centimetres a tick, and a canopy's opening up to about a quarter of a metre. The HMD's
     /// own tracking is unaffected.
-    pub anchor_snap_m: f32,
+    pub(crate) anchor_snap_m: f32,
     /// How long an absorbed landing snap takes to ease back out of the view, seconds.
-    pub anchor_snap_ease_s: f32,
+    pub(crate) anchor_snap_ease_s: f32,
     /// Steps of the anchor's offset from the root beyond this are no animation, metres: passed
     /// through, with the absorbed offset reset.
-    pub anchor_teleport_m: f32,
+    pub(crate) anchor_teleport_m: f32,
     /// The absorbed offset never exceeds this, metres.
-    pub anchor_offset_max_m: f32,
+    pub(crate) anchor_offset_max_m: f32,
 }
 
 /// The seat grapple ([`crate::grapple::seat`]).
@@ -77,11 +77,11 @@ pub struct ComfortTuning {
 pub struct SeatTuning {
     /// How long the hook may fly from the seat before it is called back, game seconds. The hook
     /// flies the grapple's range in well under a second.
-    pub flight_s: f32,
+    pub(crate) flight_s: f32,
     /// How far past the seated aim's point the target's ray reaches, metres.
-    pub ray_past_m: f32,
+    pub(crate) ray_past_m: f32,
     /// How near the seated aim's point the ray's hit must be to stand for it, metres.
-    pub hit_within_m: f32,
+    pub(crate) hit_within_m: f32,
 }
 
 /// The grapple button's gestures ([`crate::controllers::grapple_button`]).
@@ -91,14 +91,14 @@ pub struct GrappleButtonTuning {
     /// How long a press may be held and still be a tap, seconds.
     pub tap_s: f32,
     /// How soon a second tap must follow a first for a double tap, seconds.
-    pub double_tap_s: f32,
+    pub(crate) double_tap_s: f32,
     /// The retract a tightening hold starts at, `0..1`.
-    pub tighten_start: f32,
+    pub(crate) tighten_start: f32,
     /// The retract a tightening hold rises to on its own, `0..1`; the hand's pull tightens past
     /// it.
-    pub tighten_held: f32,
+    pub(crate) tighten_held: f32,
     /// How long a tightening hold takes to rise to [`tighten_held`](Self::tighten_held), seconds.
-    pub tighten_ramp_s: f32,
+    pub(crate) tighten_ramp_s: f32,
 }
 
 /// What every yank detector shares ([`crate::controllers::yank`]).
@@ -109,7 +109,7 @@ pub struct YankTuning {
     /// of the pull. A pull back along the line, down, or back and out past the side keeps the hand
     /// at about its distance from the head across the ground or brings it closer; an arm swung out
     /// to the side takes it well away.
-    pub outward_share: f32,
+    pub(crate) outward_share: f32,
 }
 
 impl Tuning for GrappleTuning {

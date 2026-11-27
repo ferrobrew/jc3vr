@@ -25,7 +25,7 @@ pub(super) struct BraceInput {
 /// breaks, metres.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct BraceReach {
-    pub take_m: f32,
+    pub(crate) take_m: f32,
     pub break_m: f32,
 }
 
@@ -36,7 +36,7 @@ pub(super) struct LineInput {
     pub holds: bool,
     /// How far ahead of the grapple hand's line origin, along the line, the hand is, metres, or
     /// `None` while it is untracked.
-    pub ahead_m: Option<f32>,
+    pub(crate) ahead_m: Option<f32>,
     /// The line's held length from its current anchor, metres.
     pub length_m: f32,
 }

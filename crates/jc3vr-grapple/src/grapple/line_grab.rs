@@ -36,16 +36,16 @@ use crate::{
 pub struct LineReach {
     /// The nearest point to the grapple hand's wrist the free hand takes the line at: past the
     /// reach of the snatch's brace at the wrist.
-    pub min_ahead_m: f32,
+    pub(crate) min_ahead_m: f32,
     /// The farthest point ahead of the wrist: about an arm's length.
-    pub max_ahead_m: f32,
+    pub(crate) max_ahead_m: f32,
     /// How near the far end the free hand may take the line.
-    pub far_margin_m: f32,
+    pub(crate) far_margin_m: f32,
     /// How near the line the palm must be.
-    pub take_m: f32,
+    pub(crate) take_m: f32,
     /// The palm's centre in the wrist's frame, where a hand holds the line: along the fingers'
     /// -Z.
-    pub palm_from_wrist_m: Vec3,
+    pub(crate) palm_from_wrist_m: Vec3,
 }
 
 /// Where the free hand would take the line.
@@ -54,7 +54,7 @@ pub(crate) struct LineSpot {
     /// The point on the line nearest the palm, world space.
     pub point: Vec3,
     /// How far ahead of the line's origin on the grapple hand the point is, metres.
-    pub ahead_m: f32,
+    pub(crate) ahead_m: f32,
     /// How far the palm is from the point, metres.
     pub distance_m: f32,
 }

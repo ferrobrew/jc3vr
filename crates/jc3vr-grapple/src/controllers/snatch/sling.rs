@@ -18,8 +18,8 @@ use crate::{
 pub(super) struct Continuation {
     pub available: bool,
     pub tracked: bool,
-    pub same_hand: bool,
-    pub empty_hand: bool,
+    pub(crate) same_hand: bool,
+    pub(crate) empty_hand: bool,
     pub grip_held: bool,
 }
 
@@ -107,11 +107,11 @@ pub(super) struct Sling {
 /// The line's tuning for one step, with the strength for this target and brace.
 #[derive(Debug, Copy, Clone)]
 pub(super) struct LineTuning {
-    pub stiffness_per_s2: f32,
+    pub(crate) stiffness_per_s2: f32,
     pub damping_per_s: f32,
     pub max_tension_n: f32,
-    pub swing_length_m: f32,
-    pub reel_mps: f32,
+    pub(crate) swing_length_m: f32,
+    pub(crate) reel_mps: f32,
 }
 
 impl LineTuning {
@@ -174,7 +174,7 @@ impl Sling {
 
     /// Move the remembered anchor by `delta`, for a change of what the line is anchored to (a
     /// brace taken or let go) that is not the hand's motion.
-    pub fn shift_anchor(&mut self, delta: Vec3) {
+    pub(crate) fn shift_anchor(&mut self, delta: Vec3) {
         if delta.is_finite() {
             self.anchor += delta;
         }

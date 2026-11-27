@@ -20,37 +20,37 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct LandingTuning {
     /// How far into the final approach the drive takes to come to full strength, metres.
-    pub ramp_m: f32,
+    pub(crate) ramp_m: f32,
     /// How many ticks the drive takes to come to full strength at most, for a snatch that bites
     /// inside the final approach: the first tick counts as one.
-    pub ramp_ticks: f32,
+    pub(crate) ramp_ticks: f32,
     /// The least and the most time to the catch the drive works to, seconds.
-    pub min_t_go_s: f32,
-    pub max_t_go_s: f32,
+    pub(crate) min_t_go_s: f32,
+    pub(crate) max_t_go_s: f32,
     /// The fastest the drive spins the body, radians per second.
-    pub max_spin_rps: f32,
+    pub(crate) max_spin_rps: f32,
     /// The hardest the drive turns the body, radians per second squared.
-    pub max_angular_accel: f32,
+    pub(crate) max_angular_accel: f32,
     /// The farthest the line's aim moves sideways off the palm, metres.
-    pub lateral_window_m: f32,
+    pub(crate) lateral_window_m: f32,
     /// How much nearer the target's incoming path the other hand must be to become the line's
     /// receiver, metres.
-    pub hysteresis_m: f32,
+    pub(crate) hysteresis_m: f32,
     /// How far ahead the hand's pose is extrapolated by its motion, at most, seconds.
-    pub max_extrapolate_s: f32,
+    pub(crate) max_extrapolate_s: f32,
     /// The residual below which the arrival puts the gun in the hand at once: an angle, degrees,
     /// and a distance, metres, both under.
     pub settled_deg: f32,
-    pub settled_m: f32,
+    pub(crate) settled_m: f32,
     /// The residual angle at which the arrival takes its full slide, degrees.
-    pub full_slide_deg: f32,
+    pub(crate) full_slide_deg: f32,
 }
 
 /// The time left until a body at `at` flying at `velocity` comes within `reach` metres of
 /// `target`, where the catch takes it, seconds: the distance left over the speed it closes at,
 /// held between [`LandingTuning::min_t_go_s`] and [`LandingTuning::max_t_go_s`], and the most
 /// while it does not close.
-pub fn time_to_go(
+pub(crate) fn time_to_go(
     at: Vec3,
     velocity: Vec3,
     target: Vec3,
@@ -70,7 +70,7 @@ pub fn time_to_go(
 
 /// An orientation and the rate it turns at, radians per second.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Turning {
+pub(crate) struct Turning {
     pub orientation: Quat,
     pub angular: Vec3,
 }
@@ -80,7 +80,7 @@ pub struct Turning {
 /// rate plus the turn left over the time left, so the turn is closed by the catch and the body then
 /// turns with the hand; the change is held to [`LandingTuning::max_angular_accel`] and the result
 /// to [`LandingTuning::max_spin_rps`].
-pub fn turn_drive(
+pub(crate) fn turn_drive(
     body: Turning,
     target: Turning,
     t_go: f32,
@@ -100,7 +100,7 @@ pub fn turn_drive(
 /// across the line, held to [`LandingTuning::lateral_window_m`], scaled by the drive's `weight`.
 /// The line then carries the centre to where the hand will hold it rather than to the palm, so the
 /// gun's grip, not its centre, heads for the hand; the line's own acceleration cap holds how fast.
-pub fn aim_shift(
+pub(crate) fn aim_shift(
     palm: Vec3,
     target: Vec3,
     line: Vec3,
@@ -116,7 +116,12 @@ pub fn aim_shift(
 /// The drive's strength, from 0 to 1: it comes on over [`LandingTuning::ramp_m`] past where it
 /// started (`start_m` from the hand, `distance_m` now), or over
 /// [`LandingTuning::ramp_ticks`] ticks (`ticks` since it started), whichever is sooner.
-pub fn drive_weight(start_m: f32, distance_m: f32, ticks: u32, tuning: &LandingTuning) -> f32 {
+pub(crate) fn drive_weight(
+    start_m: f32,
+    distance_m: f32,
+    ticks: u32,
+    tuning: &LandingTuning,
+) -> f32 {
     let by_distance = if tuning.ramp_m > 0.0 {
         (start_m - distance_m) / tuning.ramp_m
     } else {
@@ -140,7 +145,7 @@ pub fn drive_weight(start_m: f32, distance_m: f32, ticks: u32, tuning: &LandingT
 /// arriving at `speed` metres per second: none once both are under the settled thresholds;
 /// otherwise the longer of `slide_s` in proportion to the angle's share of the full-slide angle and
 /// the time the gun takes to fly the distance left, never more than `slide_s`.
-pub fn arrival_slide(
+pub(crate) fn arrival_slide(
     angle: f32,
     distance: f32,
     speed: f32,
@@ -166,7 +171,7 @@ pub fn arrival_slide(
 /// Extrapolate a pose from `last` (seen `dt` seconds before) to `now`, `ahead` seconds on, held to
 /// `max_ahead`: the position by its velocity and the rotation by its turn rate. Returns the pose's
 /// position, rotation, and angular velocity.
-pub fn extrapolate(
+pub(crate) fn extrapolate(
     last: Option<(Vec3, Quat)>,
     now: (Vec3, Quat),
     dt: f32,

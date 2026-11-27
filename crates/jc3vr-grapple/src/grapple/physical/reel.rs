@@ -43,7 +43,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// What the hand asks of the reel on this tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ReelDrive {
+pub(crate) struct ReelDrive {
     /// The scale of the reel's speeds and accelerations.
     pub scale: f32,
     /// Whether a yank's boost is running. It applies only with the game's own retract boost
@@ -53,22 +53,22 @@ pub struct ReelDrive {
 
 /// What the reel did on its last tick, for the readout and the haptics.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ReelReadout {
+pub(crate) struct ReelReadout {
     /// The scale applied, or `None` when the game's own tuning ran.
     pub scale: Option<f32>,
     /// Whether the boost applied.
     pub boosted: bool,
     /// The reel's speed along the line over its top speed, `0..=1`-ish.
-    pub speed_fraction: f32,
+    pub(crate) speed_fraction: f32,
 }
 
 /// The reel fields of the tuning the hand drives.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ReelTuning {
-    pub speed_max: f32,
-    pub retract_speed_max: f32,
+pub(crate) struct ReelTuning {
+    pub(crate) speed_max: f32,
+    pub(crate) retract_speed_max: f32,
     pub accel: f32,
-    pub retract_accel: f32,
+    pub(crate) retract_accel: f32,
 }
 
 impl ReelTuning {
@@ -117,7 +117,7 @@ impl ReelTuning {
 
 /// The reel's scale for a pull of `speed_mps`: [`ReelPullTuning::min_scale`] with no pull, rising
 /// linearly to [`ReelPullTuning::max_scale`] at [`ReelPullTuning::full_speed_mps`].
-pub fn scale_for(speed_mps: f32, config: &ReelPullTuning) -> f32 {
+pub(crate) fn scale_for(speed_mps: f32, config: &ReelPullTuning) -> f32 {
     let speed = if speed_mps.is_finite() {
         speed_mps.max(0.0)
     } else {

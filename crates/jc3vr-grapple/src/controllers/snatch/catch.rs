@@ -41,7 +41,7 @@ pub fn receiver(
 
 /// A hand that may catch the target this tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct CatchHand {
+pub(crate) struct CatchHand {
     /// Where the target must come to for this hand to catch it: the palm, or for a gun the landing
     /// steers, where the hand will hold the gun's grip.
     pub palm: Vec3,
@@ -53,7 +53,7 @@ pub struct CatchHand {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CatchTuning {
     /// How near a hand the target must come for the hand to catch it, metres.
-    pub zone_m: f32,
+    pub(crate) zone_m: f32,
     /// How long after the target was last within a hand's zone the hand's grip may still close on
     /// it, seconds.
     pub grace_s: f32,
@@ -71,7 +71,7 @@ pub struct CatchTick {
 
 /// Watches the target pass the hands: when each was last within a hand's zone.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct CatchWatch {
+pub(crate) struct CatchWatch {
     time: f32,
     near: [Option<f32>; 2],
     previous: [Option<Vec3>; 2],

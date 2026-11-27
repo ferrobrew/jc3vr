@@ -61,7 +61,7 @@ use parking_lot::Mutex;
 pub mod device;
 pub mod line_grab;
 pub mod physical;
-pub mod rope;
+pub(crate) mod rope;
 pub mod seat;
 pub mod telemetry;
 pub mod tuning;
@@ -163,7 +163,7 @@ pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &HeadPos
 
 /// Apply the body-frame hold to a body rotation. At blend `0` the rotation passes through
 /// untouched; at `1` the head composes onto the fully filtered frame.
-pub fn filter_body_rotation(body: Quat) -> Quat {
+pub(crate) fn filter_body_rotation(body: Quat) -> Quat {
     let s = FILTER.lock();
     filter_with(body, s.mode, s.held, s.factor)
 }

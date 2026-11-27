@@ -263,7 +263,7 @@ pub(super) struct Offer {
     /// How far it is from the grapple's ray origin, metres.
     pub distance: f32,
     pub hit: Option<BodyHit>,
-    pub object_local: Option<Vec3>,
+    pub(crate) object_local: Option<Vec3>,
 }
 
 pub(super) enum OfferKind {

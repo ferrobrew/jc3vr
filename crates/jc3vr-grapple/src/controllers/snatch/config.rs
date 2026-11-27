@@ -26,7 +26,7 @@ pub struct SnatchSettings {
 /// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
 /// ([`reach_along`](crate::controllers::yank::reach_along)), from the tuning's
 /// [`yank`](SnatchTuning::yank).
-pub fn snatch_yank() -> YankConfig {
+pub(crate) fn snatch_yank() -> YankConfig {
     let yank = &SNATCH.get().yank;
     YankConfig {
         min_distance_m: yank.min_distance_m,
@@ -57,42 +57,42 @@ pub struct SnatchYankTuning {
 pub struct SwingTuning {
     /// The heaviest loose object the snatch offers, kilograms. One a hand can carry is pulled into
     /// the hand; one heavier, up to this, is swung on the line and never comes to the hand.
-    pub ceiling_kg: f32,
+    pub(crate) ceiling_kg: f32,
     /// The line's stiffness: the pull per metre it is stretched past its held length, per second
     /// squared, so the same stretch asks the same acceleration of any mass, up to its strength.
-    pub stiffness_per_s2: f32,
+    pub(crate) stiffness_per_s2: f32,
     /// The line's damping of the target's speed away from the hand, per second.
     pub damping_per_s: f32,
     /// The most tension the line holds on a target of
     /// [`reference_mass_kg`](Self::reference_mass_kg), newtons.
-    pub strength_n: f32,
+    pub(crate) strength_n: f32,
     /// How the line's strength grows with the target's mass, `0..=1`: the strength is
     /// [`strength_n`](Self::strength_n) times the mass over
     /// [`reference_mass_kg`](Self::reference_mass_kg) to this power
     /// (`line_strength_n`). At 1 every mass
     /// swings alike; at 0 the line pulls every mass equally hard, so a heavy one barely moves.
-    pub mass_scaling: f32,
+    pub(crate) mass_scaling: f32,
     /// The line's strength while the other hand braces the grapple hand's wrist, as a multiple of
     /// one hand's.
-    pub brace_factor: f32,
+    pub(crate) brace_factor: f32,
     /// The length the line reels in to once the hook bites, metres: a target bitten farther off
     /// is drawn in to it and then swung around the hand. A target bitten nearer keeps its length.
-    pub swing_length_m: f32,
+    pub(crate) swing_length_m: f32,
     /// How fast the line reels in to [`swing_length_m`](Self::swing_length_m), metres per second.
     /// The line cannot push, so a target reeled in keeps its speed once the reel stops and coasts
     /// on toward the hand until friction, gravity, or a swing takes it; zero keeps the length the
     /// hook bit at.
-    pub reel_mps: f32,
+    pub(crate) reel_mps: f32,
     /// The mass the line's [`strength_n`](Self::strength_n) is given at, kilograms.
-    pub reference_mass_kg: f32,
+    pub(crate) reference_mass_kg: f32,
     /// How far inside the target the reel may take the line in, metres: at the default stiffness,
     /// a pull of about the strength of any line up to a few hundred kilograms.
-    pub reel_lead_m: f32,
+    pub(crate) reel_lead_m: f32,
     /// How far the target may be stretched past the held length before the line breaks, metres.
-    pub max_stretch_m: f32,
+    pub(crate) max_stretch_m: f32,
     /// The line's anchor moving faster than this is a jump of the hand's tracking, not a swing,
     /// metres per second: the step is refused.
-    pub max_anchor_speed_mps: f32,
+    pub(crate) max_anchor_speed_mps: f32,
 }
 
 /// A ragdoll's line: reeled in hard toward the grapple hand, not swung.
@@ -106,20 +106,20 @@ pub struct RagdollYankTuning {
     /// How fast the reel slows toward its length, per second: the reel's speed is what is left of
     /// the line times this, between the swing's reel and [`mps`](Self::mps), so a body bitten far
     /// off comes at the yank's speed and eases in over its last two metres.
-    pub ease_per_s: f32,
+    pub(crate) ease_per_s: f32,
 }
 
 /// A gun tossed to the player's feet when no hand can catch it.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TossTuning {
+pub(crate) struct TossTuning {
     /// Where the gun lands, metres in front of the player toward where it came from.
-    pub land_m: f32,
+    pub(crate) land_m: f32,
     /// The toss's speed over the ground, metres per second.
     pub speed_mps: f32,
     /// The toss's shortest and longest flight, seconds.
-    pub min_flight_s: f32,
-    pub max_flight_s: f32,
+    pub(crate) min_flight_s: f32,
+    pub(crate) max_flight_s: f32,
 }
 
 /// The grapple snatch's tuning file's root.
@@ -128,30 +128,30 @@ pub struct TossTuning {
 pub struct SnatchTuning {
     /// How near the grapple hand's wrist the other hand's wrist must be for its grip to brace it,
     /// metres.
-    pub brace_take_m: f32,
+    pub(crate) brace_take_m: f32,
     /// How far the bracing hand's wrist may drift from the grapple hand's before the brace breaks,
     /// metres.
-    pub brace_break_m: f32,
+    pub(crate) brace_break_m: f32,
     /// The farthest a target may be, metres. The hook's line caps it.
     pub range_m: f32,
     /// How far off the grapple's ray a gun in a character's hands or holster, or a weapon lying in
     /// the world, may be and still be chosen, degrees.
-    pub cone_deg: f32,
+    pub(crate) cone_deg: f32,
     /// How much wider the cone is for a weapon lying in the world at the range, degrees, in
     /// proportion to its distance ([`floor_cone`](crate::controllers::snatch::rules::floor_cone)).
-    pub floor_cone_widen_deg: f32,
+    pub(crate) floor_cone_widen_deg: f32,
     /// The speed the line yanks the target toward the hand at while it is farther than
     /// [`approach_m`](Self::approach_m), metres per second.
-    pub line_speed_mps: f32,
+    pub(crate) line_speed_mps: f32,
     /// The speed the line asks of the target at the hand, metres per second: over the last
     /// [`approach_m`](Self::approach_m) the line's speed falls in proportion to the distance from
     /// [`line_speed_mps`](Self::line_speed_mps) to this, so the target still arrives hard but
     /// slower than it flew ([`line_speed`](crate::controllers::snatch::rules::line_speed)).
-    pub arrival_speed_mps: f32,
+    pub(crate) arrival_speed_mps: f32,
     /// The hardest the line accelerates the target, metres per second squared: the line's pull is
     /// the target's mass times this, so a heavy target comes as hard as a light one, and a target
     /// a step away reaches its speed within a tick or two.
-    pub line_accel_mps2: f32,
+    pub(crate) line_accel_mps2: f32,
     /// How near the hand the final approach starts, metres. Within it the line's speed falls
     /// toward [`arrival_speed_mps`](Self::arrival_speed_mps), its arc fades to nothing, and it
     /// pulls at the target's centre rather than at the hook, so the spin the off-centre pull gave
@@ -165,69 +165,69 @@ pub struct SnatchTuning {
     /// [`slack_min_m`](Self::slack_min_m) and [`slack_max_m`](Self::slack_max_m)
     /// ([`slack_radius`](crate::controllers::snatch::rules::slack_radius)). The target then flies
     /// on by its own momentum for about two ticks, wherever the hand goes.
-    pub coast_s: f32,
-    pub slack_min_m: f32,
-    pub slack_max_m: f32,
+    pub(crate) coast_s: f32,
+    pub(crate) slack_min_m: f32,
+    pub(crate) slack_max_m: f32,
     /// How near a hand's palm the target's centre must pass for the hand to catch it, metres:
     /// the hand's own reach around the target, with no pull toward the hand.
-    pub catch_zone_m: f32,
+    pub(crate) catch_zone_m: f32,
     /// The mass at which a target's catch zone reaches [`heavy_catch_zone_m`](Self::heavy_catch_zone_m)
     /// and the line's speed falls to [`heavy_speed_share`](Self::heavy_speed_share), kilograms. A
     /// target at or below half of it keeps the light values. A heavy target's centre cannot come as near
     /// the palm as a light one's, so the hand catches it from further out, and it needs less speed
     /// to arrive without passing the hand.
-    pub heavy_mass_kg: f32,
+    pub(crate) heavy_mass_kg: f32,
     /// The catch zone for a heavy target, metres.
-    pub heavy_catch_zone_m: f32,
+    pub(crate) heavy_catch_zone_m: f32,
     /// The line's speed for a heavy target as a share of [`line_speed_mps`](Self::line_speed_mps),
     /// `0..=1`.
-    pub heavy_speed_share: f32,
+    pub(crate) heavy_speed_share: f32,
     /// How long after the target was last within a hand's catch zone the hand's grip may still
     /// close on it and catch it, seconds.
-    pub catch_grace_s: f32,
+    pub(crate) catch_grace_s: f32,
     /// How long a slack target may fly before it counts as missed, seconds.
-    pub max_slack_s: f32,
+    pub(crate) max_slack_s: f32,
     /// The fastest the line's pull at the hook may spin the target, radians per second.
-    pub max_spin_rps: f32,
+    pub(crate) max_spin_rps: f32,
     /// How little the target may move over [`stall_window_s`](Self::stall_window_s) before the
     /// pull counts as snagged, metres.
-    pub stall_distance_m: f32,
-    pub stall_window_s: f32,
+    pub(crate) stall_distance_m: f32,
+    pub(crate) stall_window_s: f32,
     /// How long the hook may fly before it counts as having missed, seconds.
-    pub attach_timeout_s: f32,
+    pub(crate) attach_timeout_s: f32,
     /// How long a gun a character lets go of may take to lie in the world before the snatch gives
     /// up on it, seconds.
-    pub free_timeout_s: f32,
+    pub(crate) free_timeout_s: f32,
     /// How near the grapple's aim must hit a door's handle area, metres.
-    pub door_reach_m: f32,
+    pub(crate) door_reach_m: f32,
     /// The fastest a vehicle may move for the line to pull its door open, metres per second.
-    pub door_max_vehicle_speed_mps: f32,
+    pub(crate) door_max_vehicle_speed_mps: f32,
     /// How hard the line swings a door outward once it comes open: the door's mass times this,
     /// metres per second.
-    pub door_swing_mps: f32,
+    pub(crate) door_swing_mps: f32,
     /// How a snatched gun is steered into the pose the catching hand will hold it in over its
     /// final approach.
     pub landing: LandingTuning,
     /// How long a target aimed at just before the grip closes is still offered to it, seconds:
     /// covers a short aim miss at the grip edge without offering an old target indefinitely.
-    pub retain_s: f32,
+    pub(crate) retain_s: f32,
     /// The extra angular tolerance while retaining a recent aimed identity across a grip press,
     /// degrees.
-    pub retain_cone_deg: f32,
+    pub(crate) retain_cone_deg: f32,
     /// How far short of a gun on a character its line of sight may be blocked, metres: the line
     /// ends inside the character.
-    pub sight_tolerance_m: f32,
+    pub(crate) sight_tolerance_m: f32,
     /// How near the attach point the engine's attachment proxy's visual position may be for the
     /// hook to count as on the selected body, metres.
-    pub attach_tolerance_m: f32,
+    pub(crate) attach_tolerance_m: f32,
     /// How far past the hook's end the impact cast reaches, metres: the end sits on the target's
     /// surface or inside it.
-    pub impact_overshoot_m: f32,
+    pub(crate) impact_overshoot_m: f32,
     /// How long the watch follows a caught weapon, milliseconds.
-    pub watch_ms: u64,
+    pub(crate) watch_ms: u64,
     /// How many times the stall window ([`stall_window_s`](Self::stall_window_s)) a placed charge
     /// has before it counts as snagged.
-    pub charge_stall_scale: f32,
+    pub(crate) charge_stall_scale: f32,
     /// The yank that fires the snatch.
     pub yank: SnatchYankTuning,
     /// The held line.
@@ -235,7 +235,7 @@ pub struct SnatchTuning {
     /// A ragdoll's line.
     pub ragdoll: RagdollYankTuning,
     /// A gun tossed to the player's feet.
-    pub toss: TossTuning,
+    pub(crate) toss: TossTuning,
 }
 
 impl Tuning for SnatchTuning {

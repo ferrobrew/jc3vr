@@ -20,15 +20,15 @@ use crate::grapple::tuning::GRAPPLE;
 /// The least length any line is held at.
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RopeFloorTuning {
+pub(crate) struct RopeFloorTuning {
     /// The shortest any line is held at by taking line in, metres, whatever its own least length
     /// is set to.
-    pub min_held_length_m: f32,
+    pub(crate) min_held_length_m: f32,
 }
 
 /// One end of the rope, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RopeEnd {
+pub(crate) struct RopeEnd {
     pub position: Vec3,
     pub velocity: Vec3,
     /// The end's inverse mass, per kilogram; zero for an end the rope does not move.
@@ -37,20 +37,20 @@ pub struct RopeEnd {
 
 /// The rope's stiffness, damping, and limits for one step.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RopeTuning {
+pub(crate) struct RopeTuning {
     /// The acceleration per metre of stretch, per second squared, for the ends' reduced mass.
-    pub stiffness_per_s2: f32,
+    pub(crate) stiffness_per_s2: f32,
     /// The acceleration per metre per second of the ends parting along the rope, per second.
     pub damping_per_s: f32,
     /// The most tension the rope holds, newtons.
     pub max_tension_n: f32,
     /// How far past its held length the rope stretches before it breaks, metres.
-    pub max_stretch_m: f32,
+    pub(crate) max_stretch_m: f32,
 }
 
 /// One step of the rope.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RopeStep {
+pub(crate) struct RopeStep {
     pub a: RopeEnd,
     pub b: RopeEnd,
     pub dt: f32,
@@ -59,10 +59,10 @@ pub struct RopeStep {
 
 /// What a step of the rope did.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RopeOutput {
+pub(crate) struct RopeOutput {
     /// The ends' velocities after the rope's pull.
-    pub a_velocity: Vec3,
-    pub b_velocity: Vec3,
+    pub(crate) a_velocity: Vec3,
+    pub(crate) b_velocity: Vec3,
     /// The rope's tension this step, newtons.
     pub tension_n: f32,
     /// The unit direction from `a` to `b`, or zero for coincident ends.
@@ -74,19 +74,19 @@ pub struct RopeOutput {
 
 impl RopeOutput {
     /// The impulse the rope gave `a` this step, newton seconds: `-b`'s.
-    pub fn impulse_on_a(&self, dt: f32) -> Vec3 {
+    pub(crate) fn impulse_on_a(&self, dt: f32) -> Vec3 {
         self.direction * self.tension_n * dt
     }
 
     /// The impulse the rope gave `b` this step, newton seconds: `-a`'s.
-    pub fn impulse_on_b(&self, dt: f32) -> Vec3 {
+    pub(crate) fn impulse_on_b(&self, dt: f32) -> Vec3 {
         -self.impulse_on_a(dt)
     }
 }
 
 /// Why the rope could not take a step.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum RopeFault {
+pub(crate) enum RopeFault {
     /// A sample was not finite, the step's length was out of bounds, or neither end can move.
     Invalid,
     /// The ends are farther apart than the rope stretches.
@@ -95,7 +95,7 @@ pub enum RopeFault {
 
 /// The rope's held length.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Rope {
+pub(crate) struct Rope {
     pub length_m: f32,
 }
 
@@ -108,7 +108,7 @@ impl Rope {
     /// Take up to `by_m` of line in, holding it no shorter than `floor_m` raised to
     /// [`held_floor`]. It never pays line out, and a take that is not finite and positive takes
     /// nothing.
-    pub fn shorten(&mut self, by_m: f32, floor_m: f32) {
+    pub(crate) fn shorten(&mut self, by_m: f32, floor_m: f32) {
         if by_m.is_finite() && by_m > 0.0 {
             self.length_m = (self.length_m - by_m)
                 .max(held_floor(floor_m))
@@ -182,13 +182,13 @@ impl Rope {
 /// A line's least held length `floor_m`, raised to the tuning's
 /// [`min_held_length_m`](RopeFloorTuning::min_held_length_m); a floor that is not finite is that
 /// least length.
-pub fn held_floor(floor_m: f32) -> f32 {
+pub(crate) fn held_floor(floor_m: f32) -> f32 {
     floor_m.max(GRAPPLE.get().rope.min_held_length_m)
 }
 
 /// `tension_n` as a share of the rope's strength `max_tension_n`, `0..=1`: none for a strength
 /// that is not positive or a tension that is not finite.
-pub fn tension_share(tension_n: f32, max_tension_n: f32) -> f32 {
+pub(crate) fn tension_share(tension_n: f32, max_tension_n: f32) -> f32 {
     if max_tension_n > 0.0 && tension_n.is_finite() {
         (tension_n / max_tension_n).clamp(0.0, 1.0)
     } else {

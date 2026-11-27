@@ -657,7 +657,7 @@ impl Swinging {
 
 pub(super) struct SlingInput<'a> {
     pub flight: &'a mut Flight,
-    pub rope: &'a mut Option<Sling>,
+    pub(crate) rope: &'a mut Option<Sling>,
     pub brace: &'a mut Brace,
 }
 

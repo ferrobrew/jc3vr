@@ -60,7 +60,7 @@ pub fn choose<K: Copy>(
 /// origin is chosen: `base`, widened by up to `widen` as the weapon nears `range`. A gun lying flat
 /// subtends a fraction of a degree at range, so the ray's own hit cannot be asked of it, and the
 /// farther it lies the more the hand's tremor and the ground's grazing angle throw the ray off it.
-pub fn floor_cone(distance: f32, base: f32, widen: f32, range: f32) -> f32 {
+pub(crate) fn floor_cone(distance: f32, base: f32, widen: f32, range: f32) -> f32 {
     let share = if range > 0.0 && distance.is_finite() {
         (distance / range).clamp(0.0, 1.0)
     } else {
@@ -73,7 +73,7 @@ pub fn floor_cone(distance: f32, base: f32, widen: f32, range: f32) -> f32 {
 /// distance still to go, so a far target rises and falls into the hand rather than dragging along
 /// the ground. The rise fades to nothing over the last `approach` metres, so the final approach
 /// aims at the hand itself.
-pub fn pull_point(body: Vec3, hand: Vec3, arc: f32, approach: f32) -> Vec3 {
+pub(crate) fn pull_point(body: Vec3, hand: Vec3, arc: f32, approach: f32) -> Vec3 {
     let distance = body.distance(hand);
     if !distance.is_finite() {
         return hand;
@@ -89,7 +89,7 @@ pub fn pull_point(body: Vec3, hand: Vec3, arc: f32, approach: f32) -> Vec3 {
 /// The speed the line asks of the target `distance` metres from the hand: `far` beyond
 /// `approach`, falling in proportion to the distance to `arrival` at the hand, never more than
 /// `far`.
-pub fn line_speed(distance: f32, far: f32, arrival: f32, approach: f32) -> f32 {
+pub(crate) fn line_speed(distance: f32, far: f32, arrival: f32, approach: f32) -> f32 {
     let far = far.max(0.0);
     let arrival = arrival.clamp(0.0, far);
     if !(approach > 0.0 && distance.is_finite()) {
@@ -103,7 +103,7 @@ pub fn line_speed(distance: f32, far: f32, arrival: f32, approach: f32) -> f32 {
 /// distance it covers in `coast_s` seconds, kept between `min` and `max` metres. A slow target,
 /// one a step away that the line has had little time to speed up, is guided nearer the hand
 /// before it flies on by itself.
-pub fn slack_radius(speed: f32, coast_s: f32, min: f32, max: f32) -> f32 {
+pub(crate) fn slack_radius(speed: f32, coast_s: f32, min: f32, max: f32) -> f32 {
     let max = max.max(min);
     let radius = speed.max(0.0) * coast_s.max(0.0);
     if radius.is_finite() {
@@ -134,11 +134,11 @@ pub enum Verdict {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct FlightLimits {
     /// How near the hand the line goes slack, metres.
-    pub slack_radius_m: f32,
+    pub(crate) slack_radius_m: f32,
     /// How far the line reaches, metres.
-    pub line_m: f32,
+    pub(crate) line_m: f32,
     /// How long the target may fly slack before it counts as missed, seconds.
-    pub max_slack_s: f32,
+    pub(crate) max_slack_s: f32,
 }
 
 /// One tick of the target's flight.
@@ -151,11 +151,11 @@ pub struct FlightSample {
     /// The palm of the hand the line steers toward, now ([`receiver`](crate::controllers::snatch::catch::receiver)).
     pub hand: Vec3,
     /// Where the hands that may catch the target need it now, by [`Hand::index`].
-    pub catchers: [Option<Vec3>; 2],
+    pub(crate) catchers: [Option<Vec3>; 2],
     /// What the catch found this tick ([`CatchWatch`](crate::controllers::snatch::catch::CatchWatch)).
     pub catch: CatchTick,
     /// How long the line has been slack, seconds, or `None` while it pulls.
-    pub slack_s: Option<f32>,
+    pub(crate) slack_s: Option<f32>,
 }
 
 /// The verdict for a tick of the flight, with `stalled` whether the stall watch has fired.
@@ -198,24 +198,24 @@ pub fn verdict(sample: &FlightSample, stalled: bool, limits: &FlightLimits) -> V
 /// near the palm as a light one's, so the hand catches it from further out, and it needs less speed
 /// to arrive without passing the hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HeavyCatch {
+pub(crate) struct HeavyCatch {
     /// The target's mass, kilograms.
     pub mass_kg: f32,
     /// The mass at which the catch reaches its wide zone and the line its heavy speed share,
     /// kilograms. A target at or below half of it keeps the light values.
-    pub heavy_mass_kg: f32,
+    pub(crate) heavy_mass_kg: f32,
     /// The catch zone for a light target, metres.
-    pub zone_m: f32,
+    pub(crate) zone_m: f32,
     /// The catch zone for a heavy target, metres.
-    pub heavy_zone_m: f32,
+    pub(crate) heavy_zone_m: f32,
     /// The line's speed for a heavy target as a share of the light one, `0..=1`.
-    pub speed_share: f32,
+    pub(crate) speed_share: f32,
 }
 
 impl HeavyCatch {
     /// How heavy the target is, `0..=1`: zero at or below half [`heavy_mass_kg`](Self::heavy_mass_kg),
     /// rising linearly to one at it. A mass that is not finite counts as heavy.
-    pub fn heaviness(&self) -> f32 {
+    pub(crate) fn heaviness(&self) -> f32 {
         let half = self.heavy_mass_kg.max(0.0) * 0.5;
         let span = self.heavy_mass_kg.max(0.0) - half;
         if !self.mass_kg.is_finite() {
@@ -228,14 +228,14 @@ impl HeavyCatch {
     }
 
     /// The catch zone for the target, metres.
-    pub fn zone_m(&self) -> f32 {
+    pub(crate) fn zone_m(&self) -> f32 {
         let light = self.zone_m.max(0.0);
         let heavy = self.heavy_zone_m.max(light);
         light + (heavy - light) * self.heaviness()
     }
 
     /// The line's speed for the target as a share of the light one, `0..=1`.
-    pub fn speed_scale(&self) -> f32 {
+    pub(crate) fn speed_scale(&self) -> f32 {
         let share = self.speed_share.clamp(0.0, 1.0);
         1.0 + (share - 1.0) * self.heaviness()
     }
@@ -243,14 +243,14 @@ impl HeavyCatch {
 
 /// The velocity the line asks of the point `at` on the target: `speed` metres per second toward
 /// `toward`.
-pub fn line_velocity(at: Vec3, toward: Vec3, speed: f32) -> Vec3 {
+pub(crate) fn line_velocity(at: Vec3, toward: Vec3, speed: f32) -> Vec3 {
     (toward - at).try_normalize().unwrap_or(Vec3::ZERO) * speed.max(0.0)
 }
 
 /// Watches a pulled body for a stall: it has stalled when, over the last `window_s` seconds of
 /// samples, it has stayed within `distance_m` of where it was at the window's start.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct StallWatch {
+pub(crate) struct StallWatch {
     /// `(time, position)` samples, oldest first.
     samples: std::collections::VecDeque<(f32, Vec3)>,
     time: f32,
@@ -284,7 +284,7 @@ impl StallWatch {
 
 /// The velocity that throws a body at `from` to land at `to` after `flight_s` seconds under
 /// `gravity`: the toss a tap of the grapple at a gun gives it.
-pub fn toss_velocity(from: Vec3, to: Vec3, flight_s: f32, gravity: Vec3) -> Vec3 {
+pub(crate) fn toss_velocity(from: Vec3, to: Vec3, flight_s: f32, gravity: Vec3) -> Vec3 {
     let t = if flight_s.is_finite() {
         flight_s.max(0.05)
     } else {
@@ -295,7 +295,7 @@ pub fn toss_velocity(from: Vec3, to: Vec3, flight_s: f32, gravity: Vec3) -> Vec3
 
 /// How long a toss over `distance` metres flies, seconds: the distance at `speed` metres per
 /// second, kept between `shortest` and `longest`.
-pub fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f32 {
+pub(crate) fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f32 {
     let t = if speed > 0.0 {
         distance / speed
     } else {
@@ -310,7 +310,7 @@ pub fn toss_flight(distance: f32, speed: f32, shortest: f32, longest: f32) -> f3
 
 /// What the snatch does with a loose object.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum PropHandling {
+pub(crate) enum PropHandling {
     /// Pulled into the hand and caught: a hand can carry it.
     Carry,
     /// Swung on the held line, never brought to the hand: too heavy to carry, but within the
@@ -321,7 +321,11 @@ pub enum PropHandling {
 /// What the snatch does with a loose object of `mass_kg`: carried up to `carry_max_kg`, swung
 /// above it up to `ceiling_kg`, and not offered above the ceiling or without a finite, positive
 /// mass. A ceiling below the carry limit swings nothing.
-pub fn prop_handling(mass_kg: f32, carry_max_kg: f32, ceiling_kg: f32) -> Option<PropHandling> {
+pub(crate) fn prop_handling(
+    mass_kg: f32,
+    carry_max_kg: f32,
+    ceiling_kg: f32,
+) -> Option<PropHandling> {
     if !(mass_kg.is_finite() && mass_kg > 0.0) {
         None
     } else if mass_kg <= carry_max_kg {

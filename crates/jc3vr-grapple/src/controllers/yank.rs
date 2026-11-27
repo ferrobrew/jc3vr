@@ -69,7 +69,7 @@ pub struct HandLine {
 /// reaches, metres; both in the cockpit frame. A yank back from what the hand pointed at is a drop
 /// in it, whichever way the line points and wherever the hand is held. `None` for a line with no
 /// direction.
-pub fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
+pub(crate) fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
     let line = line.try_normalize()?;
     let reach = grip.dot(line);
     reach.is_finite().then_some(reach)
@@ -80,7 +80,7 @@ pub fn reach_along(grip: Vec3, line: Vec3) -> Option<f32> {
 /// reel's and the retract's pull, the lock's take-in, and the snatch's yank each keep one. The
 /// gestures' detectors differ; only this latch is shared.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ArmedLine {
+pub(crate) struct ArmedLine {
     /// The aim at the arming, once a tracked hand gave a finite one.
     line: Option<Vec3>,
 }
@@ -219,7 +219,7 @@ impl YankDetector {
     /// [`step`](Self::step), with the hand's distance from the head across the ground (`None` when
     /// unknown): a pull that takes the hand out from the head by more than the grapple tuning's
     /// `yank.outward_share` of the pull does not yank.
-    pub fn step_outward(
+    pub(crate) fn step_outward(
         &mut self,
         dt: f32,
         distance: Option<f32>,

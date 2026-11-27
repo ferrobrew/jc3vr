@@ -26,7 +26,7 @@ use crate::{
 
 /// A pull measured along the aim the hand had when it armed.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct LinePull {
+pub(crate) struct LinePull {
     /// The aim at the arming; disarmed while the pull is.
     line: ArmedLine,
     tracker: PullTracker,
@@ -79,7 +79,7 @@ pub struct PullReading {
 
 /// The pull tracker's state.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct PullTracker {
+pub(crate) struct PullTracker {
     /// The last tick's reach along the line, metres.
     previous: Option<f32>,
     /// The depth's reference reach, metres.

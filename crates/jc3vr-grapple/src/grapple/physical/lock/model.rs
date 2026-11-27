@@ -29,7 +29,7 @@ pub(crate) fn armed(armed: bool, button: Option<LockButton>) -> bool {
 /// The held line between ticks.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Held {
-    pub rope: Rope,
+    pub(crate) rope: Rope,
     take_in_mps: f32,
     /// Whether the take still runs: the character coasts in toward the hook on its own momentum
     /// and the held length follows it, until it stops closing on the hook.
@@ -232,14 +232,14 @@ impl Held {
 pub(crate) struct SwingInput {
     /// The character's position and velocity, as the reel task reads them.
     pub rider: Vec3,
-    pub rider_velocity: Vec3,
-    pub rider_mass_kg: f32,
+    pub(crate) rider_velocity: Vec3,
+    pub(crate) rider_mass_kg: f32,
     /// The hook's point and its velocity.
     pub hook: Vec3,
-    pub hook_velocity: Vec3,
+    pub(crate) hook_velocity: Vec3,
     /// The inverse mass the line pulls the hook's point back with: the target body's, scaled by
     /// the reaction's share; zero for a target the line does not move.
-    pub target_inverse_mass: f32,
+    pub(crate) target_inverse_mass: f32,
     pub dt: f32,
 }
 
@@ -253,7 +253,7 @@ pub(crate) struct SwingOutput {
     /// How far the character is past the held length, metres: negative while the line is slack.
     pub stretch_m: f32,
     /// The line's impulse on the hook's point this tick, newton seconds.
-    pub target_impulse: Vec3,
+    pub(crate) target_impulse: Vec3,
 }
 
 pub(crate) fn swing(

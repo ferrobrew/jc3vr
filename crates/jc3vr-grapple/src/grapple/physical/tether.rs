@@ -48,7 +48,7 @@ pub fn armed(tick: &TetherTick) -> bool {
 /// The retract value for a pull `depth_m` metres deep: zero inside the deadzone, then the cube
 /// root of the pull's fraction of the span to [`TetherTuning::full_m`], so that the game's cube
 /// of it is the fraction itself.
-pub fn retract_value(depth_m: f32, config: &TetherTuning) -> f32 {
+pub(crate) fn retract_value(depth_m: f32, config: &TetherTuning) -> f32 {
     if !depth_m.is_finite() || depth_m <= config.deadzone_m {
         return 0.0;
     }

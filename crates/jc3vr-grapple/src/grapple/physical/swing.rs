@@ -26,7 +26,7 @@ pub(crate) const HANG_PUMP: HangPump = HangPump {
 /// The pump for a grapple hand moving at `velocity` (horizontal, body frame, metres per second)
 /// relative to the head: against the motion, from zero at the deadzone to `full_impulse` times
 /// [`SwingTuning::scale`] at the full speed, and zero inside the deadzone.
-pub fn pump_impulse(velocity: Vec2, full_impulse: f32, config: &SwingTuning) -> Vec2 {
+pub(crate) fn pump_impulse(velocity: Vec2, full_impulse: f32, config: &SwingTuning) -> Vec2 {
     let speed = velocity.length();
     if !speed.is_finite() || speed <= config.deadzone_mps {
         return Vec2::ZERO;
