@@ -151,8 +151,7 @@
 - [character-grabs.md](mod/input/character-grabs.md): grabbing characters with an empty hand.
 - [impacts.md](mod/input/impacts.md): impact sounds, and what a held object striking something does.
 - [breaking-glass.md](mod/input/breaking-glass.md): breaking window glass by hand.
-- [grab-view.md](mod/input/grab-view.md): the grab view diagnostic.
-- [collider-view.md](mod/input/collider-view.md): the collider view diagnostic.
+- [hand-views.md](mod/input/hand-views.md): the grab view and the collider view, the hands' overlay diagnostics.
 - [physical-weapons.md](mod/input/physical-weapons.md): weapons as physical objects in either hand.
 - [weapon-sockets.md](mod/input/weapon-sockets.md): drawing, docking, and swapping weapons at the body's sockets.
 - [long-gun-poses.md](mod/input/long-gun-poses.md): aiming down the sights and keeping a held long gun out of walls.
