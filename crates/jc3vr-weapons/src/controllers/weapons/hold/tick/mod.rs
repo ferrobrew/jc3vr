@@ -15,19 +15,20 @@
 //!   fan-out passes down, so it is checked here for the mod's own
 //!   ([`Inventory::GetAnimationAllowsShooting`], with the airborne waiver of
 //!   [`crate::controllers::weapons::permission`]), as is the true reload's hold on the gun;
-//! - with the hold in either hand on, the weapon the game wields, which the fan-out updates,
-//!   is handed its hand's fire input in place of the game's own ([`substitute`], from the gun aim's
-//!   per-weapon detour), so both hands fire the same way; the ammunition check's reload request
-//!   and its cancel are refused for the local player
+//! - while the per-hand tick runs ([`per_hand`]), the weapon the game wields, which the fan-out
+//!   updates, is handed its hand's fire input in place of the game's own ([`substitute`], from the
+//!   gun aim's per-weapon detour), so both hands fire the same way; the ammunition check's reload
+//!   request and its cancel are refused for the local player
 //!   ([`crate::controllers::weapons::reload`]), so one hand's gun never reloads or interrupts the
-//!   other's; each armed gun's aim mode follows the wielded weapon's ([`input_tick`]); and the
-//!   use camera hint a gun in a hand still needs is put back when another weapon of its hint stops
-//!   being used ([`stopped_using`]).
+//!   other's; each armed gun's aim mode follows the wielded weapon's ([`input_tick`]); and the use
+//!   camera hint a gun in a hand still needs is put back when another weapon of its hint stops
+//!   being used ([`restore_hints`]).
 //!
-//! With the hold in either hand off, the wielded weapon fires from the game's own fire input, and an armed
-//! weapon fires only while its magazine holds a round, since its ammunition check would otherwise
-//! ask the character to reload, which reloads the wielded weapon. The game's dual-wield pair, one
-//! weapon with a gun in each hand, fires from the game's own fire input, which alternates its guns
+//! The per-hand tick runs from the first input tick ([`input_tick`]), and nothing clears it after.
+//! Before then, the wielded weapon fires from the game's own fire input, and an armed weapon fires
+//! only while its magazine holds a round, since its ammunition check would otherwise ask the
+//! character to reload, which reloads the wielded weapon. The game's dual-wield pair, one weapon
+//! with a gun in each hand, fires from the game's own fire input, which alternates its guns
 //! ([`crate::controllers::weapons::dual_wield`]).
 //!
 //! Optional hand aim does not gate native state updates. A fresh point for the same character and
@@ -110,7 +111,7 @@ pub fn status() -> TickStatus {
 }
 
 /// Whether the per-hand tick hands the wielded weapon its hand's input and refuses the ammunition
-/// check's reload requests, as of the last input tick.
+/// check's reload requests: from the first input tick on.
 pub(crate) fn per_hand() -> bool {
     PER_HAND.load(Ordering::Relaxed)
 }
@@ -160,7 +161,8 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>) {
         let Some(mut handle) = (unsafe { armed::weapon_handle(owner, hand) }) else {
             continue;
         };
-        // SAFETY: the input phase retains each source and mutates only this weapon until the call returns.
+        // SAFETY: the input phase retains each source and mutates only this weapon until the call
+        // returns.
         let weapon = unsafe { handle.as_mut() };
         if weapon.m_AimMode != mode {
             unsafe { weapon.SetAimMode(mode) };

@@ -6,8 +6,8 @@
 //! the side changes. A gun on any other bone (a holster or back bone, or one the game moves off the
 //! hands) is left where the game put it. A weapon of more than one gun (the game's dual-wield pair)
 //! keeps a gun in each hand, so held in the left hand its layout is mirrored rather than gathered
-//! into one hand ([`placed_bone`]). A docked gun sits on one of the
-//! hip holster, back attach, or chest explosive bones ([`dock_bone`]).
+//! into one hand ([`placed_bone`]). A docked gun sits on one of the hip holster, back attach, or
+//! chest explosive bones ([`dock_bone`]).
 
 use jc3gi::character::character::SafeBoneIndex;
 use jc3vr_input::frame::Hand;
@@ -52,7 +52,6 @@ pub(crate) fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
     DOCK_BONES.into_iter().find(|&safe| safe as u32 == bone)
 }
 
-/// The bones a docked gun sits on.
 const DOCK_BONES: [SafeBoneIndex; 5] = [
     SafeBoneIndex::RIGHT_HOLSTER,
     SafeBoneIndex::LEFT_HOLSTER,

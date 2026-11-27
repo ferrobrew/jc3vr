@@ -1,7 +1,6 @@
 //! The input tick's side of taking a weapon that has no body for the hands' reach (a gun in a
 //! character's hands or holstered on its body, [`crate::controllers::weapons::hold::steal`], or a
-//! weapon on a rack,
-//! [`crate::controllers::weapons::hold::rack`]): it gathers the targets
+//! weapon on a rack, [`crate::controllers::weapons::hold::rack`]): it gathers the targets
 //! ([`crate::controllers::weapons::hold::world`]), places their grab volumes for the free hands
 //! ([`begin_tick`]), and carries out a grab of one ([`finish_grab`]).
 //!
@@ -11,6 +10,10 @@
 //!
 //! The targets come from the world in world space and are carried into the cockpit frame the grab
 //! volumes live in ([`crate::controllers::weapons::docks::cockpit_frames`]).
+//!
+//! It also keeps the held weapon's primary grip as the rigid grip's placement left it on the
+//! solved wrist ([`record_handle_placement`], through the body's held source), for the lone hand's
+//! grip to measure against ([`measured_handle_point`]).
 
 use std::fmt;
 
@@ -218,9 +221,8 @@ pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &TakeInputs) -> Vec<Candid
 }
 
 /// Take the weapon `hand`'s grab of a
-/// [`GrabVolume::WorldWeapon`](jc3vr_body::controllers::grab::GrabVolume::WorldWeapon) closed
-/// on. Returns whether a
-/// weapon went into the hand.
+/// [`GrabVolume::WorldWeapon`](jc3vr_body::controllers::grab::GrabVolume::WorldWeapon) closed on.
+/// Returns whether a weapon went into the hand.
 ///
 /// # Safety
 ///

@@ -1,6 +1,6 @@
 //! Under the controller scheme, weapons are picked up only by hand: the game's weapon pickup panel
 //! (the offered weapon, the one it replaces, and the use-item glyph) is hidden, and the use-item
-//! button no longer picks a weapon up. The design is in `docs/mod/input/physical-hands.md`.
+//! button does not pick a weapon up. The design is in `docs/mod/input/physical-hands.md`.
 //!
 //! The panel is cleared in place of the player's pickup readout ([`Player::UpdateWeaponHUD`]),
 //! which otherwise shows it whenever the character's interaction entries offer a weapon. Clearing

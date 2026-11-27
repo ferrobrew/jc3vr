@@ -320,8 +320,8 @@ pub fn owned_holder(weapon: usize) -> Option<Hand> {
 }
 
 /// Write the holding hand's bones into `weapon`'s attach-bone table, when the table holds `weapon`
-/// in a hand, the mod owns its bones, and it is wielded. With `snap`, a gun whose hand changed since its last placement skips its
-/// render interpolation.
+/// in a hand, the mod owns its bones, and it is wielded. With `snap`, a gun whose hand changed
+/// since its last placement skips its render interpolation.
 ///
 /// # Safety
 ///
@@ -435,7 +435,7 @@ fn took(arrival: live::Arrival) {
     );
 }
 
-/// The input tick's side.
+/// The input tick's clock and the hold's counts of handovers and pickups.
 struct Tick {
     last: Option<Instant>,
     handovers: u64,

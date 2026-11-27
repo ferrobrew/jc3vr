@@ -4,8 +4,8 @@
 //!
 //! A gun in a character's hands has no body in the physics world (only a dropped weapon's bodies
 //! are there), so the hands' reach cannot find it. Instead the inventory's end-of-pass detour,
-//! which runs for every character, notes each character near the player that wields a gun
-//! ([`observe`]): where the grips are of the gun it wields and of the guns holstered on its body,
+//! which runs for every character, notes each character near the player with a gun in its hands
+//! or holstered on its body ([`observe`]): where the grips are of the gun it wields and of the guns holstered on its body,
 //! and a weak reference to the character, which tells the input tick whether it still lives without
 //! keeping it alive. The weapon handling places grab volumes along those guns for a free hand
 //! ([`crate::controllers::weapons::hold::world`]).
@@ -76,7 +76,8 @@ use crate::controllers::{
 };
 
 /// Note characters' guns out to `range_m` from the player rather than within reach: the grapple's
-/// snatch takes them from range (`controllers::snatch`). Zero keeps the notice to reach.
+/// snatch takes them from range (`jc3vr_grapple::controllers::snatch`). Zero keeps the notice to
+/// reach.
 /// Called every input tick.
 #[inline]
 pub fn widen_notice(range_m: f32) {
@@ -102,7 +103,8 @@ pub(crate) fn publish_probe(position: Option<Vec3>) {
 }
 
 /// Note `inventory`'s character when it is a character other than the local player, near the
-/// player, with a gun in its hands. From the end of the character's pose-finalization pass.
+/// player, with a gun in its hands or holstered on its body. From the end of the character's
+/// pose-finalization pass.
 ///
 /// # Safety
 ///

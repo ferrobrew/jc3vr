@@ -82,8 +82,9 @@ pub unsafe fn observe(weapon: &WeaponBase) {
     });
 }
 
-/// The noted weapons still waiting on their rules whose first gun shows and passes `near`, held
-/// alive only by their weak references. Forgets the weapons that are gone or taken.
+/// The guns of the noted weapons still waiting on their rules that show and pass `near`, one entry
+/// per gun ([`shown_guns`]), held alive only by their weak references. Forgets the weapons that are
+/// gone or taken.
 ///
 /// # Safety
 ///

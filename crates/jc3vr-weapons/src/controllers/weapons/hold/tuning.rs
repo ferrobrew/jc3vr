@@ -1,7 +1,7 @@
 //! The weapon handling's hold tuning, read from the shipped `tuning/hold.toml` ([`HOLD`]): the
-//! hold's slides, reaches, and throw cap, the takes from characters and racks, the grip targets'
+//! hold's slides, reaches, and windows, the takes from characters and racks, the grip targets'
 //! volumes and marks, the sockets' attraction, the body's grab volumes, the gun's regions, the
-//! dual-wield split's waits, the pouches' models, and the pouch returns.
+//! dual-wield split's waits, the guns' bodies, the pouches' models, and the pouch returns.
 
 use glam::Vec3;
 use jc3vr_body::tuning::Millis;
@@ -304,7 +304,7 @@ impl RegionsTuning {
 }
 
 /// The regions of a gun's shape, in the gun's frame (see
-/// [`crate::controllers::weapons::regions::classify`]).
+/// [`crate::controllers::weapons::regions::shape::classify`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GunShapeTuning {

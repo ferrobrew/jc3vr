@@ -10,9 +10,9 @@
 //! ([`crate::controllers::weapons::inventory::reconcile`]), so the game's equip never runs and the
 //! other hand keeps its weapon. A weapon whose slot is taken goes into the table beside the slot's
 //! weapon, which stays where it is. Where the table cannot hold the weapon in a hand of its own
-//! ([`crate::controllers::loadout::take`]: the table not running, the game's layout, a heavy
-//! weapon, the embedded power core, or one weapon at a time), the game's pickup takes it
-//! ([`take_by_game`]), with the slot's weapon kept on the body or dropped first.
+//! ([`crate::controllers::loadout::take`]: the table not running, or the embedded power core), the
+//! game's pickup takes it ([`take_by_game`]), with the slot's weapon kept on the body or dropped
+//! first.
 //!
 //! A weapon `PickupItem` does not put into the inventory (a hand grenade, which the game collects
 //! by proximity, and a weapon with [`WeaponBase::m_InfinitePickup`], which gives a copy) and a
@@ -82,7 +82,8 @@ pub struct TakeOptions {
 ///
 /// # Safety
 ///
-/// `weapon` must be a live weapon (its body checked to belong to it this tick, or its holder held alive).
+/// `weapon` must be a live weapon (its body checked to belong to it this tick, or its holder held
+/// alive).
 pub(crate) unsafe fn take(
     game: &GameTick<'_>,
     hand: Hand,
@@ -167,10 +168,10 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
     .map_err(Refusal::Hands)
 }
 
-/// Take `weapon`, which its source gave up, into `hand` through the loadout table,
-/// from `options`' source: the weapon becomes the player's without the game's equip, the carry set keeps it,
-/// the table takes it into the hand, and the reconcile wields it there when the hand is the primary
-/// and arms it otherwise. The weapon in the other hand stays there, and one in the slot it would
+/// Take `weapon`, which its source gave up, into `hand` through the loadout table, from `options`'
+/// source: the weapon becomes the player's without the game's equip, the carry set keeps it, the
+/// table takes it into the hand, and the reconcile wields it there when the hand is the primary and
+/// arms it otherwise. The weapon in the other hand stays there, and one in the slot it would
 /// take stays where the table has it.
 ///
 /// # Safety

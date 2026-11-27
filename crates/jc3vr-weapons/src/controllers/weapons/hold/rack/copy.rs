@@ -271,7 +271,8 @@ impl Pending {
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
 
 /// Take the staged copy `weapon` into `hand` at once, sliding from the rack, as the hand's grab
-/// asked. A take the hands can no longer make leaves the copy lying at the rack.
+/// asked. A take the hands can no longer make leaves the copy lying at the rack, and with no local
+/// player the copy is despawned.
 ///
 /// # Safety
 ///

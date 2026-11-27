@@ -439,7 +439,9 @@ pub(crate) fn tick() {
     }
 }
 
-/// Forget the generation before a reset, stand-down, or character replacement.
+/// Retire every observed source, showing its rack weapon again and despawning its staged members,
+/// before a reset, a stand-down, or a character replacement. A finite pair with one pistol taken
+/// keeps its claim on the other ([`finite`]).
 pub(crate) fn clear() {
     finite::clear();
     let sources = std::mem::take(&mut STATE.lock().sources);

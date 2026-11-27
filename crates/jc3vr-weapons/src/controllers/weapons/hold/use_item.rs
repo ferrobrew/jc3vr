@@ -8,9 +8,10 @@
 //! weapons in the hands that took them, the detour does not run it: it keeps the weapon alive and
 //! queues it, and the next input tick takes it through the table into a free hand, the dominant
 //! first ([`crate::controllers::weapons::hold::pickup::take_by_table`]), or puts it back into the
-//! world with both hands full. A weapon of the heavy slot while heavy weapons stay the game's, and
-//! the embedded power core, are left to the game's pickup, and a weapon with infinite pickups, which the pickup puts into no slot, only
-//! loses its stored rounds, as the pickup would do, without the unequip.
+//! world with both hands full. The embedded power core, whose pickup gives another weapon, is left
+//! to the game's pickup at that tick. A weapon with infinite pickups gives a copy from its pickup
+//! start ([`WeaponBase::PickupStart`]) and goes into no slot, so its completion is skipped: nothing
+//! is unequipped, and its stored rounds stay.
 //!
 //! The mod's own calls of the pickup ([`own_pickup`], for the takes the table leaves to the game)
 //! pass through. The detour also makes a pistol taken from the world one pistol while pistols are
@@ -197,7 +198,7 @@ fn pickup_item(weapon: *mut WeaponBase, activator: *mut GameObject) {
     if !own && table_takes(w) {
         if w.m_InfinitePickup {
             // It gives a copy from its pickup start and goes into no slot. Its stored rounds stay:
-            // emptied here, a locker's displayed weapon had nothing left for the pickup's
+            // emptied here, a locker's displayed weapon would have nothing left for the pickup's
             // automatic credit to refill the reserve from.
             return;
         }

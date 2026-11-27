@@ -6,10 +6,11 @@
 //!   everything else a draw or a dock moves.
 //! - A drop runs the weapon's drop at once while the inventory still holds it
 //!   ([`WeaponBase::OnDrop`], as a swimming character's pickup does to a slot's occupant), gives
-//!   its body the copied release-time hand and rig motion, and then clears the slot
-//!   ([`Inventory::DropWeapon`](jc3gi::character::inventory::Inventory::DropWeapon)). A strong reference retains a heavy weapon through the slot
-//!   removal its unequip can perform inside `OnDrop`. The immediate drop fulfils any deferred
-//!   drop queued by that recursive unequip.
+//!   its body the motion of the body's one release
+//!   ([`jc3vr_body::controllers::physics::release`]), and then clears the slot
+//!   ([`Inventory::DropWeapon`](jc3gi::character::inventory::Inventory::DropWeapon)). A strong
+//!   reference retains a heavy weapon through the slot removal its unequip can perform inside
+//!   `OnDrop`. The immediate drop fulfils any deferred drop queued by that recursive unequip.
 //!
 //! Everything here runs in the game stage, on the game thread before the world update, with the
 //! local player's character.
@@ -103,7 +104,8 @@ pub struct Thrown {
     /// The sanitized release motion requested on the native body.
     pub linear: Vec3,
     pub angular: Vec3,
-    /// Whether the existing native setter returned success. Later persistence is unknown.
+    /// Whether the native velocity setter returned success; whether the velocity persists after
+    /// it is not read back.
     pub set: bool,
     pub diagnostic: DropObservation,
 }

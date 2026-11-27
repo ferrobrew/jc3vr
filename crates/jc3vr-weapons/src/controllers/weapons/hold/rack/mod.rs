@@ -27,6 +27,11 @@
 //! - a rack with unlimited stock hands out a copy instead ([`copy`]): the take asks the rack for
 //!   one, which spawns a few frames later where the rack's weapon hangs, and then goes into the
 //!   hand as the rack's own weapon would, while the rack's weapon is hidden until it has left.
+//!
+//! While pistols are single, a rack's pistol pair is taken one pistol at a time ([`paired`]), and
+//! the game's offer of a second weapon of a kind the player already carries is let pass for the
+//! dual-wield slot ([`offer`]). The weapons a placement rule set out beyond the hands' reach are
+//! noted for the grapple's snatch ([`remote`]).
 
 pub mod copy;
 pub(crate) mod entries;
@@ -219,8 +224,8 @@ pub(crate) fn stand_down() {
     remote::clear();
 }
 
-/// Walk the weapons `owner`'s valid interaction entries offer that sit on a rack, with a strong
-/// reference holding each alive, until `visit` returns true.
+/// Walk the weapons `owner`'s valid interaction entries offer in a state a hand may take them in
+/// ([`offered_state`]), with a strong reference holding each alive, until `visit` returns true.
 unsafe fn walk(owner: &Character, mut visit: impl FnMut(&WeaponBase, Strong) -> bool) {
     unsafe {
         entries::walk(&owner.m_InteractionUserProxy.m_ValidEntries, |strong| {

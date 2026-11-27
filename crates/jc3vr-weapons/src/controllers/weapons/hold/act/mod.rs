@@ -11,7 +11,8 @@
 //! - An attracted dock ([`attract`]) is a dock a release made from outside the socket's reach: the
 //!   gun travels onto the socket over a time set by the distance, toward where it sat at its last
 //!   draw, or with no draw, toward where its grip goes there.
-//! - A let-go ([`let_go`]) drops the weapon with the hand's motion and tells the table.
+//! - A let-go ([`let_go`]) drops the weapon with the motion the body's one release gives what a
+//!   hand lets go of ([`release`]), and tells the table.
 //!
 //! Each hand has its own slide and its own grip watch, so the two hands draw, dock, and let go at
 //! once. The rigid grip reads a hand's slide in the placement detour ([`snap_view`]) to place the
@@ -385,13 +386,13 @@ pub(crate) fn cancel_releases() {
 
 /// Whether each controller's grip holds its hand's gun on the latest frame, by [`Hand::index`],
 /// unmasked by the bindings' wait for a returning hand's controls to rest
-/// ([`bindings::grip_holds_now`]); `None` for a grip not known.
+/// ([`intent::grip_holds_now`]); `None` for a grip not known.
 fn physical_grips() -> [Option<bool>; 2] {
     Hand::BOTH.map(intent::grip_holds_now)
 }
 
 /// Whether each controller's grip is pressed on the latest frame, by [`Hand::index`]
-/// ([`bindings::grip_pressed_now`]); `None` for a grip not known. A release in progress (a dock's
+/// ([`intent::grip_pressed_now`]); `None` for a grip not known. A release in progress (a dock's
 /// slide or an attracted weapon's travel) is called off only by a press: on a force-sensing grip
 /// the fingers stay round the handle for a few frames after the press lets go, and reading those
 /// as a hold would call off every release made with a slow-opening hand, dropping the weapon.
@@ -809,7 +810,13 @@ static STATE: Mutex<State> = Mutex::new(State {
     },
 });
 
-/// Copy the estimate before disarm changes the gun's attach pose or cached native motion.
+/// The motion the gun of `weapon` leaves `hand` with, from the body's one release at the gun's
+/// position, counting the hand's motion from when its grip watch took this weapon. Taken before a
+/// disarm, which moves the gun's attach pose and its native motion.
+///
+/// # Safety
+///
+/// `weapon` must be a live weapon, on the game thread before the world update.
 unsafe fn release_motion(
     hand: Hand,
     weapon: &WeaponBase,

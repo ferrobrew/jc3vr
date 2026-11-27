@@ -1,7 +1,13 @@
-//! Copied observations of the latest inventory-gun release attempt.
+//! Copied observations of the latest attempt to let go of a gun from the inventory.
+//!
+//! The motion a released gun leaves with is the body's one release
+//! ([`jc3vr_body::controllers::physics::release`]), requested of the gun's native body after the
+//! game's drop; the record keeps that request, where it came from ([`ReleaseSource`]), and whether
+//! the native velocity setter took it. The game's own cached gun motion is read before the drop
+//! and recorded beside it for comparison only; it has no known producer timestamp.
 //!
 //! Native identifiers are correlation values only. No reader dereferences them, and no record
-//! retains a weapon reference or a native body. Cached gun motion has no known producer timestamp.
+//! retains a weapon reference or a native body.
 //!
 //! Each attempt is also a tracking-recording event ([`ReleaseRecord::event`]) while a recording or
 //! the lookback collects.
@@ -55,7 +61,7 @@ pub struct ReleaseRecord {
     pub stages: ReleaseStages,
     pub drop: Option<DropObservation>,
     pub refusal: Option<DockRefusal>,
-    /// No existing pre-disarm motion read is added for diagnostics.
+    /// No motion is read before an armed weapon's disarm; this records that.
     pub before_disarm_sample: Unavailable,
     pub native_readback: NativeReadback,
 }
@@ -132,7 +138,7 @@ impl ReleaseRecord {
     }
 }
 
-/// The route reached by the release executor.
+/// The route a release took: the wielded weapon's, or a weapon armed in the hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ReleaseRoute {
     Unresolved,
@@ -149,7 +155,8 @@ pub struct ReleaseStages {
     pub reconcile_returned: bool,
 }
 
-/// Existing native motion and body reads, copied before `OnDrop` or the heavy-slot drop.
+/// The game's cached gun motion and the gun's native body, read before the drop (`OnDrop` and the
+/// slot clear), and the motion the release requested of that body.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct DropObservation {
     /// The address read at the native drop site, for comparison with the loadout identity.
@@ -163,7 +170,8 @@ pub struct DropObservation {
     /// From `WeaponData::m_PfxInstance`, distinct from the mod-owned held-gun body.
     /// This identifier is never used for a later native read.
     pub(crate) native_body_id: Option<u32>,
-    /// Sanitized, capped world-space values passed to the existing native setter, if called.
+    /// The release's motion, capped ([`ReleaseMotion::capped`]), in world space, as requested of
+    /// the native velocity setter; `None` when there was no body or owner to request it of.
     pub(crate) requested_world_motion: Option<WorldMotion>,
     pub release_source: SampleSource,
     pub history_age_s: Option<f32>,
@@ -175,7 +183,8 @@ pub struct DropObservation {
 }
 
 impl DropObservation {
-    /// Prepare the exact world-space request consumed by the native velocity setter.
+    /// Cap `release` at `max_speed_mps` into the world-space motion requested of the native
+    /// velocity setter, and record it with its source, history age, and time scale.
     pub(crate) fn prepare_release(
         &mut self,
         release: ReleaseMotion,
@@ -221,7 +230,7 @@ pub enum DropBranch {
     OnDropThenVelocityWrite,
 }
 
-/// All samples are taken before the drop.
+/// Where the weapon was when its cached motion was read; every read is before the drop.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SampleStage {
     Wielded,
@@ -229,6 +238,8 @@ pub enum SampleStage {
     OutsideInventory,
 }
 
+/// Where a recorded motion came from: the game's cached gun motion, or the body's release
+/// ([`ReleaseSource`]).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SampleSource {
     CachedWeaponDataWorldMatrices,
@@ -269,7 +280,7 @@ pub enum NativeWrite {
     SetterReturned,
 }
 
-/// No native motion reader is called at any of these stages.
+/// Why no native motion is read back after each stage: none is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NativeReadback {
     pub(crate) after_setter: Unavailable,

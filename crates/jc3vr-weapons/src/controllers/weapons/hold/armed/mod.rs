@@ -2,8 +2,8 @@
 //!
 //! The game wields one weapon, the selected slot's: the primary hand's. A weapon the loadout table
 //! holds in the other hand (a slot's weapon, or one the VR inventory carries beyond the slots)
-//! stays in the holstered state, so the game's inventory, selection, HUD, and saves see a slot's weapon as
-//! holstered, and its bodies stay out of the physics world. Arming it in its hand ([`arm`]):
+//! stays in the holstered state, so the game's inventory, selection, HUD, and saves see a slot's
+//! weapon as holstered, and its bodies stay out of the physics world. Arming it in its hand ([`arm`]):
 //!
 //! - its guns' holstered entries in the attach-bone table name the hand's attach bone, written at
 //!   the same three points as the wielded weapon's ([`apply_in`], from the hold's detours), and its

@@ -1,13 +1,18 @@
-//! Grip targets for weapons discovered independently of the physical hands' probes: a gun in a
-//! living character's hands or holstered on its body, and a weapon on a rack or in a locker. This path does not classify
-//! dropped weapon bodies or acquire remote grapple targets.
-//! Pure: the grip targets placed on them and which one a grab took.
+//! Grip targets for the weapons the physical hands' probes cannot find: a gun in a living
+//! character's hands or holstered on its body, and a weapon on a rack or in a locker. Dropped
+//! weapon bodies and the grapple's remote targets are found elsewhere. Pure: the grip targets
+//! placed on them and which one a grab took.
 //!
 //! Each target is a short segment along the gun, from the grip of the hand that holds it to the
 //! grip of the other hand (or the gun's origin without one), in the cockpit frame. Each hand
 //! without a gun of its own is offered the point of the segment nearest it, so that a hand closing
 //! anywhere on the gun takes it, and the marker shows where. A grab of one
 //! ([`GrabVolume::WorldWeapon`]) takes the target whose segment is nearest the grabbing hand.
+//!
+//! It also holds the hold's other pure grab rules: the free hand's handover target on the held
+//! gun's pistol grip ([`handover_candidate`] and [`broad_handover_candidate`]), a measured grip
+//! carried onto the wrist the gun is drawn on now ([`grip_on_current_wrist`]), and the stagger a
+//! take puts on a character ([`stagger_impulse`]).
 
 use body_rig::math::geometry::{closest_on_segment, segment_distance};
 use glam::Vec3;
@@ -211,7 +216,8 @@ pub(crate) fn complete_offer<T, E>(
 
 /// A free hand's transfer target around the held gun's measured pistol grip, in the cockpit frame.
 /// A hand already touching another region keeps that region's action instead of transferring the
-/// gun through the wider grip reach. The caller checks ownership and the handover setting.
+/// gun through the wider grip reach. The caller checks that the mod owns the gun's attach bones
+/// and that the guns mode acts ([`HandoverPolicy::allowed`]).
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Handover {
     pub holder: Hand,
