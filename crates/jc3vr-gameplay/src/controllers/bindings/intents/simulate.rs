@@ -1,7 +1,6 @@
 //! The simulator: the semantic input a runtime following a layout of default bindings would report
 //! for one tick of raw controls. Pure test support, so that the tables' tests can drive them with
-//! the physical presses a player makes, and so that the semantic tables can be checked against the
-//! raw-input tables they replace.
+//! the physical presses a player makes.
 //!
 //! Each action reads the raw control its default binding names on each hand the binding covers,
 //! with the deadzones and press thresholds the raw controls already carry. A trackpad press has no

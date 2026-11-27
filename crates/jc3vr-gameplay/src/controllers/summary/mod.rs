@@ -26,7 +26,7 @@
 //! checked on every sync whether or not the panel shows, and a change of the game's language
 //! resolves the names afresh.
 //!
-//! The presentation (the glyphs, the grid layout, the glance, the page clock, and the hiding of the
+//! The presentation (the grid layout, the glance, the page clock, and the hiding of the
 //! game's own button hints, whose gamepad glyphs do not match the controllers) belongs to the HUD
 //! with the panel that draws it, under its `controllers::summary`.
 

@@ -13,7 +13,7 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass, VehicleSeat},
 };
 use jc3vr_input::{frame::Hand, semantic::SemanticSet};
-use jc3vr_view::vr::input::semantic::{bound::Layout, defaults::default_binding};
+use jc3vr_view::vr::input::semantic::defaults::default_binding;
 
 use crate::controllers::bindings::{
     intents::simulate::simulate,
@@ -80,16 +80,6 @@ pub(crate) fn all_contexts() -> Vec<(Hand, TableCtx)> {
 /// window, flick the move stick before a press and not, and press the system button both briefly
 /// and long.
 pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
-    injected_with(mode, dominant, ctx, default_binding)
-}
-
-/// [`injected`], under `layout`.
-pub(crate) fn injected_with(
-    mode: Mode,
-    dominant: Hand,
-    ctx: TableCtx,
-    layout: Layout,
-) -> BTreeSet<Action> {
     let base = Controls {
         dominant,
         dual_wield: ctx.dual_wield,
@@ -129,7 +119,7 @@ pub(crate) fn injected_with(
     let mut run = |ticks: &[(Controls, f32)]| {
         let mut bindings = Bindings::new();
         for (controls, dt) in ticks {
-            let input = simulate(controls, set, layout);
+            let input = simulate(controls, set, default_binding);
             let step = bindings.step(mode, controls, &input, *dt);
             actions.extend(step.desired.iter().map(|d| d.target.action));
         }

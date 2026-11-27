@@ -13,6 +13,13 @@ const LB: [bool; CONTROLS] = [true, false, true, false];
 /// Every member of the recenter and panel chords down.
 const ALL: [bool; CONTROLS] = [true, true, true, false];
 
+impl PolicyA {
+    /// Observe a group with every control available.
+    fn observe(&mut self, input: Observation) -> Arbitration {
+        self.observe_available(input, [true; CONTROLS])
+    }
+}
+
 struct History {
     arbiter: PolicyA,
     epoch: ClockEpoch,
@@ -48,15 +55,6 @@ impl History {
     }
 
     fn step(&mut self, at: u64, down: [bool; CONTROLS]) -> Arbitration {
-        self.evidence(at, down, InputEvidence::VerifiedUnmasked)
-    }
-
-    fn evidence(
-        &mut self,
-        at: u64,
-        down: [bool; CONTROLS],
-        evidence: InputEvidence,
-    ) -> Arbitration {
         self.sequence += 1;
         self.stamped(
             ObservationStamp {
@@ -66,16 +64,10 @@ impl History {
                 sequence: self.sequence,
             },
             down,
-            evidence,
         )
     }
 
-    fn stamped(
-        &mut self,
-        stamp: ObservationStamp,
-        down: [bool; CONTROLS],
-        evidence: InputEvidence,
-    ) -> Arbitration {
+    fn stamped(&mut self, stamp: ObservationStamp, down: [bool; CONTROLS]) -> Arbitration {
         self.arbiter.observe(Observation {
             stamp,
             generation: self.generation,
@@ -83,7 +75,6 @@ impl History {
             singles_enabled: self.enabled,
             vehicle: self.vehicle,
             down,
-            evidence,
         })
     }
 }
@@ -465,18 +456,14 @@ fn context_change_does_not_cancel_an_eligible_system_reservation() {
 #[test]
 fn reset_causes_require_fresh_unmasked_common_neutral() {
     for reason in [
-        ResetReason::FocusLost,
-        ResetReason::TrackingLost,
         ResetReason::MissingOrStaleInput,
-        ResetReason::ControllerDisabled,
-        ResetReason::SchemeChanged,
         ResetReason::BindingUnresolved,
         ResetReason::MaskedObservation,
         ResetReason::ClockDiscontinuity,
     ] {
         let mut history = History::new();
         history.step(1, LR);
-        let reset = history.evidence(2, UP, InputEvidence::Unavailable(reason));
+        let reset = history.arbiter.reset(ResetRequest { reason });
         assert_eq!(reset.status, ObservationStatus::Reset(reason));
         no_singles(&reset);
         let still_held = history.step(5000, LR);
@@ -508,19 +495,19 @@ fn reset_releases_only_owned_singles_once_and_drops_pending_taps() {
         panic!("B must commit immediately");
     };
     let reset = history.arbiter.reset(ResetRequest {
-        reason: ResetReason::FocusLost,
+        reason: ResetReason::MissingOrStaleInput,
     });
     assert_eq!(
         reset.singles[2],
         Some(SingleEvent::Released { press, at: ms(1) })
     );
     no_singles(&history.arbiter.reset(ResetRequest {
-        reason: ResetReason::FocusLost,
+        reason: ResetReason::MissingOrStaleInput,
     }));
     assert_eq!(history.step(4, UP).status, ObservationStatus::Recovered);
     history.step(5, RS);
     no_singles(&history.arbiter.reset(ResetRequest {
-        reason: ResetReason::SchemeChanged,
+        reason: ResetReason::BindingUnresolved,
     }));
     no_singles(&history.step(7, UP));
 }
@@ -580,7 +567,6 @@ fn invalid_order_time_or_sync_resets_without_hold_credit() {
             singles_enabled: true,
             vehicle: false,
             down: LR,
-            evidence: InputEvidence::VerifiedUnmasked,
         });
         assert_eq!(
             invalid.status,
@@ -616,7 +602,6 @@ fn starts_disarmed_and_does_not_synthesize_a_held_startup_press() {
             singles_enabled: true,
             vehicle: false,
             down: ALL,
-            evidence: InputEvidence::VerifiedUnmasked,
         });
         assert_eq!(out.status, ObservationStatus::AwaitingNeutral);
         no_singles(&out);
@@ -658,7 +643,6 @@ fn separate_ordered_groups_from_one_sync_retain_press_order() {
             singles_enabled: true,
             vehicle: false,
             down,
-            evidence: InputEvidence::VerifiedUnmasked,
         });
         if at == 2 {
             assert_eq!(command(out), Some(SystemCommand::TogglePanel));
@@ -730,17 +714,14 @@ fn invalid_owned_history_releases_at_watermark_and_cannot_recover_from_stale_neu
             sequence: 3,
         },
     ] {
-        for evidence in [
-            InputEvidence::VerifiedUnmasked,
-            InputEvidence::Unavailable(ResetReason::FocusLost),
-        ] {
+        {
             let mut history = History::new();
             let accepted = history.step(100, B);
             let Some(SingleEvent::Pressed { press, accepted_at }) = accepted.singles[2] else {
                 panic!("B must be owned: {accepted:?}");
             };
             assert_eq!(accepted_at, ms(100));
-            let invalid = history.stamped(rejected, B, evidence);
+            let invalid = history.stamped(rejected, B);
             assert_eq!(
                 invalid.status,
                 ObservationStatus::Reset(ResetReason::InvalidHistory)
@@ -760,7 +741,6 @@ fn invalid_owned_history_releases_at_watermark_and_cannot_recover_from_stale_neu
                         sequence,
                     },
                     down,
-                    InputEvidence::VerifiedUnmasked,
                 );
                 assert_eq!(
                     stale.status,
@@ -775,7 +755,7 @@ fn invalid_owned_history_releases_at_watermark_and_cannot_recover_from_stale_neu
                 sync: 3,
                 sequence: 3,
             };
-            let recovered = history.stamped(newer, UP, InputEvidence::VerifiedUnmasked);
+            let recovered = history.stamped(newer, UP);
             assert_eq!(recovered.status, ObservationStatus::Recovered);
             no_singles(&recovered);
             let fresh = history.stamped(
@@ -786,7 +766,6 @@ fn invalid_owned_history_releases_at_watermark_and_cannot_recover_from_stale_neu
                     sequence: 4,
                 },
                 B,
-                InputEvidence::VerifiedUnmasked,
             );
             assert!(
                 matches!(fresh.singles[2], Some(SingleEvent::Pressed { accepted_at, .. }) if accepted_at == ms(102))

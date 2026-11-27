@@ -505,6 +505,3 @@ mod tests {
         assert_eq!(unplaced(holds.fresh_at(later, stale_after())), [false; 2]);
     }
 }
-
-#[cfg(test)]
-mod native_rest_model;

@@ -1,5 +1,5 @@
-//! The shipped default layout against the one the raw-input tables encoded: whatever a player
-//! could reach before stays reachable, but for the actions the new layout drops on purpose.
+//! Properties of the shipped default layout: the wingsuit gestures' native actions, the entry and
+//! exit buttons, and the unbound weapon slot select.
 
 use std::collections::BTreeSet;
 
@@ -12,61 +12,15 @@ use jc3vr_vehicles::vehicles::{
 use jc3vr_view::vr::input::flight_pose::GestureSample;
 
 use super::*;
-use crate::controllers::bindings::tables::{
-    coverage::{all_contexts, all_modes, injected, injected_with},
-    tests::equivalence::legacy_layout,
-};
-
-/// The game actions the new layout leaves without a button: grenades come from their pouch and
-/// C4 from its chest pouch, and the grenade throw stays as an unbound action for a player who
-/// binds it. The gamepad's B (releasing the tethers, cancelling, and stepping off a ledge) is the
-/// grapple button's double tap ([`jc3vr_grapple::controllers::grapple_button`]), a gesture the
-/// tables do not declare; the use button held also steps off a ledge, and keeps a ragdoll one,
-/// which needs a ragdoll the coverage does not simulate.
-const DROPPED: [Action; 6] = [
-    THROW_GRENADE,
-    PLANT_EXPLOSIVE,
-    RELEASE_GRAPPLE,
-    CANCEL,
-    BYPASS_FALL_PREVENTION,
-    BTN_B,
-];
-
-/// The horn and the magnet in a vehicle: the controllers leave the horn action unbound by default,
-/// and the cockpit's horn button carries both (`jc3vr_vehicles::vehicles::axis_output`).
-const VEHICLE_DROPPED: [Action; 3] = [SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
-
-// Suit gestures use the narrow native actions, not the broad button aliases.
-const WINGSUIT_DROPPED_BUTTON_ALIASES: [Action; 3] = [ENTER_VEHICLE, USE_ITEM, BTN_Y];
 
 #[test]
-fn every_action_reachable_before_stays_reachable() {
-    let mut added = BTreeSet::new();
-    for mode in all_modes() {
-        let gestures = gesture_actions(mode);
-        for (dominant, ctx) in all_contexts() {
-            let before = injected_with(mode, dominant, ctx, legacy_layout);
-            let mut now = injected(mode, dominant, ctx);
-            added.extend(now.difference(&before).copied());
-            now.extend(gestures.iter().copied());
-            let lost: Vec<_> = before
-                .difference(&now)
-                .filter(|a| !DROPPED.contains(a))
-                .filter(|a| {
-                    mode != Mode::Airborne(AirborneVariant::Wingsuit)
-                        || !WINGSUIT_DROPPED_BUTTON_ALIASES.contains(a)
-                })
-                .filter(|a| !matches!(mode, Mode::Vehicle(_)) || !VEHICLE_DROPPED.contains(a))
-                .collect();
-            assert!(
-                lost.is_empty(),
-                "{mode:?}, {dominant:?}-handed, {ctx:?}: {lost:?} no longer reachable"
-            );
-        }
+fn the_wingsuit_gestures_drive_their_native_actions() {
+    for mode in [
+        Mode::Airborne(AirborneVariant::Falling),
+        Mode::Airborne(AirborneVariant::Wingsuit),
+    ] {
+        gesture_actions(mode);
     }
-    // The new layout adds the cutscene skip on the right B. The weapon slot select on a pad ships
-    // unbound: the off-hand trackpad lies under the thumb's way to the debug panel chord.
-    assert_eq!(added, BTreeSet::from([SKIP_CUTSCENE]));
 }
 
 fn gesture_actions(mode: Mode) -> BTreeSet<Action> {

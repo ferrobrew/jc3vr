@@ -7,8 +7,6 @@ use jc3vr_input::frame::ActionSetKind;
 use jc3vr_view::vr::input::semantic::{SCHEMA_VERSION, history};
 use tracking_format::input::{GroupOrder, InputGroup, InputStamp};
 
-#[cfg(test)]
-use crate::controllers::bindings::policy_a::InputEvidence;
 use crate::controllers::bindings::policy_a::{
     Arbitration, BindingGeneration, CONTROLS, ClockEpoch, Control, Disposition, GameplayContext,
     Observation, ObservationStamp, ObservationStatus, ResetReason, SingleEvent, SystemCommand,
@@ -101,8 +99,6 @@ impl Runtime {
                 singles_enabled: true,
                 vehicle: vehicle_set(context),
                 down,
-                #[cfg(test)]
-                evidence: InputEvidence::VerifiedUnmasked,
             },
             available,
         );

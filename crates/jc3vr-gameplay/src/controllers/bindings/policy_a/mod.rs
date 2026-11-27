@@ -128,28 +128,12 @@ impl Error for ConfigError {}
 /// A discontinuity cancels pending work and neutralizes only owned single output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ResetReason {
-    #[cfg(test)]
-    FocusLost,
-    #[cfg(test)]
-    TrackingLost,
     MissingOrStaleInput,
-    #[cfg(test)]
-    ControllerDisabled,
-    #[cfg(test)]
-    SchemeChanged,
     BindingUnresolved,
     BindingChanged,
     MaskedObservation,
     InvalidHistory,
     ClockDiscontinuity,
-}
-
-/// Verification applies to the physical labels and the coherent source interpretation.
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum InputEvidence {
-    VerifiedUnmasked,
-    Unavailable(ResetReason),
 }
 
 /// One valid group may contain at most one observed level change per control.
@@ -164,21 +148,12 @@ pub(crate) struct Observation {
     pub(crate) vehicle: bool,
     /// Real, unmasked levels, indexed by `Control::index`.
     pub(crate) down: [bool; CONTROLS],
-    #[cfg(test)]
-    pub(crate) evidence: InputEvidence,
 }
 
 /// Releases use the last accepted clock watermark, never an unvalidated reset timestamp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ResetRequest {
     pub(crate) reason: ResetReason,
-}
-
-/// Ends the old history before accepting a new, strictly newer epoch identity.
-#[cfg(test)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ClockEpochRequest {
-    pub(crate) next: ClockEpoch,
 }
 
 /// Singles begin at acceptance, with no credit for the reservation's physical dwell.
@@ -303,7 +278,6 @@ impl PolicyA {
     }
 
     /// Reset retains the temporal watermark and never treats masked up levels as neutral.
-    /// Even `ClockDiscontinuity` is only a reason here; it does not replace the clock epoch.
     pub(crate) fn reset(&mut self, request: ResetRequest) -> Arbitration {
         let mut out = Arbitration::empty(ObservationStatus::Reset(request.reason));
         self.release_owned(self.last.map_or(Duration::ZERO, |last| last.at), &mut out);
@@ -316,30 +290,6 @@ impl PolicyA {
         self.unavailable = [true; CONTROLS];
         self.describe(&mut out);
         out
-    }
-
-    /// Neutralize old output before replacing the clock; a lower new time is valid only here.
-    /// Every observation carries its epoch, so queued observations from the old history stay stale.
-    #[cfg(test)]
-    pub(crate) fn begin_clock_epoch(&mut self, request: ClockEpochRequest) -> Arbitration {
-        if request.next.0 <= self.epoch.0 {
-            return self.reset(ResetRequest {
-                reason: ResetReason::InvalidHistory,
-            });
-        }
-        let out = self.reset(ResetRequest {
-            reason: ResetReason::ClockDiscontinuity,
-        });
-        self.epoch = request.next;
-        self.last = None;
-        out
-    }
-
-    /// Feed every observed group in order, even when several groups precede one game tick.
-    /// Gameplay context changes invalidate singles but retain system-chord ownership.
-    #[cfg(test)]
-    pub(crate) fn observe(&mut self, input: Observation) -> Arbitration {
-        self.observe_available(input, [true; CONTROLS])
     }
 
     /// Availability is observed with each group. A missing control never supplies an up level.
@@ -361,10 +311,6 @@ impl PolicyA {
         }
         // Only a validated stamp can advance time. Unavailable evidence still cannot arm a press.
         self.last = Some(input.stamp);
-        #[cfg(test)]
-        if let InputEvidence::Unavailable(reason) = input.evidence {
-            return self.reset(ResetRequest { reason });
-        }
         let interpretation = Interpretation::of(&input);
         if self
             .interpretation

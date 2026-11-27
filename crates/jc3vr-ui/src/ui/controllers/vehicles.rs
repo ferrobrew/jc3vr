@@ -502,15 +502,13 @@ fn placed_wheel(ui: &mut Ui, wheel: &WheelFrame) {
     ));
 }
 
-pub(super) fn feature_settings(ui: &mut Ui, v: &mut VehiclesConfig, id: FeatureId) {
-    if id == FeatureId::Air {
-        ui.checkbox(
-            &mut v.wingsuit_evade.enabled,
-            "Wingsuit evade: throw the arms into a steep bank to barrel-roll",
-        )
-        .on_hover_text(
-            "With the boost wingsuit, bank the spread arms hard and fast to one side to roll that \
-             way; the view rolls with the body. Off, the player's barrel rolls are dropped.",
-        );
-    }
+pub(super) fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
+    ui.checkbox(
+        &mut v.wingsuit_evade.enabled,
+        "Wingsuit evade: throw the arms into a steep bank to barrel-roll",
+    )
+    .on_hover_text(
+        "With the boost wingsuit, bank the spread arms hard and fast to one side to roll that \
+         way; the view rolls with the body. Off, the player's barrel rolls are dropped.",
+    );
 }

@@ -4,7 +4,7 @@ use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
 use jc3vr_body::controllers::{
     intent::{
-        config::{BindingsConfig, long_press_s, menu_stick_push},
+        config::{long_press_s, menu_stick_push},
         controls::HandControls,
     },
     mode::{OnFootVariant, VehicleSeat},
@@ -17,7 +17,6 @@ use super::*;
 use crate::controllers::bindings::intents::simulate::simulate;
 
 const DT: f32 = 1.0 / 30.0;
-const CONFIG: BindingsConfig = BindingsConfig::new();
 const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 
 fn down() -> ButtonControl {
@@ -73,9 +72,7 @@ fn player(step: &Step, action: Action) -> Option<Want> {
     wants(step, MapKind::Player, action)
 }
 
-mod equivalence;
 mod layout;
-pub(crate) mod legacy;
 mod menus;
 mod on_foot;
 mod snatch;

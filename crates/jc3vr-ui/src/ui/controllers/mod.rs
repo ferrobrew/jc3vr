@@ -85,12 +85,9 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::WeaponSelection => {
             |ui, _| weapons::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
-        FeatureId::Vehicles => |ui, id| {
-            vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
-        },
-        FeatureId::Air => |ui, id| {
-            vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
-        },
+        FeatureId::Air => {
+            |ui, _| vehicles::air_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles)
+        }
         FeatureId::BodyFit => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             rig::rig_settings(ui, &mut c.body);
