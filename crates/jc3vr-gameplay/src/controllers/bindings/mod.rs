@@ -29,7 +29,7 @@
 //!   mode's own use of it;
 //! - `flight`, `heli_hang`, and `rail` rework the tick's actions for the wingsuit gestures, the
 //!   hang under a helicopter, and the release from it;
-//! - [`pointer`] turns the controller frame into the game-UI and debug panel pointers;
+//! - [`pointer`](mod@pointer) turns the controller frame into the game-UI and debug panel pointers;
 //! - `tick` runs one tick as ordered stages, `stand_down` stops what the tick drives when the
 //!   bindings do not inject, and `summary` reads the tick for the controls summary.
 //!
