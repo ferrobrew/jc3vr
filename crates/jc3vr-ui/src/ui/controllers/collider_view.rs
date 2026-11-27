@@ -1,4 +1,4 @@
-//! The collider view: its switch, what it read, and the body under the gaze.
+//! The collider view: its show and hide button, what it read, and the body under the gaze.
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;

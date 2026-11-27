@@ -1,4 +1,4 @@
-//! The sight tuning tool, in the aiming settings: the held weapon's sight offset and its source,
+//! The sight tuning tool, in the aiming feature: the held weapon's sight offset and its source,
 //! the line-up marker and the capture, fine adjustment, the resets, and copying the entry in the
 //! sight table's line format.
 

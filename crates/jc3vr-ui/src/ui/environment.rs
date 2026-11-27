@@ -1,9 +1,9 @@
-//! Environment controls and read-only time-of-day and weather observations.
+//! The environment controls, and the read-only time-of-day and weather observations.
 //!
-//! Controls reads/writes the `WorldTime` and `Weather` singletons directly, and fires the named
-//! weather events for pinned states. The engine's day-cycle and `WeatherController` keep running,
-//! so each value is re-read every frame and the raw scalars drift back unless held. Status copies
-//! the observed scalars before rendering and does not retain native references.
+//! The controls read and write the `WorldTime` and `Weather` singletons directly, and fire the
+//! named weather events for pinned states. The engine's day cycle and `WeatherController` keep
+//! running, so each value is re-read every frame and the raw scalars drift back unless held. The
+//! status copies the observed scalars before rendering and does not retain native references.
 
 use std::ffi::CStr;
 

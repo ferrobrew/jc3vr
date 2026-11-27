@@ -15,10 +15,6 @@ pub(super) fn presets(ui: &mut Ui, controllers: &mut ControllersConfig) {
         ui.label(
             "Presets change feature switches only; tuning and sight calibration stay unchanged.",
         );
-        ui.label(
-            "Optional stick-click cycling, grenade fallback, finger source, and finger drive-all \
-             settings are preserved.",
-        );
         ui.horizontal_wrapped(|ui| {
             for preset in Preset::ALL {
                 if ui

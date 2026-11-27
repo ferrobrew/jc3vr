@@ -1,5 +1,5 @@
-//! Hand bodies: the hand bodies' status rows, each hand body's drive, the push they give the player, and the held
-//! guns' bodies.
+//! Hand bodies: the hand bodies' status rows, each hand body's drive, the push they give the
+//! player, and the held guns' bodies.
 
 use egui::Ui;
 use jc3vr_body::controllers::held::guns;

@@ -1,4 +1,5 @@
-//! Every controller setting except those with their own section's file.
+//! The controller devices: the hand-tracking switch, and each hand's input recovery and grip
+//! readings.
 
 use egui::Ui;
 use jc3vr_gameplay::controllers::{

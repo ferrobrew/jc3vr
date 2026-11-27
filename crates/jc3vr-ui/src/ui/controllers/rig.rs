@@ -1,7 +1,8 @@
 //! The body rig: the grounded rig's step phase and demand, the bend, the lean's reach, the yaw,
 //! and the standing height; who owns the root, the step drive, the push-back at walls, the cockpit
-//! shift, and the ledger's attribution; and the body fit's switches, tuning, and the recenter
-//! button, the IK body's among them.
+//! shift, and the ledger's attribution; and the recenter button, the firm ragdoll's readout, the
+//! step switch, the IK body's firm ragdoll target switch, and the lean, step, yaw, and IK body
+//! tuning.
 
 use egui::Ui;
 use jc3vr_body::controllers::body::{

@@ -1,10 +1,11 @@
-//! The profiler's Performance-tab UI: a collapsible holding the enable toggle, the trace-capture
-//! control, and — when scope collection is on — puffin's live flame graph. The profiler core lives
-//! in the core crate and the GPU timestamp lane in the render crate.
+//! The profiler's Performance-tab UI: a collapsible holding the scope collection, per-draw scope,
+//! and GPU per-pass timestamp switches, the trace-capture control, the GPU summary, the busiest
+//! render-block types, and, when scope collection is on, puffin's live flame graph. The profiler
+//! core lives in the core crate and the GPU timestamp lane in the render crate.
 
 use jc3vr_core::profiler::{capture, capture::DEFAULT_CAPTURE_SECS, ui_enabled};
 
-/// Renders the profiler section, as a collapsible under the existing Performance readout.
+/// Renders the profiler section, as a collapsible under the Performance readout.
 pub(crate) fn egui_profiler(ui: &mut egui::Ui) {
     ui.collapsing("Profiler (issue #34)", |ui| {
         let mut enabled = ui_enabled();

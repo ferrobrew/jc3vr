@@ -1,5 +1,5 @@
 //! Controller-owned hands: the render-rate body's row, the IK, tier, and late-update readouts, and
-//! the hand settings.
+//! the grip offset.
 
 use egui::Ui;
 use jc3vr_body::controllers::{

@@ -1,9 +1,10 @@
-//! egui debug UI: the dockable tab tree and per-tab bodies, plus the startup build banner.
+//! The egui debug UI: the dockable feature tree and the feature bodies, the visualization drawer,
+//! the settings file's line, and the startup and restart banners.
 //!
 //! The feature views live in an `egui_dock` tree so any feature can be dragged out into its own
-//! floating window (e.g. Performance parked beside the game view while tuning Render features). The
-//! layout is persisted to `ui_layout_v2.json` in the configuration directory
-//! ([`jc3vr_core::config::config::paths`]), apart from the settings, so a customized arrangement survives
+//! floating window (for example, Performance parked beside the game view while tuning the render
+//! features). The layout is persisted to `ui_layout_v2.json` in the configuration directory
+//! ([`jc3vr_core::config::paths`]), apart from the settings, so a customized arrangement survives
 //! relaunches.
 
 use std::sync::OnceLock;

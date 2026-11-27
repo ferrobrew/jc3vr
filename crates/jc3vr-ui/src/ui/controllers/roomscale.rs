@@ -1,6 +1,6 @@
 //! Posture and roomscale: the posture in effect, the play area, the head height, the teleports, the
-//! comfort fade, the crouch, and the seat phase. The steps and the lean are
-//! the rig's ([`crate::ui::controllers::rig`]).
+//! comfort fade, the crouch, and the seat phase. The steps and the lean are the rig's
+//! ([`crate::ui::controllers::rig`]).
 
 use egui::Ui;
 use jc3vr_body::controllers::{

@@ -1,7 +1,7 @@
-//! Renderer-free navigation for the approved debug-page hierarchy.
-//!
-//! The caller owns the Context and supplies read snapshots. This bounded shell exposes widget
-//! rectangles and commands for tests; it neither dispatches legacy page bodies nor edits settings.
+//! The debug UI's navigation over the page and feature hierarchy ([`crate::ui::catalog`]): the
+//! selection ([`NavigationState`]), the page and feature selectors with the scroll boundary
+//! ([`feature_body`]), and a renderer-free shell the tests drive through its widget rectangles and
+//! commands. Navigation never edits settings.
 
 #[cfg(test)]
 use egui::Rect;

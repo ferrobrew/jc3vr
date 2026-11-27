@@ -1,5 +1,6 @@
-//! The learned body estimator: its switch, submit rate, and weights; the estimate's policy tuning in
-//! the yaw; and the live readout of the executor and the estimate against the head and the rig.
+//! The learned body estimator: its switch, its weights file, and the floor arrows; the estimate's
+//! policy tuning in the yaw; and the live readout of the executor and the estimate against the head
+//! and the rig.
 
 use body_rig::math::angle::{heading, wrap};
 use egui::Ui;

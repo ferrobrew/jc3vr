@@ -1,6 +1,6 @@
-//! The Director and Video features: the directing tools for staging footage (`jc3vr_tooling::director`),
-//! grouped by what a shot needs: time, the actor, heat, where you are, what is in frame, and the
-//! keyboard shortcuts; and the video recorder with its take markers.
+//! The Director and Video features: the directing tools for staging footage
+//! (`jc3vr_tooling::director`), grouped by what a shot needs: time, the actor, heat, where you are,
+//! what is in frame, and the keyboard shortcuts; and the video recorder with its take markers.
 
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;

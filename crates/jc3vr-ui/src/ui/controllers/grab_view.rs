@@ -1,5 +1,5 @@
-//! The grab view: its switch, what it drew, the palms' state, the candidates, and the refused
-//! grabs.
+//! The grab view: its show and hide button, what it drew, the palms' state, the candidates, and the
+//! refused grabs.
 
 use egui::Ui;
 use jc3vr_input::frame::Hand;

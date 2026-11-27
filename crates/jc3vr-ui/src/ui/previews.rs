@@ -18,7 +18,7 @@ use crate::ui::render::STEREO_CROSS_EYED;
 /// [`capture::POST_STAGE_DOF`] and [`capture::POST_STAGE_MB`]).
 const POST_STAGE_LABELS: [&str; 2] = ["after DoF", "after MB"];
 
-/// Preview thumbnail width (px); user-controllable via a slider.
+/// The preview thumbnails' width in pixels, which the tab's slider sets.
 static PREVIEW_WIDTH: Mutex<f32> = Mutex::new(700.0);
 
 pub(crate) fn egui_debug_previews(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
@@ -34,8 +34,8 @@ pub(crate) fn egui_debug_previews(ui: &mut egui::Ui, renderer: &mut egui_directx
         *w
     };
 
-    // The capture textures are prepared every frame by `egui_debug_window` (the VR blit depends
-    // on them), so this tab only reads them.
+    // The render hooks fill the capture textures every frame (the VR blit reads them too), so this
+    // tab only reads them.
     let mut state = EGUI_DEBUG_RENDER_STATE.lock();
 
     // Shrinks vertically so the performance readout below the previews stays in view.

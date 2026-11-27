@@ -6,8 +6,6 @@ use jc3vr_view::{
 };
 
 pub(crate) fn egui_debug_vr(ui: &mut egui::Ui) {
-    // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
-    // same pattern the other tabs use.
     let mut cfg = VR_CONFIG.edit();
     ui.checkbox(&mut cfg.enabled, "Enabled (bring up the OpenXR session)")
         .on_hover_text("Off leaves the mod in flatscreen stereo and tears any live runtime down.");

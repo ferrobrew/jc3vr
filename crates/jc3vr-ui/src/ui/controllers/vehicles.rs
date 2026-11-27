@@ -1,8 +1,8 @@
 //! Vehicles and flight: the vehicle rows, the seat and the physical controls it offers, what each
 //! hand holds, the values the controls write, where the wheel and handlebars were placed from and
 //! the rendered wheel's turn, the driving view's correction, the mounted gun's aim, the arm
-//! steering's pose and output, the parachute handles' pulls and output, and the vehicle and air
-//! settings.
+//! steering's pose and output, the parachute handles' pulls and output, and the wingsuit evade's
+//! switch.
 
 use egui::Ui;
 use jc3vr_body::controllers::grab::cockpit::ControlKind;

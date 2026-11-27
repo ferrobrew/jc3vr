@@ -1,6 +1,7 @@
-//! The Previews and performance feature's readout: the engine clock's frame-rate readouts and
-//! pacing controls, the online hitch switch, and the profiler, kept small so the feature can be dragged out into its own
-//! window and watched while tuning render features.
+//! The Previews and performance feature's readout: the engine clock's frame-rate readouts, the
+//! frame-time chart, and the pacing switches, the frame breakdown, the online hitch switch, and the
+//! profiler, kept small so the feature can be dragged out into its own window and watched while
+//! tuning render features.
 
 use std::{collections::VecDeque, time::Instant};
 
@@ -41,8 +42,6 @@ pub(crate) fn egui_debug_performance(ui: &mut egui::Ui) {
     frame_breakdown(ui);
     online_controls(ui);
 
-    // The profiler (issue #34): a collapsible with the live flame graph and trace capture, below
-    // the frame-rate readout.
     #[cfg(feature = "profiler")]
     crate::profiler::egui_profiler(ui);
 }

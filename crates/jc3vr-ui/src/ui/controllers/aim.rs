@@ -1,6 +1,6 @@
 //! Per-hand aiming: each hand's ray and hit, the grapple's target, the per-weapon aim points, the
-//! gamepad-semantics pin, and the aim settings with the sight tuning tool
-//! ([`crate::ui::controllers::sights`]), the one editor of the per-weapon sight table.
+//! gamepad setting's pin, and the sight tuning tool ([`crate::ui::controllers::sights`]), the one
+//! editor of the per-weapon sight table.
 
 use egui::Ui;
 use jc3vr_body::controllers::{

@@ -1,15 +1,13 @@
 //! The Tools page's render capture: the render trace over the next N frames, and the live log
-//! filter. Every probe the trace records (and the brightness-step auto-capture) is toggled from the
-//! render RE window ([`crate::ui::diagnostics`]).
+//! filter.
 
 use std::sync::atomic::Ordering;
 
 use jc3vr_render::debug::trace::{CAPTURE_FRAMES, TraceState, active_frames};
 
 pub(crate) fn controls(ui: &mut egui::Ui) {
-    // The trace records the next N frames' render events under whatever every option is set to.
-    // Long captures exist for periodic artifacts whose cadence exceeds a short window (e.g. the
-    // one-frame exposure/shadow pulses of issue #10).
+    // Long captures exist for periodic artifacts whose cadence exceeds a short window (for example,
+    // the one-frame exposure and shadow pulses of issue #10).
     ui.horizontal(|ui| {
         let mut count = CAPTURE_FRAMES.load(Ordering::Relaxed);
         if ui.button(format!("Capture {count} frames")).clicked() {

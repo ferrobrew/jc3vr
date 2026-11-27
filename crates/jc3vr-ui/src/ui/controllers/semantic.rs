@@ -1,5 +1,5 @@
-//! The semantic actions: the input self-check's row and results, and each action set's actions with their
-//! active flag, per-hand state, and bound sources.
+//! The semantic actions: the input self-check's row and results, and each action set's actions with
+//! their active flag, per-hand state, and bound sources.
 
 use egui::{RichText, Ui};
 use jc3vr_input::{frame::Hand, semantic::SemanticSet};

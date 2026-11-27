@@ -1,4 +1,4 @@
-//! Production feature routing: each feature renders its controls followed by a collapsible live
+//! The feature routing: each feature renders its controls followed by a collapsible live
 //! readout.
 
 #[cfg(test)]
