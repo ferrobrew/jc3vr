@@ -13,10 +13,9 @@ use re_utilities::hook_library::HookLibrary;
 pub mod config;
 // The replay of `GeneralMkIII`'s declaration creation that builds the hardware-instanced layout twins.
 mod declaration_replay;
-// `graphics_engine` stays public for hooks::game's BLOCK_FLIP reference. The inner name mirrors
-// jc3gi (CGraphicsEngine in its own module), hence the module_inception allow.
-#[allow(clippy::module_inception)]
-pub mod graphics_engine;
+// The `CGraphicsEngine` detours, mirroring `jc3gi::graphics_engine::graphics_engine`; public for the
+// payload's flip block and hook-thread log.
+pub mod engine;
 // The VR runtime's teardown participant: the flip block and the far-field share pipeline.
 pub mod register_vr_teardown;
 mod render_pass;
@@ -39,7 +38,7 @@ pub(crate) use single_pass::upload_global_constants;
 /// these classes.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
-        .with_hook_library(graphics_engine::hook_library())
+        .with_hook_library(engine::hook_library())
         .with_hook_library(declaration_replay::hook_library())
         .with_hook_library(scene::hook_library())
         .with_hook_library(screen::hook_library())

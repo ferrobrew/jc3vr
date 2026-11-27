@@ -32,7 +32,7 @@ use jc3vr_render::{
         draw_count::DRAW_COUNTS,
         graphics_engine,
         graphics_engine::{
-            graphics_engine::{BLOCK_FLIP, log_hook_thread},
+            engine::{BLOCK_FLIP, log_hook_thread},
             ssao,
         },
     },
@@ -558,7 +558,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 }
 
 /// Last-seen thread id for [`game_update_render`]. See
-/// [`graphics_engine::graphics_engine::log_hook_thread`].
+/// [`graphics_engine::engine::log_hook_thread`].
 static GAME_UPDATE_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static GAME_UPDATE_RENDER_THREAD: AtomicU32 = AtomicU32::new(0);

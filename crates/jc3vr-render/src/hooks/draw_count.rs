@@ -17,11 +17,11 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
-use jc3vr_core::util::bump;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
+    draw_path::bump,
     hooks::graphics_engine::{clustered_lighting, reconstruction},
     probes,
     probes::PipelinePoint,

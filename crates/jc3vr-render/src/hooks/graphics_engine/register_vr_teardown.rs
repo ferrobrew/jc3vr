@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 
 use jc3vr_view::vr::{TeardownParticipant, register_teardown_participant};
 
-use crate::hooks::graphics_engine::graphics_engine::BLOCK_FLIP;
+use crate::hooks::graphics_engine::engine::BLOCK_FLIP;
 
 pub fn register() {
     register_teardown_participant(&TEARDOWN);

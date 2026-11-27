@@ -30,7 +30,6 @@ use std::{
 use jc3gi::graphics_engine::graphics_engine::RenderContext;
 #[cfg(feature = "profiler")]
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
-use jc3vr_core::util::bump;
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceChild, ID3D11DeviceContext};
 
 pub use crate::probes::{
@@ -41,6 +40,7 @@ pub use crate::probes::{
     },
 };
 use crate::{
+    draw_path::bump,
     probes::arming::{capture_armed, capture_or_benchmark_armed},
     screenshot::CaptureSource,
     stereo::single_pass::{current_pass_id, detour_timing, per_eye_reissue_eye},

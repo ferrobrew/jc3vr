@@ -34,7 +34,7 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector4},
 };
-use jc3vr_core::{hooks::suspend, util::bump};
+use jc3vr_core::hooks::suspend;
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -107,6 +107,8 @@ pub use static_lights::EyeLightWidth;
 pub use sun::*;
 pub use viewport::*;
 pub(crate) use water_fragment_state::begin_water_surface;
+
+use crate::draw_path::bump;
 
 /// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
 /// are left out).

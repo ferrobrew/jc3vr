@@ -23,7 +23,7 @@
 //! - [`session`] and [`logging`]: the session folder and the log.
 //! - [`game_tick`]: the token that proves code runs on the game thread at one of the frame's
 //!   serial points, which the handles to game objects borrow.
-//! - [`thread_role`], [`cpu_placement`], [`module`], [`hash`], [`util`], and
+//! - [`thread_role`], [`cpu_placement`], [`module`], [`hash`], and
 //!   [`director::clean_view`]: small process-wide services.
 //!
 //! The `test-support` feature exposes the fixtures other crates' tests use: the configuration
@@ -47,6 +47,5 @@ pub mod render_frame;
 pub mod session;
 pub mod thread_role;
 pub mod tuning;
-pub mod util;
 
 pub use crate::lifecycle::is_shutting_down;

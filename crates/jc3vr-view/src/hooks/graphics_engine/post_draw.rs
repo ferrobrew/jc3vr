@@ -1,7 +1,7 @@
 //! The post-draw composition seam: what the layers above the render hooks contribute to
 //! `RenderEngine::PostDraw`, to the draw task's UI redirect, and to the engine's flip.
 //!
-//! The post-draw (`jc3vr_render::hooks::graphics_engine::graphics_engine`) runs, per dispatch: the
+//! The post-draw (`jc3vr_render::hooks::graphics_engine::engine`) runs, per dispatch: the
 //! [`DispatchTick`]s, outside the engine's context lock; then, under it, the scene capture, the
 //! [`EyeLayer`]s in their order, and on the frame's last near dispatch the [`FramePass`]es; and
 //! after the eye copies, the [`EyeFrameRecorder`]. Each contribution is registered once at startup

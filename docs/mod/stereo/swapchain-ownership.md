@@ -2,7 +2,7 @@
 
 While a VR session runs, the engine renders into a texture the mod allocates rather than into the DXGI swapchain, so the render resolution and the swapchain size stop being the same number. The scene is per-eye sized; the swapchain stays at the window's client size; the desktop mirror's present is 1:1.
 
-Controlled by `vr.own_back_buffer` (default on). Implemented in `crates/jc3vr-view/src/vr/back_buffer.rs`, with two hooks in `crates/jc3vr-render/src/hooks/graphics_engine/graphics_engine.rs` and the transitions in `crates/jc3vr-view/src/vr/resolution.rs`.
+Controlled by `vr.own_back_buffer` (default on). Implemented in `crates/jc3vr-view/src/vr/back_buffer.rs`, with two hooks in `crates/jc3vr-render/src/hooks/graphics_engine/engine.rs` and the transitions in `crates/jc3vr-view/src/vr/resolution.rs`.
 
 The engine-side behaviour this rests on is documented in [`render-setups-reinit.md`](../../engine/rendering/render-setups-reinit.md) and [`rendering.md`](../../engine/rendering/rendering.md); this document is the mod-side design.
 
