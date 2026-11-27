@@ -151,9 +151,7 @@ use viewport::{
     capture_viewport_slots, collapse_eye_width, collapse_full_viewport, ensure_collapse_viewport,
     eye_half_viewport, restore_viewport_slots, set_viewport_slots_uniform, unify_viewport_slots,
 };
-pub(crate) use viewport::{
-    apply_eye_split_viewport, duplicate_current_viewport, with_wave_simulation_viewports,
-};
+pub(crate) use viewport::{duplicate_current_viewport, with_wave_simulation_viewports};
 pub(crate) use water_fragment_state::begin_water_surface;
 
 use crate::draw_path::DrawPathCounter;
@@ -342,7 +340,7 @@ pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
 }
 
 /// Marks the render thread as inside the G-buffer geometry pass range
-/// (`RP_Z_OCCLUDERS..RP_FIRST_SCENE`) until the returned guard drops. The dual-eye viewport split and
+/// (from `RP_Z_OCCLUDERS` on) until the returned guard drops. The dual-eye viewport split and
 /// instance doubling apply only here -- so shadow/lighting/post passes, which reuse the same patched
 /// shaders but are not double-wide, keep the identical-viewport behaviour.
 ///

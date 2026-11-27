@@ -3,25 +3,6 @@
 use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-/// Which depth convention the per-eye off-axis projection is written in, and where in the
-/// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7). The headset
-/// path always writes [`EnginePreReverseZ`](Self::EnginePreReverseZ); only tests build parameters
-/// in the other form.
-#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum ProjectionConvention {
-    /// The headset path. Write a standard (non-reverse-Z) off-axis projection into
-    /// `m_Projection` *before* the engine's `SetupRenderCamera`, so the engine applies its reverse-Z
-    /// remap and TAA jitter to it exactly once, matching every other camera. `SetupRenderCamera`
-    /// consumes the pre-written `m_Projection` in place rather than rebuilding it from FOV/near/far
-    /// (settled against the engine, `docs/engine/rendering/rendering.md` §2.9), so this write reaches the GPU.
-    #[default]
-    EnginePreReverseZ,
-    /// An already-reverse-Z'd off-axis projection, as if written *after* `SetupRenderCamera` (so the
-    /// engine does not re-reverse it), with the view-projections rebuilt manually. TAA jitter is not
-    /// applied on this path.
-    ManualReverseZ,
-}
-
 /// Which pose the freeze diagnostic holds still (see [`crate::vr::pose_control`]). The two frozen
 /// modes are two answers to the same question -- "what do you want held still?" -- so they are
 /// mutually exclusive: freezing the head's contribution and freezing the whole camera are not

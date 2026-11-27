@@ -37,10 +37,7 @@
 
 pub mod projection;
 
-pub use config::{
-    FOVEATION_CONFIG, FoveationConfig, FreezeMode, MirrorView, ProjectionConvention, VR_CONFIG,
-    VrConfig,
-};
+pub use config::{FOVEATION_CONFIG, FoveationConfig, FreezeMode, MirrorView, VR_CONFIG, VrConfig};
 pub use frame::{
     CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,
     clear_render_params, cull_projection_standard, eyes_union_projection_standard, render_params,

@@ -20,7 +20,6 @@ use crate::{
     tuning::VIEW,
     vr::{
         EyeView, Fov, FrameInputs, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
-        config::ProjectionConvention,
         convert::{quat, vec3},
         harness,
         harness::HeadsetSubstitute,
@@ -32,11 +31,14 @@ use crate::{
 /// The per-eye render parameters the `SetupRenderCamera` hook applies while a VR frame is in flight.
 #[derive(Copy, Clone)]
 pub struct EyeRenderParams {
-    /// The standard-depth off-axis projection, to write into `m_Projection` *before*
-    /// `SetupRenderCamera` under [`ProjectionConvention::EnginePreReverseZ`].
+    /// The standard-depth off-axis projection, written into `m_Projection` *before*
+    /// `SetupRenderCamera`, so the engine applies its reverse-Z remap and TAA jitter to it exactly
+    /// once, as it does for every other camera. `SetupRenderCamera` consumes the pre-written
+    /// `m_Projection` in place rather than rebuilding it from FOV, near, and far
+    /// (`docs/engine/rendering/rendering.md` §2.9), so this write reaches the GPU.
     pub projection_standard: Matrix4,
-    /// The reverse-Z off-axis projection, to write *after* `SetupRenderCamera` under
-    /// [`ProjectionConvention::ManualReverseZ`].
+    /// The reverse-Z off-axis projection, the depth convention the post passes and the single-pass
+    /// rows read.
     pub projection_reverse_z: Matrix4,
     /// The eye displacement in the located center head's axes, scaled to game units.
     pub local_offset: Vec3,
@@ -46,8 +48,6 @@ pub struct EyeRenderParams {
     /// submitted to the compositor. Identity on parallel-panel HMDs; the Valve Index cants each eye
     /// ~5°, and dropping it leaves the two eyes rotationally mismatched, so the stereo will not fuse.
     pub orientation_delta: Quat,
-    /// Which depth convention to write the projection in.
-    pub convention: ProjectionConvention,
     /// The frame's FSR sub-pixel jitter, already applied to both projections above, with the
     /// projections it was applied to; `None` when the jitter is off. See [`crate::fsr::jitter`].
     pub jitter: Option<AppliedJitter>,
@@ -116,21 +116,12 @@ impl EyeRenderParams {
         )
     }
 
-    /// The reverse-Z projection the render camera holds after `SetupRenderCamera` under this frame's
-    /// [`convention`](Self::convention), without the jitter: the engine's own reverse-Z remap of the
-    /// standard-depth projection
-    /// ([`Camera::SetupRenderCamera`](jc3gi::camera::camera::Camera::SetupRenderCamera)) under
-    /// [`ProjectionConvention::EnginePreReverseZ`], so it matches the camera's bit for bit but for
-    /// the jitter.
+    /// The reverse-Z projection the render camera holds after `SetupRenderCamera`, without the
+    /// jitter: the engine's own reverse-Z remap of the standard-depth projection
+    /// ([`Camera::SetupRenderCamera`](jc3gi::camera::camera::Camera::SetupRenderCamera)), so it
+    /// matches the camera's bit for bit but for the jitter.
     pub fn unjittered_camera_projection(self) -> Matrix4 {
-        match self.convention {
-            ProjectionConvention::EnginePreReverseZ => {
-                engine_reverse_z(Matrix4::from(self.unjittered_projection_standard()))
-            }
-            ProjectionConvention::ManualReverseZ => {
-                Matrix4::from(self.unjittered_projection_reverse_z())
-            }
-        }
+        engine_reverse_z(Matrix4::from(self.unjittered_projection_standard()))
     }
 
     /// Resolve displacement and cant from the final selected, interpolated center camera.
@@ -501,7 +492,6 @@ fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig)
             // inter-eye cant (symmetric); the camera hook applies it locally so each eye renders at the
             // orientation it is submitted with.
             orientation_delta: center_orientation.inverse() * quat(eye.pose.orientation),
-            convention: ProjectionConvention::EnginePreReverseZ,
             jitter: None,
         }
     };
@@ -643,7 +633,6 @@ mod tests {
             projection_reverse_z: projection.reverse_z,
             local_offset: Vec3::ZERO,
             orientation_delta: Quat::IDENTITY,
-            convention: ProjectionConvention::EnginePreReverseZ,
             jitter: None,
         };
         let jittered = params.jittered(crate::fsr::jitter::FrameJitter {
@@ -759,7 +748,6 @@ mod tests {
             projection_reverse_z: glam::Mat4::IDENTITY.into(),
             local_offset: hmd.inverse() * sampled,
             orientation_delta: cant,
-            convention: ProjectionConvention::ManualReverseZ,
             jitter: None,
         };
         for alpha in [0.0, 0.3, 1.0] {

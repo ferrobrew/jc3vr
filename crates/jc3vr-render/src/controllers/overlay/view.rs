@@ -177,7 +177,6 @@ mod tests {
             projection_reverse_z: projection.into(),
             local_offset: center.inverse().transform_vector3(offset),
             orientation_delta: delta,
-            convention: jc3vr_view::vr::ProjectionConvention::ManualReverseZ,
             jitter: None,
         };
         let eye_world = params.resolve(center);

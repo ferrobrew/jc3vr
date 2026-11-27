@@ -169,50 +169,6 @@ pub(crate) fn duplicate_current_viewport() {
     }
 }
 
-/// Re-apply the eye-half split to the currently-bound viewport at the start of the G-buffer range.
-///
-/// The main G-buffer render setup is bound (setting its viewport) *before* `DrawRenderPassRange`
-/// raises [`in_gbuffer_range`], so the [`rs_set_viewports_detour`] identical-dups it instead of
-/// splitting -- and that dup'd viewport covers the bulk of the geometry, so both instances of a
-/// patched draw land in the same half. Called right after the range flag goes up (dual-eye only),
-/// this reads that bound viewport and re-sets it as left/right halves.
-pub(crate) fn apply_eye_split_viewport() {
-    // Collapse routes per draw (`ensure_collapse_viewport`), so the pass-level pre-split is off there.
-    if collapse_active() || !(active() && in_gbuffer_range()) {
-        return;
-    }
-    // SAFETY: runs on the render thread at the G-buffer range boundary; the device/context pointers
-    // are stable and the ops run under the engine's context mutex.
-    unsafe {
-        let Some(ge) = GraphicsEngine::get() else {
-            return;
-        };
-        let Some(device) = ge.m_Device.as_ref() else {
-            return;
-        };
-        let Some(context) = device.m_Context.as_ref() else {
-            return;
-        };
-        let ctx = &context.m_Context;
-        EnterCriticalSection(context.m_Mutex);
-        let mut count = 1u32;
-        let mut viewports = [D3D11_VIEWPORT::default(); 1];
-        ctx.RSGetViewports(&mut count, Some(viewports.as_mut_ptr()));
-        let vp = viewports[0];
-        if vp.Width > 0.0 {
-            let half = vp.Width / 2.0;
-            let mut left = vp;
-            left.Width = half;
-            let mut right = vp;
-            right.Width = half;
-            right.TopLeftX = vp.TopLeftX + half;
-            // count == 2 passes straight through the detour to the raw RSSetViewports.
-            ctx.RSSetViewports(Some(&[left, right]));
-        }
-        LeaveCriticalSection(context.m_Mutex);
-    }
-}
-
 /// Whether both viewport slots are known to be bound to the **same** region, so a patched shader's
 /// `SV_ViewportArrayIndex = SV_InstanceID & 1` rasterises identically whichever parity it computes.
 ///

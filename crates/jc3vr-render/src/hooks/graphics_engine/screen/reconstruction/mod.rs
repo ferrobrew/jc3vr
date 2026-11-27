@@ -870,7 +870,6 @@ mod tests {
                 projection_reverse_z: projection.reverse_z,
                 local_offset: glam::Vec3::ZERO,
                 orientation_delta: glam::Quat::from_rotation_y(cant.to_radians()),
-                convention: jc3vr_view::vr::ProjectionConvention::EnginePreReverseZ,
                 jitter: None,
             };
             let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();

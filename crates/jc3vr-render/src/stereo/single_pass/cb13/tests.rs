@@ -1,6 +1,6 @@
 use glam::{DMat4, DVec3, EulerRot, Mat4, Quat, Vec3, Vec4};
 use jc3gi::types::math::Vector4;
-use jc3vr_view::vr::{EyeRenderParams, Fov, OffAxisProjection, ProjectionConvention};
+use jc3vr_view::vr::{EyeRenderParams, Fov, OffAxisProjection};
 use test_case::test_case;
 
 use crate::stereo::single_pass::cb13::{
@@ -164,7 +164,6 @@ fn fixture(origin: f32, eye: usize) -> Fixture {
     let params = EyeRenderParams {
         projection_standard: projection.standard_depth,
         projection_reverse_z: projection.reverse_z,
-        convention: ProjectionConvention::ManualReverseZ,
         local_offset: Vec3::new(side * 0.032, 0.0013, -0.0021),
         orientation_delta: Quat::from_euler(EulerRot::YXZ, side * 0.085, 0.006, -side * 0.009),
         jitter: None,

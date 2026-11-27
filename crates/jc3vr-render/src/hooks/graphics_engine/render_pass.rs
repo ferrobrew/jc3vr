@@ -143,25 +143,15 @@ fn draw_render_pass_range(
         None => draw_runs(lo, hi),
     };
 
-    // Single-pass stereo: mark the camera-scene geometry range so the dual-eye cb13,
-    // viewport split, and instance doubling apply to it. `first >= RP_Z_OCCLUDERS` selects the main
-    // camera scene, excluding the shadow/reflection prepasses (<= RP_LAST_PREPASS) that reuse the same
-    // patched shaders under a different (sun/reflection) view. Without collapse the range is just the
-    // G-buffer (`..RP_FIRST_SCENE`), each eye rendered into a half; with collapse it
-    // extends to the whole camera scene so the later geometry passes (water, sky, transparents) route
-    // to the eyes too -- there the viewport split moves to draw time (patched geometry only), so the
-    // interleaved fullscreen lighting/post passes keep the full width. A no-op unless single-pass is
-    // active.
-    let scene_geometry = crate::stereo::single_pass::active()
-        && first >= RP_Z_OCCLUDERS
-        && (jc3vr_view::stereo::layout::collapse_active() || last <= RP_FIRST_SCENE);
-    let range = scene_geometry.then(|| {
-        let range = crate::stereo::single_pass::enter_gbuffer_range();
-        // The main G-buffer viewport was bound before this range flag went up, so re-split it now.
-        // (A no-op under collapse, which splits per-draw instead.)
-        crate::stereo::single_pass::apply_eye_split_viewport();
-        range
-    });
+    // Single-pass stereo: mark the camera-scene geometry range so the dual-eye cb13, viewport
+    // split, and instance doubling apply to it. `first >= RP_Z_OCCLUDERS` selects the main camera
+    // scene, excluding the shadow/reflection prepasses (<= RP_LAST_PREPASS) that reuse the same
+    // patched shaders under a different (sun/reflection) view. The range covers the whole camera
+    // scene so the later geometry passes (water, sky, transparents) route to the eyes too; the
+    // viewport split happens at draw time (patched geometry only), so the interleaved fullscreen
+    // lighting/post passes keep the full width. A no-op unless single-pass is active.
+    let scene_geometry = crate::stereo::single_pass::active() && first >= RP_Z_OCCLUDERS;
+    let range = scene_geometry.then(crate::stereo::single_pass::enter_gbuffer_range);
     run_scene_range(first, last, &draw);
     capture_geometry_range(first, last);
     if range.is_some() {
@@ -176,8 +166,6 @@ fn capture_geometry_range(first: i32, last: i32) {
     }
 }
 
-/// The first pass of the scene (lighting/main) block.
-const RP_FIRST_SCENE: i32 = RenderPassId::RP_REFLECTIVE_WATER_PLANES as i32;
 /// The head of the G-buffer range (where the depth clear lands via the pass's own PreDraw flags).
 const RP_Z_OCCLUDERS: i32 = RenderPassId::RP_Z_OCCLUDERS as i32;
 

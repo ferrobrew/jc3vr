@@ -35,10 +35,7 @@ use std::{
 
 use anyhow::Context as _;
 use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
-use jc3vr_core::{
-    session,
-    session::{CaptureFile, CaptureFolder},
-};
+use jc3vr_core::{session, session::CaptureFile};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
@@ -115,13 +112,6 @@ pub enum ImageTarget {
     Screenshot {
         stamp: String,
         sidecar: serde_json::Value,
-    },
-    /// One eye of one frame of a render trace, written as `frameNNN_eye<N>.png` in that trace's
-    /// folder.
-    TraceFrame {
-        trace_stamp: String,
-        frame: u32,
-        eye: usize,
     },
     /// An image written to `path` with a sidecar its submitter supplies, which writes its own
     /// artifacts first and its JSON beside the image after it, as `<stem>.json`.
@@ -322,7 +312,7 @@ fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
     let result = write(&target, image).map_err(|error| format!("image writer: {error:#}"));
     let sidecar = match target {
         ImageTarget::Attached { sidecar, .. } => Some(sidecar),
-        ImageTarget::Screenshot { .. } | ImageTarget::TraceFrame { .. } => None,
+        ImageTarget::Screenshot { .. } => None,
     };
     WriteOutcome { result, sidecar }
 }
@@ -333,12 +323,6 @@ fn write(target: &ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
         ImageTarget::Screenshot { stamp, .. } => {
             session::capture_file(CaptureFile::Screenshot, stamp)?
         }
-        ImageTarget::TraceFrame {
-            trace_stamp,
-            frame,
-            eye,
-        } => session::capture_folder(CaptureFolder::Trace, trace_stamp)?
-            .join(trace_frame_name(*frame, *eye)),
     };
 
     write_png(&path, image)?;
@@ -351,7 +335,6 @@ fn write(target: &ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
                 serde_json::to_writer_pretty(writer, sidecar)
             })?;
         }
-        ImageTarget::TraceFrame { .. } => {}
     }
     Ok(path)
 }
@@ -387,11 +370,6 @@ fn write_sidecar(
     writer
         .flush()
         .with_context(|| format!("flushing {}", json_path.display()))
-}
-
-/// A trace frame's image name: the frame index as the stem, marked as one eye.
-fn trace_frame_name(frame: u32, eye: usize) -> String {
-    format!("frame{frame:03}_eye{eye}.png")
 }
 
 /// Normalizes read-back rows in place: swaps R and B for the BGRA formats, and forces alpha opaque.
@@ -679,12 +657,5 @@ mod tests {
         let mut rgba = [10, 20, 30, 0];
         to_rgba8_opaque(&mut rgba, ChannelOrder::Rgba);
         assert_eq!(rgba, [10, 20, 30, 255]);
-    }
-
-    /// The analyzer globs `frame*_eye<N>.png` and sorts by name, so the index must be zero-padded.
-    #[test]
-    fn trace_frame_names_sort_by_frame_and_mark_the_eye() {
-        assert_eq!(trace_frame_name(7, 1), "frame007_eye1.png");
-        assert!(trace_frame_name(9, 0) < trace_frame_name(10, 0));
     }
 }
