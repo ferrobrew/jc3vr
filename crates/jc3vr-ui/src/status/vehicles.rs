@@ -5,7 +5,7 @@ use jc3vr_body::controllers::{
     grab::cockpit::ControlKind,
     mode::{VehicleClass, VehicleSeat},
 };
-use jc3vr_vehicles::{
+use jc3vr_vehicles::controllers::{
     vehicles,
     vehicles::{VehiclesStatus, mounted_recoil, passenger, passenger::PassengerStatus},
 };
@@ -152,7 +152,7 @@ fn flight_controls_line(summary: &VehiclesStatus) -> Line {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_vehicles::vehicles::physical::Outputs;
+    use jc3vr_vehicles::controllers::vehicles::physical::Outputs;
 
     use super::*;
     use crate::status::Health;
