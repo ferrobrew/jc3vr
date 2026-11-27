@@ -141,6 +141,9 @@
 - [grip.md](mod/input/grip.md): the grip and how each hand picks a grab target.
 - [grip-poses.md](mod/input/grip-poses.md): the fingers wrapping what the hand holds.
 - [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands.
+- [inventory-world-and-carry.md](mod/input/inventory-world-and-carry.md): the weapons let go of, their pins and markers, the lost-weapon return, and the carry set.
+- [inventory-persistence.md](mod/input/inventory-persistence.md): the loadout table across caches, resets, saves, and the scheme switch.
+- [inventory-debug-ui.md](mod/input/inventory-debug-ui.md): the inventory view, giving weapons, and the docked guns' view.
 - [weapon-acquisition.md](mod/input/weapon-acquisition.md): taking guns from characters' hands, racks, and lockers.
 - [controls-summary.md](mod/input/controls-summary.md): the controls summary on the off-hand wrist.
 - [haptics.md](mod/input/haptics.md): the controllers' vibration.
