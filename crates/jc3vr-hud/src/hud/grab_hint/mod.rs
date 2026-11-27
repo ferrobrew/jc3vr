@@ -17,7 +17,6 @@
 
 mod layout;
 mod paint;
-pub mod register_gate;
 
 use std::{sync::Arc, time::Instant};
 

@@ -65,7 +65,6 @@ pub(crate) fn install() -> Result<(), InstallError> {
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     hud::pointer::register_pointer::register();
     recorder::register_mark::register();
-    hud::grab_hint::register_gate::register();
     controllers::install(&mut check).map_err(InstallError::Participant)?;
     diagnostics::install();
     director::register_tracking::register();
