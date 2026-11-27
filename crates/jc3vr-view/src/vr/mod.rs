@@ -103,8 +103,8 @@ pub use participants::{
     register_teardown_participant, resize_observer_registered, teardown_participant_registered,
 };
 pub use recenter::{
-    RecenterCause, RecenterKind, auto_recenter_tick, recenter, recenter_count, request_recenter,
-    request_seat_recenter, request_seat_yaw_rebase,
+    RecenterCause, RecenterKind, auto_recenter_tick, rebase_count, recenter, recenter_count,
+    request_recenter, request_seat_recenter, request_seat_yaw_rebase,
 };
 pub use resolution::{
     ResolutionProgress, ResolutionStatus, apply_native_resolution, progress as resolution_progress,

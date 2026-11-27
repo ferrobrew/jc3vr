@@ -116,6 +116,14 @@ pub fn recenter_count() -> u32 {
     RECENTERS.load(Ordering::Relaxed)
 }
 
+/// How many times the cockpit frame has been re-based since the mod loaded, wrapping: every
+/// recenter and every follow bank ([`crate::headpose::follow`]). Each turns or moves the frame the
+/// controllers are reported in, so poses and velocities taken before it do not compare with those
+/// taken after.
+pub fn rebase_count() -> u32 {
+    REBASES.load(Ordering::Relaxed)
+}
+
 /// Re-base the baseline now. Locks the runtime state, so it runs only at the top of the frame, from
 /// [`auto_recenter_tick`].
 fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
@@ -154,6 +162,7 @@ fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
     // the torso estimate turns with the frame.
     on_recenter();
     RECENTERS.fetch_add(1, Ordering::Relaxed);
+    REBASES.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Service a recenter asked for through [`request_recenter`]. Called at the top of
@@ -344,10 +353,14 @@ fn banked(yaw: f32, turn: glam::Quat) {
         (participants.on_recenter)(RecenterKind::YawAndHeight, turn, RecenterCause::FollowBank);
     }
     bank(yaw);
+    REBASES.fetch_add(1, Ordering::Relaxed);
 }
 
 /// The recenters done, for [`recenter_count`].
 static RECENTERS: AtomicU32 = AtomicU32::new(0);
+
+/// The re-bases done, for [`rebase_count`].
+static REBASES: AtomicU32 = AtomicU32::new(0);
 
 /// The pending [`recenter`], [`request_recenter`], and [`request_seat_recenter`] calls, as a set of
 /// `REQUEST_*` bits ([`decode_request`]).

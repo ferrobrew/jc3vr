@@ -69,6 +69,17 @@ struct Stepping {
     body: f32,
 }
 
+/// What [`BodyFollow::steps`] did with a tick.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Steps {
+    /// The view does not step or hold: the tick is the follow's or the freeze's.
+    Off,
+    /// The view held its heading, or kept it between steps.
+    Held,
+    /// The view stepped toward the body.
+    Stepped,
+}
+
 /// One input tick's inputs to [`BodyFollow::tick`].
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct FollowTick {
@@ -123,17 +134,22 @@ impl BodyFollow {
         }
     }
 
-    /// Advance one input tick.
-    pub fn tick(&mut self, tick: FollowTick) {
-        if !tick.follow && tick.body.is_finite() && self.steps(tick) {
-            return;
+    /// Advance one input tick. Returns whether the view took a hard step toward the body
+    /// ([`Self::is_stepping`]), which turns the view in one tick rather than over a turn.
+    pub fn tick(&mut self, tick: FollowTick) -> bool {
+        if !tick.follow && tick.body.is_finite() {
+            match self.steps(tick) {
+                Steps::Stepped => return true,
+                Steps::Held => return false,
+                Steps::Off => {}
+            }
         }
         if !tick.follow || !tick.heading.is_finite() || !tick.body.is_finite() {
             self.stepping = None;
             if let Some((_, current)) = self.view.take() {
                 self.frozen = wrap(tick.body - current);
             }
-            return;
+            return false;
         }
         let previous = match self.view {
             Some((_, current)) if self.stepping.take().is_some() => {
@@ -160,11 +176,12 @@ impl BodyFollow {
                 self.target = wrap(torso - off.signum() * deadband);
             }
         }
+        false
     }
 
     /// Step the view toward the body while a vehicle's entry or exit animation turns it, or until
-    /// the view has caught up with a body an animation turned. Returns whether it stepped.
-    fn steps(&mut self, tick: FollowTick) -> bool {
+    /// the view has caught up with a body an animation turned.
+    fn steps(&mut self, tick: FollowTick) -> Steps {
         let held = match self.view {
             Some((_, current)) => current,
             None => wrap(tick.body - self.frozen),
@@ -175,7 +192,7 @@ impl BodyFollow {
                 body: tick.body,
             });
             self.view = Some((held, held));
-            return true;
+            return Steps::Held;
         }
         // Past the animation, the vehicle turns the body: the view rides that turn.
         let current = match self.stepping {
@@ -189,7 +206,7 @@ impl BodyFollow {
             if self.stepping.is_some() {
                 self.view = Some((current, current));
             }
-            return false;
+            return Steps::Off;
         }
         let dt = if tick.dt.is_finite() {
             tick.dt.max(0.0)
@@ -197,7 +214,8 @@ impl BodyFollow {
             0.0
         };
         let since = self.stepping.map_or(0.0, |stepping| stepping.since + dt);
-        let (heading, since) = if since >= tuning.step_interval_s && !settled {
+        let stepped = since >= tuning.step_interval_s && !settled;
+        let (heading, since) = if stepped {
             (
                 wrap(current + remaining.signum() * remaining.abs().min(tuning.step_rad)),
                 0.0,
@@ -210,7 +228,7 @@ impl BodyFollow {
             body: tick.body,
         });
         self.view = Some((held, heading));
-        true
+        if stepped { Steps::Stepped } else { Steps::Held }
     }
 
     /// Whether the view is stepping toward the body through a vehicle's entry or exit.

@@ -40,6 +40,8 @@
 //! ([`crate::headpose::follow`]): the view frame is then the body frame turned back by the body's
 //! heading relative to the view ([`follow_turn`]), so only the turn input turns the view.
 
+use std::sync::atomic::{AtomicU32, Ordering};
+
 use body_rig::math::angle::{direction, heading, wrap};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
@@ -167,7 +169,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
     }
     if !on_foot && !swimming {
         let heading = s.yaw.unwrap_or(body);
-        s.follow.tick(FollowTick {
+        let stepped = s.follow.tick(FollowTick {
             follow: false,
             heading,
             body,
@@ -177,6 +179,9 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
             hold: body_thrown,
             dt,
         });
+        if stepped {
+            note_rig_turn();
+        }
         s.yaw = None;
         s.snap_armed = true;
         // Any pending filter retarget is left unconsumed: it is aimed at the next on-foot tick.
@@ -226,6 +231,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
                 let step = look_x.signum() * turn.snap_angle_deg.to_radians();
                 yaw = wrap(yaw - step);
                 s.snap_armed = false;
+                note_rig_turn();
             }
             // Re-arm the snap step once the flick relaxes, with hysteresis so one flick is one step.
             if look_x.abs() < turn.snap_threshold * 0.5 {
@@ -241,7 +247,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
     let following = follow.enabled && on_foot && !swimming;
     // A take-off from the ground turns the body to the head's heading in place of the torso's.
     let take_off = take_off_heading.filter(|h| h.is_finite());
-    s.follow.tick(FollowTick {
+    let stepped = s.follow.tick(FollowTick {
         follow: following,
         heading: yaw,
         body,
@@ -255,6 +261,9 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
         hold: false,
         dt,
     });
+    if stepped {
+        note_rig_turn();
+    }
 
     // Clamp how far the target may lead the body, re-anchoring it each tick: the body chases at a
     // rate limit, so a big input jump otherwise keeps it turning after the input stops, and past a
@@ -395,6 +404,23 @@ pub fn body_yaw_target() -> Option<Vec3> {
     let s = BODY_YAW.lock();
     s.yaw.map(|yaw| direction(wrap(yaw + s.follow.target())))
 }
+
+/// How many times the mod has turned the body frame the cockpit composes onto in one tick, since
+/// it loaded, wrapping: a snap turn's step, or a hard step of the view toward the body through a
+/// vehicle's entry or exit ([`BodyFollow`]). It changes under the same lock as the heading it
+/// turns, so a reader that sees the new count knows [`body_rotation`] jumped by a turn the player
+/// did not make with their body.
+pub fn rig_turn_count() -> u32 {
+    RIG_TURNS.load(Ordering::Relaxed)
+}
+
+/// Count one turn of the body frame in one tick, for [`rig_turn_count`].
+fn note_rig_turn() {
+    RIG_TURNS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// The turns counted for [`rig_turn_count`].
+static RIG_TURNS: AtomicU32 = AtomicU32::new(0);
 
 /// The VR body-yaw accumulator state (see [`advance_body_yaw`]).
 static BODY_YAW: Mutex<VrBodyYaw> = Mutex::new(VrBodyYaw {
