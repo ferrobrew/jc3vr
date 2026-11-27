@@ -7,9 +7,10 @@
 //! takes both away from the animation:
 //!
 //! - [`after_task`] replaces the horizontal velocity the movement task wrote with the stick's,
-//!   reached at a fixed acceleration ([`accel`]). It runs from the post-call detour on the on-foot
-//!   locomotion task ([`crate::controllers::body::rig::root`]), before the palms' push and the
-//!   chase add their own.
+//!   reached at a fixed acceleration ([`accel`]). It is the first of the on-foot contributions to
+//!   the wanted velocity ([`crate::controllers::physics::wanted`]), composed by the post-call
+//!   detour on the on-foot locomotion task ([`crate::controllers::body::rig::root`]), before the
+//!   palms' push and the step drive add their own.
 //! - [`acts`] keeps the turn-in-place and turning start and stop acts off the body.
 //! - [`anchor`] anchors the on-foot view to Rico's root and a neutral standing head instead of his
 //!   animated head ([`view`]).
@@ -50,6 +51,7 @@ use crate::{
         body::{procedural::state::animation_moves_body, rig::grounded},
         body_frame::{self, LOCOMOTION_FRAME},
         locomotion::{config::LOCOMOTION_CONFIG, speeds::SpeedLog, tuning::LOCOMOTION},
+        physics::wanted,
     },
     tuning::FRESHNESS,
 };
@@ -103,15 +105,16 @@ pub fn status() -> LocomotionFrame {
     body_frame::locomotion()
 }
 
-/// Replace the movement task's horizontal velocity with the stick's, for the local player after the
-/// on-foot locomotion task wrote it. The caller runs it only on a tick where the task wrote the
-/// velocity and the headset drives the view.
+/// The stick's velocity in place of the movement task's horizontal velocity, for the local player
+/// after the on-foot locomotion task wrote `wanted`: the wanted velocity to write
+/// ([`wanted::Contributor::Locomotion`]), or `None` to pass the task's through. The caller runs it
+/// only on a tick where the task wrote the velocity and the headset drives the view.
 ///
 /// # Safety
 ///
 /// `character` must be the live local character, on the thread running its state machines' serial
 /// pass.
-pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
+pub(crate) unsafe fn after_task(character: &mut Character, wanted: Vec3, dt: f32) -> Option<Vec3> {
     let config = LOCOMOTION_CONFIG.lock().stick;
     let tuning = &LOCOMOTION.get().stick;
     let now = Stamp::now();
@@ -120,10 +123,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let stick = player_stick(unsafe { stick_vector() }, grounded::step_stick());
     let game_speed = unsafe { game_target_speed(character) };
     let root_speed = unsafe { root_speed(character) };
-    let mut wanted = Vector3 { data: [0.0; 3] };
-    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
-    let [task_x, task_y, task_z] = wanted.data;
-    let task_velocity = Vec2::new(task_x, task_z);
+    let task_velocity = Vec2::new(wanted.x, wanted.z);
 
     let mut state = STATE.lock();
     // The movement task is the section's only writer, and it runs under the state lock.
@@ -147,7 +147,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         status.target = Vec2::ZERO;
         status.velocity = None;
         LOCOMOTION_FRAME.publish_at(status, now);
-        return;
+        return None;
     }
 
     // A gap means the task stopped (a jump, a fall, a vehicle) and the body kept whatever velocity
@@ -162,10 +162,6 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let target = accel::target(stick, forward, game_speed);
     let start = accel::coast_limited(start, target, body);
     let velocity = accel::step(start, target, dt, tuning.rates);
-    let world = Vector3 {
-        data: [velocity.x, task_y, velocity.y],
-    };
-    unsafe { character.SetWantedWorldVelocity(&world) };
     status.target = target;
     status.velocity = Some(velocity);
 
@@ -189,6 +185,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         );
     }
     LOCOMOTION_FRAME.publish_at(status, now);
+    Some(wanted::with_horizontal(wanted, velocity))
 }
 
 /// How often the commanded velocity is logged while moving.

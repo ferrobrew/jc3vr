@@ -10,7 +10,7 @@ use jc3gi::{character::character::Character, physics::hknpWorld};
 use jc3vr_body::{contributions::BodyContributions, controllers::facts::climb::ClimbReaders};
 
 use crate::controllers::physical_hands::{
-    carry_bodies_destroying, climb, physics, press_summary, push_body,
+    carry_bodies_destroying, climb, palm_push, physics, press_summary,
 };
 
 /// Fill the physical hands' fields of `body`.
@@ -20,7 +20,7 @@ pub fn register(body: &mut BodyContributions) {
         body_frame: climb::engine::body_frame,
         body_identity: climb::engine::body_identity,
     });
-    body.palm_push = Some(push_body);
+    body.palm_push = Some(palm_push);
     body.bodies_destroying = Some(bodies_destroying);
     body.palm_summary = Some(press_summary);
     body.post_step_sample = Some(post_step_sample);

@@ -53,6 +53,7 @@ use crate::{
         body_frame,
         locomotion::strokes::{self, model::propel},
         mode::CharacterSnapshot,
+        physics::wanted::{Composition, Contributor, WantedStore},
     },
     hooks::input::tuning::INPUT_HOOKS,
 };
@@ -428,9 +429,9 @@ unsafe fn propel_strokes(character: &mut Character, core: SwimCore) {
     let Some(speed) = strokes::propulsion(Stamp::now()) else {
         return;
     };
-    let Some(proxy) = (unsafe { character.m_PfxCharacter.px.as_ref() }) else {
+    if character.m_PfxCharacter.px.is_null() {
         return;
-    };
+    }
     let facing = FACING
         .with(Cell::get)
         .unwrap_or_else(|| -Mat4::from(character.m_WorldMatrixT1).z_axis.truncate());
@@ -442,20 +443,54 @@ unsafe fn propel_strokes(character: &mut Character, core: SwimCore) {
     if direction == Vec3::ZERO {
         return;
     }
-    let mut transform = Matrix4::IDENTITY;
-    unsafe { proxy.GetTransform(&mut transform) };
-    let local = Vec3::from_array(proxy.m_Input.wantedVelocity.data);
-    let wrote = Mat4::from(transform).transform_vector3(local);
-    if !wrote.is_finite() {
-        return;
+    // SAFETY: the local character, right after its swim core ran, with a proxy.
+    let mut wanted = Composition::new(unsafe { CapsuleFrameWanted::new(character) });
+    wanted.apply(Contributor::Strokes, |_, wrote| {
+        if !wrote.is_finite() {
+            return None;
+        }
+        let velocity = propel(wrote, direction, speed);
+        strokes::record_applied(wrote.dot(direction), velocity.dot(direction));
+        (velocity != wrote).then_some(velocity)
+    });
+}
+
+/// The local character's wanted velocity as the swim core writes it: read in the capsule frame the
+/// core wrote it in, through the proxy's transform, and written through the world-velocity accessor
+/// ([`Character::SetWantedWorldVelocity`]), which converts with the same frame.
+struct CapsuleFrameWanted<'c> {
+    character: &'c mut Character,
+}
+
+impl<'c> CapsuleFrameWanted<'c> {
+    /// # Safety
+    ///
+    /// `character` must be the live local character, on the thread running its update.
+    unsafe fn new(character: &'c mut Character) -> Self {
+        Self { character }
     }
-    let velocity = propel(wrote, direction, speed);
-    strokes::record_applied(wrote.dot(direction), velocity.dot(direction));
-    if velocity != wrote {
-        let world = Vector3 {
-            data: velocity.to_array(),
+}
+
+impl WantedStore for CapsuleFrameWanted<'_> {
+    /// The core's wanted velocity in world space, or not finite without a proxy.
+    fn read(&self) -> Vec3 {
+        // SAFETY: the store's contract (see [`CapsuleFrameWanted::new`]).
+        let Some(proxy) = (unsafe { self.character.m_PfxCharacter.px.as_ref() }) else {
+            return Vec3::NAN;
         };
-        unsafe { character.SetWantedWorldVelocity(&world) };
+        let mut transform = Matrix4::IDENTITY;
+        // SAFETY: as above; the proxy is the character's own.
+        unsafe { proxy.GetTransform(&mut transform) };
+        let local = Vec3::from_array(proxy.m_Input.wantedVelocity.data);
+        Mat4::from(transform).transform_vector3(local)
+    }
+
+    fn write(&mut self, wanted: Vec3) {
+        let world = Vector3 {
+            data: wanted.to_array(),
+        };
+        // SAFETY: as [`Self::read`].
+        unsafe { self.character.SetWantedWorldVelocity(&world) };
     }
 }
 

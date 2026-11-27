@@ -14,6 +14,7 @@
 
 use std::sync::OnceLock;
 
+use glam::Vec2;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext, physics::hknpWorld};
 use jc3vr_core::registration::RegistrationCheck;
 use jc3vr_input::frame::Hand;
@@ -64,10 +65,13 @@ pub struct BodyContributions {
     pub hang_pump: Option<HangPump>,
     /// The climb's readers (the physical hands).
     pub climb: Option<ClimbReaders>,
-    /// The palms' push off what they press into, added to the character's wanted velocity after
-    /// the stick's and before the step drive reads it; called on the simulation thread from the
-    /// locomotion task's post-call detour with the local player (the physical hands).
-    pub palm_push: Option<unsafe fn(&mut Character)>,
+    /// The palms' push off what they press into this tick, world `(x, z)`, or `None` for no push:
+    /// the wanted velocity's [`Contributor::PalmPush`], added after the stick's and before the step
+    /// drive reads it; called on the simulation thread from the locomotion task's post-call detour
+    /// (the physical hands).
+    ///
+    /// [`Contributor::PalmPush`]: crate::controllers::physics::wanted::Contributor::PalmPush
+    pub palm_push: Option<fn() -> Option<Vec2>>,
     /// The refusals of the automatic entry into a vehicle's stunt area below the player, in the
     /// order they are asked (gameplay's refusal table).
     pub auto_attach_blockers: &'static [BlocksAutoAttach],

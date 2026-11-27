@@ -16,13 +16,14 @@
 //! context, which handles stairs, slopes, and support. On each tick it:
 //!
 //! - keeps the teleport and warp bookkeeping (a teleport clears the ledger);
-//! - replaces the clip's velocity with the stick's ([`after_task`]) and adds the palms' push
-//!   (contributed by the physical hands,
+//! - picks the root's owner ([`owner::select`]);
+//! - composes the wanted velocity in its on-foot order
+//!   ([`crate::controllers::physics::wanted`]): the stick's velocity in place of the clip's
+//!   ([`after_task`]) and the palms' push (contributed by the physical hands,
 //!   [`crate::contributions::BodyContributions::palm_push`]), which together are the task's
-//!   movement;
-//! - picks the root's owner ([`owner::select`]), and while the player owns it adds the step drive's
-//!   velocity through the engine's world-velocity accessors (the proxy's wanted velocity is
-//!   character-local) and submits the split to the ledger;
+//!   movement, then, while the player owns the root, the step drive's velocity, through the
+//!   engine's world-velocity accessors (the proxy's wanted velocity is character-local); the split
+//!   goes to the ledger;
 //! - requests or releases the crouch capsule, on the simulation thread where the engine applies it.
 //!
 //! The task writes nothing while the character is attached to a vehicle, and every other state
@@ -93,6 +94,7 @@ use crate::{
         clock::TimeScale,
         facts::climb,
         locomotion::after_task,
+        physics::wanted::{self, CharacterWanted, Composition, Contributor, WantedStore},
         roomscale,
         roomscale::{
             SeatPhase, crouch::capsule_step, fade, fade::FadeSource, posture::EffectivePosture,
@@ -617,17 +619,6 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     };
 
     let authored = unsafe { animation_moves_body(character, now) };
-    // The stick's velocity replaces the clip's root velocity first; the palms' push off what they
-    // press into then counts as the task's own movement, so it is added before the drive reads the
-    // task's velocity.
-    let task = horizontal(unsafe { wanted_velocity(character) });
-    unsafe { after_task(character, dt) };
-    let stick = horizontal(unsafe { wanted_velocity(character) });
-    if let Some(push) = contributions::get().and_then(|contributions| contributions.palm_push) {
-        unsafe { push(character) };
-    }
-    let palms = horizontal(unsafe { wanted_velocity(character) }) - stick;
-
     let owner = owner::select(&OwnerInput {
         task_wrote: true,
         climbing,
@@ -636,11 +627,44 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         seat: shared.seat,
     });
     sim.status.owner = Some(owner);
-    match step_frame.filter(|_| owner.drives()) {
-        Some(frame) => unsafe { drive_tick(&mut sim, character, &frame, dt, owner, &rig) },
+    // The stick's velocity replaces the clip's root velocity first; the palms' push off what they
+    // press into then counts as the task's own movement, so it is added before the drive reads the
+    // task's velocity. The ledger records nothing for a tick the player did not move the root on,
+    // so a climb or an authored motion is never credited as a step.
+    let palm_push = contributions::get().and_then(|contributions| contributions.palm_push);
+    let drive_frame = step_frame.filter(|_| owner.drives());
+    let mut gap = Vec2::ZERO;
+    let split = {
+        // SAFETY: the local player, live on the thread running its state machines' serial pass.
+        let store = unsafe { CharacterWanted::new(character) };
+        compose_on_foot(
+            store,
+            OnFoot {
+                // SAFETY: as above.
+                locomotion: |store: &mut CharacterWanted<'_>, wanted| unsafe {
+                    after_task(store.character_mut(), wanted, dt)
+                },
+                push: || palm_push.and_then(|push| push()),
+                step: || {
+                    drive_frame.map(|frame| {
+                        // SAFETY: the locomotion task runs while the game runs.
+                        let (frame_gap, step) = unsafe { step_velocity(&sim, &frame, dt, &rig) };
+                        gap = frame_gap;
+                        step
+                    })
+                },
+                dt,
+            },
+        )
+    };
+    match split.drive {
+        Some(drive) => {
+            sim.movement.submit_owned(drive.movement, owner);
+            sim.status.effective_gap = gap;
+            sim.status.step_velocity = drive.step;
+            sim.status.task_velocity = drive.task;
+        }
         None => {
-            // The ledger records nothing for a tick the player did not move the root on, so a climb
-            // or an authored motion is never credited as a step.
             sim.movement.clear();
             stand_down(&mut sim.status, owner);
         }
@@ -652,11 +676,11 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
         position,
         dt,
         split: Split {
-            task,
-            stick,
-            palms,
+            task: split.task,
+            stick: split.stick,
+            palms: split.palms,
             chase: sim.status.step_velocity,
-            wanted: unsafe { wanted_velocity(character) },
+            wanted: unsafe { wanted::read(character) },
         },
         proxy: unsafe { read_proxy(character) },
         authored,
@@ -668,17 +692,6 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     if let Some(jump) = jump {
         log_jump(&jump, owner);
     }
-}
-
-/// The character's wanted velocity, world metres per second.
-///
-/// # Safety
-///
-/// `character` must be live, on the thread running its state machines.
-unsafe fn wanted_velocity(character: &Character) -> Vec3 {
-    let mut wanted = Vector3 { data: [0.0; 3] };
-    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
-    Vec3::from_array(wanted.data)
 }
 
 /// The world `(x, z)` part of `v`.
@@ -752,41 +765,119 @@ fn stand_down(status: &mut SimStatus, owner: RootOwner) {
     status.effective_gap = Vec2::ZERO;
 }
 
-/// Add the step drive's velocity to the task's and submit the split. `dt` is the task's step, game
-/// seconds, and the velocity is the world's per game second. The drive closes the gap to the
-/// player's own neck, which moves in real time, so it is paced in real time and converted: in slow
-/// motion the body keeps up with the player's steps.
-unsafe fn drive_tick(
-    sim: &mut Sim,
-    character: &mut Character,
-    frame: &StepFrame,
+/// The on-foot contributions to the wanted velocity, in their order: the stick locomotion, the
+/// palms' push, and the step drive's velocity while the player moves the root, `None` otherwise.
+/// Each closure runs at its place in the composition.
+struct OnFoot<L, P, D> {
+    locomotion: L,
+    push: P,
+    step: D,
+    /// The task's step, game seconds.
     dt: f32,
-    owner: RootOwner,
-    config: &RigConfig,
-) {
+}
+
+/// What the on-foot composition read between its contributions, world `(x, z)`.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct OnFootSplit {
+    /// As the movement task wrote it.
+    task: Vec2,
+    /// After the stick locomotion.
+    stick: Vec2,
+    /// The palms' push added.
+    palms: Vec2,
+    /// The step drive's tick, when it ran.
+    drive: Option<DriveTick>,
+}
+
+/// The step drive's tick: what it read, what it added, and the movement it submits.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct DriveTick {
+    /// The task's velocity as the drive read it, after the palms' push.
+    task: Vec2,
+    step: Vec2,
+    movement: Movement,
+}
+
+/// Compose the on-foot tick's wanted velocity through `store` ([`wanted`]): the locomotion's write,
+/// the palms' push added, and the step drive added to the sum and capped. The step drive writes
+/// only a step that moves, but submits its movement whatever the step.
+fn compose_on_foot<S: WantedStore>(
+    store: S,
+    on_foot: OnFoot<
+        impl FnOnce(&mut S, Vec3) -> Option<Vec3>,
+        impl FnOnce() -> Option<Vec2>,
+        impl FnOnce() -> Option<Vec2>,
+    >,
+) -> OnFootSplit {
+    let OnFoot {
+        locomotion,
+        push,
+        step,
+        dt,
+    } = on_foot;
+    let mut wanted = Composition::new(store);
+    let task = horizontal(wanted.read());
+    wanted.apply(Contributor::Locomotion, locomotion);
+    let stick = horizontal(wanted.read());
+    wanted.apply(Contributor::PalmPush, |_, current| {
+        wanted::pushed(current, push())
+    });
+    let palms = horizontal(wanted.read()) - stick;
+    let drive = step().map(|step| {
+        let mut drive = None;
+        wanted.apply(Contributor::StepDrive, |_, current| {
+            let (tick, write) = step_drive(current, step, dt);
+            drive = Some(tick);
+            write
+        });
+        drive.expect("the step drive's contribution ran")
+    });
+    OnFootSplit {
+        task,
+        stick,
+        palms,
+        drive,
+    }
+}
+
+/// The step drive's contribution: the movement the task's horizontal velocity in `wanted` and
+/// `step` make over `dt`, and their capped sum with the task's vertical velocity kept, to write
+/// when the step moves.
+fn step_drive(wanted: Vec3, step: Vec2, dt: f32) -> (DriveTick, Option<Vec3>) {
+    let task = horizontal(wanted);
+    let movement = Movement::new(task, step, dt);
+    let write = (step != Vec2::ZERO).then(|| {
+        wanted::with_horizontal(
+            wanted,
+            movement.velocity(dt).clamp_length_max(MAX_WANTED_MPS),
+        )
+    });
+    (
+        DriveTick {
+            task,
+            step,
+            movement,
+        },
+        write,
+    )
+}
+
+/// The step drive's gap and velocity for this tick. `dt` is the task's step, game seconds, and the
+/// velocity is the world's per game second. The drive closes the gap to the player's own neck,
+/// which moves in real time, so it is paced in real time and converted: in slow motion the body
+/// keeps up with the player's steps.
+///
+/// # Safety
+///
+/// The game runs (the time scale is read).
+unsafe fn step_velocity(sim: &Sim, frame: &StepFrame, dt: f32, config: &RigConfig) -> (Vec2, Vec2) {
     let completed = sim.movement.completed();
     let gap = frame.effective_gap(completed.current);
-    // SAFETY: the locomotion task runs while the game runs.
     let time_scale = unsafe { TimeScale::current() };
     let real = body_rig::drive_velocity(frame.phase, gap, time_scale.real_dt(dt), &config.step);
     let step = (real / time_scale.get()).clamp_length_max(MAX_WANTED_MPS);
     let step = if step.is_finite() { step } else { Vec2::ZERO };
-    let mut wanted = Vector3 { data: [0.0; 3] };
-    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
-    let [x, y, z] = wanted.data;
-    let task = Vec2::new(x, z);
-    let movement = Movement::new(task, step, dt);
-    if step != Vec2::ZERO {
-        let sum = movement.velocity(dt).clamp_length_max(MAX_WANTED_MPS);
-        let world = Vector3 {
-            data: [sum.x, y, sum.y],
-        };
-        unsafe { character.SetWantedWorldVelocity(&world) };
-    }
-    sim.movement.submit_owned(movement, owner);
-    sim.status.effective_gap = gap;
-    sim.status.step_velocity = step;
-    sim.status.task_velocity = task;
+    (gap, step)
 }
 
 /// Hand an owned crouch capsule back to the character's default state.

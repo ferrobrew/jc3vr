@@ -31,8 +31,8 @@
 //! which never hits the player. Characters are passed through. What the casts find drives these:
 //!
 //! 1. A press into a solid surface pushes the body away from it ([`push`]), as movement added to
-//!    the on-foot locomotion task's own ([`push_body`], from the roomscale simulation half), so
-//!    that the view moves with the body as it does for stick movement.
+//!    the on-foot locomotion task's own ([`palm_push`], composed by the body rig's simulation
+//!    half), so that the view moves with the body as it does for stick movement.
 //! 2. The rendered hand is held at the surface ([`apply`], from [`jc3vr_body::controllers::hands`]).
 //! 3. A press into a dynamic object shoves it every tick, within the hand's strength ([`shove`]);
 //!    the share it does not give pushes the body away, as a wall does. A fast hit also knocks it.
@@ -92,7 +92,7 @@ use std::num::NonZeroUsize;
 
 pub use config::PhysicalHandsConfig;
 use glam::Vec3;
-use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};
+use jc3gi::physics::hknpWorld;
 use jc3vr_body::controllers::physics::{line_body, world};
 use jc3vr_core::published::Stamp;
 use state::{State, stale_after};
@@ -179,15 +179,11 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
     }
 }
 
-/// Add the palms' push to the on-foot locomotion task's velocity. Called by the roomscale
-/// simulation half before its chase reads the task's velocity, so that the push counts as the
-/// task's own movement.
-///
-/// # Safety
-///
-/// `character` must be the live local player character, after the locomotion task wrote its
-/// velocity.
-pub(crate) unsafe fn push_body(character: &mut Character) {
+/// The palms' push this tick, world `(x, z)`: the wanted velocity's palm-push contribution
+/// (`jc3vr_body::controllers::physics::wanted::Contributor::PalmPush`), which the body adds to the
+/// on-foot locomotion task's velocity before its step drive reads it, so that the push counts as
+/// the task's own movement. `None` for no push.
+pub(crate) fn palm_push() -> Option<glam::Vec2> {
     let palms = {
         let state = STATE.lock();
         if state.fresh(Stamp::now()) {
@@ -196,16 +192,7 @@ pub(crate) unsafe fn push_body(character: &mut Character) {
             glam::Vec2::ZERO
         }
     };
-    let Some(push) = admitted_push(stunt::game_holds(), palms, physics::push()) else {
-        return;
-    };
-    let mut wanted = Vector3 { data: [0.0; 3] };
-    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
-    let [x, y, z] = wanted.data;
-    let pushed = Vector3 {
-        data: [x + push.x, y, z + push.y],
-    };
-    unsafe { character.SetWantedWorldVelocity(&pushed) };
+    admitted_push(stunt::game_holds(), palms, physics::push())
 }
 
 fn admitted_push(
