@@ -1,6 +1,6 @@
 //! One sample of the physical desktop input (the keyboard, the mouse buttons, and the text
 //! composition), as the capture policy consumes it. The sampler itself is native and lives with
-//! the window (`egui_impl::desktop_input` in the payload).
+//! the window (`egui_impl::desktop_input` in the HUD crate).
 
 /// An unavailable sample never establishes desktop neutrality.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

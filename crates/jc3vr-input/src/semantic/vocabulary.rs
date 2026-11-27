@@ -3,7 +3,7 @@
 //!
 //! An action's name is part of the player's saved bindings, so a name never changes meaning: a
 //! rename is a removal plus an addition (see `vr::input::semantic::SCHEMA_VERSION` in the
-//! payload). The localized names are English sentence case and mention the overloads the game or
+//! view crate). The localized names are English sentence case and mention the overloads the game or
 //! the mod resolves within the one action, such as a tap and a hold.
 
 use crate::semantic::{ActionDef, ActionKind, SemanticSet};
@@ -22,7 +22,8 @@ impl ActionId {
         self.index as usize
     }
 
-    /// Press thresholds belong to the action, independently of its suggested binding.
+    /// The press thresholds of a float action that has them. They belong to the action,
+    /// independently of its suggested binding.
     pub fn float_press(self) -> Option<FloatPress> {
         use FloatPress::{Grip, Trackpad, Trigger};
         match self.set {

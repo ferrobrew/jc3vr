@@ -1,7 +1,7 @@
 //! The published per-frame controller snapshot ([`ControllerFrame`]) and its press and release
 //! edges ([`Edges`]).
 //!
-//! The VR runtime (`vr::input` in the payload) produces one [`ControllerFrame`] per rendered
+//! The VR runtime (`vr::input` in the view crate) produces one [`ControllerFrame`] per rendered
 //! frame, on the main thread inside the VR frame loop: it syncs the OpenXR actions, locates the
 //! grip and aim spaces at the frame's predicted display time, re-bases them against the recenter
 //! baseline exactly as the eye views are, and calls [`publish`]. Everything downstream reads the
@@ -13,19 +13,19 @@
 //!   path cleared it.
 //!
 //! The press and release edges since the input tick's last take are latched beside the semantic
-//! actions' (`vr::input::semantic::frame` in the payload), which publishes each frame here and
+//! actions' (`vr::input::semantic::frame` in the view crate), which publishes each frame here and
 //! folds its [`Edges`] under the same lock as the semantic frame's, so the two streams are taken
 //! and cleared together.
 //!
 //! Poses are in the **cockpit frame**: the OpenXR LOCAL space re-based by the recenter baseline
 //! (position and yaw), metres, OpenXR axes (+X right, +Y up, -Z forward). This is the frame the eye
 //! views' `pose` uses, so a controller pose composes into the world through the same transform as
-//! the head (`headpose::xr::compose`).
+//! the head (`headpose::xr::compose` in the view crate).
 //!
 //! The values are raw: they are read from the always-active `hands` set's actions, which are named
 //! for the physical inputs (trigger, squeeze, A, B, ...), so they do not depend on the active mode
 //! set, and mapping them to game actions happens in the bindings layer. The semantic actions are
-//! published beside the frame (`vr::input::semantic::frame` in the payload). The only derived
+//! published beside the frame (`vr::input::semantic::frame` in the view crate). The only derived
 //! states are the digital presses ([`Button::TriggerPress`], [`Button::SqueezePress`],
 //! [`Button::TrackpadPressLeft`], and [`Button::TrackpadPressRight`]), thresholded here with
 //! hysteresis ([`PressRules`]) so that their edges are latched at frame rate like every other
@@ -118,9 +118,9 @@ impl From<Side> for Hand {
 }
 
 /// The mode action set that was active when a frame was sampled. The mode detector selects one per
-/// sim tick through `vr::input::set_active_action_set` in the payload. Each is one of the semantic
-/// sets (`vr::input::semantic` in the payload), active beside the always-active `hands` and
-/// `global` sets. The raw inputs come from `hands` whichever is active, so the choice changes only
+/// sim tick through `vr::input::set_active_action_set` in the view crate. Each is one of the
+/// semantic sets (`vr::input::semantic` in the view crate), active beside the always-active `hands`
+/// and `global` sets. The raw inputs come from `hands` whichever is active, so the choice changes only
 /// which semantic actions are read.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum ActionSetKind {
@@ -652,8 +652,8 @@ pub fn with_latest<R>(f: impl FnOnce(&ControllerFrame) -> R) -> Option<R> {
     SLOT.lock().fresh(Instant::now()).map(f)
 }
 
-/// Publish a frame: make it the latest. The caller leaves [`ControllerFrame::sequence`] and [`ControllerFrame::published_at`] to this
-/// function, which stamps them.
+/// Publish a frame: make it the latest. The caller leaves [`ControllerFrame::sequence`] and
+/// [`ControllerFrame::published_at`] to this function, which stamps them, and gets them back.
 pub fn publish(frame: ControllerFrame) -> (u64, Instant) {
     let mut slot = SLOT.lock();
     let frame = slot.publish(frame, Instant::now());

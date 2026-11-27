@@ -1,6 +1,6 @@
 //! The semantic action vocabulary: the action sets, each set's actions, their OpenXR types, and
 //! their localized names. The OpenXR side (the action and set handles, the suggested bindings, the
-//! schema version, and the per-frame state) lives in `vr::input::semantic` in the payload.
+//! schema version, and the per-frame state) lives in `vr::input::semantic` in the view crate.
 
 pub mod vocabulary;
 

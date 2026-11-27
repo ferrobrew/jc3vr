@@ -1,12 +1,13 @@
 //! Every haptic source the mod has, and the cue each one plays: a primitive of the vocabulary, a
-//! strength within it, and the category whose switch gates it. The category is fixed here; the
-//! primitive and the strength are tuning ([`crate::haptics::tuning::HapticsTuning`]).
+//! strength within it, and the category it plays in. The category is fixed here; the primitive and
+//! the strength are tuning ([`crate::haptics::tuning::HapticsTuning`]).
 
 use serde::{Deserialize, Serialize};
 
 use crate::haptics::vocabulary::Primitive;
 
-/// The groups of sources a player switches on and off together.
+/// The groups the sources fall into, which the debug UI counts the cues by. The game's rumble is
+/// the one group with its own switch; the mod's own groups always play.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Category {
     /// The hands meeting, pressing, holding, and striking the world and the characters in it.
@@ -308,7 +309,7 @@ impl Event {
 
     pub const COUNT: usize = Self::ALL.len();
 
-    /// The category whose switch gates the event's cue.
+    /// The category the event's cue plays in.
     pub const fn category(self) -> Category {
         match self {
             Event::PalmTouch
@@ -497,7 +498,7 @@ impl Sustain {
 
     pub const COUNT: usize = Self::ALL.len();
 
-    /// The category whose switch gates the source's cue.
+    /// The category the source's cue plays in.
     pub const fn category(self) -> Category {
         match self {
             Sustain::PalmPressure | Sustain::HeldLoad | Sustain::BodyPressure => Category::Contact,

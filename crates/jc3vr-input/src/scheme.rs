@@ -5,7 +5,7 @@
 //! frame. Otherwise (no session, controllers disabled, or no controller tracked) the gamepad scheme
 //! (gaze aiming, the game's own gamepad and keyboard input, animated hands) is in effect, so the
 //! mod's behaviour without controllers is unchanged. Reading the master switch and the frame is
-//! the caller's part (`controllers::scheme::current` in the payload).
+//! the caller's part (`controllers::scheme::current` in the body crate).
 
 /// The control scheme in effect.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
