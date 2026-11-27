@@ -103,9 +103,9 @@ pub struct Vocabulary {
     pub tick: Shape,
     pub click: Shape,
     pub bump: Shape,
-    pub thud: Shape,
+    pub(crate) thud: Shape,
     pub buzz: Shape,
-    pub hum: Shape,
+    pub(crate) hum: Shape,
     pub tension: Shape,
 }
 

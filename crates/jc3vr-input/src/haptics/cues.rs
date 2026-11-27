@@ -511,7 +511,7 @@ impl Sustain {
 
     /// Whether a one-off cue's onset leaves this source out entirely, rather than mixing a share of
     /// it in underneath: the game's rumble, so the mod's own cues stand clear of it.
-    pub const fn ducks_fully(self) -> bool {
+    pub(crate) const fn ducks_fully(self) -> bool {
         matches!(self, Sustain::GameRumble)
     }
 

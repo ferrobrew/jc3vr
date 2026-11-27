@@ -53,7 +53,7 @@ pub enum OwnershipBlocker {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EditCapture {
     pub pointer: bool,
-    pub grip_drag: bool,
+    pub(crate) grip_drag: bool,
     pub keyboard: bool,
     pub text: bool,
     pub scroll: bool,

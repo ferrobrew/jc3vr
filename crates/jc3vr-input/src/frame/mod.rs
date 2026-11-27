@@ -433,7 +433,7 @@ pub struct PressRules {
 
 /// A half of the trackpad, left or right of its vertical centre line.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TrackpadHalf {
+pub(crate) enum TrackpadHalf {
     Left,
     Right,
 }
@@ -451,7 +451,7 @@ impl TrackpadHalf {
 /// The half of the trackpad pressed after observing `inputs`, given the half pressed before, if
 /// any, with `margin` the [`PressRules::trackpad_half_margin`]. The half is decided at the press
 /// and kept, wherever the thumb slides, until the force falls below the release threshold.
-pub fn trackpad_press(
+pub(crate) fn trackpad_press(
     previous: Option<TrackpadHalf>,
     inputs: &HandInputs,
     thresholds: PressThresholds,

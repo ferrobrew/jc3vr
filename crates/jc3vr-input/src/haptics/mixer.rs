@@ -161,7 +161,7 @@ impl Mixer {
 }
 
 /// `x` passed unchanged up to `knee` and bent smoothly toward `ceiling` above it.
-pub fn soft_limit(x: f32, knee: f32, ceiling: f32) -> f32 {
+pub(crate) fn soft_limit(x: f32, knee: f32, ceiling: f32) -> f32 {
     if !x.is_finite() || x <= 0.0 {
         return 0.0;
     }

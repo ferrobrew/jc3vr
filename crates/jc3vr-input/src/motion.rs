@@ -59,7 +59,7 @@ pub struct ReleaseEstimate {
     /// How far back from the release the samples are considered, seconds.
     pub window_s: f32,
     /// The span around the fastest sample whose velocities are averaged, seconds on each side.
-    pub peak_span_s: f32,
+    pub(crate) peak_span_s: f32,
 }
 
 /// How a release reads the hand's history: the fastest moment in the last quarter second, averaged
