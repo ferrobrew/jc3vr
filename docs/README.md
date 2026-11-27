@@ -52,9 +52,8 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [swim-locomotion.md](engine/gameplay/swim-locomotion.md): the swim state tasks, their turn dispatch, and their heading paths.
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md): the parachute's steering and how the camera feeds it.
 - [weapon-data.md](engine/gameplay/weapon-data.md): a weapon entity's files, fire points, and model parts.
-- [weapon-equip-and-drop.md](engine/gameplay/weapon-equip-and-drop.md): a weapon object's pickup, equip, unequip, and drop.
-- [weapon-ownership-and-despawn.md](engine/gameplay/weapon-ownership-and-despawn.md): what keeps a weapon alive, slot moves, the respawn table, and the save.
-- [weapon-gives-and-restores.md](engine/gameplay/weapon-gives-and-restores.md): every way into a slot, removals, and the three weapon caches.
+- [weapon-equip-and-drop.md](engine/gameplay/weapon-equip-and-drop.md): a weapon object's pickup, the inventory's add, equip, unequip, deferred operations, and drop.
+- [weapon-ownership-and-despawn.md](engine/gameplay/weapon-ownership-and-despawn.md): what keeps a weapon alive, slot moves, the game's gives and removals, the respawn table, the save, and the three weapon caches.
 - [weapon-selection.md](engine/gameplay/weapon-selection.md): slot selection and cycling, the automatic switch, and the HUD's selection cross.
 - [weapon-ammo-and-reload.md](engine/gameplay/weapon-ammo-and-reload.md): magazines, reserves, the reload funnel, and the per-weapon actions.
 - [melee-and-damage.md](engine/gameplay/melee-and-damage.md): damage messages, the player's melee, and hit reactions.
