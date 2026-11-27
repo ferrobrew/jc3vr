@@ -30,6 +30,11 @@
 //!
 //! The tasks run on the animation's update and the forced neutral state wherever the game calls
 //! it; the detours read a published switch and the character, and fold the table's one event.
+//!
+//! [`NWeaponUnequipTask_OnEnter`]: jc3gi::equipment::weapon_animation::NWeaponUnequipTask_OnEnter
+//! [`NWeaponHideInVehicleTask_OnEnter`]: jc3gi::equipment::weapon_animation::NWeaponHideInVehicleTask_OnEnter
+//! [`NStopUsingWeaponStateTask_OnEnter`]: jc3gi::equipment::weapon_animation::NStopUsingWeaponStateTask_OnEnter
+//! [`NDropWeaponStateTask_OnEnter`]: jc3gi::equipment::weapon_animation::NDropWeaponStateTask_OnEnter
 
 use std::{
     ffi::c_void,

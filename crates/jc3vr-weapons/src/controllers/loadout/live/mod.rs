@@ -27,6 +27,8 @@
 //! call and take no other lock while they hold it but the published hands' and places'
 //! ([`published`]) and the take's grip placements' invalidation, leaf locks of their own. The
 //! readouts' status is written after the table's lock is released.
+//!
+//! [`expect`]: mod@expect
 
 mod expect;
 mod hands;

@@ -67,6 +67,7 @@
 //!
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
 //! [`Character::HolsterWeapon`]: jc3gi::character::character::Character::HolsterWeapon
+//! [`placed`]: mod@placed
 
 pub mod detonator;
 pub mod placed;

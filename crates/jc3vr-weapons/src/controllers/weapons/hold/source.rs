@@ -13,6 +13,8 @@
 //!   with its bodies, the line pulls it in, and the catching hand takes it ([`deliver`]). A source
 //!   that makes the weapon it gives (a rack's copy, a pair's staged pistol) gives it a few frames
 //!   later ([`poll`]), placed where it hung.
+//!
+//! [`take`]: fn@take
 
 use std::{fmt, num::NonZeroUsize};
 
@@ -250,6 +252,8 @@ pub(crate) fn take(
 /// # Safety
 ///
 /// `weapon` must be live.
+///
+/// [`take`]: fn@take
 pub(crate) unsafe fn take_ground(
     game: &GameTick<'_>,
     hand: Hand,

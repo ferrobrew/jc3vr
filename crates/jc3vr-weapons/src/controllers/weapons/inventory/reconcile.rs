@@ -23,6 +23,9 @@
 //!   weapon disarms it.
 //!
 //! Everything here runs in the game stage, on the game thread before the world update.
+//!
+//! [`Inventory::RemoveWeapon`]: jc3gi::character::inventory::Inventory::RemoveWeapon
+//! [`Inventory::AddWeapon`]: jc3gi::character::inventory::Inventory::AddWeapon
 
 use std::ptr::NonNull;
 

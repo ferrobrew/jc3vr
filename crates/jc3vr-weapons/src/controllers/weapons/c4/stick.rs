@@ -20,6 +20,7 @@
 //! [`StickTuning::contact_m`]: crate::controllers::weapons::c4::tuning::StickTuning::contact_m
 //! [`StickTuning::standoff_m`]: crate::controllers::weapons::c4::tuning::StickTuning::standoff_m
 //! [`StickTuning::push_mps`]: crate::controllers::weapons::c4::tuning::StickTuning::push_mps
+//! [`c4::placed`]: mod@c4::placed
 
 use glam::Vec3;
 use jc3vr_body::controllers::aim::{ray::Ray, raycast, raycast::CastOptions};

@@ -1,5 +1,5 @@
 //! The weapon handling's tick-to-tick state: the readout the debug UI reads
-//! ([`WeaponsStatus`](crate::controllers::weapons::WeaponsStatus)), the wielded weapon and its
+//! ([`WeaponsStatus`]), the wielded weapon and its
 //! measured geometry, and the bookkeeping the two tick halves share.
 
 use glam::Vec3;

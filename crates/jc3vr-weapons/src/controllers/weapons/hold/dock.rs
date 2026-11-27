@@ -220,11 +220,11 @@ impl ReleaseWatch {
         self.before = [false; 2];
     }
 
-    /// Fold in one input tick before [`Self::observe`]: a gun in `holder`'s hand that no grab put
-    /// there (a draw the game made, the weapon wheel's, or one kept across a stand-down) becomes the
-    /// grip's on the tick the grip closes on it. Only a press counts, not a grip already held when
-    /// the gun arrived, so a hand that held a vehicle's control while the game drew the gun does
-    /// not drop it on letting go. Returns the hand when it latched.
+    /// Fold in one input tick before [`Self::observe_action`]: a gun in `holder`'s hand that no grab
+    /// put there (a draw the game made, the weapon wheel's, or one kept across a stand-down) becomes
+    /// the grip's on the tick the grip closes on it. Only a press counts, not a grip already held
+    /// when the gun arrived, so a hand that held a vehicle's control while the game drew the gun
+    /// does not drop it on letting go. Returns the hand when it latched.
     pub(crate) fn latch_press(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
         let before = std::mem::replace(&mut self.before, grips);
         let hand = holder.filter(|h| self.armed().is_none() && grips[h.index()])?;

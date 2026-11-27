@@ -105,7 +105,7 @@ pub(crate) unsafe fn take(
 ///
 /// # Safety
 ///
-/// As [`take`].
+/// As [`take`](fn@take).
 pub unsafe fn deliver(
     owner: &mut Character,
     hand: Hand,
@@ -176,7 +176,7 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
 ///
 /// # Safety
 ///
-/// As [`take`], with the route checked to be the table's.
+/// As [`take`](fn@take), with the route checked to be the table's.
 pub(crate) unsafe fn take_by_table(
     owner: &mut Character,
     hand: Hand,
@@ -247,7 +247,7 @@ pub(crate) unsafe fn take_by_table(
 ///
 /// # Safety
 ///
-/// As [`take`].
+/// As [`take`](fn@take).
 unsafe fn take_by_game(
     owner: &mut Character,
     hand: Hand,

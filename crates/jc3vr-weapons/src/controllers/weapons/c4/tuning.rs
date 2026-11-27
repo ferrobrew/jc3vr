@@ -92,7 +92,9 @@ impl StickTuning {
     }
 }
 
-/// Taking a placed charge back into a hand (see [`crate::controllers::weapons::c4::placed`]).
+/// Taking a placed charge back into a hand (see [`placed`]).
+///
+/// [`placed`]: mod@crate::controllers::weapons::c4::placed
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlacedTuning {

@@ -17,7 +17,7 @@
 //!
 //! A grab of one takes it through the hands' take from a source
 //! ([`crate::controllers::weapons::hold::source`]), found again among the entries ([`find`]) so
-//! that it is known alive, and then ([`take`]):
+//! that it is known alive, and then ([`take`](fn@take)):
 //!
 //! - a weapon the rack hands over goes straight into the grabbing hand, as a weapon off the ground
 //!   does, after the call that starts the game's own pickup of it ([`WeaponBase::PickupStart`]);
@@ -32,6 +32,8 @@
 //! the game's offer of a second weapon of a kind the player already carries is let pass for the
 //! dual-wield slot ([`offer`]). The weapons a placement rule set out beyond the hands' reach are
 //! noted for the grapple's snatch ([`remote`]).
+//!
+//! [`InteractionUserProxy::m_ValidEntries`]: jc3gi::interaction::InteractionUserProxy::m_ValidEntries
 
 pub mod copy;
 pub(crate) mod entries;

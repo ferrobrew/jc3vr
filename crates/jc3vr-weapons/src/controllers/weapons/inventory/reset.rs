@@ -22,6 +22,10 @@
 //! The handler runs for every character's inventory, on whatever thread resets the spawn system,
 //! so the detour compares the inventory's character with the published local player before it
 //! takes any lock.
+//!
+//! [`StorePlayerSaveData`]: jc3gi::save::StorePlayerSaveData
+//! [`LoadPlayerSaveData`]: jc3gi::save::LoadPlayerSaveData
+//! [`GameStateFrontend::ResetSystems`]: jc3gi::game::GameStateFrontend::ResetSystems
 
 use std::ffi::c_void;
 

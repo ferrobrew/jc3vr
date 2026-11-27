@@ -200,7 +200,7 @@ pub fn pause(game: &GameTick<'_>) {
 }
 
 /// Stop acting: close an open wheel as a cancel and withdraw its placement. A step of the weapon
-/// handling's stand-down ([`crate::controllers::weapons::stand_down`]).
+/// handling's stand-down ([`stand_down`](fn@crate::controllers::weapons::stand_down)).
 pub(crate) fn stand_down(game: &GameTick<'_>) {
     close_as_cancel(game);
     placement::clear();
