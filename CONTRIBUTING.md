@@ -20,7 +20,7 @@ The mod's code is split into layer crates in `crates/`, each of which may depend
 - **jc3vr-hud** and **jc3vr-tooling**, siblings with no edge between them: the floating panel and its layers, and the recorder, directing tools, and the capture harness's request file and staging.
 - **jc3vr-ui**: the debug UI, the status rows, and the pause menu.
 
-A lower crate reaches a higher one through a registration the higher one makes, never by naming it, and the payload's `composition::install` runs the registrations in their load-bearing order.
+A lower crate reaches a higher one through a registration the higher one makes, never by naming it, and the payload's `composition::install` calls each crate's one `register` in one place; `docs/architecture.md`, "Crate layering", lists the few orders among them that matter.
 
 Libraries shared by the payload and the offline tools live in `crates/` too:
 
