@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 
 use crate::{tuning::UI, ui::util::patchbox};
 
-pub fn egui_debug_performance(ui: &mut egui::Ui) {
+pub(crate) fn egui_debug_performance(ui: &mut egui::Ui) {
     unsafe {
         let Some(clock) = jc3gi::clock::Clock::get() else {
             ui.label("(clock not reachable)");

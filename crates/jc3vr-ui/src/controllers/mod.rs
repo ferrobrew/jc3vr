@@ -4,4 +4,4 @@
 
 pub mod body;
 pub mod menu;
-pub mod presets;
+pub(crate) mod presets;

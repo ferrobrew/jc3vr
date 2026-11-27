@@ -17,8 +17,8 @@ jc3vr_core::tuning_file! {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UiTuning {
-    pub banner: BannerTuning,
-    pub performance: PerformanceTuning,
+    pub(crate) banner: BannerTuning,
+    pub(crate) performance: PerformanceTuning,
     pub readouts: ReadoutsTuning,
     pub controls: ControlsTuning,
 }
@@ -60,20 +60,20 @@ impl Tuning for UiTuning {
 /// The startup banner ([`crate::ui::startup_banner`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct BannerTuning {
+pub(crate) struct BannerTuning {
     /// How long the banner stays up after the first frame, seconds.
-    pub startup_s: f32,
+    pub(crate) startup_s: f32,
 }
 
 /// The Performance tab's rolling frame-time chart.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PerformanceTuning {
+pub(crate) struct PerformanceTuning {
     /// The history the chart keeps and displays, seconds.
-    pub chart_window_s: f32,
+    pub(crate) chart_window_s: f32,
     /// How far above the 99th-percentile frame time the chart's scale must reach before it snaps
     /// to a band, as a factor, so the steady trace rides mid-chart rather than at its ceiling.
-    pub chart_scale_headroom: f32,
+    pub(crate) chart_scale_headroom: f32,
 }
 
 /// How long a debug readout's last update counts as live.
@@ -82,11 +82,11 @@ pub struct PerformanceTuning {
 pub struct ReadoutsTuning {
     /// The weapon-agnostic body's readout, after the local player's pose finalization last ran,
     /// seconds.
-    pub unarmed_stale_s: f32,
+    pub(crate) unarmed_stale_s: f32,
     /// The body mirror's status row, after the mirror's last pass, seconds. The pause stops the
     /// pass, so the window is long enough for a mirror that drew before the menu opened to still
     /// read as drawing.
-    pub mirror_stale_s: f32,
+    pub(crate) mirror_stale_s: f32,
 }
 
 /// The pause menu's controls page.
@@ -94,7 +94,7 @@ pub struct ReadoutsTuning {
 #[serde(deny_unknown_fields)]
 pub struct ControlsTuning {
     /// The furthest from flat a captured neutral wrist tilt may be, either way, degrees.
-    pub neutral_tilt_limit_deg: f32,
+    pub(crate) neutral_tilt_limit_deg: f32,
 }
 
 #[cfg(test)]

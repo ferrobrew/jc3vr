@@ -5,7 +5,7 @@
 use jc3vr_core::profiler::{capture, capture::DEFAULT_CAPTURE_SECS, ui_enabled};
 
 /// Renders the profiler section, as a collapsible under the existing Performance readout.
-pub fn egui_profiler(ui: &mut egui::Ui) {
+pub(crate) fn egui_profiler(ui: &mut egui::Ui) {
     ui.collapsing("Profiler (issue #34)", |ui| {
         let mut enabled = ui_enabled();
         if ui

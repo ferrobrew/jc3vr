@@ -15,7 +15,7 @@ use crate::{
 /// Preview width (px) for the redirected HUD texture, independent of the Previews and performance feature's preview size.
 const HUD_PREVIEW_WIDTH: f32 = 512.0;
 
-pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
+pub(crate) fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer) {
     // The CONFIG lock is scoped to this block and dropped before HUD_STATE is locked for the
     // preview.
     let redirect = {

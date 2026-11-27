@@ -27,7 +27,7 @@ struct SavedLayout {
 pub(crate) struct Layout {
     pub selection: NavigationState,
     pub dock: egui_dock::DockState<View>,
-    pub drawer: bool,
+    pub(crate) drawer: bool,
     pub notice: String,
     save_enabled: bool,
     frames: u32,

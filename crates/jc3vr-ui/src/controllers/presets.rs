@@ -7,7 +7,7 @@ use jc3vr_gameplay::controllers::config::ControllersConfig;
 
 /// The named controller switch presets shown by the Tools page.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Preset {
+pub(crate) enum Preset {
     /// Every controller feature on, as `ControllersConfig::new()` ships.
     Controllers,
     /// Every controller and roomscale feature off: the head-tracked gamepad game.
@@ -26,7 +26,7 @@ impl Preset {
 }
 
 /// Apply feature switches without changing tuning, calibration, or optional preferences.
-pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
+pub(crate) fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     let on = preset == Preset::Controllers;
     c.enabled = on;
     c.input.hand_tracking = on;
@@ -46,7 +46,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
 }
 
 /// Whether applying the preset changes any of its owned switches.
-pub fn preset_modified(config: &ControllersConfig, preset: Preset) -> bool {
+pub(crate) fn preset_modified(config: &ControllersConfig, preset: Preset) -> bool {
     let mut expected = config.clone();
     apply_preset(&mut expected, preset);
     match (serde_json::to_value(config), serde_json::to_value(expected)) {

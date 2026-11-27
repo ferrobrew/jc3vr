@@ -51,7 +51,7 @@ pub(crate) enum NavigationTarget {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct NavigationInteraction {
     pub target: NavigationTarget,
-    pub hovered: bool,
+    pub(crate) hovered: bool,
     pub pressed: bool,
     pub clicked: bool,
 }
@@ -60,10 +60,10 @@ pub(crate) struct NavigationInteraction {
 #[derive(Debug, Default)]
 pub(crate) struct NavigationFrame {
     pub targets: Vec<(NavigationTarget, Rect)>,
-    pub target_ids: Vec<(NavigationTarget, egui::Id)>,
-    pub interactions: Vec<NavigationInteraction>,
+    pub(crate) target_ids: Vec<(NavigationTarget, egui::Id)>,
+    pub(crate) interactions: Vec<NavigationInteraction>,
     pub commands: Vec<NavigationCommand>,
-    pub shown_summary: Option<String>,
+    pub(crate) shown_summary: Option<String>,
     pub narrow: bool,
 }
 

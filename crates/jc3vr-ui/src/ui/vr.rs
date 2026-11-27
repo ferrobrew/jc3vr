@@ -5,7 +5,7 @@ use jc3vr_view::{
     vr::{EyeMask, MaskStatus, MirrorView, VR_CONFIG},
 };
 
-pub fn egui_debug_vr(ui: &mut egui::Ui) {
+pub(crate) fn egui_debug_vr(ui: &mut egui::Ui) {
     // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
     // same pattern the other tabs use.
     let mut cfg = VR_CONFIG.edit();
