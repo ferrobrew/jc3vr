@@ -9,7 +9,7 @@ use jc3gi::graphics_engine::render_block::Matrix3x4;
 use jc3vr_core::published::Stamp;
 use jc3vr_view::{
     hooks::graphics_engine::palette_edit::PaletteLayout,
-    recorder::tracking::{events, events::EventKind},
+    recorder::{events, events::EventKind},
     stereo,
 };
 use parking_lot::Mutex;

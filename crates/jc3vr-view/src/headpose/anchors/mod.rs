@@ -7,7 +7,7 @@ use glam::{Mat4, Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::body::rig::origin_provenance::OriginEvidence,
+    controllers::origin_provenance::OriginEvidence,
     headpose::{Anchors, Source, participants::head_participants, skeleton::SkeletonKey, teleport},
     tuning::VIEW,
     vr::{VR_CONFIG, live_tracking},

@@ -255,7 +255,7 @@ fn vr_tracking_discontinuities_collapse_new_publications() {
         sequence: 10,
         display_time_ns: 100,
         published_at: Instant::now(),
-        origin: crate::controllers::body::rig::origin_provenance::begin(Ok(())),
+        origin: crate::controllers::origin_provenance::begin(Ok(())),
     });
     for case in 0..4 {
         let mut history = History::new();
@@ -268,7 +268,9 @@ fn vr_tracking_discontinuities_collapse_new_publications() {
             0 => next.context.tracking = None,
             1 => next.context.tracking.as_mut().unwrap().sequence -= 1,
             2 => next.context.tracking.as_mut().unwrap().display_time_ns -= 1,
-            _ => next.context.tracking.as_mut().unwrap().origin = OriginEvidence::Unavailable(crate::controllers::body::rig::origin_provenance::OriginUnavailable::ChangedDuringAcquisition),
+            _ => next.context.tracking.as_mut().unwrap().origin = OriginEvidence::Unavailable(
+                crate::controllers::origin_provenance::OriginUnavailable::ChangedDuringAcquisition,
+            ),
         }
         let pair = history.capture(next, || Some(sample(1.0))).unwrap();
         assert!(pair.collapsed, "case {case}");

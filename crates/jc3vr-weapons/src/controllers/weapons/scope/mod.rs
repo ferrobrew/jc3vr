@@ -50,7 +50,7 @@ use jc3vr_body::{
 };
 use jc3vr_core::published::{Published, Stage, Window};
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_view::controllers::weapons::scope::lens_frame::{self, LensFrame};
+use jc3vr_view::controllers::lens_frame::{self, LensFrame};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 use serde::Deserialize;

@@ -143,7 +143,7 @@ pub struct CameraTuning {
     pub(crate) context_fov_deg: f32,
 }
 
-/// The tracking recorder ([`crate::recorder::tracking`]).
+/// The tracking recorder ([`crate::recorder`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RecorderTuning {
@@ -263,7 +263,7 @@ pub struct MirrorTuning {
     pub zoom: f32,
 }
 
-/// The panels as the controller pointers see them ([`crate::hud::pointer::panel`]).
+/// The panels as the controller pointers see them ([`crate::hud::panel`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PointerTuning {

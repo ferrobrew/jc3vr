@@ -5,7 +5,7 @@
 use body_rig::math::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3vr_body::controllers::aim::marker_rays::Sight;
-use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
+use jc3vr_view::hud::stage_frame::StageFrame;
 
 use crate::hud::tuning::HUD;
 

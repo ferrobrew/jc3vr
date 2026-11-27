@@ -16,7 +16,7 @@ use jc3vr_body::controllers::{
     telemetry::Thrown,
 };
 use jc3vr_input::frame::{self, Hand};
-use jc3vr_view::recorder::tracking::format::{debug_label, hand_to_file};
+use jc3vr_view::recorder::format::{debug_label, hand_to_file};
 use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
 
 use crate::controllers::weapons::hold::equip::DockRefusal;

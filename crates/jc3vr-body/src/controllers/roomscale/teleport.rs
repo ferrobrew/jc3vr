@@ -12,7 +12,7 @@
 
 use detours_macro::detour;
 use jc3gi::{camera::game_camera_manager::GameCameraManager, types::math::Matrix4};
-use jc3vr_view::{controllers::body::rig::origin_provenance, headpose::teleport};
+use jc3vr_view::{controllers::origin_provenance, headpose::teleport};
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {

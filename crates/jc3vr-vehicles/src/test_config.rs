@@ -16,7 +16,7 @@ use jc3vr_view::{
     fsr::FSR_CONFIG,
     headpose::config::HEADPOSE_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
-    recorder::tracking::{RECORD_HAND_JOINTS, TESTING_ENABLED, TIME_SCALE},
+    recorder::{RECORD_HAND_JOINTS, TESTING_ENABLED, TIME_SCALE},
     stereo::config::STEREO_CONFIG,
     vr::{
         FOVEATION_CONFIG, PANEL_CONFIG, VR_CONFIG,

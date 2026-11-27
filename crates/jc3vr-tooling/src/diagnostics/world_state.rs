@@ -16,7 +16,7 @@ use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_view::{
     headpose,
     hooks::camera::{eye_point, last_dtf},
-    recorder::tracking::format::debug_label,
+    recorder::format::debug_label,
     vr::VR_CONFIG,
 };
 use tracking_format::{

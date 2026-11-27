@@ -45,11 +45,11 @@ use jc3vr_render::{
 };
 use jc3vr_view::{
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
+    gpu_passes::{self, GpuPassTotal},
     stereo::{
         config::{STEREO_CONFIG, set_single_pass_feature},
         layout,
     },
-    testing::benchmark::gpu_passes::{self, GpuPassTotal},
     vr::{
         FOVEATION_CONFIG, FoveationConfig, FreezeMode, VR_CONFIG, pose_control,
         pose_control::PoseValues,

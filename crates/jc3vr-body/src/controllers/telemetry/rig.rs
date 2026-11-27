@@ -8,7 +8,7 @@ use std::time::Duration;
 use body_rig::{PlayerBody, RigFrame, RigOutput, RigTuning};
 use glam::{Vec2, Vec3};
 use jc3vr_core::published::Stamp;
-use jc3vr_view::recorder::tracking::{events, events::EventKind};
+use jc3vr_view::recorder::{events, events::EventKind};
 use parking_lot::Mutex;
 use tracking_format::event::{Label, RigConfig, RigInput, RigResult, RigSample};
 

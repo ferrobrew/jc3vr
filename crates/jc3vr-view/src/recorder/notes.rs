@@ -1,11 +1,15 @@
 //! The recording's notes that the tracking recorder takes on its own behalf: the settings in
 //! effect and the frame-time breakdown. Like every event, nothing is built unless a recording or
-//! the lookback collects.
+//! the lookback collects. The frame-time breakdown reaches the recorder through the frame timing's
+//! report sink ([`register_frame_timing`]), so `frame_timing` does not name the recorder.
 
-use jc3vr_core::frame_timing::{Report, Slot, ns_to_ms};
+use jc3vr_core::{
+    frame_timing,
+    frame_timing::{Report, Slot, ns_to_ms},
+};
 use tracking_format::event::{FrameTiming, Label, Settings, SlotTiming};
 
-use crate::recorder::tracking::{events, events::EventKind};
+use crate::recorder::{events, events::EventKind};
 
 /// Note the settings file's text, as a save writes it or a recording starts with it.
 pub fn note_settings(toml: &str) {
@@ -16,8 +20,14 @@ pub fn note_settings(toml: &str) {
     });
 }
 
+/// Hand every closed frame-timing window to [`note_frame_timing`]. Call once, before the first
+/// window closes.
+pub fn register_frame_timing() {
+    frame_timing::set_report_sink(note_frame_timing);
+}
+
 /// Note a closed reporting window of the frame-time breakdown.
-pub(crate) fn note_frame_timing(report: &Report) {
+fn note_frame_timing(report: &Report) {
     events::note_with(|| {
         let totals = &report.totals;
         let slots = Slot::ALL

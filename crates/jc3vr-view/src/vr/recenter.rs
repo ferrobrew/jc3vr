@@ -14,9 +14,9 @@ use openxr as xr;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::body::rig::origin_provenance,
+    controllers::origin_provenance,
     headpose::xr::{bank, on_recenter, pending_bank, stepping},
-    recorder::tracking::format::RecenterEvent,
+    recorder::format::RecenterEvent,
     tuning::VIEW,
     vr::{
         convert::{posef, quat, vec3},
@@ -36,7 +36,7 @@ use crate::{
 ///
 /// Out of a seat, only the yaw and the height are re-based
 /// ([`crate::controllers::roomscale::manual_recenter_kind`]), and the body rig then snaps the pelvis
-/// under the neck by re-basing the cockpit shift ([`crate::controllers::body::rig::root::on_recenter`]):
+/// under the neck by re-basing the cockpit shift ([`crate::controllers::root::on_recenter`]):
 /// the view moves to the body, so the recenter never puts the body through a wall. The seat
 /// transitions ask for their own re-base through [`request_seat_recenter`].
 ///
@@ -144,7 +144,7 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
             // The cockpit frame turns by the yaw change: new frame from old.
             let turn = previous.map_or(glam::Quat::IDENTITY, |p| fresh.yaw.conjugate() * p.yaw);
             rebased(kind, cause, turn);
-            crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
+            crate::recorder::note_recenter(RecenterEvent { kind, cause, turn });
             tracing::info!(target: "vr", ?kind, ?cause, "recentered the cockpit baseline");
         }
         None => {
@@ -233,7 +233,7 @@ fn service_follow_bank() {
     // The cockpit frame turns by the inverse: new frame from old.
     let turn = rotation.conjugate();
     banked(yaw, turn);
-    crate::recorder::tracking::note_recenter(RecenterEvent {
+    crate::recorder::note_recenter(RecenterEvent {
         kind: RecenterKind::YawAndHeight,
         cause: RecenterCause::FollowBank,
         turn,
@@ -313,7 +313,7 @@ fn service_seat_yaw() {
         (participants.on_recenter)(kind, turn, cause);
     }
     on_recenter();
-    crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
+    crate::recorder::note_recenter(RecenterEvent { kind, cause, turn });
 }
 
 /// The share of the seat lock's yaw re-base applied `elapsed_s` seconds in: eased in and out, so

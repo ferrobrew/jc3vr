@@ -17,11 +17,11 @@ use openxr as xr;
 use parking_lot::MutexGuard;
 
 use crate::{
-    controllers::body::rig::{
+    controllers::{
         origin_provenance,
         origin_provenance::{OriginEvidence, OriginUnavailable},
     },
-    recorder::tracking::{CaptureSample, format::EyeSample},
+    recorder::{CaptureSample, format::EyeSample},
     stereo::engine_context::EngineContext,
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VR_CONFIG, VrConfig, convert,
@@ -569,7 +569,7 @@ impl VrState {
         }
 
         // After the controllers, so the frame records what the input update published.
-        crate::recorder::tracking::capture(capture_sample(
+        crate::recorder::capture(capture_sample(
             frame_state.predicted_display_time,
             frame_state.should_render,
             head_tracked,

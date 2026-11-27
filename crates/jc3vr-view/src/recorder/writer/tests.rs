@@ -3,7 +3,7 @@ use tracking_format::{Header, StartMarker, model::Hand};
 
 use super::*;
 use crate::{
-    recorder::tracking::{
+    recorder::{
         encode_capture,
         format::{ControllerSample, Frame, SessionSample},
     },
@@ -146,11 +146,11 @@ fn input_batch(time: u64) -> CaptureBatch {
 
 #[test]
 fn recordings_start_with_the_version_4_chunked_preamble() {
-    let payload_header = crate::recorder::tracking::format::Header {
+    let payload_header = crate::recorder::format::Header {
         build: "fixture".into(),
         recorded_at: "fixture".into(),
         action_schema: 4,
-        start: crate::recorder::tracking::format::StartMarker {
+        start: crate::recorder::format::StartMarker {
             transform: [0.0; 16],
             bookmark: None,
         },
@@ -158,7 +158,7 @@ fn recordings_start_with_the_version_4_chunked_preamble() {
         world_scale: 1.0,
         time_scale: 1.0,
     };
-    let bytes = crate::recorder::tracking::format::encode_chunked_preamble(&payload_header);
+    let bytes = crate::recorder::format::encode_chunked_preamble(&payload_header);
     assert_eq!(
         tracking_format::decode(&bytes).unwrap().version,
         tracking_format::VERSION
@@ -534,7 +534,7 @@ fn stopped_writer_reports_accepted_write_marker_flush_and_sync_failures() {
         };
         assert_eq!(writer.bytes_written(), expected_bytes as u64);
         assert_eq!(bytes.lock().len(), expected_bytes);
-        crate::recorder::tracking::tests::assert_active_failure_transition(completion(
+        crate::recorder::tests::assert_active_failure_transition(completion(
             Ok(Err(error)),
             writer.bytes_written(),
         ));
@@ -590,5 +590,5 @@ fn active_sink_panic_preserves_exact_cause_and_bytes_through_fail_stop_reap() {
     );
     assert_eq!(completion.bytes, expected.len() as u64);
     assert_eq!(*bytes.lock(), expected);
-    crate::recorder::tracking::tests::assert_active_failure_transition(completion);
+    crate::recorder::tests::assert_active_failure_transition(completion);
 }

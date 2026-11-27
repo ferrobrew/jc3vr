@@ -8,7 +8,7 @@ use std::time::Instant;
 use body_rig::math::smooth::half_life_factor;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
-use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
+use jc3vr_view::hud::stage_frame::StageFrame;
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, ID3D11DeviceContext,

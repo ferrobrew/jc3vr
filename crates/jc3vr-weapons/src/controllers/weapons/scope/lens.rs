@@ -1,5 +1,5 @@
 //! The lens's geometry, all pure: where the eyepiece is, which eye sights through it, and the lens
-//! draw it hands the pass ([`jc3vr_view::controllers::weapons::scope::lens_frame`]), which holds
+//! draw it hands the pass ([`jc3vr_view::controllers::lens_frame`]), which holds
 //! the draw's constants.
 //!
 //! The sight line is kept in the holding hand's wrist frame between aim updates, so the lens follows
@@ -15,7 +15,7 @@
 use glam::Vec3;
 use jc3vr_body::controllers::aim::ray::Ray;
 use jc3vr_input::frame::{Hand, Pose};
-use jc3vr_view::controllers::weapons::scope::lens_frame::LensDraw;
+use jc3vr_view::controllers::lens_frame::LensDraw;
 use serde::Deserialize;
 
 /// The lens's geometry and look: the `scope.lens` section of the handling tuning
@@ -137,7 +137,7 @@ pub(crate) fn draw_of(lens: &Lens, config: &LensTuning) -> LensDraw {
 #[cfg(test)]
 mod tests {
     use glam::{Mat4, Quat, Vec2, Vec4};
-    use jc3vr_view::controllers::weapons::scope::lens_frame::{
+    use jc3vr_view::controllers::lens_frame::{
         EyeCamera, LensConstants, field_tangent, lens_basis,
     };
 

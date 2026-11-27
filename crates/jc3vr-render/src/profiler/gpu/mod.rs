@@ -267,9 +267,9 @@ pub(crate) fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
 }
 
 /// Whether the per-pass and detail intervals should be recorded: while puffin collects, or while a
-/// benchmark run asks for them (`jc3vr_view::testing::benchmark::gpu_passes`).
+/// benchmark run asks for them (`jc3vr_view::gpu_passes`).
 pub(crate) fn passes_wanted() -> bool {
-    puffin::are_scopes_on() || jc3vr_view::testing::benchmark::gpu_passes::armed()
+    puffin::are_scopes_on() || jc3vr_view::gpu_passes::armed()
 }
 
 /// Brackets one render pass with a GPU timestamp pair, nested inside the seam that is drawing it.

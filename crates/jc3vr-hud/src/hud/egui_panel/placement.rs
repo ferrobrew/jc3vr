@@ -11,7 +11,7 @@ use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
 use jc3vr_view::{
     controllers::cockpit::{CockpitTransform, body_of_head},
-    hud::pointer::panel::RenderedCamera,
+    hud::panel::RenderedCamera,
 };
 
 use crate::hud::{quad::PanelParams, tuning::HUD};

@@ -5,7 +5,7 @@
 //! The frame driver calls [`record`] after the engine's render update, so the late hand snapshot
 //! and the frame's sub-tick fraction it is evaluated at are the ones that frame rendered with.
 //! While a tracking recording or the lookback collects
-//! ([`jc3vr_view::recorder::tracking::events::collecting`]), each call notes one
+//! ([`jc3vr_view::recorder::events::collecting`]), each call notes one
 //! [`ControllerState`](tracking_format::event::ControllerState) event, which the recorder stamps on
 //! the frame timeline and writes beside the next frame, and a
 //! [`BodyState`](tracking_format::event::BodyState) event when the body's animation state changed
@@ -30,7 +30,7 @@ use std::time::Instant;
 
 use jc3gi::character::character::Character;
 use jc3vr_body::{controllers::body::procedural, hooks::animation::active_state_type_id};
-use jc3vr_view::recorder::tracking::{events, events::EventKind};
+use jc3vr_view::recorder::{events, events::EventKind};
 
 /// Note the controller subsystems' state when a recording or the lookback collects it.
 pub fn record() {

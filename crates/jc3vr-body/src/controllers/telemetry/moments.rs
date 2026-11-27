@@ -4,7 +4,7 @@
 
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
-use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
+use jc3vr_view::recorder::{events, events::EventKind, format::hand_to_file};
 use tracking_format::event::{GripRelease, Label, ReleasePose, Throw, WorldMotion};
 
 /// An item that left a hand with a requested motion.

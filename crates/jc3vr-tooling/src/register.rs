@@ -20,7 +20,7 @@ use jc3vr_view::{
     hooks::graphics_engine::post_draw::{
         EyeFrameRecorder, eye_frame_recorder_registered, register_eye_frame_recorder,
     },
-    recorder::tracking::{NamedPlace, StartSource, register_start_source, start_source_registered},
+    recorder::{NamedPlace, StartSource, register_start_source, start_source_registered},
     vr::{MirrorObserver, mirror_observer_registered, register_mirror_observer},
 };
 

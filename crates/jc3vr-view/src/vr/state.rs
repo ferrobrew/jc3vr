@@ -21,7 +21,7 @@ use windows::{
 };
 
 use crate::{
-    controllers::body::rig::{origin_provenance, origin_provenance::ReferenceSpaceChanges},
+    controllers::{origin_provenance, origin_provenance::ReferenceSpaceChanges},
     tuning::VIEW,
     vr::{
         VIEW_TYPE, VR_CONFIG, VrConfig, blit,

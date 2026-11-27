@@ -2,7 +2,7 @@
 
 The tracking recorder writes what the OpenXR runtime gives the mod each frame to a file, with the mod's own decisions beside it as events, so that a headset session can be studied afterwards without the game: printed, evaluated against the body rig offline, or scrubbed in Rerun beside the take's video. Recordings are evidence, not something to play back into the game; the game is not deterministic, so the same input would not reproduce what followed.
 
-The code is `crates/jc3vr-view/src/recorder/tracking/` (the recorder, and the conversion between the payload's types and the file's), `crates/tracking-format/` (the file format's data model and codec, a crate of its own so that host tools build it on Linux and Windows), `tools/tracking-synth/` (the offline tools and the synthetic recordings), and the debug UI's Tracking capture feature in `crates/jc3vr-ui/src/ui/testing.rs`.
+The code is `crates/jc3vr-view/src/recorder/` (the recorder, and the conversion between the payload's types and the file's), `crates/tracking-format/` (the file format's data model and codec, a crate of its own so that host tools build it on Linux and Windows), `tools/tracking-synth/` (the offline tools and the synthetic recordings), and the debug UI's Tracking capture feature in `crates/jc3vr-ui/src/ui/testing.rs`.
 
 ## Starting and stopping
 

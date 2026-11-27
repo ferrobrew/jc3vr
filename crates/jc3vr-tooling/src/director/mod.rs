@@ -19,7 +19,7 @@ use jc3vr_core::{
     config::{ConfigSlot, SlotOptions},
     slot_children,
 };
-use jc3vr_view::recorder::tracking::TIME_SCALE;
+use jc3vr_view::recorder::TIME_SCALE;
 use jc3vr_weapons::controllers::spawn;
 use serde::{Deserialize, Serialize};
 

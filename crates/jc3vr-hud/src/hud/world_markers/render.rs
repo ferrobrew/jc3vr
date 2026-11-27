@@ -22,7 +22,7 @@ use jc3vr_body::controllers::aim::{
     marker_rays as raycast,
     marker_rays::{Sight, Timed},
 };
-use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
+use jc3vr_view::hud::stage_frame::StageFrame;
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext};
 

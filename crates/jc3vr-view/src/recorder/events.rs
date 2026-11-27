@@ -2,7 +2,7 @@
 //! the subsystems that make the decisions, held here until the next captured frame, and written
 //! before it, stamped on the recording's frame timeline.
 //!
-//! Noting is a no-op unless a recording or the lookback ([`crate::recorder::tracking::lookback`])
+//! Noting is a no-op unless a recording or the lookback ([`crate::recorder::lookback`])
 //! is collecting, so a producer builds its event lazily through [`note_with`]. The pending list
 //! is bounded; an event beyond the bound is counted and dropped rather than growing the list when
 //! no frame is captured to drain it (a session without a headset, for one).
@@ -19,7 +19,7 @@ pub use tracking_format::event::EventKind;
 /// Whether noted events are kept: a tracking recording runs, or the lookback does.
 #[inline]
 pub fn collecting() -> bool {
-    crate::recorder::tracking::is_recording() || crate::recorder::tracking::lookback::is_running()
+    crate::recorder::is_recording() || crate::recorder::lookback::is_running()
 }
 
 /// Note an event for the next captured frame. Any thread; takes only this module's leaf lock.
@@ -67,7 +67,7 @@ pub(super) fn stamp(noted: &[Noted], origin: Instant) -> Vec<Event> {
         .iter()
         .filter(|noted| noted.at >= origin)
         .map(|noted| Event {
-            time_ns: crate::recorder::tracking::nanos_since(noted.at, origin),
+            time_ns: crate::recorder::nanos_since(noted.at, origin),
             kind: noted.kind.clone(),
         })
         .collect()

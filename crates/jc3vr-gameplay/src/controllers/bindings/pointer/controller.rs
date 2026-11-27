@@ -12,7 +12,7 @@ use jc3vr_body::controllers::{intent::controls::ButtonControl, scheme};
 use jc3vr_input::frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE};
 use jc3vr_view::{
     headpose,
-    hud::pointer::panel::{PanelHit, aim_at_panel, intersect_panel},
+    hud::panel::{PanelHit, aim_at_panel, intersect_panel},
 };
 use parking_lot::Mutex;
 

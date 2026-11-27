@@ -30,7 +30,7 @@ use jc3vr_vehicles::controllers::vehicles::{
     },
 };
 use jc3vr_view::{
-    recorder::tracking::{events, events::EventKind},
+    recorder::{events, events::EventKind},
     vr::input::flight_pose,
 };
 use jc3vr_weapons::controllers::{

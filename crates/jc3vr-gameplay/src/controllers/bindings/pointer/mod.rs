@@ -10,7 +10,7 @@
 //! - [`egui_grab`] decides which hand's grip holds the panel.
 //!
 //! The rays are intersected with the panels the HUD last drew and published
-//! ([`jc3vr_view::hud::pointer::panel`], which the camera hook also gives the render camera they were
+//! ([`jc3vr_view::hud::panel`], which the camera hook also gives the render camera they were
 //! placed from), and the egui panel's aspect is read from its settings slot
 //! ([`jc3vr_view::vr::PANEL_CONFIG`]). The HUD reads the results: it routes the game UI's mouse from
 //! [`selected_controller`] and drains the egui updates ([`take_updates`]). What the pointers need

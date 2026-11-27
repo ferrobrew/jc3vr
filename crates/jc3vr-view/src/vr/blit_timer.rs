@@ -4,7 +4,7 @@
 //! dispatch timestamp layer (`jc3vr_render::profiler::gpu`) cannot bracket it. While a benchmark run asks
 //! for per-pass times, [`TailBlitTimer`] brackets it with a timestamp pair inside a disjoint query of
 //! its own, reads the result back a few frames later without waiting, and files it into the run's
-//! totals (`crate::testing::benchmark::gpu_passes`) as the detail `frame tail: swapchain blit` on
+//! totals (`crate::gpu_passes`) as the detail `frame tail: swapchain blit` on
 //! lane [`TAIL_LANE`].
 
 use std::iter;
@@ -20,7 +20,7 @@ use windows::{
     core::Interface as _,
 };
 
-use crate::testing::benchmark::gpu_passes::{self, GpuPassLabel};
+use crate::gpu_passes::{self, GpuPassLabel};
 
 /// The lane the tail blit's time is filed under, past the dispatch lanes (the two eyes and the far
 /// field).

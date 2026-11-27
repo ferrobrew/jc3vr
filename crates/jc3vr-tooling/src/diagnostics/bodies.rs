@@ -23,7 +23,7 @@ use jc3vr_physical::controllers::physical_hands::{
     collider_view::nearby::{self, BodyState},
     physics,
 };
-use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
+use jc3vr_view::recorder::{events, events::EventKind, format::hand_to_file};
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BodiesSample, BodyIntro, BodySample, HeldMotion, HeldSample, HoldReport, Label},

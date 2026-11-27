@@ -45,7 +45,7 @@ use jc3vr_view::{
         primitive::{Anchor, DepthMode, HandPose, Primitive, Source},
         store,
     },
-    hud::pointer::panel::{PanelHit, aim_at_egui_panel, intersect_panel},
+    hud::panel::{PanelHit, aim_at_egui_panel, intersect_panel},
     vr::PANEL_CONFIG,
 };
 use parking_lot::Mutex;

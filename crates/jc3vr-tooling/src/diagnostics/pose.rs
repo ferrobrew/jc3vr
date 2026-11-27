@@ -20,7 +20,7 @@ use jc3vr_core::{
 };
 use jc3vr_view::{
     headpose::skeleton::SkeletonKey,
-    recorder::tracking::{events, events::EventKind},
+    recorder::{events, events::EventKind},
 };
 use parking_lot::Mutex;
 use tracking_format::{

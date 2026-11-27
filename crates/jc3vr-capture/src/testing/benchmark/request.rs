@@ -35,7 +35,7 @@ pub struct BenchmarkTable {
     #[serde(default = "default_true")]
     gpu: bool,
     /// Also time every render pass and post effect on the GPU, at the cost of two timestamp
-    /// queries each (`jc3vr_view::testing::benchmark::gpu_passes`). Needs `gpu`.
+    /// queries each (`jc3vr_view::gpu_passes`). Needs `gpu`.
     #[serde(default)]
     gpu_passes: bool,
     /// Time the draw-path detours and their forwarding calls, at the cost of four clock reads per

@@ -41,7 +41,7 @@ pub enum Source {
     /// The body mirror's render-time pouch models and copied input targets.
     BodyMirrorPouches,
     /// The grounded body rig's neck and waist pivots, spine, and lean rings
-    /// ([`crate::controllers::body::rig::visual`]).
+    /// ([`crate::controllers::visual`]).
     BodyRig,
     /// The docked guns' marks: where each gun on a socket of the body is placed, and whether its
     /// model is shown ([`crate::controllers::weapons::inventory::docked_view`]).

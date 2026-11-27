@@ -25,7 +25,7 @@ impl ConfigRoot for Config {
 
     /// Note the settings for a tracking recording.
     fn note_saved(text: &str) {
-        jc3vr_view::recorder::tracking::note_settings(text);
+        jc3vr_view::recorder::note_settings(text);
     }
 }
 

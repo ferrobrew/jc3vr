@@ -15,7 +15,7 @@ use std::{
 use parking_lot::Mutex;
 use tracking_format::input::{CapturedInput, DiscontinuityReason, InputRecord};
 
-use crate::recorder::tracking::format::{self, Header};
+use crate::recorder::format::{self, Header};
 
 /// A frame and all input records captured beside it occupy one queue slot.
 pub(crate) struct CaptureBatch {

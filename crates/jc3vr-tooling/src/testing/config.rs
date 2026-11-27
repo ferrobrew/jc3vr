@@ -5,7 +5,7 @@ use jc3vr_core::{
     slot_children,
 };
 use jc3vr_render::debug::texture_census::TEXTURE_CENSUS;
-use jc3vr_view::recorder::tracking::{RECORD_HAND_JOINTS, TESTING_ENABLED};
+use jc3vr_view::recorder::{RECORD_HAND_JOINTS, TESTING_ENABLED};
 use serde::{Deserialize, Serialize};
 
 /// The capture harness's settings, at `testing` in the settings file; the payload binds the slot at

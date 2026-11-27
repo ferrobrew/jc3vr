@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use jc3gi::graphics_engine::graphics_engine::{
     self, FrequencyStatus, HContext_t, HDevice_t, HTimeStampDisjointQuery_t, HTimeStampQuery_t,
 };
-use jc3vr_view::testing::benchmark::{gpu_passes, gpu_passes::GpuPassLabel};
+use jc3vr_view::{gpu_passes, gpu_passes::GpuPassLabel};
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId};
 
 use crate::profiler::{

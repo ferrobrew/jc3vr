@@ -2,14 +2,14 @@
 //! lens drawn on the sighting eye, with the constants of the lens shaders.
 //!
 //! The lens's plan is the scopes': once per frame they hand over the frame's [`LensFrame`]
-//! ([`jc3vr_view::controllers::weapons::scope::lens_frame`]), which the capture and the draw of every
+//! ([`jc3vr_view::controllers::lens_frame`]), which the capture and the draw of every
 //! dispatch read.
 
 use std::time::Duration;
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_view::{
-    controllers::weapons::scope::{
+    controllers::{
         lens_frame,
         lens_frame::{EyeCamera, LensFrame},
     },

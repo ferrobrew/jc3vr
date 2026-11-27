@@ -18,7 +18,7 @@ use jc3vr_body::controllers::{
     physics::{bodies::BodyState, error::PhysicsError, rigid::Velocities},
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_view::recorder::tracking::{
+use jc3vr_view::recorder::{
     events,
     events::EventKind,
     format::{debug_label, hand_to_file},

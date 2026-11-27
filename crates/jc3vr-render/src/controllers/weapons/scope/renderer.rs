@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use anyhow::Context as _;
 use jc3gi::graphics_engine::texture::Texture;
-use jc3vr_view::controllers::weapons::scope::lens_frame::{EyeCamera, LensConstants};
+use jc3vr_view::controllers::lens_frame::{EyeCamera, LensConstants};
 use windows::{
     Win32::Graphics::{
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,

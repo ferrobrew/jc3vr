@@ -83,7 +83,7 @@ use jc3gi::{
 use jc3vr_core::{config::disable_automatically, hooks::in_gameplay, switch};
 use jc3vr_view::{
     hud::{
-        pointer::panel::{RenderedPanel, publish_panel, rendered_camera},
+        panel::{RenderedPanel, publish_panel, rendered_camera},
         render_camera_pose,
     },
     stereo::layout::collapse_active,

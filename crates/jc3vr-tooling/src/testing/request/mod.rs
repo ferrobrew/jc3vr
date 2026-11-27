@@ -534,8 +534,8 @@ fn act(request: Request) {
             Some(phase) => harness::request_motion(id, phase, options),
             None => harness::request(id, options),
         },
-        Request::Record => jc3vr_view::recorder::tracking::request_start(),
-        Request::StopRecording => jc3vr_view::recorder::tracking::request_stop(),
+        Request::Record => jc3vr_view::recorder::request_start(),
+        Request::StopRecording => jc3vr_view::recorder::request_stop(),
     }
 }
 

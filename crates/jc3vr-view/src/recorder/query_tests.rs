@@ -1,7 +1,7 @@
 //! The tracking recorder's owned snapshots and non-reaping query.
 
 use super::*;
-use crate::recorder::tracking::writer::{Completion, ControlledCompletion};
+use crate::recorder::writer::{Completion, ControlledCompletion};
 
 #[test]
 fn local_snapshot_preserves_stopped_fields_and_completed_writer_ownership() {

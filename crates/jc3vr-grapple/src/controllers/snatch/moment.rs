@@ -2,7 +2,7 @@
 //! phase to the next, gathered while it runs and noted once it has settled.
 
 use jc3vr_input::frame::Hand;
-use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
+use jc3vr_view::recorder::{events, events::EventKind, format::hand_to_file};
 use tracking_format::event::{Label, Snatch};
 
 /// What a step saw beyond the phases it went between.

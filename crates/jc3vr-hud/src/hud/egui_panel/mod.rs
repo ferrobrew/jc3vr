@@ -39,7 +39,7 @@ use jc3vr_input::{
     frame::{Hand, Pose},
 };
 use jc3vr_view::{
-    hud::pointer::panel::{RenderedPanel, publish_egui_panel, rendered_camera},
+    hud::panel::{RenderedPanel, publish_egui_panel, rendered_camera},
     vr::EguiPanelConfig,
 };
 use parking_lot::Mutex;

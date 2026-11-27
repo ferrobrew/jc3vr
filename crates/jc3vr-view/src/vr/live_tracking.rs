@@ -11,7 +11,7 @@ use jc3vr_input::frame::{ControllerFrame, Pose, TrackedPose};
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::{controllers::body::rig::origin_provenance::OriginEvidence, vr::convert};
+use crate::{controllers::origin_provenance::OriginEvidence, vr::convert};
 
 /// The located head, with the exact transform used to rebase grips.
 /// `cockpit_from_local` is a transform value, not a complete origin-generation identity.

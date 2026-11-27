@@ -38,7 +38,7 @@ use jc3vr_input::{
     frame::{Hand, Pose},
     motion,
 };
-use jc3vr_view::recorder::tracking::{events, events::EventKind};
+use jc3vr_view::recorder::{events, events::EventKind};
 use parking_lot::Mutex;
 
 use crate::controllers::{

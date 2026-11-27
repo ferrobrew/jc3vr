@@ -22,7 +22,7 @@ use crate::{
     controllers::cockpit::CockpitTransform,
     fsr::FSR_CONFIG,
     hooks::camera::config::CAMERA_CONFIG,
-    hud::pointer::panel::publish_camera,
+    hud::panel::publish_camera,
     stereo::STEREO_STATE,
     tuning::VIEW,
     vr::{FreezeMode, VR_CONFIG, harness, pose_control},

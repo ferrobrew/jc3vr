@@ -13,9 +13,9 @@ use jc3vr_input::{
 use tracking_format::{self as file, model as wire};
 
 #[cfg(test)]
-use crate::recorder::tracking::format::Recording;
+use crate::recorder::format::Recording;
 use crate::{
-    recorder::tracking::format::{
+    recorder::format::{
         ControllerSample, EyeSample, Frame, HeadSample, Header, RecenterEvent, SemanticSample,
         SessionSample, StartMarker,
     },

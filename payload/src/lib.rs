@@ -9,7 +9,7 @@ use jc3vr_physical::controllers::physical_hands;
 use jc3vr_render::hooks::graphics_engine::shader::restore_original_shaders_on_eject;
 use jc3vr_tooling::{director, testing};
 use jc3vr_ui::ui;
-use jc3vr_view::{hooks::graphics_engine::capture, recorder::tracking, vr};
+use jc3vr_view::{hooks::graphics_engine::capture, recorder, vr};
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
