@@ -1,5 +1,6 @@
 use std::{mem, time::Instant};
 
+use glam::Quat;
 use jc3vr_input::frame::{ActionSetKind, HandFrame, TrackedPose};
 
 use super::*;
@@ -235,12 +236,12 @@ fn heavy_write_rejection_remains_distinct_from_a_zero_request() {
         linear: Vec3::ZERO,
         angular: Vec3::ZERO,
     });
-    sample.write = NativeWrite::Rejected(BodyError::Reowned);
+    sample.write = NativeWrite::Rejected(PhysicsError::Reowned);
     sample.on_drop_returned = true;
     attempt.drop = Some(sample);
     status.record(attempt);
     let rejected = status.latest.unwrap().drop.unwrap();
-    assert_eq!(rejected.write, NativeWrite::Rejected(BodyError::Reowned));
+    assert_eq!(rejected.write, NativeWrite::Rejected(PhysicsError::Reowned));
     assert_eq!(rejected.requested_world_motion.unwrap().linear, Vec3::ZERO);
     assert_eq!(
         status.latest.unwrap().native_readback,
@@ -274,10 +275,12 @@ fn controller(hand: Hand) -> ControllerContext {
 fn release_frame() -> ReleaseFrame {
     ReleaseFrame {
         origin: Vec3::new(100.0, 20.0, -30.0),
-        rotation: Quat::IDENTITY,
+        rig: RigSample {
+            rotation: Quat::IDENTITY,
+            recenters: 0,
+        },
         scale: 1.0,
         teleport_epoch: 0,
-        recenters: 0,
     }
 }
 
@@ -337,7 +340,10 @@ fn release_converts_point_motion_and_scale_once_and_rig_motion_once() {
     let context = controller(Hand::Left);
     let rig = RigMotion {
         frame: ReleaseFrame {
-            rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            rig: RigSample {
+                rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+                ..release_frame().rig
+            },
             scale: 2.0,
             ..release_frame()
         },
@@ -346,7 +352,7 @@ fn release_converts_point_motion_and_scale_once_and_rig_motion_once() {
             angular: Vec3::Y,
         },
     };
-    let point = rig.frame.origin + rig.frame.rotation * (Vec3::NEG_Z * 0.2);
+    let point = rig.frame.origin + rig.frame.rig.rotation * (Vec3::NEG_Z * 0.2);
     let sample = release_sample(1.0, Vec3::X * 2.0, Vec3::Y * 3.0);
     let release = estimate_release(ReleaseInput {
         rig: Some(rig),
@@ -356,7 +362,7 @@ fn release_converts_point_motion_and_scale_once_and_rig_motion_once() {
         history_after_s: None,
         point_world: point,
     });
-    let hand_linear = rig.frame.rotation * (Vec3::X * 1.7) * 2.0;
+    let hand_linear = rig.frame.rig.rotation * (Vec3::X * 1.7) * 2.0;
     let transport = rig.motion.linear + rig.motion.angular.cross(point - rig.frame.origin);
     assert_motion(release.world, hand_linear + transport, Vec3::Y * 4.0);
     let mut drop = observation(
@@ -535,12 +541,18 @@ fn transport_is_finite_differenced_once_and_discontinuities_reprime_it() {
             ..next
         },
         ReleaseFrame {
-            recenters: 1,
+            rig: RigSample {
+                recenters: 1,
+                ..next.rig
+            },
             ..next
         },
         ReleaseFrame { scale: 2.0, ..next },
         ReleaseFrame {
-            rotation: Quat::from_rotation_y(1.0),
+            rig: RigSample {
+                rotation: Quat::from_rotation_y(1.0),
+                ..next.rig
+            },
             ..next
         },
         ReleaseFrame {
@@ -564,13 +576,16 @@ fn transport_is_finite_differenced_once_and_discontinuities_reprime_it() {
 fn composed_head_shift_does_not_become_a_wrist_rotation_lever() {
     let context = controller(Hand::Right);
     let base = ReleaseFrame {
-        rotation: Quat::from_rotation_y(0.4),
+        rig: RigSample {
+            rotation: Quat::from_rotation_y(0.4),
+            ..release_frame().rig
+        },
         scale: 1.5,
         ..release_frame()
     };
     let origin = base.origin + Vec3::new(0.5, 0.2, -0.1);
     let head_cockpit = Vec3::new(0.25, 0.1, -0.3);
-    let head_world = origin + base.rotation * (head_cockpit * base.scale);
+    let head_world = origin + base.rig.rotation * (head_cockpit * base.scale);
     let frame = base.with_composed_head(head_world, head_cockpit);
     assert!(frame.origin.distance(origin) < 1e-4);
     let sample = MotionSample {
@@ -579,7 +594,7 @@ fn composed_head_shift_does_not_become_a_wrist_rotation_lever() {
         ..release_sample(1.0, Vec3::ZERO, Vec3::Y * 4.0)
     };
     let lever = sample.orientation * (Vec3::NEG_Z * 0.2);
-    let point = origin + frame.rotation * ((sample.position + lever) * frame.scale);
+    let point = origin + frame.rig.rotation * ((sample.position + lever) * frame.scale);
     let release = estimate_release(ReleaseInput {
         rig: Some(RigMotion {
             frame,
@@ -597,7 +612,7 @@ fn composed_head_shift_does_not_become_a_wrist_rotation_lever() {
     assert_eq!(release.source, SampleSource::TimestampedHandHistory);
     assert_motion(
         release.world,
-        frame.rotation * (Vec3::Y * 4.0).cross(lever) * frame.scale,
+        frame.rig.rotation * (Vec3::Y * 4.0).cross(lever) * frame.scale,
         Vec3::Y * 4.0,
     );
 }
@@ -611,11 +626,14 @@ fn changing_composed_origin_transports_stationary_tracking_once() {
     let current_origin = origin + Vec3::X * 0.02;
     let current_head = raw_head + Vec3::X * 0.1;
     let current = ReleaseFrame {
-        rotation: Quat::from_rotation_y(0.08),
+        rig: RigSample {
+            rotation: Quat::from_rotation_y(0.08),
+            ..base.rig
+        },
         ..base
     };
     let current = current.with_composed_head(
-        current_origin + current.rotation * current_head,
+        current_origin + current.rig.rotation * current_head,
         current_head,
     );
     let mut transport = ReleaseTransport::new();
@@ -626,7 +644,7 @@ fn changing_composed_origin_transports_stationary_tracking_once() {
         position: Vec3::new(0.3, -0.1, -0.4),
         ..release_sample(1.0, Vec3::ZERO, Vec3::ZERO)
     };
-    let lever = current.rotation * sample.position;
+    let lever = current.rig.rotation * sample.position;
     let context = controller(Hand::Left);
     let release = estimate_release(ReleaseInput {
         rig: Some(rig),
@@ -652,7 +670,10 @@ fn second_input_tick_after_recenter_excludes_old_peak_and_coordinate_difference(
         assert_eq!(transport.update(Some(previous), 0.02, Some(0.94)), None);
         assert!(transport.update(Some(previous), 0.02, Some(0.96)).is_some());
         let recentered = ReleaseFrame {
-            recenters: 1,
+            rig: RigSample {
+                recenters: 1,
+                ..previous.rig
+            },
             ..previous
         };
         assert_eq!(transport.update(Some(recentered), 0.02, Some(0.98)), None);

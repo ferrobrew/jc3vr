@@ -9,12 +9,16 @@
 use std::time::Duration;
 
 use body_rig::math::rotation::{angular_velocity, shortest};
-use glam::{Quat, Vec3};
+use glam::Vec3;
 use jc3gi::character::inventory::WeaponSlot;
-use jc3vr_body::controllers::{clock::TimeScale, physics::bodies::BodyError, telemetry::Thrown};
+use jc3vr_body::controllers::{
+    clock::TimeScale,
+    physics::{error::PhysicsError, rig::RigSample},
+    telemetry::Thrown,
+};
 use jc3vr_input::{
     frame::{self, ControllerFrame, Hand},
-    motion::{self, MotionSample, RELEASE_ESTIMATE},
+    motion::{self, MotionSample, RELEASE_ESTIMATE, ReleaseShape, shaped_release},
 };
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
@@ -28,10 +32,10 @@ use crate::controllers::weapons::hold::{equip::DockRefusal, tuning::HOLD};
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct ReleaseFrame {
     pub origin: Vec3,
-    pub rotation: Quat,
+    /// The body's facing, which rotates the cockpit into the world, and the recenter count.
+    pub rig: RigSample,
     pub scale: f32,
     pub teleport_epoch: u64,
-    pub recenters: u32,
 }
 
 /// A fresh rig transform and its world-space motion, excluding hand motion.
@@ -76,14 +80,15 @@ impl ReleaseTransport {
         };
         if !(0.001..=HOLD.get().hold.release_max_age_s).contains(&dt)
             || current.teleport_epoch != previous.teleport_epoch
-            || current.recenters != previous.recenters
+            || current.rig.recenters != previous.rig.recenters
             || (current.scale - previous.scale).abs() > 1e-4
             || current.origin.distance(previous.origin) > 5.0
         {
             self.cut_history(time_s);
             return None;
         }
-        let angle = shortest(current.rotation * previous.rotation.inverse()).to_scaled_axis();
+        let angle =
+            shortest(current.rig.rotation * previous.rig.rotation.inverse()).to_scaled_axis();
         if !angle.is_finite() || angle.length() > std::f32::consts::FRAC_PI_4 {
             self.cut_history(time_s);
             return None;
@@ -116,7 +121,7 @@ impl ReleaseFrame {
         self.origin = CockpitTransform {
             head_world,
             head_cockpit,
-            body: self.rotation,
+            body: self.rig.rotation,
             world_scale: self.scale,
         }
         .point_to_world(Vec3::ZERO);
@@ -125,8 +130,8 @@ impl ReleaseFrame {
 
     fn valid(self) -> bool {
         self.origin.is_finite()
-            && self.rotation.is_finite()
-            && (self.rotation.length_squared() - 1.0).abs() < 1e-3
+            && self.rig.rotation.is_finite()
+            && (self.rig.rotation.length_squared() - 1.0).abs() < 1e-3
             && self.scale.is_finite()
             && self.scale > 0.0
     }
@@ -183,7 +188,8 @@ impl ReleaseMotion {
     /// at any time scale. The carried part is bounded only by the hold's
     /// [`max_carried_mps`](crate::controllers::weapons::hold::tuning::HoldTuning::max_carried_mps):
     /// a throw from a vehicle keeps the vehicle's speed, and a stale or corrupt reading does not
-    /// fling the released object.
+    /// fling the released object. The shaping is the one every release takes ([`shaped_release`]),
+    /// with the hand's share unscaled.
     pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
         let cap = if max_speed_mps.is_finite() {
             max_speed_mps.max(0.0) / self.time_scale.get()
@@ -199,9 +205,15 @@ impl ReleaseMotion {
         };
         let carried =
             finite(self.inherited.linear).clamp_length_max(HOLD.get().hold.max_carried_mps);
-        let own = finite(self.world.linear) - carried;
         WorldMotion {
-            linear: carried + own.clamp_length_max(cap),
+            linear: shaped_release(
+                finite(self.world.linear),
+                carried,
+                ReleaseShape {
+                    scale: 1.0,
+                    max_speed_mps: cap,
+                },
+            ),
             angular: finite(self.world.angular),
         }
     }
@@ -284,7 +296,7 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
         }
     }
     let point_cockpit =
-        rig.frame.rotation.inverse() * (input.point_world - rig.frame.origin) / rig.frame.scale;
+        rig.frame.rig.rotation.inverse() * (input.point_world - rig.frame.origin) / rig.frame.scale;
     let offset = latest.orientation.inverse() * (point_cockpit - latest.position);
     let Some(linear) = motion::release_velocity(&samples, release_s, offset, RELEASE_ESTIMATE)
     else {
@@ -293,8 +305,8 @@ pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
     let angular = motion::release_angular_velocity(&samples, release_s, RELEASE_ESTIMATE)
         .unwrap_or(Vec3::ZERO);
     let world = WorldMotion {
-        linear: rig.frame.rotation * linear * rig.frame.scale + inherited.linear,
-        angular: rig.frame.rotation * angular + inherited.angular,
+        linear: rig.frame.rig.rotation * linear * rig.frame.scale + inherited.linear,
+        angular: rig.frame.rig.rotation * angular + inherited.angular,
     };
     if !(world.linear.is_finite() && world.angular.is_finite()) {
         return fallback;
@@ -600,7 +612,7 @@ pub enum NativeWrite {
     NotAttempted,
     MissingBody,
     MissingOwner,
-    Rejected(BodyError),
+    Rejected(PhysicsError),
     SetterReturned,
 }
 

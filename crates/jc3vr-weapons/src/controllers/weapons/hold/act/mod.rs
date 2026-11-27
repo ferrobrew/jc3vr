@@ -33,7 +33,7 @@ use jc3vr_body::controllers::{
     hands::grip,
     held::{SnapStart, SnapView},
     intent,
-    physics::local_player::LocalPlayer,
+    physics::{local_player::LocalPlayer, rig::RigSample},
     telemetry,
 };
 use jc3vr_core::game_tick::GameTick;
@@ -45,7 +45,7 @@ use jc3vr_view::{
     headpose,
     headpose::teleport,
     recorder::tracking::{events, events::EventKind},
-    vr::{VR_CONFIG, recenter_count},
+    vr::VR_CONFIG,
 };
 use parking_lot::Mutex;
 
@@ -834,10 +834,9 @@ fn sample_release_transport(dt: f32) {
         let head_world = jc3vr_view::hooks::camera::eye_point();
         ReleaseFrame {
             origin: head_world,
-            rotation: headpose::xr::body_rotation(),
+            rig: RigSample::now(),
             scale,
             teleport_epoch: teleport::epoch(),
-            recenters: recenter_count(),
         }
         .with_composed_head(head_world, head_cockpit.position)
     });
