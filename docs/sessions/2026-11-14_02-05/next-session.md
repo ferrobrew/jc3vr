@@ -156,6 +156,21 @@ Seated characters through broken glass.
 120. Broken glass: shatter a side window and punch a passenger hard: he is knocked out of the seat. An intact window gives no knockdown.
 121. Broken glass: hijacking through a hand-opened door and punching a rider off a motorcycle work as before.
 
+One release for props and weapons. Props now throw like grenades: the controller's peak, the hand's spin, the player's movement added once, and only the hand's share capped at 15 m/s.
+
+122. Release: standing, throw a crate in one hand and a grenade in the other with the same swing: they leave at about the same speed and direction. Note whether props now feel weaker or stronger than before (they were capped at 25 m/s overall).
+123. Release: flick a long prop with the wrist: it spins with the hand's turn, not its own, and the far end swings.
+124. Release: from a car at speed, throw a prop and a grenade forward and sideways: both keep the car's speed and land ahead of where they left, not behind.
+125. Release: in slow motion, throw a prop and a grenade: both leave as fast as the hand moved and carry farther, with no visible slowing at the release.
+126. Release: grab a prop mid-swing and let go at once: the swing before the grab does not fling it.
+127. Release: snap-turn while holding a prop, a grenade, and a gun, then throw on or right after the turn: no sideways spin or kick from the turn, and the throw goes where the hand moved.
+128. Release: recenter while holding, then throw: a throw within a tick of the recenter may leave with only your movement; later ones are normal.
+129. Release: smooth-turn fast with the stick and the mouse while holding a prop against a wall: the hand bodies follow the turn rather than jumping, and nothing is flung.
+130. Release: snap-turn and recenter while hand-climbing: the grips re-take from where the body is, with no pull or fling.
+131. Release: snap-turn and recenter while pumping the grapple swing: the pump starts afresh, with no kick.
+132. Release: enter and leave a vehicle holding a prop (the view's hard steps): the hands do not swing the prop through the car.
+133. Release: die and respawn while holding a prop and a gun: nothing is flung on the respawn.
+
 ## What was built for the deferred work
 
 Everything the earlier plans deferred was built on 15 November, untested in the headset; the checks above cover it. The commits are listed in the [README](README.md#the-deferred-work-built-on-15-november).

@@ -23,7 +23,7 @@ The clocks the controllers read are these. The bindings tick's step is the game'
 | The palms' velocity smoothing (`physics/observe.rs`, `physical_hands/tick.rs`) | Real stretch | The smoothing's time constant was game seconds, so throws and flicks were smoothed four times longer at a quarter. |
 | The palms' lead (`physics/step.rs`) | Game seconds | The target's age, real, times a velocity per game second overshot by `1 / scale`. |
 | The body rig's step drive (`body/rig/root/`) | Real, converted | The step drive closes the gap to the player's neck: paced and capped per real second, then handed to the game per game second, so the body keeps up with the player's steps ([rig.md, "Steps"](../body/rig.md#steps)). |
-| A throw (`hold::act::release_at`, every gun, grenade, and charge) | Real, converted | See below. |
+| A throw (`physics::release`, every prop, gun, grenade, and charge) | Real, converted | See below. |
 | The reload: the taps, the flicks, the grip's motion, the round's insertion and its float into the well, and the action's return (`weapons/reload/`) | Real step | The player's hands and what they hold. A loose round carried as a body in the world keeps the game step. |
 | The wingsuit gestures, the grip's hand speed, the haptics, the seated follow, the head fade, the weight spring, the dock slides, the recoil springs, the grapple hang's pump | Real already | Display times or the wall clock. The recoil's spring settles in real time while shots come further apart; it is the player's arm settling. |
 | The snatch's wire timeouts | Game step | The wire flies in the world. |
@@ -31,7 +31,7 @@ The clocks the controllers read are these. The bindings tick's step is the game'
 
 ## Throws
 
-A release takes the hand's velocity from the controller's history, per real second, and the player's movement through the rig, per game second (`ReleaseMotion::in_game_time`). The hand's part becomes the same motion per game second, `1 / scale` as fast in the world's units, and the cap against tracking glitches (the [hold tuning](../tuning.md)'s `hold.max_throw_mps`) holds per real second. In slow motion an item leaves the hand as fast as the hand moved, carrying on from the hold, which keeps a held body with the hand in real time, rather than slowing by the scale the moment the fingers open. The player is fast in a slowed world, so a throw also carries farther: at a quarter, four times as fast, and on the world's gravity farther still. Leaving the hand's real speed unconverted would keep a throw's arc the same as at full speed, but the item would stop dead against the hand that threw it.
+A release takes the hand's velocity from the controller's history, per real second, and the player's movement through the rig, per game second (`ReleaseMotion::in_game_time`). The hand's part becomes the same motion per game second, `1 / scale` as fast in the world's units, and the cap against tracking glitches (the substrate [tuning](../tuning.md)'s `release.max_hand_mps`) holds per real second. In slow motion an item leaves the hand as fast as the hand moved, carrying on from the hold, which keeps a held body with the hand in real time, rather than slowing by the scale the moment the fingers open. The player is fast in a slowed world, so a throw also carries farther: at a quarter, four times as fast, and on the world's gravity farther still. Leaving the hand's real speed unconverted would keep a throw's arc the same as at full speed, but the item would stop dead against the hand that threw it.
 
 ## Unverified in the headset
 
