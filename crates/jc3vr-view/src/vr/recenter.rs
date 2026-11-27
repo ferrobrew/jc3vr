@@ -377,10 +377,12 @@ const REQUEST_POSTURE: u8 = 1 << 3;
 /// Drive the gameplay-resume auto-recenter and service the recenters asked for since the last frame.
 /// Call once per frame on the game thread, before `frame_wait` locates the views. Arms while the
 /// game is not in settled gameplay (frontend, loading, or no local player character), and fires a
-/// single manual recenter once gameplay is running, the session has no baseline yet, and the
-/// player's head anchor has stopped moving (the entry animation has finished), so the neutral snaps
-/// to the player's real pose. A baseline already taken disarms it instead. In-session transitions
-/// such as exiting a vehicle keep a live character, so they never re-arm and never fire.
+/// single manual recenter once gameplay is running and the player's head anchor has stopped moving
+/// (the entry animation has finished), so the neutral snaps to the player's real pose. A baseline
+/// already taken disarms it instead, unless the local player character went missing since: that is
+/// a new world (a save loaded, a new game), whose spawn the old baseline was not taken at, so it
+/// recenters again. Pausing and in-session transitions such as exiting a vehicle keep a live
+/// character, so they keep a baseline the player calibrated.
 pub fn auto_recenter_tick() {
     if !is_running() {
         PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
@@ -403,6 +405,7 @@ pub fn auto_recenter_tick() {
     // while in-session transitions (which keep a live character) do not.
     if !in_gameplay || !has_character {
         s.armed = true;
+        s.new_world |= !has_character;
         s.settled_since = None;
         s.last_anchor = None;
         return;
@@ -410,7 +413,7 @@ pub fn auto_recenter_tick() {
     if !s.armed {
         return;
     }
-    if lock_state().baseline.is_some() {
+    if baseline_holds(s.new_world, lock_state().baseline.is_some()) {
         s.armed = false;
         s.settled_since = None;
         s.last_anchor = None;
@@ -430,6 +433,7 @@ pub fn auto_recenter_tick() {
         (true, Some(a)) => {
             if s.observe_anchor(a, sample, now) {
                 s.armed = false;
+                s.new_world = false;
                 drop(s);
                 // In place rather than requested: this is the top of the frame, before it takes
                 // the runtime lock.
@@ -445,6 +449,12 @@ pub fn auto_recenter_tick() {
             s.last_anchor = anchor;
         }
     }
+}
+
+/// Whether an existing baseline stands in for the auto-recenter: it does unless the world is a new
+/// one, whose spawn the baseline was not taken at.
+fn baseline_holds(new_world: bool, has_baseline: bool) -> bool {
+    has_baseline && !new_world
 }
 
 /// The recenter baseline: a position and a yaw-only orientation, re-based from the latest VIEW-space
@@ -508,11 +518,15 @@ static AUTO_RECENTER: Mutex<AutoRecenterState> = Mutex::new(AutoRecenterState {
     last_anchor: None,
     settled_since: None,
     last_sample: None,
+    new_world: false,
 });
 
 struct AutoRecenterState {
     /// Armed to fire one recenter once gameplay settles. Set while not in settled gameplay.
     armed: bool,
+    /// The local player character was missing since the last recenter, so the world is a new one
+    /// and an existing baseline does not hold for it.
+    new_world: bool,
     /// The head anchor last frame, for the settle test.
     last_anchor: Option<glam::Vec3>,
     settled_since: Option<Instant>,
@@ -557,6 +571,7 @@ mod tests {
             last_anchor: None,
             settled_since: None,
             last_sample: None,
+            new_world: false,
         };
         let now = Instant::now();
         let sample = |sequence, time_ns| GestureSample {
@@ -582,6 +597,13 @@ mod tests {
             sample(4, 900_000_000),
             now + Duration::from_millis(900)
         ));
+    }
+
+    #[test]
+    fn a_baseline_holds_across_a_resume_but_not_a_new_world() {
+        assert!(baseline_holds(false, true));
+        assert!(!baseline_holds(false, false));
+        assert!(!baseline_holds(true, true));
     }
 
     #[test]
