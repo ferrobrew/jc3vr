@@ -5,7 +5,7 @@
 use std::fmt::Display;
 
 use jc3vr_core::{
-    config::engine::{Invalid, positive, range},
+    config::{Invalid, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

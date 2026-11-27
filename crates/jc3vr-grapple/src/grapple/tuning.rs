@@ -4,7 +4,7 @@
 //! the grapple button's gestures, and the yank.
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range, vec3},
+    config::{Invalid, nonnegative, positive, range, vec3},
     tuning::Tuning,
 };
 use serde::Deserialize;

@@ -3,7 +3,7 @@
 use std::f32::consts::PI;
 
 use jc3vr_core::{
-    config::engine::{Invalid, positive, range},
+    config::{Invalid, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

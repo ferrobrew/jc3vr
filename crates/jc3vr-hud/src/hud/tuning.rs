@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use glam::Vec3;
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range, vec3},
+    config::{Invalid, nonnegative, positive, range, vec3},
     published::Window,
     tuning::Tuning,
 };

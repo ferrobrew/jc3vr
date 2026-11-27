@@ -1,6 +1,6 @@
 //! The world-space overlay layer's diagnostic switches.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::intent::tuning::CONTROLS;

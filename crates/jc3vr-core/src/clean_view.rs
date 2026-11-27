@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::engine::ConfigSlot;
+use crate::config::ConfigSlot;
 
 /// The clean view's settings, at `director.clean_view` in the configuration (never in the file).
 /// The payload binds the slot to its field in the directing settings at startup.
@@ -89,7 +89,7 @@ pub fn hide() {
     publish(*clean_view);
 }
 
-/// Publish the config's clean view, once per frame from [`crate::director::update`], so a change
+/// Publish the config's clean view, once per frame from the tooling's directing pass (`jc3vr_tooling::director::update`), so a change
 /// made in the debug UI reaches the gates. Logs the edges so a recording's log shows when the
 /// overlays went away.
 pub fn update(cfg: &CleanViewConfig) {

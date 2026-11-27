@@ -1,6 +1,6 @@
 //! Breaking glass's settings, `controllers.glass`.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// The glass breaking's settings, at `controllers.glass` in the settings file; the payload binds

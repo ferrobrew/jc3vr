@@ -1,6 +1,6 @@
 //! Headpose configuration: the thresholds and tunables for the headpose simulation.
 
-use jc3vr_core::config::engine::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, range};
+use jc3vr_core::config::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, range};
 use serde::{Deserialize, Serialize};
 
 /// The head pose settings, at `headpose` in the settings file; the payload binds the slot at

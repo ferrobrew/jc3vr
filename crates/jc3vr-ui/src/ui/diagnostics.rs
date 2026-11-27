@@ -13,7 +13,7 @@ use jc3gi::graphics_engine::{
     },
     render_engine::{RenderBlockTypeInstances, RenderBlockTypeRegistry},
 };
-use jc3vr_core::config::engine::{Parts, edit_parts};
+use jc3vr_core::config::{Parts, edit_parts};
 use jc3vr_render::hooks::graphics_engine::config::EXPOSURE_CONFIG;
 use jc3vr_view::stereo::config::STEREO_CONFIG;
 

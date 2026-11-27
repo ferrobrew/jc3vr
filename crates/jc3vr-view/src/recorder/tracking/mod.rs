@@ -38,7 +38,7 @@ use std::{
 };
 
 use jc3vr_core::{
-    config::engine::{ConfigSlot, SlotOptions, Snapshot},
+    config::{ConfigSlot, SlotOptions, Snapshot},
     session::{RecordingFile, SessionError},
 };
 use jc3vr_input::frame as controller_frame;

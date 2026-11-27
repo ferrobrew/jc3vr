@@ -4,7 +4,7 @@
 //! as moving, and the driver's view correction's ease.
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

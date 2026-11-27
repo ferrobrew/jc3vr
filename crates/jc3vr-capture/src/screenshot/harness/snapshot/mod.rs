@@ -898,7 +898,7 @@ fn plane_name(plane: Plane) -> String {
 }
 
 fn captures_folder() -> Option<PathBuf> {
-    jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
+    jc3vr_core::config::paths::dir().map(|dir| dir.join("captures"))
 }
 
 #[derive(Serialize)]

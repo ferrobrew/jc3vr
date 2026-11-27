@@ -1,7 +1,7 @@
 //! The body rig's settings, under `controllers.body.rig` (`docs/mod/body/rig.md`).
 
 use body_rig::{PelvisTuning, StepTuning, YawTuning};
-use jc3vr_core::config::engine::Invalid;
+use jc3vr_core::config::Invalid;
 use serde::{Deserialize, Serialize};
 
 /// The body rig's step switch and tuning. The switch defaults on; the tuning is the pure core's

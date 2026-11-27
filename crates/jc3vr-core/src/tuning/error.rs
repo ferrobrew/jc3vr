@@ -2,7 +2,7 @@
 
 use std::{fmt, io, path::Path};
 
-use crate::{config::engine::Invalid, session::wine::ConversionError};
+use crate::{config::Invalid, session::wine::ConversionError};
 
 /// Why one tuning file, or the directory the files are read from, could not be used.
 #[derive(Debug)]

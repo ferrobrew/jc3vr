@@ -42,7 +42,7 @@ use jc3gi::{
     types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
 };
 use jc3vr_body::controllers::{hands::ik, held::native::weapon_at, physics::refs::Strong};
-use jc3vr_core::{config::engine::paths, game_tick::GameTick, published::DetourQueue};
+use jc3vr_core::{config::paths, game_tick::GameTick, published::DetourQueue};
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{

@@ -3,8 +3,8 @@
 //!
 //! A slot is declared where its type is known and bound once, before anything reads it, by the
 //! code that knows the root's type: binding gives the slot its [`Projection`], the functions that
-//! find its part in the root ([`projection!`](crate::config::engine::projection)). Every slot
-//! shares the store's one lock, so the [nesting rule](crate::config::engine::store#lock-nesting)
+//! find its part in the root ([`projection!`](crate::config::projection)). Every slot
+//! shares the store's one lock, so the [nesting rule](crate::config::store#lock-nesting)
 //! covers them all.
 
 use std::{
@@ -17,8 +17,8 @@ use serde::{Serialize, de::DeserializeOwned};
 use toml::Value;
 
 #[cfg(any(test, feature = "test-support"))]
-use crate::config::engine::test_root;
-use crate::config::engine::{
+use crate::config::test_root;
+use crate::config::{
     automatic::{self, Observed},
     load::Reset,
     persist,
@@ -132,7 +132,7 @@ impl<T: 'static> ConfigSlot<T> {
 
     /// Lock the configuration to read the part, or to change it on the payload's own account (a
     /// fallback, a value discovered at runtime), which is not a reason to save. The guard derefs
-    /// to the part; see the [nesting rule](crate::config::engine::store#lock-nesting).
+    /// to the part; see the [nesting rule](crate::config::store#lock-nesting).
     pub fn lock(&self) -> SlotGuard<T> {
         let (guard, held) = store::lock_mapped(self.projection().exclusive);
         SlotGuard { guard, _held: held }
@@ -200,7 +200,7 @@ fn unbound(path: &str) -> ! {
 }
 
 /// The functions that find a slot's part in the root. Build one with
-/// [`projection!`](crate::config::engine::projection).
+/// [`projection!`](crate::config::projection).
 pub struct Projection<T: 'static> {
     shared: for<'a> fn(&'a Root) -> &'a T,
     exclusive: for<'a> fn(&'a mut Root) -> &'a mut T,
@@ -228,9 +228,9 @@ impl<T: 'static> Copy for Projection<T> {}
 #[macro_export]
 macro_rules! projection {
     ($root:ty $(, $($field:ident).+)?) => {
-        $crate::config::engine::Projection::new(
-            |root| &(*$crate::config::engine::downcast_ref::<$root>(root))$($(.$field)+)?,
-            |root| &mut (*$crate::config::engine::downcast_mut::<$root>(root))$($(.$field)+)?,
+        $crate::config::Projection::new(
+            |root| &(*$crate::config::downcast_ref::<$root>(root))$($(.$field)+)?,
+            |root| &mut (*$crate::config::downcast_mut::<$root>(root))$($(.$field)+)?,
         )
     };
 }
@@ -253,11 +253,11 @@ macro_rules! slot_children {
     ($parent:path { $($slot:path => $($field:ident).+),* $(,)? }) => {
         || {
             $(
-                $crate::config::engine::bind_child(
+                $crate::config::bind_child(
                     &$parent,
                     &$slot,
                     &[$(::std::stringify!($field)),+],
-                    $crate::config::engine::Projection::new(
+                    $crate::config::Projection::new(
                         |root| &$parent.project(root)$(.$field)+,
                         |root| &mut $parent.project_mut(root)$(.$field)+,
                     ),

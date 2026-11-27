@@ -550,7 +550,7 @@ mod tests {
                 eye_height: 1,
                 world_scale: 1.0,
             },
-            effective_config: jc3vr_core::config::engine::Snapshot::defaults(),
+            effective_config: jc3vr_core::config::Snapshot::defaults(),
             water_reflection: None,
             aa_weights: None,
             aa_draws: None,

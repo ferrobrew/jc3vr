@@ -58,7 +58,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use anyhow::Context as _;
 use jc3gi::graphics_engine::device::Device;
 use jc3vr_core::{
-    config::engine::{ConfigSlot, disable_automatically},
+    config::{ConfigSlot, disable_automatically},
     switch,
 };
 use parking_lot::Mutex;
@@ -349,7 +349,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         // (`crate::hud::mirror_overlay`) -- so here we only composite that texture as an
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
-        if !jc3vr_core::director::clean_view::hides_everything() {
+        if !jc3vr_core::clean_view::hides_everything() {
             let panel = *PANEL_CONFIG.lock();
             if panel.enabled {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop
@@ -372,7 +372,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
                     );
                     mirror.draw_overlay(&context.m_Context, &rtv, &srv, overlay);
                 }
-            } else if !jc3vr_core::director::clean_view::hides_desktop()
+            } else if !jc3vr_core::clean_view::hides_desktop()
                 && let Some(srv) = overlay_srv()
             {
                 // The flat overlay texture is window-sized, so stretching it across the whole buffer

@@ -1,8 +1,8 @@
 use std::{ffi::c_void, sync::OnceLock};
 
 use jc3vr_core::{
-    cpu_placement, director::clean_view, game_tick::GameTick, is_shutting_down, lifecycle, logging,
-    module, session, thread_role,
+    clean_view, cpu_placement, game_tick::GameTick, is_shutting_down, lifecycle, logging, module,
+    session, thread_role,
 };
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_physical::controllers::physical_hands;

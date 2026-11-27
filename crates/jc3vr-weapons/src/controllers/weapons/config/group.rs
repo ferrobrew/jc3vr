@@ -1,6 +1,6 @@
 //! Physical weapon handling's settings.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::weapons::{

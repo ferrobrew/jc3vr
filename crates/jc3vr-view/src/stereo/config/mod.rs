@@ -1,6 +1,6 @@
 //! Stereo rendering configuration. The live per-eye runtime state is [`crate::stereo::StereoState`].
 
-use jc3vr_core::config::engine::{ConfigSlot, Parts};
+use jc3vr_core::config::{ConfigSlot, Parts};
 use serde::{Deserialize, Serialize};
 
 use crate::vr::VR_CONFIG;
@@ -70,7 +70,7 @@ impl Default for StereoConfig {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_core::config::engine::Snapshot;
+    use jc3vr_core::config::Snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;

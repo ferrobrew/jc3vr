@@ -4,7 +4,7 @@
 use glam::Vec3;
 use jc3vr_body::tuning::Millis;
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range, vec3},
+    config::{Invalid, nonnegative, positive, range, vec3},
     tuning::Tuning,
 };
 use jc3vr_view::controllers::overlay::primitive::Rgba;

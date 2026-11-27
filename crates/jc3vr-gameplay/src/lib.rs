@@ -33,7 +33,7 @@
 //! - The hook libraries [`hooks::sim::hook_library`], [`hooks::online::hook_library`], and
 //!   [`hooks::input::hook_library`] (which composes the body crate's input detours around the look
 //!   detour), which the composition enables in its order with the other layers'.
-//! - The settings: each subsystem declares the [`ConfigSlot`](jc3vr_core::config::engine::ConfigSlot)
+//! - The settings: each subsystem declares the [`ConfigSlot`](jc3vr_core::config::ConfigSlot)
 //!   for its group beside the group's type (one per controllers group, such as
 //!   [`jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG`]), and the `controllers` slot
 //!   binds them wherever it is bound. A subsystem reads only its own group and the groups of the subsystems it builds on,

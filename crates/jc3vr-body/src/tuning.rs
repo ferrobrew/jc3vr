@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use jc3vr_core::{
-    config::engine::{Invalid, positive, range},
+    config::{Invalid, positive, range},
     published::Window,
     tuning::Tuning,
 };

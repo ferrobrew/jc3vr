@@ -1,7 +1,7 @@
 //! Floating-HUD configuration types. See `docs/mod/hud.md`.
 
 use jc3vr_core::{
-    config::engine::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, positive},
+    config::{ConfigSlot, Invalid, SlotOptions, load::reset_or_default, positive},
     slot_children,
 };
 use jc3vr_view::vr::{EguiPanelConfig, PANEL_CONFIG};

@@ -21,7 +21,7 @@ use std::{
 
 use glam::Vec3;
 use jc3vr_body::controllers::{grab::cockpit::ControlKind, haptics};
-use jc3vr_core::config::engine::{paths, write};
+use jc3vr_core::config::{paths, write};
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};

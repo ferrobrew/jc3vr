@@ -48,7 +48,7 @@ impl Drop for FixtureState {
 #[test]
 fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() {
     crate::test_support::register_head_participants();
-    let _config = jc3vr_core::config::engine::test_fixture();
+    let _config = jc3vr_core::config::test_fixture();
     // Plan admission is under test, not the live controller and world-rotation adapters.
     *CONTROLLERS_ENABLED.lock() = false;
     let _role = thread_role::enter(ThreadRole::Unmarked);

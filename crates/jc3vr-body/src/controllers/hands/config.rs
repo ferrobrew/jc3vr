@@ -1,6 +1,6 @@
 //! Controller-owned hands' wrist-to-grip offset.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// The controller-owned hands' settings, at `controllers.hands` in the settings file; the payload

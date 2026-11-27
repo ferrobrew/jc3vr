@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use jc3vr_core::config::engine::write;
+use jc3vr_core::config::write;
 use parking_lot::{Condvar, Mutex};
 
 pub(super) struct Snapshot {

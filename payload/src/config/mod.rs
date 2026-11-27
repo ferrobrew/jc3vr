@@ -26,7 +26,7 @@
 //! not saved for its own sake; one that switches off a setting the user chose goes through
 //! [`engine::disable_automatically`], so a later save keeps the user's choice. Every guard locks
 //! the one configuration lock, so a thread must not lock it again while it holds one (the
-//! [nesting rule](jc3vr_core::config::engine::store#lock-nesting)). See `docs/mod/settings.md`.
+//! [nesting rule](jc3vr_core::config::store#lock-nesting)). See `docs/mod/settings.md`.
 //!
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
 //! the load then reads a missing key as `None` and a present one as `Some`. A setting whose value is
@@ -63,7 +63,7 @@ pub(crate) mod slots;
 use std::sync::Once;
 
 use jc3vr_body::controllers::body::BodyDimensions;
-use jc3vr_core::config::{engine, engine::SlotGuard};
+use jc3vr_core::{config as engine, config::SlotGuard};
 use jc3vr_gameplay::{controllers::ControllersConfig, hooks::online::OnlineConfig};
 use jc3vr_hud::hud::HudConfig;
 use jc3vr_render::hooks::graphics_engine::config::{ExposureConfig, PostFxConfig};

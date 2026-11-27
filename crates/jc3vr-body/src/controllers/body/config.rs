@@ -1,6 +1,6 @@
 //! Body scale remapping between the player's body and the character's.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{estimator::EstimatorConfig, ik_body::IkBodyConfig, rig::RigConfig};

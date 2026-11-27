@@ -2,7 +2,7 @@
 //! ([`INVENTORY`](crate::controllers::weapons::inventory::tuning::INVENTORY)'s `wheel`). Whether
 //! the wheel acts at all is a setting ([`WheelConfig`](crate::controllers::weapons::wheel::config::WheelConfig)).
 
-use jc3vr_core::config::engine::{Invalid, positive, range};
+use jc3vr_core::config::{Invalid, positive, range};
 use serde::Deserialize;
 
 /// The weapon wheel (see [`crate::controllers::weapons::wheel`]): how its openers open it and how

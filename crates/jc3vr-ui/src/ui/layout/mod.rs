@@ -4,7 +4,7 @@ mod writer;
 
 use std::{fs, io, path::Path};
 
-use jc3vr_core::config::engine::paths;
+use jc3vr_core::config::paths;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

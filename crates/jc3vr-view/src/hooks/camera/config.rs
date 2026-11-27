@@ -1,6 +1,6 @@
 //! Camera hook configuration.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 pub const SCENE_NEAR_CLIP_M: f32 = 0.02;

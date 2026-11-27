@@ -3,7 +3,7 @@
 //! anchor, its height smoothing, the held view's head follow, and the arm strokes.
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

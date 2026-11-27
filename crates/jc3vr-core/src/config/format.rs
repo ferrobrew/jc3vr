@@ -7,14 +7,14 @@
 //! Format zero, a file without a version, holds every setting, each default as it stood when the
 //! file was written, so a default changed since is indistinguishable from the player's choice.
 //! [`upgrade`] takes the version out and hands the file to the schema's migration
-//! ([`ConfigRoot::migrate`](crate::config::engine::ConfigRoot::migrate)), which can remove such
+//! ([`ConfigRoot::migrate`](crate::config::ConfigRoot::migrate)), which can remove such
 //! defaults ([`remove_superseded`]) so that they take the current ones.
 
 use std::fmt;
 
 use toml::{Table, Value};
 
-use crate::config::engine::store::{Root, Schema};
+use crate::config::store::{Root, Schema};
 
 /// The format a save writes.
 pub const VERSION: i64 = 1;

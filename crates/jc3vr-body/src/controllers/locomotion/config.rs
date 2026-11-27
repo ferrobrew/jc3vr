@@ -1,7 +1,7 @@
 //! The stick locomotion's settings: the stick's direction frame and its velocity integrator's
 //! switch ([`StickConfig`]), under `controllers.locomotion`.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// Stick-driven on-foot velocity with fixed acceleration (see [`crate::controllers::locomotion`]).

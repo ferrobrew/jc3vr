@@ -3,7 +3,7 @@
 //! fixed in their modules under [`crate::controllers::roomscale`]. The chase that walks the body
 //! after the head is the rig's ([`crate::controllers::body::rig::config::ChaseConfig`]).
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// The posture and roomscale settings, at `controllers.roomscale` in the settings file; the payload

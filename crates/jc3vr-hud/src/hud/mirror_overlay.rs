@@ -16,7 +16,7 @@
 //!
 //! Only active while a VR session renders, the mirror is on, the floating panel is off (with the
 //! panel on, the mirror composites the panel texture instead), and the clean view is off
-//! ([`jc3vr_core::director::clean_view`], toggled with F4). Off, every path is the untouched flat
+//! ([`jc3vr_core::clean_view`], toggled with F4). Off, every path is the untouched flat
 //! overlay.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
@@ -39,7 +39,7 @@ pub fn release_on_eject() {
 /// not the VR runtime lock (see [`crate::hud::egui_panel::is_active`] for why).
 pub fn is_active() -> bool {
     jc3vr_view::vr::render_params(0).is_some()
-        && !jc3vr_core::director::clean_view::hides_desktop()
+        && !jc3vr_core::clean_view::hides_desktop()
         && jc3vr_view::vr::VR_CONFIG.query(|vr| vr.mirror)
         && !crate::hud::config::HUD_CONFIG.query(|hud| hud.egui_panel.enabled)
 }

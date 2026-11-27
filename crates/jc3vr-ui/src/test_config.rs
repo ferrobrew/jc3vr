@@ -1,5 +1,5 @@
 //! The configuration root of the crate's tests: the slots the crate's code reads, registered once
-//! before any test runs; see [`test_root`](jc3vr_core::config::engine::test_root).
+//! before any test runs; see [`test_root`](jc3vr_core::config::test_root).
 
 use jc3vr_body::controllers::body::BODY_CONFIG;
 use jc3vr_gameplay::{controllers::config::CONTROLLERS_CONFIG, hooks::online::ONLINE_CONFIG};

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use jc3vr_core::config::engine::Snapshot;
+use jc3vr_core::config::Snapshot;
 use jc3vr_render::probes::state::FrameDiagnostics;
 use jc3vr_view::stereo::dispatch::RenderMode;
 use serde::Serialize;

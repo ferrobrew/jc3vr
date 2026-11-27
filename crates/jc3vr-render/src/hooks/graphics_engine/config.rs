@@ -1,6 +1,6 @@
 //! Graphics-engine area configuration: exposure and post-effect toggles.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// The exposure settings, at `exposure` in the settings file; the payload binds the slot at

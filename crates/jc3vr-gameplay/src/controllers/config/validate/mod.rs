@@ -1,15 +1,15 @@
 //! Range and consistency checks for the controller settings whose types admit values the
 //! subsystems cannot use: the controller tuning and the per-weapon sight corrections. The tolerant
-//! load ([`jc3vr_core::config::engine::load`]) runs them on a loaded configuration through the
+//! load ([`jc3vr_core::config::load`]) runs them on a loaded configuration through the
 //! controller settings' slot ([`reset_invalid`]), and resets the setting a failure names, or the
 //! subtree when that does not make it pass. A failure is an
-//! [`Invalid`](jc3vr_core::config::engine::Invalid), which the engine owns so that a subsystem's own
+//! [`Invalid`](jc3vr_core::config::Invalid), which the engine owns so that a subsystem's own
 //! checks need nothing from this module.
 //!
 //! The checks are split by config area, one module per subsystem (or the group's own `validate`,
 //! where the group's crate owns its checks), each returning the first out-of-range or inconsistent
 //! setting in `controllers`' order. They are built from the engine's
-//! range checks ([`jc3vr_core::config::engine::range`] and its specializations).
+//! range checks ([`jc3vr_core::config::range`] and its specializations).
 
 mod aim;
 mod haptics;
@@ -18,7 +18,7 @@ mod physical_hands;
 mod weapons;
 
 use jc3vr_body::controllers::aim::sights::config::SightTable;
-use jc3vr_core::config::engine::{
+use jc3vr_core::config::{
     Invalid,
     load::{Reset, reset_named},
     vec2, vec3,

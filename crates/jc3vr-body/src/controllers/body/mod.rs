@@ -58,7 +58,7 @@ pub mod unarmed;
 
 use body_rig::math::shoulders::{eyes_to_right_shoulder, shoulders};
 use glam::{Quat, Vec3};
-use jc3vr_core::config::engine::{ConfigSlot, Invalid, SlotOptions, load::Reset};
+use jc3vr_core::config::{ConfigSlot, Invalid, SlotOptions, load::Reset};
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::calibration::{

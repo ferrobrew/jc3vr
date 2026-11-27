@@ -12,7 +12,7 @@ use std::{
     sync::LazyLock,
 };
 
-use jc3vr_core::config::engine::{paths, write};
+use jc3vr_core::config::{paths, write};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 

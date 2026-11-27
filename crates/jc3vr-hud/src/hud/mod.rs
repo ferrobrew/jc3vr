@@ -80,7 +80,7 @@ use jc3gi::{
         ui_manager::{GetIUIManager, UIManager},
     },
 };
-use jc3vr_core::{config::engine::disable_automatically, hooks::in_gameplay, switch};
+use jc3vr_core::{config::disable_automatically, hooks::in_gameplay, switch};
 use jc3vr_view::{
     hud::{
         pointer::panel::{RenderedPanel, publish_panel, rendered_camera},
@@ -131,9 +131,7 @@ pub fn current_mode() -> HudMode {
 /// floating panel, the game is in its gameplay HUD, and the clean view does not hide everything.
 /// The parts that need the controllers add the scheme.
 pub(crate) fn world_quads_active(cfg: &HudConfig) -> bool {
-    cfg.redirect
-        && current_mode() == HudMode::Hud
-        && !jc3vr_core::director::clean_view::hides_everything()
+    cfg.redirect && current_mode() == HudMode::Hud && !jc3vr_core::clean_view::hides_everything()
 }
 
 pub(crate) fn gameplay_hints_active() -> bool {
@@ -402,7 +400,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         world_markers::prepare_eye(context, hud.redirected_target());
         atlas::prepare_eye(context, hud.redirected_target());
     }
-    if !jc3vr_core::director::clean_view::hides_everything() {
+    if !jc3vr_core::clean_view::hides_everything() {
         world_markers::draw_billboards(context, device, target);
     }
     lost_weapons::draw(context, device, target, eye);

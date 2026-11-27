@@ -9,7 +9,7 @@
 //! against the engine's own "too far without load state" threshold.
 //!
 //! Bookmarks persist in `teleports.toml` in the configuration directory
-//! ([`jc3vr_core::config::engine::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
+//! ([`jc3vr_core::config::paths`]), so a shot's framing survives a relaunch. The stored transform is the character's full world matrix, so the facing comes back
 //! too and no axis convention is assumed.
 
 use std::{
@@ -332,7 +332,7 @@ impl State {
 
 /// The bookmarks file, in the configuration directory beside the settings.
 fn path() -> Option<PathBuf> {
-    jc3vr_core::config::engine::paths::file("teleports.toml")
+    jc3vr_core::config::paths::file("teleports.toml")
 }
 
 /// The player's current world matrix (`m_WorldMatrixT1`, what `GetTransform` returns). Main

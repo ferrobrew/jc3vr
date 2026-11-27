@@ -1,7 +1,7 @@
 //! The IK body's settings, `controllers.body.ik` (`docs/mod/body/ik-body.md`).
 
 use body_rig::contact::ContactTuning;
-use jc3vr_core::config::engine::Invalid;
+use jc3vr_core::config::Invalid;
 use serde::{Deserialize, Serialize};
 
 /// The IK-first on-foot body's settings: whether it gives the firm ragdoll its muscle target, and

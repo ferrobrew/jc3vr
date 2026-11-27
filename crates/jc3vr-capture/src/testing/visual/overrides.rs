@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use jc3vr_core::config::engine::Parts;
+use jc3vr_core::config::Parts;
 use jc3vr_render::hooks::graphics_engine::config::{
     EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG,
 };
@@ -463,7 +463,7 @@ impl Serialize for SinglePassOverrides {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_core::config::engine::Snapshot;
+    use jc3vr_core::config::Snapshot;
     use pretty_assertions::assert_eq;
 
     use super::*;

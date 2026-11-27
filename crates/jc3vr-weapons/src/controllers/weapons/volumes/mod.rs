@@ -35,7 +35,7 @@ use jc3vr_body::controllers::{
     body::rig::frames::SkeletonLandmarks,
     grab::{Candidate, GrabVolume},
 };
-use jc3vr_core::config::engine::{Invalid, positive, range, vec3};
+use jc3vr_core::config::{Invalid, positive, range, vec3};
 use jc3vr_input::frame::Hand;
 use serde::Deserialize;
 pub(crate) use stride::StrideFilter;

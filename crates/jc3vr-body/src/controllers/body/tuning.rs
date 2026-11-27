@@ -3,7 +3,7 @@
 //! body and the IK body keep their own files, beside their code.
 
 use jc3vr_core::{
-    config::engine::{Invalid, positive},
+    config::{Invalid, positive},
     tuning::Tuning,
 };
 use serde::Deserialize;

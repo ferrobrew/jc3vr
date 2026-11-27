@@ -1,7 +1,7 @@
 use detours_macro::detour;
 #[cfg(feature = "profiler")]
 use jc3vr_core::profiler::capture;
-use jc3vr_core::{director::clean_view, lifecycle};
+use jc3vr_core::{clean_view, lifecycle};
 use jc3vr_hud::{
     egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
     hud::{cursor, egui_panel},
@@ -162,7 +162,7 @@ fn is_first_press(lparam: LPARAM) -> bool {
     lparam.0 & 0x4000_0000 == 0
 }
 
-/// Toggle the clean view at its scope (`jc3vr_core::director::clean_view`): the flat egui debug
+/// Toggle the clean view at its scope (`jc3vr_core::clean_view`): the flat egui debug
 /// overlay leaves the desktop window, and at the everything scope every other overlay goes too.
 /// With no live VR panel, hiding releases editing and showing requests it through the device and
 /// neutral gates. The consumed key episode remains blocked through its release.

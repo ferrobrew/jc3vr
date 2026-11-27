@@ -63,7 +63,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
         let (enabled, dominant) = CONTROLLERS_CONFIG.query(|c| (c.enabled, c.acting_hand()));
         let active = enabled
             && scheme::is_controllers()
-            && !jc3vr_core::director::clean_view::hides_everything()
+            && !jc3vr_core::clean_view::hides_everything()
             && jc3vr_view::vr::render_params(0).is_some();
         panel.prepare(context, device, active, dominant.other());
     }

@@ -12,7 +12,7 @@ use jc3vr_body::{
     hooks::input::wingsuit::{WINGSUIT_EVADE_CONFIG, WingsuitEvadeConfig},
 };
 use jc3vr_core::{
-    config::engine::{ConfigSlot, Invalid, SlotOptions, range},
+    config::{ConfigSlot, Invalid, SlotOptions, range},
     slot_children,
 };
 use jc3vr_input::frame::Hand;

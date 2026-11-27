@@ -4,7 +4,7 @@
 //! subsystem that reads it and documents its values.
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range, vec3},
+    config::{Invalid, nonnegative, positive, range, vec3},
     tuning::Tuning,
 };
 use serde::Deserialize;

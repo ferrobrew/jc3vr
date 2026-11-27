@@ -22,7 +22,7 @@
 use std::collections::VecDeque;
 
 use glam::Vec3;
-use jc3vr_core::config::engine::{Invalid, nonnegative, positive};
+use jc3vr_core::config::{Invalid, nonnegative, positive};
 use serde::Deserialize;
 
 use crate::grapple::tuning::GRAPPLE;

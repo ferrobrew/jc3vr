@@ -1,6 +1,6 @@
 //! What the input self-check has already run against: each OpenXR runtime and set of controller
 //! interaction profiles it has checked, kept in `input_self_check.toml` in the configuration
-//! directory beside the settings ([`jc3vr_core::config::engine::paths`]), so that the check runs once
+//! directory beside the settings ([`jc3vr_core::config::paths`]), so that the check runs once
 //! per new runtime or controller rather than every session.
 
 use std::{
@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use jc3vr_core::config::engine::{paths, write};
+use jc3vr_core::config::{paths, write};
 use serde::{Deserialize, Serialize};
 
 /// A runtime and the controllers the check ran against: the runtime's name (its version is left out,

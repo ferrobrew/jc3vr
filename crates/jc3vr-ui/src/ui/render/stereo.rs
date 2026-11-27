@@ -1,7 +1,7 @@
 //! The core stereo widgets: the anti-aliasing, the shadow fit, and the shader reload that applies
 //! the shader patches.
 
-use jc3vr_core::config::engine::Parts;
+use jc3vr_core::config::Parts;
 use jc3vr_render::hooks::graphics_engine::{shader, shadow_fit_gap_m};
 use jc3vr_view::{
     fsr::{AntiAliasing, FSR_CONFIG},

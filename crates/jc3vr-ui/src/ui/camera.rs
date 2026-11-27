@@ -1,7 +1,7 @@
 //! The head and view feature: the camera switch and the frozen-pose diagnostic, the headpose
 //! readout, and the grapple comfort's readout it shares with the grapple feature.
 
-use jc3vr_core::config::engine::{Parts, edit_parts};
+use jc3vr_core::config::{Parts, edit_parts};
 use jc3vr_grapple::grapple;
 use jc3vr_view::{
     headpose, hooks,

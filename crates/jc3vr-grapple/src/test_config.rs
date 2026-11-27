@@ -1,5 +1,5 @@
 //! The configuration root of the crate's tests: the slots the crate's code reads, registered once
-//! before any test runs; see [`test_root`](jc3vr_core::config::engine::test_root).
+//! before any test runs; see [`test_root`](jc3vr_core::config::test_root).
 
 use jc3vr_body::{
     controllers::{
@@ -13,7 +13,7 @@ use jc3vr_body::{
     },
     hooks::input::wingsuit::WINGSUIT_EVADE_CONFIG,
 };
-use jc3vr_core::director::clean_view::CLEAN_VIEW_CONFIG;
+use jc3vr_core::clean_view::CLEAN_VIEW_CONFIG;
 use jc3vr_physical::controllers::{
     glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
 };

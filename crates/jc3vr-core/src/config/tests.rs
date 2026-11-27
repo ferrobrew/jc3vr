@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 
-use crate::config::engine::{
+use crate::config::{
     ConfigRoot, ConfigSlot, Invalid, Schema,
     format::{self, Format, Migrated, VERSION, VERSION_KEY},
     load::{self, LoadReport, Reset, reset_named},

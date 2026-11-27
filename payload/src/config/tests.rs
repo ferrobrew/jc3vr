@@ -8,11 +8,11 @@ use jc3vr_body::controllers::{
     roomscale::config::Posture,
 };
 use jc3vr_core::{
-    config::engine::{
+    clean_view::CleanViewScope,
+    config::{
         Snapshot,
         load::{LoadError, LoadReport},
     },
-    director::clean_view::CleanViewScope,
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_tooling::director::keymap::{Action, Binding, Chord};

@@ -1,6 +1,6 @@
 //! Checks for physical hand handling: the hands' strength.
 
-use jc3vr_core::config::engine::{Invalid, range};
+use jc3vr_core::config::{Invalid, range};
 use jc3vr_physical::controllers::physical_hands::PhysicalHandsConfig;
 
 /// Check the physical hand settings. Paths are relative to `controllers.physical_hands`.

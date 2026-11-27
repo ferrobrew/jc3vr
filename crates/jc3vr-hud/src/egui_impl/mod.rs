@@ -6,7 +6,7 @@ use jc3gi::{
     graphics_engine::graphics_engine::{ActiveCursor, GraphicsEngine, get_graphics_params},
     input::input_device_manager::InputDeviceManager,
 };
-use jc3vr_core::director::clean_view::hides_desktop;
+use jc3vr_core::clean_view::hides_desktop;
 use jc3vr_input::capture::{
     CapturePolicy, CaptureUpdate, DebugUiInput, DeviceEffect, InputObservation, OwnershipSnapshot,
     PanelMode, PanelRequest, publish_capture,

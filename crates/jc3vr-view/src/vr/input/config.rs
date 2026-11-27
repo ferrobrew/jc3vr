@@ -1,7 +1,7 @@
 //! What the VR runtime's input sampling reads from the settings: the raw input interpretation
 //! ([`InputConfig`], stored as `controllers.input`), and the frame's [`SamplingConfig`].
 
-use jc3vr_core::config::engine::{ConfigSlot, SlotOptions};
+use jc3vr_core::config::{ConfigSlot, SlotOptions};
 use jc3vr_input::{
     frame::{GripPress, Hand, InteractionProfile, PressRules},
     haptics::cues::Category,

@@ -56,7 +56,7 @@ pub(crate) fn poll() {
     if !enabled || !watched {
         return;
     }
-    let Some(path) = jc3vr_core::config::engine::paths::file(FILE_NAME) else {
+    let Some(path) = jc3vr_core::config::paths::file(FILE_NAME) else {
         return;
     };
     match take(&path) {

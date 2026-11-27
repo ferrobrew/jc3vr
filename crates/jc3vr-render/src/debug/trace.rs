@@ -4,7 +4,7 @@
 
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
-use jc3vr_core::{config::engine::Snapshot, session::CaptureFolder};
+use jc3vr_core::{config::Snapshot, session::CaptureFolder};
 use parking_lot::Mutex;
 
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path

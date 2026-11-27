@@ -4,7 +4,7 @@ use pretty_assertions::assert_eq;
 use serde::Deserialize;
 
 use super::*;
-use crate::config::engine::{Invalid, positive};
+use crate::config::{Invalid, positive};
 
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

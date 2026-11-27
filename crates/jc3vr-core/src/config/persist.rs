@@ -1,6 +1,6 @@
 //! Loading the settings file at startup and saving it as the user changes settings.
 //!
-//! The save has explicit write points: an edit ([`crate::config::engine::ConfigSlot::edit`]) marks
+//! The save has explicit write points: an edit ([`crate::config::ConfigSlot::edit`]) marks
 //! the configuration changed ([`note_edit`]), and the game thread's per-frame [`tick`] saves once
 //! the changes settle (the core tuning's `settings_save`), at most a few seconds after the first
 //! unsaved one so that a control held through every frame (an open debug UI tab edits each frame)
@@ -32,7 +32,7 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::{
-    config::engine::{
+    config::{
         automatic,
         format::{self, Format},
         load, paths,
@@ -736,7 +736,7 @@ fn snapshot(schema: &Schema) -> Box<Root> {
 }
 
 /// Hand a saved change to the schema
-/// ([`ConfigRoot::note_saved`](crate::config::engine::ConfigRoot::note_saved)), with every setting rather than
+/// ([`ConfigRoot::note_saved`](crate::config::ConfigRoot::note_saved)), with every setting rather than
 /// the file's changes alone, so that a tracking recording says what it ran with whatever the
 /// defaults of its build.
 fn note_settings() {
@@ -788,7 +788,7 @@ fn write_generation(generation: u64, path: &Path, text: &str) -> Result<Written,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::engine::{
+    use crate::config::{
         ConfigRoot,
         tests::{SAMPLE, Sample},
     };

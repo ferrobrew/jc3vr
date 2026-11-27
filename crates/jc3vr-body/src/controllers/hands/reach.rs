@@ -33,7 +33,7 @@ use body_rig::math::{
     smooth::{follow_factor, smoothstep_between},
 };
 use glam::{FloatExt, Quat, Vec3};
-use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range};
+use jc3vr_core::config::{Invalid, nonnegative, positive, range};
 use jc3vr_input::frame::{Hand, Pose};
 use serde::Deserialize;
 

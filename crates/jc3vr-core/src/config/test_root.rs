@@ -5,9 +5,9 @@
 //! instead, made of the slots its code reads: each listed slot holds its part, defaulted as the
 //! aggregate defaults it (the slot's declared default, or its type's, which is the group's
 //! `const fn new()`), and binds the slots nested in it as the aggregate does
-//! ([`SlotOptions::with_children`](crate::config::engine::SlotOptions::with_children)). A test reads and changes the configuration through the slots
+//! ([`SlotOptions::with_children`](crate::config::SlotOptions::with_children)). A test reads and changes the configuration through the slots
 //! exactly as the payload does, its loads run the checks the slots carry, and it takes the
-//! configuration exclusively with [`test_fixture`](crate::config::engine::test_fixture).
+//! configuration exclusively with [`test_fixture`](crate::config::test_fixture).
 //!
 //! A slot the root does not list or bind panics on its first read with a message naming the root
 //! to add it to. The registration runs from the C runtime's initializer table (`.CRT$XCU`), before
@@ -19,7 +19,7 @@ use std::{ptr, sync::OnceLock};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _, ser::Error as _};
 use toml::{Table, Value};
 
-use crate::config::engine::{
+use crate::config::{
     ConfigRoot, ConfigSlot, Projection, Schema,
     slot::{Bound, SlotValue},
     store::{self, Root},
@@ -42,15 +42,15 @@ macro_rules! test_root {
         pub(crate) fn register() {
             static REGISTER: ::std::sync::Once = ::std::sync::Once::new();
             REGISTER.call_once(|| {
-                $crate::config::engine::test_root::register(
+                $crate::config::test_root::register(
                     ::std::module_path!(),
                     ::std::vec![$(
-                        $crate::config::engine::test_root::part(
+                        $crate::config::test_root::part(
                             &$slot,
-                            $crate::config::engine::Projection::new(
-                                |root| $crate::config::engine::test_root::TestRoot::of(root)
+                            $crate::config::Projection::new(
+                                |root| $crate::config::test_root::TestRoot::of(root)
                                     .get(&$slot),
-                                |root| $crate::config::engine::test_root::TestRoot::of_mut(root)
+                                |root| $crate::config::test_root::TestRoot::of_mut(root)
                                     .get_mut(&$slot),
                             ),
                         )
@@ -169,8 +169,8 @@ impl ConfigRoot for TestRoot {
 
     fn migrate(
         _file: &mut Table,
-        _format: crate::config::engine::format::Format,
-    ) -> Vec<crate::config::engine::format::Migrated> {
+        _format: crate::config::format::Format,
+    ) -> Vec<crate::config::format::Migrated> {
         Vec::new()
     }
 
@@ -259,7 +259,7 @@ fn index<T: 'static>(slot: &'static ConfigSlot<T>) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::engine::{bind_child, projection};
+    use crate::config::{bind_child, projection};
 
     #[derive(Clone, Default, Serialize, Deserialize)]
     struct Group {

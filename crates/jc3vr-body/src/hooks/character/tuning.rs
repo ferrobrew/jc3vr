@@ -2,7 +2,7 @@
 //! body IK ([`BodyIkTuning`]) and the neck's twist under the head override.
 
 use jc3vr_core::{
-    config::engine::{Invalid, positive},
+    config::{Invalid, positive},
     tuning::Tuning,
 };
 use serde::Deserialize;

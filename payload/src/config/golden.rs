@@ -9,7 +9,7 @@ use std::{
 
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::aim::sights::config::SightOverride;
-use jc3vr_core::config::engine::persist::edit_pending;
+use jc3vr_core::config::persist::edit_pending;
 use jc3vr_hud::hud::config::HUD_CONFIG;
 use jc3vr_input::frame::Hand;
 use jc3vr_tooling::director::keymap::{Action, Binding, Chord};

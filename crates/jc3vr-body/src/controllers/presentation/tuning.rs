@@ -3,7 +3,7 @@
 //! shares, head residual, chain passes, clavicle turn, and drawn-elbow confidence.
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

@@ -36,7 +36,7 @@ use jc3gi::{
     animation::symbol_table::EventIdSymbolTable, character::character::AnimatedModel,
     input::parachute::get_WingsuitBlendState_StallFlagSet,
 };
-use jc3vr_core::{config::engine::ConfigSlot, published::Counter};
+use jc3vr_core::{config::ConfigSlot, published::Counter};
 use jc3vr_view::{headpose, headpose::Source};
 use serde::{Deserialize, Serialize};
 

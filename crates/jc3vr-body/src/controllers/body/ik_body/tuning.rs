@@ -7,7 +7,7 @@
 
 use body_rig::{brace::BraceTuning, fk::FkTuning};
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

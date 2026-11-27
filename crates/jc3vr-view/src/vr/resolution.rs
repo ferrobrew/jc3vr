@@ -51,7 +51,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use jc3gi::{
     camera::camera_manager::CameraManager, graphics_engine::graphics_engine::GraphicsEngine,
 };
-use jc3vr_core::{config::engine::disable_automatically, switch};
+use jc3vr_core::{config::disable_automatically, switch};
 use parking_lot::Mutex;
 
 use crate::vr::{VR_CONFIG, back_buffer, participants::resize_observer};

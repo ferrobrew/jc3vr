@@ -3,7 +3,7 @@
 //! haptic cues.
 
 use glam::Vec3;
-use jc3vr_core::config::engine::{Invalid, nonnegative, positive, range, vec3};
+use jc3vr_core::config::{Invalid, nonnegative, positive, range, vec3};
 use serde::Deserialize;
 
 use crate::controllers::vehicles::{

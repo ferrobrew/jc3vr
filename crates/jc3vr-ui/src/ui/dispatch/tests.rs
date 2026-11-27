@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use jc3vr_core::config::engine::{Snapshot, test_fixture};
+use jc3vr_core::config::{Snapshot, test_fixture};
 use jc3vr_view::{headpose, vr::recenter_count};
 
 use super::*;

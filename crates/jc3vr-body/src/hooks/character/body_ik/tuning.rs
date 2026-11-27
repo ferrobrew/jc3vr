@@ -3,7 +3,7 @@
 //! lean model's shares and limits, and the view's floor.
 
 use glam::Vec3;
-use jc3vr_core::config::engine::{Invalid, nonnegative, range, vec3};
+use jc3vr_core::config::{Invalid, nonnegative, range, vec3};
 use serde::Deserialize;
 
 /// The body IK's tuning.

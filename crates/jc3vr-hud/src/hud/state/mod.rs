@@ -350,7 +350,7 @@ impl HudState {
     ) {
         // The clean view hides the HUD by skipping the quad: the redirect keeps drawing the game's
         // HUD into the offscreen texture, so switching it off shows the live HUD at once.
-        if jc3vr_core::director::clean_view::hides_everything() {
+        if jc3vr_core::clean_view::hides_everything() {
             return;
         }
         self.draw_panel(context, device, target);

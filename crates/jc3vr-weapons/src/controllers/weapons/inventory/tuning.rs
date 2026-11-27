@@ -5,7 +5,7 @@
 use std::time::Duration;
 
 use jc3vr_core::{
-    config::engine::{Invalid, positive, range, vec3},
+    config::{Invalid, positive, range, vec3},
     tuning::Tuning,
 };
 use jc3vr_view::controllers::overlay::primitive::Rgba;

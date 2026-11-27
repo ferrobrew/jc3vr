@@ -4,7 +4,7 @@
 //! bar diameters of the sources that hold one.
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;

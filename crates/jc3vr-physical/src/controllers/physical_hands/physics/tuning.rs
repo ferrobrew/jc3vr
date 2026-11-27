@@ -5,7 +5,7 @@
 use std::{f32::consts::PI, time::Duration};
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     published::Window,
     tuning::Tuning,
 };

@@ -3,15 +3,12 @@
 //! The feature views live in an `egui_dock` tree so any feature can be dragged out into its own
 //! floating window (e.g. Performance parked beside the game view while tuning Render features). The
 //! layout is persisted to `ui_layout_v2.json` in the configuration directory
-//! ([`jc3vr_core::config::engine::paths`]), apart from the settings, so a customized arrangement survives
+//! ([`jc3vr_core::config::config::paths`]), apart from the settings, so a customized arrangement survives
 //! relaunches.
 
 use std::sync::OnceLock;
 
-use jc3vr_core::{
-    config::{engine, engine::SaveStatus},
-    published::Stamp,
-};
+use jc3vr_core::{config, config::SaveStatus, published::Stamp};
 use jc3vr_hud::{egui_impl::request_debug_ui, hud::egui_panel};
 use jc3vr_input::capture::{OwnershipBlocker, PanelMode, PanelRequest, debug_ui_capture};
 
@@ -154,7 +151,7 @@ fn neutralize_dock_input(context: &egui::Context) {
 
 /// The settings file's path, selectable so it can be copied, and whether it is up to date.
 fn settings_line(ui: &mut egui::Ui) {
-    let state = match engine::status() {
+    let state = match config::status() {
         SaveStatus::UpToDate => "saved",
         SaveStatus::Pending => "saving",
         SaveStatus::Failed => "save failed, see the log",
@@ -166,7 +163,7 @@ fn settings_line(ui: &mut egui::Ui) {
                 .weak()
                 .small(),
         );
-        if let Some(path) = engine::paths::settings_file() {
+        if let Some(path) = config::paths::settings_file() {
             let text = path.display().to_string();
             let mut shown = text.as_str();
             ui.add(

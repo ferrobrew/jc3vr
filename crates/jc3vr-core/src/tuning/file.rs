@@ -9,7 +9,7 @@ use std::{
 
 use serde::de::DeserializeOwned;
 
-use crate::{config::engine::Invalid, tuning::error::FileCause};
+use crate::{config::Invalid, tuning::error::FileCause};
 
 /// A tuning file's root: the values one file holds.
 ///

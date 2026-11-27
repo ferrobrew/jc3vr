@@ -1,6 +1,6 @@
 //! Checks for physical weapon handling: the recoil strength the pause menu sets.
 
-use jc3vr_core::config::engine::{Invalid, nonnegative};
+use jc3vr_core::config::{Invalid, nonnegative};
 use jc3vr_weapons::controllers::weapons::config::WeaponsConfig;
 
 /// Check the physical weapon settings. Paths are relative to `controllers.weapons`.

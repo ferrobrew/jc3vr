@@ -63,7 +63,7 @@ pub fn status() -> OverlayStatus {
 /// engine's context lock and, under the collapse, has selected the eye with
 /// `set_collapse_ui_eye`.
 pub fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if jc3vr_core::director::clean_view::hides_everything() {
+    if jc3vr_core::clean_view::hides_everything() {
         return;
     }
     let Some(inputs) = inputs::registered() else {

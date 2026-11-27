@@ -234,7 +234,7 @@ fn plan(
     }
     if !scheme::is_controllers()
         || !jc3vr_core::hooks::in_gameplay()
-        || jc3vr_core::director::clean_view::hides_everything()
+        || jc3vr_core::clean_view::hides_everything()
     {
         return idle(LensIdle::Inactive);
     }

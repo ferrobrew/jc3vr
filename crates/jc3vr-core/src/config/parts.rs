@@ -7,11 +7,11 @@
 //! configuration at once: a capture harness that pins a profile across subsystems and restores the
 //! settings afterwards, or a debug UI tab whose controls span several groups. Like every guard,
 //! [`lock_parts`] and [`edit_parts`] hold the one configuration lock, so the
-//! [nesting rule](crate::config::engine::store#lock-nesting) applies to them.
+//! [nesting rule](crate::config::store#lock-nesting) applies to them.
 
 use serde::{Serialize, Serializer};
 
-use crate::config::engine::{
+use crate::config::{
     automatic::{self, Observed},
     persist,
     slot::ConfigSlot,

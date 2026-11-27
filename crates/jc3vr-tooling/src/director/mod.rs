@@ -14,8 +14,9 @@
 
 use jc3vr_capture::testing::visual::PAUSED;
 use jc3vr_core::{
-    config::engine::{ConfigSlot, SlotOptions},
-    director::{clean_view, clean_view::CLEAN_VIEW_CONFIG},
+    clean_view,
+    clean_view::CLEAN_VIEW_CONFIG,
+    config::{ConfigSlot, SlotOptions},
     slot_children,
 };
 use jc3vr_view::recorder::tracking::TIME_SCALE;

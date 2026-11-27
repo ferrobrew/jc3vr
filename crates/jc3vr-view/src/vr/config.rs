@@ -1,6 +1,6 @@
 //! VR runtime configuration. See [`crate::vr`] and `docs/mod/vr-runtime.md`.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// Which depth convention the per-eye off-axis projection is written in, and where in the

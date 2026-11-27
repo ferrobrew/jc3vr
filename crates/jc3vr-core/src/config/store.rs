@@ -3,7 +3,7 @@
 //! [`Schema`].
 //!
 //! The root is the whole configuration, so a guard over it (or over one of its parts, through a
-//! [`ConfigSlot`](crate::config::engine::ConfigSlot)) is a consistent snapshot: every read through
+//! [`ConfigSlot`](crate::config::ConfigSlot)) is a consistent snapshot: every read through
 //! one guard sees the same configuration, and a change made through one is seen whole by the next
 //! lock.
 //!
@@ -32,7 +32,7 @@ use parking_lot::{Mutex, MutexGuard};
 use serde::{Serialize, de::DeserializeOwned};
 use toml::{Table, Value};
 
-use crate::config::engine::{
+use crate::config::{
     format::{Format, Migrated},
     load::Reset,
     slot,
@@ -51,7 +51,7 @@ pub trait ConfigRoot: Serialize + DeserializeOwned + Clone + Send + 'static {
     fn migrate(file: &mut Table, format: Format) -> Vec<Migrated>;
 
     /// Reset the settings that fail checks of the root's own, pushing each reset. The checks the
-    /// bound slots carry ([`SlotOptions::validated`](crate::config::engine::SlotOptions::validated))
+    /// bound slots carry ([`SlotOptions::validated`](crate::config::SlotOptions::validated))
     /// run after these.
     fn validate(&mut self, resets: &mut Vec<Reset>) {
         let _ = resets;

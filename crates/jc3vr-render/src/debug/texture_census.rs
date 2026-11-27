@@ -20,7 +20,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use parking_lot::Mutex;
 use retour::GenericDetour;
 use windows::{

@@ -2,7 +2,7 @@
 //! checks a load runs are the ones the groups' slots carry), registered with the store before anything reads the configuration
 //! ([`crate::config::register`]).
 
-use jc3vr_core::config::engine::{
+use jc3vr_core::config::{
     ConfigRoot, Parts, Schema,
     format::{Format, Migrated},
     store::Root,

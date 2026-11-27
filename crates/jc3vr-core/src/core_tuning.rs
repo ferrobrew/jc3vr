@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use crate::{
-    config::engine::{Invalid, positive},
+    config::{Invalid, positive},
     tuning::Tuning,
 };
 
@@ -50,7 +50,7 @@ impl Tuning for CoreTuning {
 }
 
 /// When the settings file is saved after a change
-/// ([`crate::config::engine::persist`]), milliseconds.
+/// ([`crate::config::persist`]), milliseconds.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SettingsSaveTuning {

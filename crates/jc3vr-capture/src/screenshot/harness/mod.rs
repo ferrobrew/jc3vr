@@ -26,7 +26,7 @@ mod sun_probe;
 pub(crate) mod types;
 pub(crate) mod water_gpu_probe;
 
-use jc3vr_core::config::engine::Snapshot;
+use jc3vr_core::config::Snapshot;
 use jc3vr_render::{
     image_writer,
     image_writer::{ImageTarget, WriteOutcome},
@@ -155,8 +155,7 @@ fn admissible(options: &CaptureRequest, motion: bool) -> Result<(), String> {
 
 fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: CaptureRequest) {
     arm(Arming::Capture);
-    let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
-    else {
+    let Some(folder) = jc3vr_core::config::paths::dir().map(|dir| dir.join("captures")) else {
         tracing::error!("screenshot harness: no configuration directory");
         return;
     };
@@ -180,8 +179,7 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
 }
 
 fn reject(id: &RequestId, error: &str) {
-    let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
-    else {
+    let Some(folder) = jc3vr_core::config::paths::dir().map(|dir| dir.join("captures")) else {
         tracing::error!("screenshot harness: no configuration directory");
         return;
     };

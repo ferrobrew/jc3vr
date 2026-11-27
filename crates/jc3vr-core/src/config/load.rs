@@ -4,7 +4,7 @@
 //! edited by hand, so the load bridges drift in both directions rather than rejecting the file:
 //!
 //! 1. The file is parsed into a TOML value tree, its format's version is taken out, and a file of
-//!    the schema's migration runs on it ([`crate::config::engine::format::upgrade`]). The tree
+//!    the schema's migration runs on it ([`crate::config::format::upgrade`]). The tree
 //!    is merged over the defaults serialized the same way. A setting the file lacks takes its
 //!    default; a setting the file has that the defaults do not stays in the tree, since it is
 //!    either an optional setting (a `None` default is left out of the defaults' tree as it is left
@@ -15,7 +15,7 @@
 //!    removed, when it has none) and the deserialization is tried again, a bounded number of
 //!    times. One bad value costs one setting, not the file.
 //! 3. The settings whose types admit unusable values are validated by the schema
-//!    ([`ConfigRoot::validate`](crate::config::engine::ConfigRoot::validate)). A check names the
+//!    ([`ConfigRoot::validate`](crate::config::ConfigRoot::validate)). A check names the
 //!    setting that fails ([`Invalid`]), so [`reset_named`] resets that setting to its default (or
 //!    the group around it, when the default fails too) and runs the check again; a subtree is
 //!    reset whole only when that does not make it pass.
@@ -29,7 +29,7 @@ use std::fmt;
 use serde::{Serialize, de::DeserializeOwned};
 use toml::{Table, Value};
 
-use crate::config::engine::{
+use crate::config::{
     format::{self, Format, Migrated},
     store::{DeserializeError, Root, Schema},
     validate::Invalid,

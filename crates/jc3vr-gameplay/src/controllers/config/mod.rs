@@ -33,7 +33,7 @@ use jc3vr_body::controllers::{
     scheme,
 };
 use jc3vr_core::{
-    config::engine::{ConfigSlot, SlotOptions},
+    config::{ConfigSlot, SlotOptions},
     slot_children,
 };
 use jc3vr_input::frame::Hand;

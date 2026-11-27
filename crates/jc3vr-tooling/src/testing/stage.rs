@@ -489,7 +489,7 @@ impl StageResult {
 }
 
 fn publish(result: &StageResult) {
-    let Some(dir) = jc3vr_core::config::engine::paths::dir() else {
+    let Some(dir) = jc3vr_core::config::paths::dir() else {
         tracing::error!("visual stage: no configuration directory for the result");
         return;
     };

@@ -14,7 +14,7 @@ use std::ptr;
 
 use parking_lot::Mutex;
 
-use crate::config::engine::{
+use crate::config::{
     slot::ConfigSlot,
     store::{self, Root},
 };
@@ -32,7 +32,7 @@ pub struct Switch<T: 'static> {
 #[macro_export]
 macro_rules! switch {
     ($slot:path, $field:ident) => {
-        $crate::config::engine::Switch {
+        $crate::config::Switch {
             slot: &$slot,
             field: ::std::stringify!($field),
             place: |part| &mut part.$field,
@@ -166,7 +166,7 @@ static OVERRIDES: Mutex<Overrides> = Mutex::new(Overrides::new());
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::engine::projection;
+    use crate::config::projection;
 
     #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
     struct Sample {

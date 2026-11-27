@@ -30,8 +30,8 @@ pub use environment::{
     EnvironmentTable, WorldTimeSnapshot,
 };
 use jc3vr_core::{
-    config::engine::{ConfigSlot, Parts, Snapshot, lock_parts},
-    director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
+    clean_view::{CLEAN_VIEW_CONFIG, CleanViewScope},
+    config::{ConfigSlot, Parts, Snapshot, lock_parts},
 };
 use jc3vr_render::{
     hooks::graphics_engine::{shader, tone_mapping},
@@ -1167,8 +1167,7 @@ fn apply_profile(config: &mut impl Parts, mode: Mode) {
 }
 
 fn result_path(id: &RequestId) -> Option<std::path::PathBuf> {
-    jc3vr_core::config::engine::paths::dir()
-        .map(|dir| dir.join("visual").join(format!("{}.json", id.0)))
+    jc3vr_core::config::paths::dir().map(|dir| dir.join("visual").join(format!("{}.json", id.0)))
 }
 
 fn publish(id: &RequestId, state: ResultState, metadata: &VisualMetadata) {

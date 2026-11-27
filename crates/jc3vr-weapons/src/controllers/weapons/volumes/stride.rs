@@ -10,7 +10,7 @@
 use body_rig::math::smooth::damp;
 use glam::Vec3;
 use jc3vr_body::controllers::body::rig::frames::SkeletonLandmarks;
-use jc3vr_core::config::engine::{Invalid, positive};
+use jc3vr_core::config::{Invalid, positive};
 use serde::Deserialize;
 
 use crate::controllers::weapons::hold::tuning::HOLD;

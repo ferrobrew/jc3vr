@@ -5,12 +5,12 @@
 //! Each subsystem declares the slot for its own settings beside their type (`HUD_CONFIG` beside
 //! [`HudConfig`](jc3vr_hud::hud::HudConfig)), so it reads them without naming the aggregate. A group
 //! that holds groups or settings a lower layer reads binds their slots relative to its own
-//! ([`SlotOptions::with_children`](jc3vr_core::config::engine::SlotOptions::with_children)), so
+//! ([`SlotOptions::with_children`](jc3vr_core::config::SlotOptions::with_children)), so
 //! this table lists only the aggregate's own fields. A slot locks the whole configuration, as
 //! [`crate::config::CONFIG`] does, and derefs to its part. Two guards held at once on one thread
-//! deadlock; see the [nesting rule](jc3vr_core::config::engine::store#lock-nesting).
+//! deadlock; see the [nesting rule](jc3vr_core::config::store#lock-nesting).
 
-use jc3vr_core::config::engine::{ConfigSlot, projection};
+use jc3vr_core::config::{ConfigSlot, projection};
 
 use crate::config::Config;
 
@@ -52,7 +52,7 @@ slots! {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_core::config::engine::mismatched_defaults;
+    use jc3vr_core::config::mismatched_defaults;
 
     use crate::config::Config;
 

@@ -1,6 +1,6 @@
 //! FSR configuration. See `docs/mod/rendering/fsr.md`.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// Which anti-aliasing resolves the eye images at the engine's anti-aliasing stage.

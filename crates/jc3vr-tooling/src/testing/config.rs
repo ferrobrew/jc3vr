@@ -1,7 +1,7 @@
 //! The test tools' settings.
 
 use jc3vr_core::{
-    config::engine::{ConfigSlot, SlotOptions},
+    config::{ConfigSlot, SlotOptions},
     slot_children,
 };
 use jc3vr_render::debug::texture_census::TEXTURE_CENSUS;

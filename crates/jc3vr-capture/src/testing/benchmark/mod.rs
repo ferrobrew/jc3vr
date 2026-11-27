@@ -27,7 +27,7 @@ use std::{
 
 use anyhow::Context as _;
 use jc3vr_core::{
-    config::engine::{Parts, Snapshot, lock_parts},
+    config::{Parts, Snapshot, lock_parts},
     frame_timing,
     frame_timing::Slot,
 };
@@ -772,8 +772,7 @@ fn publish_failure(request: &BenchmarkRequest, error: String) {
 }
 
 fn write_ack(request: &BenchmarkRequest, ack: &BenchmarkAck<'_>) {
-    let Some(folder) = jc3vr_core::config::engine::paths::dir().map(|dir| dir.join("captures"))
-    else {
+    let Some(folder) = jc3vr_core::config::paths::dir().map(|dir| dir.join("captures")) else {
         tracing::error!("benchmark: no configuration directory for the acknowledgement");
         return;
     };

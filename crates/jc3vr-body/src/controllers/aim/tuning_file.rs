@@ -5,7 +5,7 @@
 
 use glam::Vec3;
 use jc3vr_core::{
-    config::engine::{Invalid, positive, range, vec3},
+    config::{Invalid, positive, range, vec3},
     tuning::Tuning,
 };
 use serde::Deserialize;

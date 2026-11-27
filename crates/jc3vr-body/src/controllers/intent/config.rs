@@ -1,6 +1,6 @@
 //! The controller-to-game bindings' settings.
 
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::intent::tuning::CONTROLS;

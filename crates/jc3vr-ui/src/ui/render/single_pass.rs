@@ -3,7 +3,7 @@
 
 use std::sync::atomic::Ordering;
 
-use jc3vr_core::config::engine::Parts;
+use jc3vr_core::config::Parts;
 use jc3vr_render::{
     hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
     stereo::single_pass,

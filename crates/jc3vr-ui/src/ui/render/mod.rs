@@ -9,7 +9,7 @@ mod resolution;
 mod single_pass;
 mod stereo;
 
-use jc3vr_core::config::engine::{Parts, edit_parts};
+use jc3vr_core::config::{Parts, edit_parts};
 use jc3vr_render::hooks::graphics_engine::config::POST_FX_CONFIG;
 use jc3vr_view::vr::FOVEATION_CONFIG;
 

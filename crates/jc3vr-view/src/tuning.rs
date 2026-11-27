@@ -11,7 +11,7 @@
 use std::ops::Deref;
 
 use jc3vr_core::{
-    config::engine::{Invalid, nonnegative, positive, range},
+    config::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use jc3vr_input::{

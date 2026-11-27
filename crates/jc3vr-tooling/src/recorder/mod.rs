@@ -43,7 +43,7 @@ use std::{
     time::Instant,
 };
 
-use jc3vr_core::{config::engine::ConfigSlot, session::CaptureFolder};
+use jc3vr_core::{config::ConfigSlot, session::CaptureFolder};
 use jc3vr_view::vr::MirrorFrame;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};

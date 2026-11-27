@@ -87,7 +87,7 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// runtime lock.
 pub fn is_active() -> bool {
     HUD_CONFIG.query(|c| c.egui_panel.enabled)
-        && !jc3vr_core::director::clean_view::hides_everything()
+        && !jc3vr_core::clean_view::hides_everything()
         && jc3vr_view::vr::render_params(0).is_some()
 }
 
@@ -119,7 +119,7 @@ pub fn hide() {
     if is_active() {
         HUD_CONFIG.edit().egui_panel.enabled = false;
     } else {
-        jc3vr_core::director::clean_view::hide();
+        jc3vr_core::clean_view::hide();
     }
     request_debug_ui(PanelRequest::Hide);
 }

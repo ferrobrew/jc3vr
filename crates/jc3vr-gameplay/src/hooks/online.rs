@@ -49,7 +49,7 @@ use jc3gi::{
     profile_manager::ProfileManager,
 };
 use jc3vr_core::{
-    config::engine::ConfigSlot,
+    config::ConfigSlot,
     frame_timing::{self, Slot},
     published::ReentryGuard,
 };
