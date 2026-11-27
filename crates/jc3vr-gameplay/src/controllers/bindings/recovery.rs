@@ -289,8 +289,8 @@ mod tests {
         config::BindingsConfig,
         controls::Controls,
         hold::{Desired, DevicePoll, HoldTracker, Phase, Target, Want},
-        yank::LineYank,
     };
+    use jc3vr_grapple::controllers::yank::LineYank;
     use jc3vr_input::frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons};
     use jc3vr_view::vr::input::config::press_rules;
 

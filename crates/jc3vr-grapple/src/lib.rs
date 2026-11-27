@@ -7,6 +7,8 @@
 //!
 //! - [`grapple`]: the grapple's comfort filter on the head pose, its device, its physical rope,
 //!   pull, swing, and lock, the free hand's hold on the line, and the seat grapple;
+//! - [`controllers::grapple_button`] and [`controllers::yank`]: the grapple button's gestures and
+//!   the yank gesture, which the bindings read for the grapple and the snatch;
 //! - [`controllers::snatch`]: the grapple snatch, which pulls a weapon, a loose object, or a car
 //!   door out of reach into the empty grapple hand on the game's hook.
 //!

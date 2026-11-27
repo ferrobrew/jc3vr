@@ -336,10 +336,12 @@ pub fn prop_handling(mass_kg: f32, carry_max_kg: f32, ceiling_kg: f32) -> Option
 #[cfg(test)]
 mod tests {
     use body_rig::math::constants::{GRAVITY_MPS2, SEATED_TICK_S};
-    use jc3vr_body::controllers::intent::yank::{YankDetector, reach_along};
 
     use super::*;
-    use crate::controllers::snatch::config::snatch_yank;
+    use crate::controllers::{
+        snatch::config::snatch_yank,
+        yank::{YankDetector, reach_along},
+    };
 
     /// A seated player's grip on a weapon on the ground ahead and to the right, then a pull of the
     /// hand back and out past their left side at about 0.9 m/s, sampled at the game's tick, with the

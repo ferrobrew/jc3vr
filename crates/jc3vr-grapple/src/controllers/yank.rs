@@ -13,7 +13,7 @@
 //! seated player, whose hand starts close to the body and pulls back past its side.
 //!
 //! A pull that carries the hand out from the head across the ground is not a yank
-//! (the controls tuning's `yank.outward_share`): spreading the arms for the wingsuit swings the grapple hand out to the side,
+//! (the grapple tuning's `yank.outward_share`): spreading the arms for the wingsuit swings the grapple hand out to the side,
 //! which drops its reach along an aim pointed across the body as fast as a yank, but takes it away
 //! from the body, where a yank brings it in, down, or back past the side. The distance is taken
 //! across the ground alone, so a pull down from a raised hand, which takes it further from the head
@@ -25,17 +25,16 @@ use glam::Vec3;
 use jc3vr_core::config::engine::{Invalid, nonnegative, positive};
 use serde::Deserialize;
 
-use crate::controllers::intent::tuning::CONTROLS;
+use crate::grapple::tuning::GRAPPLE;
 
-/// The grapple yank's detector settings (the controls tuning's `grapple_yank`): a sharp pull of
+/// The grapple yank's detector settings (the grapple tuning's `grapple_yank`): a sharp pull of
 /// the grapple hand toward the body zips along an attached line. Acts only under the controller
 /// scheme.
 pub fn grapple_yank() -> &'static YankConfig {
-    &CONTROLS.get().grapple_yank
+    &GRAPPLE.get().grapple_yank
 }
 
-/// A yank detector's settings: the grapple's ([`grapple_yank`]), or the snatch's (`snatch_yank` in
-/// the grapple crate's snatch).
+/// A yank detector's settings: the grapple's ([`grapple_yank`]), or the snatch's ([`snatch_yank`](crate::controllers::snatch::config::snatch_yank)).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct YankConfig {
@@ -218,7 +217,7 @@ impl YankDetector {
     }
 
     /// [`step`](Self::step), with the hand's distance from the head across the ground (`None` when
-    /// unknown): a pull that takes the hand out from the head by more than the controls tuning's
+    /// unknown): a pull that takes the hand out from the head by more than the grapple tuning's
     /// `yank.outward_share` of the pull does not yank.
     pub fn step_outward(
         &mut self,
@@ -246,7 +245,7 @@ impl YankDetector {
         if self.cooldown > 0.0 {
             return None;
         }
-        let outward_share = CONTROLS.get().yank.outward_share;
+        let outward_share = GRAPPLE.get().yank.outward_share;
         // Every sample in the window may start the pull, so a hand held still before it pulls
         // does not slow the pull's measured speed with the pause.
         let yank = self

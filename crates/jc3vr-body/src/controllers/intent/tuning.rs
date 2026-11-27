@@ -1,6 +1,5 @@
 //! The controls' tuning, read from the shipped `tuning/controls.toml` ([`CONTROLS`]): the bindings'
-//! thresholds and chord timings, the grapple button's gestures, the grapple yank, the held
-//! actions' analog press, the mode detection's debounce, the game rumble's forward, and the
+//! thresholds and chord timings, the held actions' analog press, the mode detection's debounce, the game rumble's forward, and the
 //! world-space overlay's drawing.
 
 use jc3vr_core::{
@@ -8,8 +7,6 @@ use jc3vr_core::{
     tuning::Tuning,
 };
 use serde::Deserialize;
-
-use crate::controllers::intent::yank::YankConfig;
 
 jc3vr_core::tuning_file! {
     /// The controls' tuning file.
@@ -21,11 +18,6 @@ jc3vr_core::tuning_file! {
 #[serde(deny_unknown_fields)]
 pub struct ControlsTuning {
     pub bindings: BindingsTuning,
-    pub grapple_button: GrappleButtonTuning,
-    pub yank: YankTuning,
-    /// The grapple yank's detector: a sharp pull of the grapple hand toward the body zips along an
-    /// attached line. Acts only under the controller scheme.
-    pub grapple_yank: YankConfig,
     pub hold: HoldTuning,
     pub mode: ModeTuning,
     pub rumble: RumbleTuning,
@@ -51,20 +43,6 @@ impl Tuning for ControlsTuning {
             10.0,
         )?;
 
-        let g = &self.grapple_button;
-        positive("grapple_button.tap_s", g.tap_s, 10.0)?;
-        positive("grapple_button.double_tap_s", g.double_tap_s, 10.0)?;
-        range("grapple_button.tighten_start", g.tighten_start, 0.0, 1.0)?;
-        range(
-            "grapple_button.tighten_held",
-            g.tighten_held,
-            g.tighten_start,
-            1.0,
-        )?;
-        positive("grapple_button.tighten_ramp_s", g.tighten_ramp_s, 60.0)?;
-
-        range("yank.outward_share", self.yank.outward_share, 0.0, 10.0)?;
-        self.grapple_yank.validate("grapple_yank")?;
         range("hold.analog_press", self.hold.analog_press, 0.0, 1.0)?;
         if !(1..=30).contains(&self.mode.debounce_ticks) {
             return Err(Invalid(format!(
@@ -123,34 +101,6 @@ pub struct BindingsTuning {
     /// How soon after the left stick click a fresh right B press can show or hide the debug panel,
     /// seconds. The left click waits for the longer of this and the recenter join window.
     pub panel_chord_window_s: f32,
-}
-
-/// The grapple button's gestures ([`crate::controllers::intent::grapple_button`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GrappleButtonTuning {
-    /// How long a press may be held and still be a tap, seconds.
-    pub tap_s: f32,
-    /// How soon a second tap must follow a first for a double tap, seconds.
-    pub double_tap_s: f32,
-    /// The retract a tightening hold starts at, `0..1`.
-    pub tighten_start: f32,
-    /// The retract a tightening hold rises to on its own, `0..1`; the hand's pull tightens past
-    /// it.
-    pub tighten_held: f32,
-    /// How long a tightening hold takes to rise to [`tighten_held`](Self::tighten_held), seconds.
-    pub tighten_ramp_s: f32,
-}
-
-/// What every yank detector shares ([`crate::controllers::intent::yank`]).
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct YankTuning {
-    /// The most a yank's pull may carry the hand out from the head across the ground, as a share
-    /// of the pull. A pull back along the line, down, or back and out past the side keeps the hand
-    /// at about its distance from the head across the ground or brings it closer; an arm swung out
-    /// to the side takes it well away.
-    pub outward_share: f32,
 }
 
 /// The held actions ([`crate::controllers::intent::hold`]).

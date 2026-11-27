@@ -14,14 +14,16 @@ use jc3vr_body::controllers::{
     },
     intent::{
         controls::Controls,
-        grapple_button::{GrapplePermissions, grapple_press},
         rows::{Control, Effect, Gesture, ModAction, Row},
     },
     mode::{AirborneVariant, Detection, Mode},
     physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
-use jc3vr_grapple::controllers::snatch;
+use jc3vr_grapple::controllers::{
+    grapple_button::{GrapplePermissions, grapple_press},
+    snatch,
+};
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_physical::controllers::physical_hands::door_offer_current;
 use jc3vr_vehicles::controllers::vehicles::{

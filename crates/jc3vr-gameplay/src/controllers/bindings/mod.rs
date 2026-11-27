@@ -11,10 +11,10 @@
 //! - the grip model ([`jc3vr_body::controllers::grab`]) gathers the targets the weapon handling, the
 //!   vehicle handling, and the physical hands provide, resolves each hand among them, and hands
 //!   each grab to the subsystem that owns its target;
-//! - [`grapple_button`](jc3vr_body::controllers::intent::grapple_button) reads the grapple button's gestures while tethers or a line are attached:
+//! - [`grapple_button`](jc3vr_grapple::controllers::grapple_button) reads the grapple button's gestures while tethers or a line are attached:
 //!   a tap, a double tap that releases the tethers, a hold that tethers or tightens, and a sharp
 //!   pull that zips;
-//! - [`yank`](jc3vr_body::controllers::intent::yank) detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
+//! - [`yank`](jc3vr_grapple::controllers::yank) detects the yank gesture on the grapple hand, a sharp pull while the grapple button is
 //!   held, and the snatch's own yank while the grip holds a remote target
 //!   ([`jc3vr_grapple::controllers::snatch`]);
 //! - `recovery` masks a hand after a loss of its pose or of injection until its controls rest
@@ -70,12 +70,12 @@ use jc3vr_body::controllers::{
     intent::{
         controls::ClosedHand,
         hold::{ActionWrite, DevicePoll, HoldTracker},
-        yank::{LineYank, Yank},
     },
     mode,
     mode::Detection,
 };
 use jc3vr_core::game_tick::GameTick;
+use jc3vr_grapple::controllers::yank::{LineYank, Yank};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 

@@ -508,7 +508,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | Haptics | `haptics.enabled`, `haptics.intensity`, and `haptics.game_rumble` ([haptics.md](haptics.md)) | Built. |
 | Separate pistols | none | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
 | The anchored tier for the grapple line and the hang push | No settings; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
-| The yank gesture | No settings; the detector is the controls tuning's `grapple_yank` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
+| The yank gesture | No settings; the detector is the grapple tuning's `grapple_yank` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 on foot | none | Re-bases yaw and height only out of a vehicle seat, and the rig snaps the pelvis under the neck ([rig.md, "Recentering"](../body/rig.md#recentering)). |
 
 ### Milestone 4: vehicles and flight

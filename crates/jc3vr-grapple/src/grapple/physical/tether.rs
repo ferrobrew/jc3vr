@@ -61,13 +61,13 @@ pub fn retract_value(depth_m: f32, config: &TetherTuning) -> f32 {
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
-    use jc3vr_body::controllers::{
-        intent::yank::HandLine,
-        mode::{Traversal, VehicleClass, VehicleSeat},
-    };
+    use jc3vr_body::controllers::mode::{Traversal, VehicleClass, VehicleSeat};
 
     use super::*;
-    use crate::grapple::{physical::pull::LinePull, tuning::GRAPPLE};
+    use crate::{
+        controllers::yank::HandLine,
+        grapple::{physical::pull::LinePull, tuning::GRAPPLE},
+    };
 
     fn tick(tethers: u32) -> TetherTick {
         TetherTick {

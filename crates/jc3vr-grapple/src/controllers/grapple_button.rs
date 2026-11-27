@@ -12,11 +12,11 @@
 //!   gamepad's B, which also cancels and steps off a ledge, since the grapple took that button;
 //! - a hold with a grapple target under the aim is the game's hold, a new tether;
 //! - a hold with nothing new under the aim tightens the tethers, the retract rising from
-//!   `grapple_button.tighten_start` to `tighten_held` over `tighten_ramp_s`; pulling the hand back while
+//!   the grapple tuning's `button.tighten_start` to `tighten_held` over `tighten_ramp_s`; pulling the hand back while
 //!   holding tightens harder, by the physical grapple's pull (`grapple::physical`),
 //!   which the bindings merge with this retract, the larger winning;
 //! - a sharp pull of the hand while the button is held, with a line attached, zips along the
-//!   line, as a tap would ([`crate::controllers::intent::yank`]).
+//!   line, as a tap would ([`crate::controllers::yank`]).
 //!
 //! The pulls act only while the button is held, so a pull of the hand never zips or tightens by
 //! itself.
@@ -24,7 +24,7 @@
 //! While the hook reels in along a line to a target the lock can hold
 //! ([`GrappleContext::reeling`]), from the reel's wind-up on, the button is the lock's
 //! (`grapple::physical::lock`): a press locks the line's length at once, or, in the
-//! wind-up, as soon as the reel carries the character; a release within `grapple_button.tap_s` unlocks it and
+//! wind-up, as soon as the reel carries the character; a release within the tuning's `button.tap_s` unlocks it and
 //! resumes the reel, firing nothing, since a fire onto the attached line can release it; a release
 //! after a longer hold lets go of the line; and a yank of the grapple hand while it is held unlocks
 //! it and resumes the reel. The game sees no held fire input through any of it. A press that
@@ -37,43 +37,18 @@
 //! game sees no fire input; the double tap and the tightening hold stay as they are.
 
 use jc3gi::input::input_action_map::Action;
+use jc3vr_body::controllers::{
+    intent::{
+        controls::{ButtonControl, GrappleContext},
+        hold::{Desired, MapKind, Target, Want},
+    },
+    mode::{AirborneVariant, Mode, VehicleClass},
+};
 use jc3vr_input::semantic::vocabulary::{
     ActionId, HelicopterAction, LandVehicleAction, OnFootAction, PlaneAction, WingsuitAction,
 };
 
-use crate::controllers::{
-    intent::{
-        controls::ButtonControl,
-        hold::{Desired, MapKind, Target, Want},
-        tuning::CONTROLS,
-    },
-    mode::{AirborneVariant, Mode, VehicleClass},
-};
-
-/// What the grapple's gestures need to know of the game.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct GrappleContext {
-    /// Dual tethers are attached.
-    pub tethers: bool,
-    /// The grapple holds a line of its own to something, not carrying the character.
-    pub line: bool,
-    /// The game holds a grapple target in range under the grapple's aim.
-    pub aim_target: bool,
-    /// The hook reels in along a line to a target the lock can hold, from the reel's wind-up on:
-    /// the button is the lock's. Were the wind-up's presses the game's, a press held into the reel
-    /// would be the game's dual tether hold, whose release replaces the reel's line.
-    pub reeling: bool,
-    /// The seat grapple stands in for the game's (`grapple::seat::stands_in`): the
-    /// button's fire is the seat grapple's.
-    pub seated: bool,
-}
-
-impl GrappleContext {
-    /// Whether the button's presses are read as gestures before the game sees them.
-    const fn gestures(self) -> bool {
-        self.tethers || self.line
-    }
-}
+use crate::grapple::tuning;
 
 /// Current eligibility of the grapple button's tether gestures.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -132,7 +107,7 @@ pub enum LockButton {
     Pressed,
     /// The button is held into the lock.
     Held,
-    /// The button came up within the controls tuning's `grapple_button.tap_s`: unlock, the reel resuming. Nothing is fired onto the
+    /// The button came up within the grapple tuning's `button.tap_s`: unlock, the reel resuming. Nothing is fired onto the
     /// attached line.
     Tapped,
     /// The button came up after a longer hold: let go of the line.
@@ -171,10 +146,10 @@ pub struct GrappleButton {
     traversal_spent: bool,
 }
 
-/// How long a press may be held and still be a tap, seconds (the controls tuning's
-/// `grapple_button.tap_s`).
+/// How long a press may be held and still be a tap, seconds (the grapple tuning's
+/// `button.tap_s`).
 pub fn tap_s() -> f32 {
-    CONTROLS.get().grapple_button.tap_s
+    tuning::GRAPPLE.get().button.tap_s
 }
 
 impl GrappleButton {
@@ -320,7 +295,7 @@ impl GrappleButton {
                 }
                 Phase::Idle
             }
-            Phase::Idle | Phase::TapWaiting { .. } if fresh && !context.gestures() => {
+            Phase::Idle | Phase::TapWaiting { .. } if fresh && !gestures(context) => {
                 // A tap still waiting fires first, and the new press reaches the game from the
                 // next tick.
                 if matches!(self.phase, Phase::TapWaiting { .. }) {
@@ -335,7 +310,7 @@ impl GrappleButton {
                 second: false,
             },
             Phase::Idle => {
-                out.gestures = context.gestures() || context.reeling;
+                out.gestures = gestures(context) || context.reeling;
                 Phase::Idle
             }
             Phase::TapWaiting { .. } if fresh => Phase::Pressed {
@@ -344,7 +319,7 @@ impl GrappleButton {
             },
             Phase::TapWaiting { waited_s } => {
                 let waited_s = waited_s + dt;
-                if waited_s >= CONTROLS.get().grapple_button.double_tap_s {
+                if waited_s >= tuning::GRAPPLE.get().button.double_tap_s {
                     out.fire = Some(Want::Click);
                     Phase::Idle
                 } else {
@@ -392,7 +367,7 @@ impl GrappleButton {
                     out.fire = Some(Want::Hold(1.0));
                     Phase::Firing
                 } else {
-                    out.tighten = Some(CONTROLS.get().grapple_button.tighten_start);
+                    out.tighten = Some(tuning::GRAPPLE.get().button.tighten_start);
                     Phase::Tightening { held_s: 0.0 }
                 }
             }
@@ -422,7 +397,7 @@ impl GrappleButton {
         out: &mut GrappleOutput,
     ) -> Phase {
         let phase = match self.phase {
-            Phase::Idle | Phase::TapWaiting { .. } if button.pressed && !context.gestures() => {
+            Phase::Idle | Phase::TapWaiting { .. } if button.pressed && !gestures(context) => {
                 // A tap still waiting is taken up by the new press's fire.
                 out.seat_fire = Some(SeatRequest::Press);
                 Phase::Firing
@@ -584,15 +559,20 @@ const PLANE_GRAPPLE: [ActionId; 1] = [PlaneAction::Grapple.id()];
 
 /// The retract `held_s` into a tightening hold.
 fn tighten_at(held_s: f32) -> f32 {
-    let tuning = &CONTROLS.get().grapple_button;
+    let tuning = &tuning::GRAPPLE.get().button;
     let t = (held_s / tuning.tighten_ramp_s.max(1e-3)).clamp(0.0, 1.0);
     tuning.tighten_start + (tuning.tighten_held - tuning.tighten_start) * t
+}
+
+/// Whether the button's presses are read as gestures before the game sees them.
+const fn gestures(context: GrappleContext) -> bool {
+    context.tethers || context.line
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::intent::tuning::GrappleButtonTuning;
+    use crate::grapple::tuning::GrappleButtonTuning;
 
     #[test]
     fn snatch_consumes_cancelled_press_and_release_until_observed_neutral() {
@@ -635,7 +615,7 @@ mod tests {
     const DT: f32 = 1.0 / 30.0;
 
     fn button() -> &'static GrappleButtonTuning {
-        &CONTROLS.get().grapple_button
+        &tuning::GRAPPLE.get().button
     }
     const UP: ButtonControl = ButtonControl {
         down: false,

@@ -9,12 +9,10 @@
 
 use jc3gi::input::input_action_map::Action::{self, *};
 use jc3vr_body::controllers::{
-    intent::{
-        controls::{Controls, PadZone},
-        grapple_button::{GRAPPLE, GRAPPLE_VEHICLE, PAD_B},
-    },
+    intent::controls::{Controls, PadZone},
     mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
 };
+use jc3vr_grapple::controllers::grapple_button::{GRAPPLE, GRAPPLE_VEHICLE, PAD_B};
 use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{

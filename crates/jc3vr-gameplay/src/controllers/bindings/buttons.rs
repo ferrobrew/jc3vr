@@ -1,9 +1,7 @@
 //! Semantic button reads shared by input-tick consumers outside the binding tables.
 
-use jc3vr_body::controllers::{
-    intent::{controls::ButtonControl, grapple_button::grapple_press},
-    mode::Mode,
-};
+use jc3vr_body::controllers::{intent::controls::ButtonControl, mode::Mode};
+use jc3vr_grapple::controllers::grapple_button::grapple_press;
 use jc3vr_input::semantic::vocabulary::OnFootAction;
 
 use crate::controllers::bindings::{intents::SemanticInput, tables};

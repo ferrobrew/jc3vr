@@ -12,10 +12,7 @@ use jc3vr_view::vr::input::{
 
 use crate::controllers::{
     grab::GrabVolume,
-    intent::{
-        config::{BindingsConfig, trigger_deadzone},
-        grapple_button::GrappleContext,
-    },
+    intent::config::{BindingsConfig, trigger_deadzone},
 };
 
 /// One digital input over the tick.
@@ -135,6 +132,25 @@ pub struct Controls {
     pub bail: bool,
     /// Whether the current seated body state can take the stunt act; unknown retains the hold exit.
     pub stunt_available: Option<bool>,
+}
+
+/// What the grapple button's gestures (the grapple crate's `controllers::grapple_button`) need to
+/// know of the game.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct GrappleContext {
+    /// Dual tethers are attached.
+    pub tethers: bool,
+    /// The grapple holds a line of its own to something, not carrying the character.
+    pub line: bool,
+    /// The game holds a grapple target in range under the grapple's aim.
+    pub aim_target: bool,
+    /// The hook reels in along a line to a target the lock can hold, from the reel's wind-up on:
+    /// the button is the lock's. Were the wind-up's presses the game's, a press held into the reel
+    /// would be the game's dual tether hold, whose release replaces the reel's line.
+    pub reeling: bool,
+    /// The seat grapple stands in for the game's (`grapple::seat::stands_in`): the
+    /// button's fire is the seat grapple's.
+    pub seated: bool,
 }
 
 impl Controls {

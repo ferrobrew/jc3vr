@@ -82,12 +82,7 @@ use jc3vr_body::controllers::{
     facts::{line, seat},
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics,
-    intent::{
-        controls::ButtonControl,
-        grapple_button::grapple_press,
-        hold::Desired,
-        yank::{ArmedLine, HandLine, YankConfig, YankDetector},
-    },
+    intent::{controls::ButtonControl, hold::Desired},
     mode::{Detection, Mode, VehicleClass},
     physics::local_player::LocalPlayer,
 };
@@ -101,20 +96,24 @@ use jc3vr_weapons::controllers::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::snatch::{
-    arrival::ArrivalWatch,
-    brace::Brace,
-    config::{SnatchSettings, snatch_yank},
-    moment::Moment,
-    prearm::Prearm,
-    pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
-    rules::PropHandling,
-    target::{Offer, OfferKind},
-};
 pub use crate::controllers::snatch::{
     config::SNATCH,
     readout::{SnatchStatus, SwingReadout, TargetReadout},
     refusal::Refusal,
+};
+use crate::controllers::{
+    grapple_button::grapple_press,
+    snatch::{
+        arrival::ArrivalWatch,
+        brace::Brace,
+        config::{SnatchSettings, snatch_yank},
+        moment::Moment,
+        prearm::Prearm,
+        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
+        rules::PropHandling,
+        target::{Offer, OfferKind},
+    },
+    yank::{ArmedLine, HandLine, YankConfig, YankDetector},
 };
 
 /// The snatch's hooks, aggregated by `controllers::hook_library`.

@@ -1,14 +1,14 @@
 //! The grapple snatch's tuning, read from the shipped `tuning/snatch.toml` ([`SNATCH`]), and the
 //! settings one snatch tick reads.
 
-use jc3vr_body::controllers::{intent::yank::YankConfig, overlay::config::OverlayConfig};
+use jc3vr_body::controllers::overlay::config::OverlayConfig;
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
 use serde::Deserialize;
 
-use crate::controllers::snatch::landing::LandingTuning;
+use crate::controllers::{snatch::landing::LandingTuning, yank::YankConfig};
 
 jc3vr_core::tuning_file! {
     /// The grapple snatch's tuning file.
@@ -24,7 +24,7 @@ pub struct SnatchSettings {
 }
 
 /// The yank that fires the snatch, measured along the grapple hand's aim at the grip edge
-/// ([`reach_along`](jc3vr_body::controllers::intent::yank::reach_along)), from the tuning's
+/// ([`reach_along`](crate::controllers::yank::reach_along)), from the tuning's
 /// [`yank`](SnatchTuning::yank).
 pub fn snatch_yank() -> YankConfig {
     let yank = &SNATCH.get().yank;
@@ -351,9 +351,8 @@ impl Tuning for SnatchTuning {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_body::controllers::intent::yank::YankDetector;
-
     use super::*;
+    use crate::controllers::yank::YankDetector;
 
     const DT: f32 = 1.0 / 30.0;
 

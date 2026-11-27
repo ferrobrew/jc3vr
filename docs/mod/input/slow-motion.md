@@ -12,7 +12,7 @@ The clocks the controllers read are these. The bindings tick's step is the game'
 
 | What | Clock now | Why |
 |---|---|---|
-| The zip's yank, the snatch's yank, and the snatch's aim keeping a target (`intent/yank.rs`, `snatch/`) | Real step | A yank is the player's arm: its speed, window, and cooldown were game seconds, so in slow motion a gentle drift counted as a yank. |
+| The zip's yank, the snatch's yank, and the snatch's aim keeping a target (`controllers/yank.rs` and `snatch/` in the grapple crate) | Real step | A yank is the player's arm: its speed, window, and cooldown were game seconds, so in slow motion a gentle drift counted as a yank. |
 | The reel's pull and the boost's yank (`grapple/physical/`) | Real step | The pull's speed sets the reel's scale; it read four times high at a quarter. |
 | The reel's boost | Game seconds | The boost speeds the reel, which runs in the world: it covered a quarter of its stretch of reel when timed in real seconds. |
 | The grip's fist window and the long presses (`grab/latch.rs`, `bindings/tables/`) | Real step | The player's grip timing. |

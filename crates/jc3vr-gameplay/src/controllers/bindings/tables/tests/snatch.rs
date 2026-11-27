@@ -1,6 +1,6 @@
 //! Snatch ownership through the production binding tables and native hook gate.
 
-use jc3vr_body::controllers::{grab::RemoteKind, intent::grapple_button::GrappleContext};
+use jc3vr_body::controllers::{grab::RemoteKind, intent::controls::GrappleContext};
 use jc3vr_grapple::controllers::snatch::{ButtonHolds, should_reel_weapon};
 use jc3vr_view::vr::input::semantic::defaults::{Component, DefaultBinding};
 

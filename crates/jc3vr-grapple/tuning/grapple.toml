@@ -1,7 +1,8 @@
 # The grapple's tuning: `GrappleTuning` in `src/grapple/tuning.rs`, whose fields say what each value
 # does. Every key is required and no other is accepted. Lengths are metres, angles degrees, times
-# seconds (or milliseconds where the key ends in `_ms`), and accelerations named `_g` multiples of
-# gravity; a share is a fraction of a range, in `0..1`.
+# seconds (or milliseconds where the key ends in `_ms`), speeds metres per second, and
+# accelerations named `_g` multiples of gravity; a share or a retract is a fraction of a range, in
+# `0..1`.
 
 [comfort]
 release_s = 0.4
@@ -83,3 +84,19 @@ full_mps = 1.5
 scale = 1.5
 max_scale = 2.0
 smoothing_s = 0.05
+
+[button]
+tap_s = 0.25
+double_tap_s = 0.3
+tighten_start = 0.35
+tighten_held = 0.7
+tighten_ramp_s = 1.0
+
+[yank]
+outward_share = 0.35
+
+[grapple_yank]
+min_distance_m = 0.15
+min_speed_mps = 1.8
+window_s = 0.2
+cooldown_s = 0.6

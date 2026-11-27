@@ -12,7 +12,7 @@
 //!   character swings from it;
 //!
 //! The yank that starts a reel along an attached line is the bindings' own gesture
-//! ([`jc3vr_body::controllers::intent::yank`]); the point-and-fire of a tether is the grapple's hand
+//! ([`crate::controllers::yank`]); the point-and-fire of a tether is the grapple's hand
 //! aim ([`jc3vr_body::controllers::aim::grapple`]) with the grip's held `FIRE_GRAPPLE`. Everything here
 //! coexists with the buttons: the retract the pull drives merges with the trigger's, the larger
 //! value winning, and a reel the hand does not drive runs on the game's own tuning.
@@ -35,7 +35,6 @@ use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use jc3vr_body::controllers::{
     hands::anchor,
     haptics,
-    intent::yank::{HandLine, LineYank, grapple_yank},
     mode::{Detection, Traversal},
     physics::{grapple_hook as hook, grapple_hook::HookRead},
 };
@@ -51,13 +50,16 @@ use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::{
-    physical::{
-        pull::{LinePull, PullReading},
-        reel::ReelDrive,
-        tether::TetherTick,
+use crate::{
+    controllers::yank::{HandLine, LineYank, grapple_yank},
+    grapple::{
+        physical::{
+            pull::{LinePull, PullReading},
+            reel::ReelDrive,
+            tether::TetherTick,
+        },
+        tuning::GRAPPLE,
     },
-    tuning::GRAPPLE,
 };
 
 /// The physical grapple's hooks, aggregated by `hooks`.

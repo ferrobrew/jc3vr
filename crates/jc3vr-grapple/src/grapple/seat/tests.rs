@@ -1,12 +1,14 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3vr_body::controllers::intent::grapple_button::{SeatRequest, tap_s};
 use jc3vr_input::frame::Hand;
 
-use crate::grapple::{
-    seat::{Act, Pending, Phase, Refusal, SeatTickInput, Target, WireReading, step},
-    tuning::GRAPPLE,
+use crate::{
+    controllers::grapple_button::{SeatRequest, tap_s},
+    grapple::{
+        seat::{Act, Pending, Phase, Refusal, SeatTickInput, Target, WireReading, step},
+        tuning::GRAPPLE,
+    },
 };
 
 #[test]

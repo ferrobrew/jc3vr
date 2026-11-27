@@ -17,11 +17,11 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     intent::{
         controls::PadZone,
-        grapple_button::grapple_press,
         rows::{Control, Effect, Gesture, ModAction, Row, StickDir},
     },
     mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass},
 };
+use jc3vr_grapple::controllers::grapple_button::grapple_press;
 use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
@@ -496,7 +496,7 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
             add(control, Gesture::Press, modded(ModAction::Turn));
         }
     }
-    // The grapple button's gestures (`jc3vr_body::controllers::intent::grapple_button`).
+    // The grapple button's gestures (`jc3vr_grapple::controllers::grapple_button`).
     if let Some((grapple, _)) = grapple_press(ctx.mode) {
         for &action in grapple {
             for (control, _) in controls(action)

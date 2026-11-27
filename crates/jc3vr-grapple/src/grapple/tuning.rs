@@ -1,7 +1,7 @@
 //! The grapple's tuning, read from the shipped `tuning/grapple.toml` ([`GRAPPLE`]): the comfort
 //! filter on the head pose, the free hand's reach for the line, the least held length of any line,
-//! the seat grapple, the lock, and the physical grapple's pull, reel, tether retract, and hang
-//! swing.
+//! the seat grapple, the lock, the physical grapple's pull, reel, tether retract, and hang swing,
+//! the grapple button's gestures, and the yank.
 
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range, vec3},
@@ -9,10 +9,13 @@ use jc3vr_core::{
 };
 use serde::Deserialize;
 
-use crate::grapple::{
-    line_grab::LineReach,
-    physical::config::{LockTuning, PhysicalGrappleTuning},
-    rope::RopeFloorTuning,
+use crate::{
+    controllers::yank::YankConfig,
+    grapple::{
+        line_grab::LineReach,
+        physical::config::{LockTuning, PhysicalGrappleTuning},
+        rope::RopeFloorTuning,
+    },
 };
 
 jc3vr_core::tuning_file! {
@@ -30,6 +33,11 @@ pub struct GrappleTuning {
     pub seat: SeatTuning,
     pub lock: LockTuning,
     pub physical: PhysicalGrappleTuning,
+    pub button: GrappleButtonTuning,
+    pub yank: YankTuning,
+    /// The grapple yank's detector: a sharp pull of the grapple hand toward the body zips along an
+    /// attached line. Acts only under the controller scheme.
+    pub grapple_yank: YankConfig,
 }
 
 /// The comfort filter on the head pose while the grapple owns the character
@@ -74,6 +82,34 @@ pub struct SeatTuning {
     pub ray_past_m: f32,
     /// How near the seated aim's point the ray's hit must be to stand for it, metres.
     pub hit_within_m: f32,
+}
+
+/// The grapple button's gestures ([`crate::controllers::grapple_button`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GrappleButtonTuning {
+    /// How long a press may be held and still be a tap, seconds.
+    pub tap_s: f32,
+    /// How soon a second tap must follow a first for a double tap, seconds.
+    pub double_tap_s: f32,
+    /// The retract a tightening hold starts at, `0..1`.
+    pub tighten_start: f32,
+    /// The retract a tightening hold rises to on its own, `0..1`; the hand's pull tightens past
+    /// it.
+    pub tighten_held: f32,
+    /// How long a tightening hold takes to rise to [`tighten_held`](Self::tighten_held), seconds.
+    pub tighten_ramp_s: f32,
+}
+
+/// What every yank detector shares ([`crate::controllers::yank`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct YankTuning {
+    /// The most a yank's pull may carry the hand out from the head across the ground, as a share
+    /// of the pull. A pull back along the line, down, or back and out past the side keeps the hand
+    /// at about its distance from the head across the ground or brings it closer; an arm swung out
+    /// to the side takes it well away.
+    pub outward_share: f32,
 }
 
 impl Tuning for GrappleTuning {
@@ -122,6 +158,21 @@ impl Tuning for GrappleTuning {
         positive("seat.flight_s", seat.flight_s, 60.0)?;
         nonnegative("seat.ray_past_m", seat.ray_past_m, 10.0)?;
         nonnegative("seat.hit_within_m", seat.hit_within_m, 10.0)?;
+
+        let button = &self.button;
+        positive("button.tap_s", button.tap_s, 10.0)?;
+        positive("button.double_tap_s", button.double_tap_s, 10.0)?;
+        range("button.tighten_start", button.tighten_start, 0.0, 1.0)?;
+        range(
+            "button.tighten_held",
+            button.tighten_held,
+            button.tighten_start,
+            1.0,
+        )?;
+        positive("button.tighten_ramp_s", button.tighten_ramp_s, 60.0)?;
+
+        range("yank.outward_share", self.yank.outward_share, 0.0, 10.0)?;
+        self.grapple_yank.validate("grapple_yank")?;
 
         self.lock.validate()?;
         self.physical.validate()

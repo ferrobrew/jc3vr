@@ -2,7 +2,7 @@
 
 In a vehicle seat, the grapple button fires the hook along the off-hand's aim, and when the hook holds, what it hit is tethered to the vehicle. The base game takes no grapple fire in a seat; it ships a vehicle grapple that does exactly this but never calls it ([grapple-pipeline.md, "The grapple in a vehicle seat"](../../engine/gameplay/grapple-pipeline.md#the-grapple-in-a-vehicle-seat)). The mod runs the same steps from the input tick.
 
-The code is `crates/jc3vr-grapple/src/grapple/seat/`, with the button's part in `crates/jc3vr-body/src/controllers/intent/grapple_button.rs` and the aim's in `crates/jc3vr-body/src/controllers/aim/mod.rs`.
+The code is `crates/jc3vr-grapple/src/grapple/seat/`, with the button's part in `crates/jc3vr-grapple/src/controllers/grapple_button.rs` and the aim's in `crates/jc3vr-body/src/controllers/aim/mod.rs`.
 
 ## The aim
 

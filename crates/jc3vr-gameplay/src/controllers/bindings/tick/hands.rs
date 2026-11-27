@@ -13,9 +13,7 @@ use jc3vr_body::controllers::{
     haptics, intent,
     intent::{
         config::{long_press_s, trigger_deadzone},
-        controls::{ButtonControl, Controls},
-        grapple_button::GrappleContext,
-        yank::{HandLine, grapple_yank},
+        controls::{ButtonControl, Controls, GrappleContext},
     },
     locomotion::config::LocomotionDirection,
     mode,
@@ -23,7 +21,10 @@ use jc3vr_body::controllers::{
     physics::local_player::LocalPlayer,
 };
 use jc3vr_grapple::{
-    controllers::snatch,
+    controllers::{
+        snatch,
+        yank::{HandLine, grapple_yank},
+    },
     grapple,
     grapple::physical::{TickInput as GrappleTickInput, TickOutput as GrappleTickOutput},
 };

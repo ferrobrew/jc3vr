@@ -52,14 +52,13 @@ use jc3vr_body::controllers::{
     },
     intent::{
         config::{crouch_flick, long_press_s, menu_stick_push},
-        controls::{ButtonControl, Controls},
-        grapple_button::{
-            GrappleButton, GrappleContext, GrapplePermissions, GrappleTick, LockButton,
-            SeatRequest, grapple_press,
-        },
+        controls::{ButtonControl, Controls, GrappleContext},
         hold::{Desired, MapKind, Target, Want},
     },
     mode::{AirborneVariant, Mode, VehicleClass, VehicleSeat},
+};
+use jc3vr_grapple::controllers::grapple_button::{
+    GrappleButton, GrapplePermissions, GrappleTick, LockButton, SeatRequest, grapple_press,
 };
 use jc3vr_input::{
     frame::Hand,

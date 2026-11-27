@@ -14,9 +14,9 @@ use jc3vr_body::controllers::{
         tiers,
         tiers::{TierFrame, TierState},
     },
-    intent::yank::Yank,
 };
 use jc3vr_gameplay::controllers::bindings;
+use jc3vr_grapple::controllers::yank::Yank;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::{
     loadout::slot_label,

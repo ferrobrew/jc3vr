@@ -4,11 +4,11 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     intent::{
         controls::{ButtonControl, Controls},
-        grapple_button::grapple_press,
         hold::{Desired, MapKind},
     },
     mode::{AirborneVariant, Mode},
 };
+use jc3vr_grapple::controllers::grapple_button::grapple_press;
 use jc3vr_input::{
     frame::Hand,
     semantic::{
@@ -296,7 +296,7 @@ mod tests {
     use jc3vr_body::controllers::{
         intent::{
             config::trigger_deadzone,
-            grapple_button::GrappleContext,
+            controls::GrappleContext,
             hold::{Target, Want},
         },
         mode::{OnFootVariant, VehicleClass, VehicleSeat},

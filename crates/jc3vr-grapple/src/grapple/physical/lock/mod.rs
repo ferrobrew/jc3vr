@@ -22,7 +22,7 @@
 //! line, keeping the speed as far as the line can hold the swing it starts, and lets the held
 //! length follow the character in, so the line does not fall slack ([`model::swing`]).
 //!
-//! The grapple button's gestures ([`jc3vr_body::controllers::intent::grapple_button`]) say what the
+//! The grapple button's gestures ([`crate::controllers::grapple_button`]) say what the
 //! player asks ([`LockButton`]), and [`lock_tick`] acts on them after the bindings' tables step:
 //!
 //! - pulling the grapple hand back takes line in ([`model::TakeIn`]), as does pulling back the free
@@ -60,7 +60,6 @@ use jc3gi::{
 use jc3vr_body::{
     controllers::{
         facts, haptics,
-        intent::{grapple_button::LockButton, yank::HandLine},
         physics::{characters::character_position, local_player::LocalPlayer},
     },
     hooks::input::air,
@@ -81,14 +80,17 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::{
-    physical::{
-        config::SwingTuning,
-        lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
+use crate::{
+    controllers::{grapple_button::LockButton, yank::HandLine},
+    grapple::{
+        physical::{
+            config::SwingTuning,
+            lock::model::{FreeHand, Held, Pump, PumpSample, SwingInput, TakeIn},
+        },
+        rope,
+        rope::RopeFault,
+        tuning::GRAPPLE,
     },
-    rope,
-    rope::RopeFault,
-    tuning::GRAPPLE,
 };
 
 /// The lock's hooks, aggregated by [`crate::grapple::physical::hook_library`].

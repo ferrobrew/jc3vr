@@ -1,15 +1,17 @@
 use body_rig::math::{constants::GRAVITY_MPS2, smooth::follow_factor};
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::intent::{
-    grapple_button::LockButton,
-    yank::{ArmedLine, HandLine},
-};
 use jc3vr_physical::controllers::physical_hands::physics::drive::rig_jumped;
 
-use crate::grapple::{
-    physical::config::{LockTuning, SwingTuning},
-    rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
-    tuning::GRAPPLE,
+use crate::{
+    controllers::{
+        grapple_button::LockButton,
+        yank::{ArmedLine, HandLine},
+    },
+    grapple::{
+        physical::config::{LockTuning, SwingTuning},
+        rope::{Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
+        tuning::GRAPPLE,
+    },
 };
 
 /// Whether a press asks the lock to take hold, given whether it asked last tick (`armed`, cleared

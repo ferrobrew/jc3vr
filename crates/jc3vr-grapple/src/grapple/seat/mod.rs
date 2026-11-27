@@ -9,16 +9,16 @@ use std::num::NonZeroUsize;
 pub use engine::{Target, WireReading};
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    facts::seat::stands_in,
-    haptics,
-    intent::grapple_button::{SeatRequest, tap_s},
-    physics::local_player::LocalPlayer,
+    facts::seat::stands_in, haptics, physics::local_player::LocalPlayer,
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
-use crate::grapple::tuning::GRAPPLE;
+use crate::{
+    controllers::grapple_button::{SeatRequest, tap_s},
+    grapple::tuning::GRAPPLE,
+};
 
 /// What the bindings hand the seat grapple's tick.
 pub struct SeatTickInput {

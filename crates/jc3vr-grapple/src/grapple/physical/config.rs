@@ -111,7 +111,7 @@ pub struct PhysicalGrappleTuning {
 
 /// How the grapple hand's pull toward the body is measured
 /// ([`crate::grapple::physical::pull`]). The hand's distance from the body point is the yank's
-/// ([`grapple_yank`](jc3vr_body::controllers::intent::yank::grapple_yank)).
+/// ([`grapple_yank`](crate::controllers::yank::grapple_yank)).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PullTuning {
