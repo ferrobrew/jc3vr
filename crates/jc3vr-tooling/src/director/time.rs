@@ -39,7 +39,7 @@ pub(super) fn apply(cfg: &DirectorConfig) {
 }
 
 /// Toggle between real time and the configured slow-motion rate.
-pub fn toggle_slow_motion(cfg: &mut DirectorConfig) {
+pub(crate) fn toggle_slow_motion(cfg: &mut DirectorConfig) {
     cfg.time_scale = if cfg.time_scale == 1.0 {
         cfg.slow_motion_scale
     } else {
@@ -49,6 +49,6 @@ pub fn toggle_slow_motion(cfg: &mut DirectorConfig) {
 
 /// Step the time scale by `factor` (multiplicative, so repeated presses walk a geometric ladder),
 /// clamped to a usable range.
-pub fn step_time_scale(cfg: &mut DirectorConfig, factor: f32) {
+pub(crate) fn step_time_scale(cfg: &mut DirectorConfig, factor: f32) {
     cfg.time_scale = (cfg.time_scale * factor).clamp(MIN_TIME_SCALE, MAX_TIME_SCALE);
 }

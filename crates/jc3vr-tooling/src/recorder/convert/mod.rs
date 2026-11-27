@@ -50,7 +50,7 @@ pub enum Readback {
 }
 
 /// The pack pipeline and readback ring, built for one layout.
-pub struct Converter {
+pub(crate) struct Converter {
     vertex_shader: ID3D11VertexShader,
     pixel_shader: ID3D11PixelShader,
     sampler: ID3D11SamplerState,

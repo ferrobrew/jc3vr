@@ -157,7 +157,7 @@ pub fn request_position(position: [f32; 3], mode: TeleportMode) {
 }
 
 /// Queue a jump to a full transform.
-pub fn request_transform(transform: [f32; 16], mode: TeleportMode) {
+pub(crate) fn request_transform(transform: [f32; 16], mode: TeleportMode) {
     *PENDING.lock() = Some(Request { transform, mode });
 }
 

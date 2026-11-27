@@ -46,10 +46,10 @@ pub struct DirectorTuning {
     /// metres. It stays short of where the engine warns about a teleport without the load state
     /// ([`ENGINE_INSTANT_TELEPORT_WARNING_M`] from the camera), leaving a margin for the character
     /// standing away from the camera.
-    pub instant_teleport_range_m: f32,
+    pub(crate) instant_teleport_range_m: f32,
     /// The factor one press of the time-scale keys multiplies (up) or divides (down) the time
     /// scale by, so repeated presses walk a geometric ladder.
-    pub time_scale_step: f32,
+    pub(crate) time_scale_step: f32,
 }
 
 impl DirectorTuning {
@@ -70,20 +70,20 @@ impl DirectorTuning {
 pub struct BodiesTuning {
     /// Within this of Rico's root, or [`hand_radius_m`](Self::hand_radius_m) of a hand, a dynamic
     /// body is near, metres.
-    pub rico_radius_m: f32,
-    pub hand_radius_m: f32,
+    pub(crate) rico_radius_m: f32,
+    pub(crate) hand_radius_m: f32,
     /// The most bodies kept, held ones first and then the nearest.
     pub max_bodies: usize,
     /// Each step walks this share of the body slots (one over it), and at least
     /// [`min_slice`](Self::min_slice) of them: a body is found within this many steps of coming
     /// near.
-    pub walk_steps: u32,
-    pub min_slice: u32,
+    pub(crate) walk_steps: u32,
+    pub(crate) min_slice: u32,
     /// A kept body is introduced again after this long, so a stretch of a recording names its
     /// bodies, seconds.
-    pub intro_repeat_s: f32,
+    pub(crate) intro_repeat_s: f32,
     /// Below this squared speed, in either velocity, a body is at rest.
-    pub rest_speed_sq: f32,
+    pub(crate) rest_speed_sq: f32,
 }
 
 impl BodiesTuning {
@@ -103,7 +103,7 @@ impl BodiesTuning {
 #[serde(deny_unknown_fields)]
 pub struct BodyStateTuning {
     /// How long an unchanged state goes before a note repeats it, seconds.
-    pub repeat_after_s: f32,
+    pub(crate) repeat_after_s: f32,
 }
 
 /// The visual stage ([`crate::testing::stage`]).
@@ -112,7 +112,7 @@ pub struct BodyStateTuning {
 pub struct StageTuning {
     /// How many consecutive frames the player must stand in gameplay with no teleport in flight
     /// before the spawns are submitted: long enough for the landing to settle.
-    pub arrived_frames: u32,
+    pub(crate) arrived_frames: u32,
 }
 
 /// The distance from the camera past which the engine warns about a teleport without the load

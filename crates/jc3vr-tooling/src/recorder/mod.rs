@@ -196,7 +196,7 @@ pub struct Capture {
 
 /// Start a recording whose folder is stamped `stamp`, so a session recording's tracking half lands
 /// in the same folder. Any thread. A no-op while one runs.
-pub fn start_stamped(stamp: &str) {
+pub(crate) fn start_stamped(stamp: &str) {
     if is_recording() || jc3vr_core::is_shutting_down() {
         return;
     }
@@ -502,7 +502,7 @@ pub fn shutdown() -> bool {
 
 /// The default streamed frame rate. The game renders at about 40 fps in the headset, so a fixed 30
 /// keeps the stream at a rate the game can meet.
-pub const DEFAULT_FRAME_RATE: u32 = 30;
+pub(crate) const DEFAULT_FRAME_RATE: u32 = 30;
 /// The slowest streamed frame rate the config accepts.
 pub const MIN_FRAME_RATE: u32 = 10;
 /// The fastest streamed frame rate the config accepts.

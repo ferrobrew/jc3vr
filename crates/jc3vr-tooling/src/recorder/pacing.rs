@@ -16,7 +16,7 @@ use std::time::Duration;
 
 /// How many stream frames each rendered frame owes, by the wall clock.
 #[derive(Debug)]
-pub struct Pacer {
+pub(crate) struct Pacer {
     rate: u32,
     /// The stream frames accounted for so far.
     emitted: u64,
@@ -44,7 +44,7 @@ impl Pacer {
 
 /// The stream frames that frames the writer could not queue still owe.
 #[derive(Debug)]
-pub struct Backlog {
+pub(crate) struct Backlog {
     owed: u32,
     limit: u32,
 }
@@ -62,7 +62,7 @@ impl Backlog {
 
     /// Owe `frames` more stream frames, from a frame the writer could not queue. Returns how many
     /// were given up because the backlog is at its limit.
-    pub fn owe(&mut self, frames: u32) -> u32 {
+    pub(crate) fn owe(&mut self, frames: u32) -> u32 {
         let total = self.owed.saturating_add(frames);
         self.owed = total.min(self.limit);
         total - self.owed

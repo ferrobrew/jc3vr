@@ -30,7 +30,7 @@ pub struct TestingConfig {
     pub record_hand_joints: bool,
     /// Whether the request file in the configuration directory is watched, so that a script can
     /// start and stop the tools without the debug UI.
-    pub request_file: bool,
+    pub(crate) request_file: bool,
     /// Whether to keep a census of the live 2D textures and log it after every resize
     /// (`debug::texture_census`). Diagnostic: once armed, the payload cannot be ejected until the
     /// game restarts.

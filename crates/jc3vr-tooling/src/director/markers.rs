@@ -79,7 +79,7 @@ pub fn recent() -> Vec<Marker> {
 }
 
 /// How many recent markers the debug tab lists.
-pub const RECENT_SHOWN: usize = 8;
+pub(crate) const RECENT_SHOWN: usize = 8;
 
 struct State {
     count: u32,

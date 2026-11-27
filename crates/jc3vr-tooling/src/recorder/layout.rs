@@ -36,7 +36,7 @@ impl Arrangement {
 
 /// One eye's rectangle in the frame, in luma pixels.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct EyeRect {
+pub(crate) struct EyeRect {
     pub eye: usize,
     pub x: u32,
     pub y: u32,
@@ -46,7 +46,7 @@ pub struct EyeRect {
 
 /// The recorded frame's size and where each eye is in it.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct StreamLayout {
+pub(crate) struct StreamLayout {
     pub width: u32,
     pub height: u32,
     pub arrangement: Arrangement,
@@ -60,11 +60,11 @@ pub const MIN_EYE_WIDTH: u32 = 320;
 /// H.264 frame the hardware encoders take.
 pub const MAX_EYE_WIDTH: u32 = 2048;
 /// The default eye width: wide enough for a 1920x1080 crop of one eye.
-pub const DEFAULT_EYE_WIDTH: u32 = 1920;
+pub(crate) const DEFAULT_EYE_WIDTH: u32 = 1920;
 
 /// The eye render size gave no frame.
 #[derive(Debug, PartialEq, Eq)]
-pub enum LayoutError {
+pub(crate) enum LayoutError {
     /// An eye render dimension is zero.
     EmptyEye { width: u32, height: u32 },
 }
@@ -150,7 +150,7 @@ impl StreamLayout {
 }
 
 /// Clamp a requested eye width to the accepted range, rounded to even.
-pub fn clamp_eye_width(width: u32) -> u32 {
+pub(crate) fn clamp_eye_width(width: u32) -> u32 {
     width.clamp(MIN_EYE_WIDTH, MAX_EYE_WIDTH) & !1
 }
 
