@@ -83,9 +83,9 @@ fn set_geometry_program_constants(
     // context's (single, collapsed) projection. A per-eye run substitutes its own eye's, which maps
     // that eye's NDC onto that eye's narrowed half of the tile grid by construction.
     //
-    // The `state.ctx != ctx` guard mirrors `substitute_assignment_view`: without it, a cross-block
-    // geometry-constant upload with the same `(cb_index, offset, count)` shape -- a terrain patch
-    // stage that happens to land while the split is active -- would be substituted too.
+    // The context check mirrors `substitute_assignment_view`: without it, a geometry-constant upload
+    // of the same `(cb_index, offset, count)` shape on another context, landing while the split is
+    // active, would be substituted too.
     if cb_index == ASSIGNMENT_TRANSFORM_CB
         && start_offset == 0
         && count == MATRIX4_ROWS

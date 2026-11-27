@@ -14,12 +14,10 @@
 //!   the baked `m_OffsetViewProjection` and discards the patch when its expanded bounds fall outside
 //!   a clip plane. That matrix is the *render camera's*, and the constant buffer is baked once per
 //!   frame per slot -- so both eyes are culled against one frustum. Under the single-pass collapse
-//!   that frustum belongs to neither eye: the render camera stays centred with the engine's own
-//!   projection, built from the mod's injected 90 deg *vertical* FOV and the double-wide target's
-//!   aspect (`Camera::RecalcProjection` -> `CMatrix4f::PerspectiveFov`, which takes the vertical FOV
-//!   and divides by the aspect for the horizontal extent). A headset eye whose vertical FOV exceeds
-//!   90 deg, or whose display cant rotates it off the centre axis, sees past that frustum's top and
-//!   bottom, and every terrain patch out there is discarded for both eyes.
+//!   that frustum belongs to neither eye: the render camera stays centred and carries eye 0's
+//!   projection with no display cant. An eye whose field of view reaches past that frustum's sides,
+//!   top, or bottom, or whose display cant rotates it off the centre axis, sees beyond it, and
+//!   every terrain patch out there is discarded for both eyes.
 //!
 //! A patch the hull discards is not drawn in any pass, and the coarser tile that covers the same
 //! footprint is separately clipped away by the LOD clip (which keys on the streaming visibility mask,
@@ -38,8 +36,7 @@
 //! rasterizer, and out-of-frustum ones at the clipper.
 //!
 //! Under the single-pass collapse the frustum the hull programs cull against is the centred
-//! camera's, which carries eye 0's projection and no cant, and a canted eye sees past its outer edge
-//! (the left eye's: the right eye's outer side lies inside the double-wide target's clip range).
+//! camera's, which carries eye 0's projection and no cant, and a canted eye sees past its outer edge.
 //! Clearing the flag does not reach every hull: the patch system's own hull programs test the
 //! frustum unconditionally. So inside the G-buffer range under the collapse, both block types' bakes
 //! ([`RenderBlockTypeTerrain::SetupConstantBuffers`](jc3gi::graphics_engine::render_block::RenderBlockTypeTerrain::SetupConstantBuffers)

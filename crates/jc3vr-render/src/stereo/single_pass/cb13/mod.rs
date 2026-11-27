@@ -459,7 +459,8 @@ pub(crate) fn cb13_buffer_ptr() -> Option<usize> {
 }
 
 /// Write `rows` into the live `cb13` buffer, reporting whether it landed. Takes the engine context
-/// mutex before [`CB13`], the same order as [`mirror_and_bind_cb13`].
+/// mutex before [`CB13`], the same order as [`mirror_and_bind_cb13`]. The first failure is logged
+/// here, whichever path wrote; each caller reports what its own failure costs.
 pub(super) fn write_cb13_rows(d3d: EngineContext, rows: &[Vector4; STEREO_CB_TOTAL_ROWS]) -> bool {
     // SAFETY: runs on the render thread under the engine's context mutex, as every other `cb13` write.
     let result = d3d.with_lock(|ctx| unsafe { CB13.lock().write(ctx, rows) });
@@ -467,8 +468,8 @@ pub(super) fn write_cb13_rows(d3d: EngineContext, rows: &[Vector4; STEREO_CB_TOT
         if !CB13_PIN_WARNED.swap(true, Ordering::Relaxed) {
             tracing::warn!(
                 target: "single_pass",
-                "per-eye re-issue of an already-instanced draw could not map cb13 ({e}); those draws \
-                 stay split between the eyes"
+                "a cb13 write could not map the buffer ({e}); the draws that needed its rows keep the \
+                 rows the last write left"
             );
         }
         return false;

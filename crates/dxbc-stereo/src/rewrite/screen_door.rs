@@ -415,7 +415,7 @@ fn projected_site(
     let div = &tokens[div.start..div.end];
     let hash = &tokens[dp2.start..dp2.end];
     let [
-        ADD_7,
+        ADD_9,
         OPERAND_TEMP_MASK_ZW,
         size,
         CB_ZZZW,
@@ -585,7 +585,7 @@ const SCREEN_DOOR_X: u32 = 0x3eef_965b;
 /// The screen-door vector's `y`, `-0.703648`.
 const SCREEN_DOOR_Y: u32 = 0xbf34_2246;
 /// The opcode tokens of a nine-token `add`, a seven-token `div`, and a ten-token `dp2`.
-const ADD_7: u32 = (9 << 24) | OPCODE_ADD;
+const ADD_9: u32 = (9 << 24) | OPCODE_ADD;
 const DIV_7: u32 = (7 << 24) | OPCODE_DIV;
 const DP2_10: u32 = (10 << 24) | OPCODE_DP2;
 /// The `.xy` component-mask bits of a masked operand token.

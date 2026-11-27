@@ -142,8 +142,9 @@ pub(super) struct SplitState {
     /// The eye this run assigns lights for, and whose half of the tile grid it writes.
     pub(super) eye: usize,
     /// The graphics context `DrawClustered` is running on, as the caller's raw pointer value. Keys
-    /// [`substitute_assignment_view`]'s match so an unrelated vertex-constant stage on another context
-    /// -- or another block's on this one -- cannot be mistaken for the light-assignment view upload.
+    /// [`substitute_assignment_view`]'s match so a vertex-constant stage on another context cannot
+    /// be mistaken for the light-assignment view upload; on this context, the constant-buffer
+    /// index, offset, and count pick the upload out.
     pub(super) ctx: usize,
     pub(super) grid: TileGrid,
     /// This eye's light-assignment geometry transform, substituted on `cb0`.
