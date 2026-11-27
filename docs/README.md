@@ -114,7 +114,7 @@
 
 ### body/
 
-- [runtime-testing.md](mod/body/runtime-testing.md): active replacement paths, gameplay checks, and known limitations.
+- [runtime-testing.md](mod/body/runtime-testing.md): the order of the live-game checks across the body, reload, grenade, rack, and hull paths.
 - [human-hull-restoration.md](mod/body/human-hull-restoration.md): restoring the human's native shape settings.
 - [attachments.md](mod/body/attachments.md): socket interaction targets and pouch markers in the body mirror.
 - [head-and-body.md](mod/body/head-and-body.md): how head and body yaw relate, the head pose, and the head bone.
