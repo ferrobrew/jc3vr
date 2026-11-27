@@ -52,19 +52,26 @@ use crate::controllers::{
 
 /// State that can invalidate an offer between the provider pass and final publication.
 ///
-/// The hands' explosives and the foregrip hold are read live, not from the weapon handling's
+/// The hands' contents are sampled live ([`weapons::contents::now`]), not read from the weapon handling's
 /// published hands record: the record is the end of the last finish half, and the beacon and the C4
 /// throw change in their weapons' updates between input ticks, and the loss cancels throws earlier
-/// in this tick, so the record would count those changes as this tick's finish's. The record also
-/// leaves out a foregrip hold that is fading out.
+/// in this tick, so the record would count those changes as this tick's finish's.
 pub(super) struct BeforeFinish {
     guns: [Option<GunOwner>; 2],
     reload: ReloadStatus,
-    foregrip: Option<(usize, Hand, bool)>,
-    grenade: [bool; 2],
-    c4: Option<Hand>,
-    detonator: Option<Hand>,
+    held: [HeldParts; 2],
     parachute: [Option<HandleHold>; 2],
+}
+
+/// The parts of a hand's contents whose change invalidates an offer: the foregrip it braces (an
+/// engaged hold only, not one fading out), whether it holds a grenade, whether a C4 throw belongs to
+/// it, and whether it holds the detonator.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+struct HeldParts {
+    braces: Option<usize>,
+    grenade: bool,
+    charge: bool,
+    detonator: bool,
 }
 
 impl BeforeFinish {
@@ -73,10 +80,7 @@ impl BeforeFinish {
         Self {
             guns,
             reload: current_reload(guns),
-            foregrip: foregrip_owner(),
-            grenade: Hand::BOTH.map(weapons::grenade::holds),
-            c4: weapons::c4::throwing_hand(),
-            detonator: weapons::c4::detonator_hand(),
+            held: held_now(),
             parachute,
         }
     }
@@ -184,10 +188,7 @@ pub(super) fn capture(game: &GameTick<'_>, input: Refresh<'_>) -> Eligibility {
         BeforeFinish {
             guns,
             reload,
-            foregrip: foregrip_owner(),
-            grenade: Hand::BOTH.map(weapons::grenade::holds),
-            c4: weapons::c4::throwing_hand(),
-            detonator: weapons::c4::detonator_hand(),
+            held: held_now(),
             parachute,
         },
         fire,
@@ -214,10 +215,7 @@ fn capture_current(
     let reload = current.reload;
     let owners_changed = input.before.guns != guns
         || reload_changed(&input.before.reload, &reload)
-        || input.before.foregrip != current.foregrip
-        || input.before.grenade != current.grenade
-        || input.before.c4 != current.c4
-        || input.before.detonator != current.detonator
+        || input.before.held != current.held
         || input.before.parachute != current.parachute;
     let chosen = retained_choices(input.chosen, input.grabs, owners_changed);
     let fires_guns = tables::triggers_fire_hand_weapons(input.owners[0].mode);
@@ -253,7 +251,9 @@ fn capture_current(
     ));
     mechanics.extend(detonator_rows(
         weapons::c4::returnable().map(|charge| charge.is_some()),
-        current.detonator,
+        Hand::BOTH
+            .into_iter()
+            .find(|hand| current.held[hand.index()].detonator),
         input.ready,
     ));
     if let Some(hand) = input.yank {
@@ -499,10 +499,14 @@ fn detonator_rows(
         })
 }
 
-fn foregrip_owner() -> Option<(usize, Hand, bool)> {
-    weapons::foregrip::status()
-        .hold
-        .map(|hold| (hold.weapon, hold.holder, hold.engaged))
+/// Each hand's [`HeldParts`], from a live sample of the hands.
+fn held_now() -> [HeldParts; 2] {
+    weapons::contents::now().map(|hand| HeldParts {
+        braces: hand.braces,
+        grenade: hand.grenade.is_some(),
+        charge: hand.charge.is_some(),
+        detonator: hand.detonator,
+    })
 }
 
 fn retained_choices(

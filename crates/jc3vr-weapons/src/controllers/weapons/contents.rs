@@ -21,6 +21,9 @@ use crate::controllers::{
 /// ([`hands`](crate::controllers::loadout::contents::hands)), it follows the beacon and the C4 throw
 /// as their weapons' updates move them between ticks, and keeps the gun hands through a
 /// stand-down. The brace is the engaged foregrip hold only, not one fading out after a release.
+///
+/// The sample takes the weapon handling's locks one after another (the reload's, the C4's, and the
+/// foregrip's among them), so no caller may hold one of them.
 pub fn now() -> [HandContents; 2] {
     sample(last_wielded().0.as_ref())
 }
