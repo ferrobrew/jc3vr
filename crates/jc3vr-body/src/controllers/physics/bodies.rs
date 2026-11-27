@@ -33,10 +33,6 @@ use crate::controllers::{
     telemetry::{Applied, BodyBefore, note_force},
 };
 
-/// The substrate's error under the name the physical hands and the weapons still match on: a shim
-/// until they name [`PhysicsError`].
-pub type BodyError = PhysicsError;
-
 /// A body's state, game space.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct BodyState {
