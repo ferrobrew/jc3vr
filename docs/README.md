@@ -29,13 +29,13 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 
 ### physics/
 
-- [havok-bodies.md](engine/physics/havok-bodies.md): the physics step, the pre-simulation callbacks, making dynamic bodies, and the collision filter.
+- [havok-bodies.md](engine/physics/havok-bodies.md): the physics step, the pre-simulation callbacks, making dynamic bodies, the collision filter, constraints, contact events, and loose-object masses.
 
 ### character/
 
 - [skeleton.md](engine/character/skeleton.md): the pose producer, the skeleton and its bones, the Joint API, and where bones can be overridden.
-- [humanik.md](engine/character/humanik.md): the HumanIK solver, its lifecycle, effectors, and external targets.
-- [weapon-attachment-and-arm-ik.md](engine/character/weapon-attachment-and-arm-ik.md): the weapon-to-hand attach, the dual-wield attach bones, muzzle effects, and the per-arm aim IK.
+- [humanik.md](engine/character/humanik.md): the HumanIK solver, the pose-finalization pass order, effectors, and external targets.
+- [weapon-attachment-and-arm-ik.md](engine/character/weapon-attachment-and-arm-ik.md): the weapon-to-hand attach, the dual-wield attach bones, muzzle effects, the secondary hand pass, and the per-arm aim IK.
 - [root-motion-and-proxy.md](engine/character/root-motion-and-proxy.md): root motion, the collision proxy and its support, scene queries, teleports, and the seat pose.
 - [state-signals.md](engine/character/state-signals.md): the per-tick character state signals, the UI and pause signals, and hit reactions.
 - [animation-layers.md](engine/character/animation-layers.md): the animation layers, how the pose job stacks them, and the state tasks in pose finalization.
