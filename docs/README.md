@@ -10,6 +10,7 @@
 - [pause-menu.md](engine/pause-menu.md): the pause and options menu's Scaleform screens, `pause.gfx`, its commands, and its input.
 - [scaleform.md](engine/scaleform.md): the Scaleform runtime, its loader and VFS, standalone movies, fonts, and building a movie the loader accepts.
 - [window-focus.md](engine/window-focus.md): how the game detects and handles losing the desktop foreground.
+- [environment.md](engine/environment.md): how the game's time of day and weather work, and how to pin them.
 
 ### rendering/
 
@@ -19,6 +20,8 @@
 - [render-setups-reinit.md](engine/rendering/render-setups-reinit.md): the runtime resize path and the render setups.
 - [window-glass.md](engine/rendering/window-glass.md): window glass, its damage, and how a pane is drawn and hidden.
 - [model-culling.md](engine/rendering/model-culling.md): the instance cull and the per-render-block frustum cull.
+- [terrain.md](engine/rendering/terrain.md): the terrain's blocks, patch culling, the hull's discards, and the detail skin's budget.
+- [render-pass-sort.md](engine/rendering/render-pass-sort.md): the render-pass sort and its depth buckets.
 - [ui-rendering.md](engine/rendering/ui-rendering.md): how the Scaleform UI is updated, captured, and rendered, and the HUD movie's layout.
 
 ### performance/
@@ -33,7 +36,9 @@
 
 - [skeleton.md](engine/character/skeleton.md): the pose producer, the skeleton and its bones, the Joint API, and where bones can be overridden.
 - [humanik.md](engine/character/humanik.md): the HumanIK solver, its lifecycle, effectors, and external targets.
-- [hands-locomotion-and-state.md](engine/character/hands-locomotion-and-state.md): the weapon-to-hand attach, aim IK, root motion, the collision proxy, seat attach, and the per-tick character state.
+- [weapon-attachment-and-arm-ik.md](engine/character/weapon-attachment-and-arm-ik.md): the weapon-to-hand attach, the dual-wield attach bones, muzzle effects, and the per-arm aim IK.
+- [root-motion-and-proxy.md](engine/character/root-motion-and-proxy.md): root motion, the collision proxy and its support, scene queries, teleports, and the seat pose.
+- [state-signals.md](engine/character/state-signals.md): the per-tick character state signals, the UI and pause signals, and hit reactions.
 - [idle-stance.md](engine/character/idle-stance.md): the on-foot idle variants and why every armed idle is a combat stance.
 - [animation-layers.md](engine/character/animation-layers.md): the animation layers, how the pose job stacks them, and the state tasks in pose finalization.
 - [animation-graph.md](engine/character/animation-graph.md): the decoded state-machine format and what Rico's graphs do with the weapon.
@@ -67,22 +72,21 @@
 
 ## mod/
 
-- [vr-runtime.md](mod/vr-runtime.md): the OpenXR runtime, session lifecycle, frame loop, pose model, and mirror.
-- [threading.md](mod/threading.md): the threads mod code runs on, the VR runtime's locks, and the frame overlap.
-- [lifecycle.md](mod/lifecycle.md): shutdown preparation, deferred retries, and teardown.
-- [tuning.md](mod/tuning.md): the tuning TOML files, their loading and hot reload, and what counts as tuning.
-- [settings.md](mod/settings.md): the settings file, its load and save, and its representation.
-- [hud.md](mod/hud.md): the floating-panel HUD, its compositing, cursor, and HUD depth placement.
-- [pause-menu.md](mod/pause-menu.md): the VR pages inside the game's pause menu.
-- [status.md](mod/status.md): the status rows shown by the debug UI and logged.
-- [debug-ui.md](mod/debug-ui.md): the egui debug UI.
-- [environment.md](mod/environment.md): time of day and weather from the debug UI.
+- [vr-runtime.md](mod/vr-runtime.md): the OpenXR session, frame loop, projection, per-eye resolution, and desktop mirror.
+- [threading.md](mod/threading.md): threads, the VR runtime's lock rules and guard, and the game tick.
+- [lifecycle.md](mod/lifecycle.md): startup order, shutdown preparation, hook removal, and teardown.
+- [tuning.md](mod/tuning.md): the shipped TOML tuning, its loading and hot reload, and what counts as tuning.
+- [settings.md](mod/settings.md): the settings aggregate, its slots, and how the file is loaded, migrated, and saved.
+- [hud.md](mod/hud.md): the floating HUD panel, world markers, HUD depth, the debug panel, the clean view, and the UI pointer.
+- [pause-menu.md](mod/pause-menu.md): the VR pages in the game's pause menu and the body calibration.
+- [status.md](mod/status.md): the status rows' states, sections, and threading rule.
+- [debug-ui.md](mod/debug-ui.md): the debug UI's pages, input ownership, and layout.
+- [environment.md](mod/environment.md): debug UI controls for time of day and weather.
 - [sessions.md](mod/sessions.md): the session output folder and where each output lands.
-- [capture.md](mod/capture.md): capturing both eyes to video, the capture hosts, and the pose sidecar.
-- [trailer-tooling.md](mod/trailer-tooling.md): the directing tools for recording footage.
-- [weapon-selector.md](mod/weapon-selector.md): the weapon wheel on the game's selection cross.
+- [capture.md](mod/capture.md): session recording, the eye-view video capture, the capture hosts, and the sidecar.
+- [trailer-tooling.md](mod/trailer-tooling.md): the directing tools for staging footage.
+- [weapon-selector.md](mod/weapon-selector.md): the weapon wheel on the game's selection cross (off by default).
 - [window-focus.md](mod/window-focus.md): keeping the game running when the desktop window loses focus.
-- [scaleform-movie.md](mod/scaleform-movie.md): a mod-owned Scaleform movie (not built) and why the pause menu is used instead.
 
 ### stereo/
 
@@ -191,12 +195,7 @@
 
 ## issues/
 
-- [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md): HUD overlays and depth (#8, #14).
-- [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md): enclosed vehicles (#15).
-- [20-animation-judder.md](issues/20-animation-judder.md): animation judder (#20).
-- [32-monoscopic-far-field.md](issues/32-monoscopic-far-field.md): the render-pass sort as a distance split for a shared far field (#32).
-- [40-terrain-black-tiles.md](issues/40-terrain-black-tiles.md): terrain rendering black at grazing angles (#40).
-- [far-field.md](issues/far-field.md): the removed monoscopic far field (#32).
-- [periodic-sim-tick-hitches.md](issues/periodic-sim-tick-hitches.md): periodic stalls inside the sim tick.
-- [session-stalls-and-low-camera.md](issues/session-stalls-and-low-camera.md): long game-thread stalls and a low camera.
-- [swim-yaw-endless-spin.md](issues/swim-yaw-endless-spin.md): the swimming body flipping as it moved.
+- [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md): HUD overlays and depth (#8, #14), resolved: the depth split's post-mortem.
+- [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md): enclosed vehicles (#15), open.
+- [20-animation-judder.md](issues/20-animation-judder.md): animation judder from the 30 Hz tick (#20), open.
+- [periodic-sim-tick-hitches.md](issues/periodic-sim-tick-hitches.md): periodic sim-tick hitches, resolved: the Steam client's Steam Frame link.
