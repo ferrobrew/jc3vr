@@ -1009,8 +1009,8 @@ mod tests {
 
     #[test]
     fn a_press_that_reached_the_game_just_before_the_reel_is_the_locks_once_it_reels() {
-        // The 10 November take: the tap fired, and the press to swing landed a tick before the
-        // hook entered the reel, so it went to the game and the lock never heard it.
+        // A tap fires, and a press to swing that lands a tick before the hook enters the reel goes to the
+        // game, so the lock never hears it.
         let mut g = GrappleButton::new();
         assert!(!g.step(tick(PRESS, GrappleContext::default())).gestures);
         let out = run(&mut g, REELING, &[HELD, HELD]);

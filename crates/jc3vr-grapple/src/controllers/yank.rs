@@ -298,9 +298,9 @@ mod tests {
 
     #[test]
     fn an_arm_spread_out_to_the_side_does_not_yank() {
-        // The 10 November take, 1492.6 s: the grapple hand, aimed ahead and across the body, swung
-        // out to the side to open the wingsuit; its reach along the aim dropped 0.36 m in 0.2 s,
-        // and it went 0.3 m further out from the head across the ground.
+        // A grapple hand aimed ahead and across the body can swing out to the side to open the wingsuit:
+        // its reach along the aim drops 0.36 m in 0.2 s, and it goes 0.3 m further out from the head
+        // across the ground.
         let head = Vec3::new(0.0, 0.0, 0.0);
         let aim = Vec3::new(0.62, -0.17, -0.77);
         let from = Vec3::new(-0.05, -0.35, -0.35);
