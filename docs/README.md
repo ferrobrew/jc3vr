@@ -152,9 +152,8 @@
 - [collider-view.md](mod/input/collider-view.md): the collider view diagnostic.
 - [physical-weapons.md](mod/input/physical-weapons.md): weapons as physical objects in either hand.
 - [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body.
-- [pouch-models.md](mod/input/pouch-models.md): grenade, C4, and magazine models on Rico's pouches.
+- [pouch-models.md](mod/input/pouch-models.md): grenade, C4, and magazine models on Rico's pouches and the round in the hand.
 - [grenades.md](mod/input/grenades.md): grenades as independent loadout items.
-- [attachments.md](mod/input/attachments.md): the belt magazine and other body attachments.
 - [paired-rack-weapons.md](mod/input/paired-rack-weapons.md): rack weapons and their ammunition.
 - [reload.md](mod/input/reload.md): the hand-worked reload, and what each weapon loads.
 - [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand.
