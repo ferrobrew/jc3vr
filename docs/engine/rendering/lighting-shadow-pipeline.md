@@ -2,7 +2,7 @@
 
 This doc maps how the game computes and stages its per-frame sun-shadow and global-lighting state — the constants the material shaders read out of `cb0` GlobalConstants each frame, where each value comes from, and, critically, **which of them are selected by a frame counter or frame parity** (the set of things that legitimately differ frame-to-frame in the base game). Names follow the pyxis-defs, which hold every address and offset; follow a linked name into the defs for the binding.
 
-Companion to [`rendering.md`](rendering.md) (the frame pipeline and the stereo double-Draw machinery) and [`shaders.md`](shaders.md) (the shader bytecode side). Where `rendering §N` is cited, it refers to that doc.
+Companion to [`rendering.md`](rendering.md) (the frame pipeline) and [`shaders.md`](shaders.md) (the shader bytecode side). Where `rendering §N` is cited, it refers to that doc.
 
 ## 1. The frame counters
 
@@ -15,7 +15,7 @@ Three engine-global counters and one per-context stamp select frame-varying stat
 | [`m_RingIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderFrameCounters##field-m_RingIndex) | `m_FrameIndex % 3` | The three-slot constant-buffer / light-lookup ring. |
 | [`RenderContext::m_RenderFrameNo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_RenderFrameNo) | copied from `m_FrameIndex` in `SetupRenderContext` | The per-dispatch stamp the draw side keys shadow parity on. **Equals `m_FrameIndex`**, so `m_RenderFrameNo & 1 == m_FrameIndex & 1`. |
 
-**Parity consistency (the key invariant).** The shadow *simulation* writes its parity storage indexed by `m_Counter & 1` (in `ShadowManager::UpdateRender`), while the *draw* side reads by `m_FrameIndex & 1` / `m_RenderFrameNo & 1`. These agree because the sim shadow update runs in `CGameStateRun::UpdateShadows` (sim phase, **before** the `Draw` prologue increments the counter): at sim time `m_Counter == C`, and the prologue then assigns `m_FrameIndex = C`. So sim-write parity `C & 1` == draw-read parity `m_FrameIndex & 1`. Both dispatches of a stereo frame share one prologue, hence one parity — the second eye reads the same shadow half the first eye did (rendering §5.3).
+**Parity consistency (the key invariant).** The shadow *simulation* writes its parity storage indexed by `m_Counter & 1` (in `ShadowManager::UpdateRender`), while the *draw* side reads by `m_FrameIndex & 1` / `m_RenderFrameNo & 1`. These agree because the sim shadow update runs in `CGameStateRun::UpdateShadows` (sim phase, **before** the `Draw` prologue increments the counter): at sim time `m_Counter == C`, and the prologue then assigns `m_FrameIndex = C`. So sim-write parity `C & 1` == draw-read parity `m_FrameIndex & 1`.
 
 [`RenderPass::SetupRenderContext`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_pass::RenderPass##func-SetupRenderContext) also stamps the context's ring indices: [`RenderContext::m_RenderFrameIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_RenderFrameIndex) (`m_FrameIndex % 3`) and [`RenderContext::m_PreviousRenderFrameIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_PreviousRenderFrameIndex) (`(m_FrameIndex + 2) % 3`). It then copies the live per-frame light and sun values into the context: the point and spot light counts, the light manager's global light direction and diffuse colour, the render engine's sun vector, and the time-of-day light modulator.
 
@@ -156,8 +156,8 @@ Every position in it is relative to the render camera: each point light's first 
 
 ### 5.3 Camera-derived constants
 
-- **Full (translation-bearing) view-projection**: a `memcpy` of the render camera's [`Camera::m_ViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_ViewProjectionF) into vertex rows 0 to 3. It drives screen-space / non-geometry work (rendering §2.4). Off-axis, so **per-eye** in stereo.
-- **Camera world position** from the translation row of the render camera's [`Camera::m_TransformF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_TransformF) → vertex rows 4 and 5 and fragment rows 4 to 6. **Per-eye.** The fragment cascade translation (row 48, §5.2) is baked relative to it. Which pixel shaders read these rows, and for what, is in [`shaders.md`](shaders.md#pixel-shaders-that-read-the-camera-position).
+- **Full (translation-bearing) view-projection**: a `memcpy` of the render camera's [`Camera::m_ViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_ViewProjectionF) into vertex rows 0 to 3. It drives screen-space / non-geometry work (rendering §2.4). **Camera-dependent.**
+- **Camera world position** from the translation row of the render camera's [`Camera::m_TransformF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_TransformF) → vertex rows 4 and 5 and fragment rows 4 to 6. **Camera-dependent.** The fragment cascade translation (row 48, §5.2) is baked relative to it. Which pixel shaders read these rows, and for what, is in [`shaders.md`](shaders.md#pixel-shaders-that-read-the-camera-position).
 - **Depth-unproject constants** from the render camera near/far: `1/m_Near` ([`Camera::m_Near`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_Near)) and `1/m_Far` ([`Camera::m_Far`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::camera::Camera##field-m_Far)) → fragment row 9 `.z = 1/near − 1/far` and `.w = 1/far`. Stable within a frame.
 - **Inverse display size** from [`Graphics::GetDeviceInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::device##func-GetDeviceInfo): `1/width`, `1/height` → fragment row 8 `.zw`. The fragment `GlobalConstants` cbuffer therefore carries `cb0[8].zw = (1/DisplayWidth, 1/DisplayHeight)`, sourced from `Graphics::SDeviceInfo` and not from the bound render setup or the viewport. This is the one screen-size constant the shaders have; see rendering §4.3 for how they use it.
 
@@ -172,7 +172,7 @@ Every position in it is relative to the render camera: each point light's first 
 
 ## 7. The ping-pong table
 
-Every per-frame global lighting/shadow value the material shaders consume, and what selects it frame-to-frame. "Stable" = deterministic within a frame and identical across both dispatches of a stereo frame; "per-eye" = legitimately differs between the two dispatches by design; "parity" = `m_FrameIndex & 1` (== `m_RenderFrameNo & 1`); "counter" = full `m_Counter`. CB rows are `cb0` rows of the vertex (VP) or fragment (FP) GlobalConstants.
+Every per-frame global lighting/shadow value the material shaders consume, and what selects it frame-to-frame. "Stable" = deterministic within a frame and identical for every dispatch of it; "camera" = follows the render camera, so it differs between dispatches drawn from different cameras; "parity" = `m_FrameIndex & 1` (== `m_RenderFrameNo & 1`); "counter" = full `m_Counter`. CB rows are `cb0` rows of the vertex (VP) or fragment (FP) GlobalConstants.
 
 | Value | Where computed | Backing field / global | Indexed by |
 |---|---|---|---|
@@ -189,8 +189,8 @@ Every per-frame global lighting/shadow value the material shaders consume, and w
 | **Which cascades are freshly fit** (atlas contents) | `SetActiveShadowPassCount` schedule + `UpdateRender` | `m_CascadeUpdateLevels`; gate `((1<<lvl)-1)&counter` | **counter** (period `2^lvl`) |
 | Shadow fade / transparency | `SetGlobalShaderConstants` | `ShadowManager::m_ShadowTransparency` | stable (console var) |
 | Shadow enable | throughout | `shadow_system_enabled` | stable |
-| Full view-projection (`m_ViewProjectionF`) | `SetGlobalShaderConstants` | `Camera::m_ViewProjectionF` → VP rows 0 to 3 | per-eye |
-| Camera world position | `SetGlobalShaderConstants` | render cam `m_TransformF` translation → VP rows 4 and 5, FP rows 4 to 6 | per-eye |
+| Full view-projection (`m_ViewProjectionF`) | `SetGlobalShaderConstants` | `Camera::m_ViewProjectionF` → VP rows 0 to 3 | camera |
+| Camera world position | `SetGlobalShaderConstants` | render cam `m_TransformF` translation → VP rows 4 and 5, FP rows 4 to 6 | camera |
 | Depth-unproject (1/near, 1/far) | `SetGlobalShaderConstants` | `Camera::m_Near` / `Camera::m_Far` → FP row 9 `.zw` | stable within frame |
 | Inverse display size (`cb0[8].zw`) | `SetGlobalShaderConstants` | `GetDeviceInfo` → FP row 8 `.zw` | stable |
 | Wet properties block | `SetGlobalShaderConstants` | `GetWetProperties(ctx)` → FP rows 40 to 43 | stable |
@@ -199,7 +199,7 @@ Every per-frame global lighting/shadow value the material shaders consume, and w
 | TAA jitter phase (perturbs projection) | [`ApplySubsampleJitter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::PostEffectsManager##func-ApplySubsampleJitter) | reads `m_FrameIndex` | **parity/ring** (rendering §5.7) |
 | Auto-exposure | [`ToneMappingEffect::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::tone_mapping::ToneMappingEffect##func-Update) | [`m_ExposureBrightPoint`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::tone_mapping::ToneMappingEffect##field-m_ExposureBrightPoint) | frame-counted (rendering §5.4) |
 
-**The shadow ping-pong surface, in one line:** the horizon-map blend time, the cascade block, the per-slice matrices, and the active-cascade count all switch on `m_FrameIndex & 1`; *which* cascades carry a fresh fit switches on the full `m_Counter`. Everything else in the lighting/fog/sun set is recomputed every frame from continuous inputs and is identical across a stereo frame's two dispatches. Any lighting/shadow flicker that is *not* explained by the exposure meter (rendering §5.4) or TAA jitter must come from one of the parity- or counter-indexed shadow rows above being read at a parity/counter that disagrees with the half that was written.
+**The shadow ping-pong surface, in one line:** the horizon-map blend time, the cascade block, the per-slice matrices, and the active-cascade count all switch on `m_FrameIndex & 1`; *which* cascades carry a fresh fit switches on the full `m_Counter`. Everything else in the lighting/fog/sun set is recomputed every frame from continuous inputs and is identical for every dispatch of a frame. Any lighting/shadow flicker that is *not* explained by the exposure meter (rendering §5.4) or TAA jitter must come from one of the parity- or counter-indexed shadow rows above being read at a parity/counter that disagrees with the half that was written.
 
 ## 8. Bindings
 

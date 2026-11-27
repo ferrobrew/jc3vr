@@ -47,26 +47,25 @@ python3 tools/shaders/shader_names.py "$HOME/.steam/steam/steamapps/common/Just 
 # 1512 00a8d600 domain   nvwaterhighend
 ```
 
-`--json` emits the same records (plus the name and data hashes) for scripting. Measured on the 2026
-Steam build: 1551 blobs in `Shaders_F` and `ShadersLowShadows_F`, 1552 in the two `ConstMath` bundles,
+`--json` emits the same records (plus the name and data hashes) for scripting. Measured: 1551 blobs in `Shaders_F` and `ShadersLowShadows_F`, 1552 in the two `ConstMath` bundles,
 all named.
 
 ### The name table
 
-The ADF header lists a single instance, `ShaderLibrary`, at file offset `0x50`. **Every pointer inside
+The ADF header lists a single instance, `ShaderLibrary`. **Every pointer inside
 an ADF instance is relative to that instance's own offset**, not to the start of the file — the single
-most common way to get lost here. The file's own typedef table spells out both structs:
+most common way to get lost here. The file's own typedef table spells out both structs, in field order:
 
 ```
-ShaderLibrary (112 bytes)          Shader (40 bytes)
-  +0   Name*                         +0   NameHash   u32 (8-byte slot)
-  +8   BuildTime*                    +8   Name*
-  +16  VertexShaders    {ptr,count}  +16  DataHash   u32 (8-byte slot)
-  +32  FragmentShaders  {ptr,count}  +24  BinaryData {ptr,count}   -> the DXBC container
-  +48  ComputeShaders   {ptr,count}
-  +64  GeometryShaders  {ptr,count}
-  +80  HullShaders      {ptr,count}
-  +96  DomainShaders    {ptr,count}
+ShaderLibrary                      Shader
+  Name*                              NameHash   u32
+  BuildTime*                         Name*
+  VertexShaders    {ptr,count}       DataHash   u32
+  FragmentShaders  {ptr,count}       BinaryData {ptr,count}   -> the DXBC container
+  ComputeShaders   {ptr,count}
+  GeometryShaders  {ptr,count}
+  HullShaders      {ptr,count}
+  DomainShaders    {ptr,count}
 ```
 
 Because a shader lives in the array for its stage, the table also hands you each blob's **program
