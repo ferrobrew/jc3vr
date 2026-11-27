@@ -2,7 +2,7 @@
 //!
 //! On foot, Y asks for the use, the vehicle entry, and the wingsuit at once. Hanging on the line
 //! below a helicopter, the entry has no state to take it, and the wingsuit opened and ended the
-//! reel instead (1800 s on the 14 November take). So while the lock hangs Rico below a helicopter,
+//! reel instead. So while the lock hangs Rico below a helicopter,
 //! Y's wingsuit is dropped and its press asks the lock to point the reel at the door side and let
 //! it arrive ([`lock::entering_helicopter`]), which pulls Rico up onto the skid. The press that
 //! started the pull is kept from the game until it is released, so the door-side arrival leaves
