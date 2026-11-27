@@ -1,6 +1,7 @@
-//! What the world-space overlay's draw reads from the controllers, which they register at startup:
-//! whether the overlay is on and how it draws, and the hands' render-time poses its hand-anchored
-//! primitives ride. Until they do, the overlay draws nothing.
+//! What the world-space overlay's draw reads from the controllers, registered once at startup by the
+//! gameplay crate on the body's behalf: whether the overlay is on and how it draws, and the hands'
+//! render-time poses its hand-anchored primitives ride. Until they are registered, the overlay draws
+//! nothing.
 
 use std::sync::OnceLock;
 

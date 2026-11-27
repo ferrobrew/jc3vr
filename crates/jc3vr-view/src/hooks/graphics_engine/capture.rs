@@ -41,7 +41,6 @@ pub struct StageCapture {
 }
 
 pub struct EguiDebugRenderState {
-    /// Final back-buffer capture per Draw (eye): index 0 and index 1.
     /// The per-eye captures the VR presentation path submits. The egui id is `None` until the UI
     /// thread registers one for the Previews panel: these textures must exist whether or not the
     /// debug UI ever installs, so their creation cannot depend on a renderer.
@@ -279,9 +278,9 @@ impl EguiDebugRenderState {
     /// Create or resize the two per-eye captures the VR presentation path submits.
     ///
     /// Deliberately takes no renderer and is driven from the frame loop rather than from inside the
-    /// egui closure. These textures are what VR presents; they existed only as a side effect of the
-    /// debug UI preparing itself, so an `EguiState` that failed to install left VR with nothing to
-    /// submit and no indication why.
+    /// egui closure. These textures are what VR presents; were they a side effect of the debug UI
+    /// preparing itself, an `EguiState` that failed to install would leave VR with nothing to submit
+    /// and no indication why.
     pub fn ensure_eye_targets(&mut self) {
         // SAFETY: reads the live engine device on the game thread, as the UI preparation does.
         unsafe {
@@ -558,8 +557,8 @@ pub fn capture_main_color(eye: usize) {
     }
 }
 
-/// Register the debug render-state cleanup. Call once at init; it tears down the captured textures and
-/// egui registrations at shutdown.
+/// Register the debug render-state cleanup, once at startup: it tears down the captured textures
+/// and egui registrations at shutdown.
 pub fn install() {
     jc3vr_core::lifecycle::on_cleanup(|renderer| {
         EGUI_DEBUG_RENDER_STATE

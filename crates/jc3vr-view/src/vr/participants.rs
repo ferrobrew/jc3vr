@@ -1,10 +1,10 @@
 //! The work the VR runtime drives without owning it: the roomscale cockpit composition, the
-//! composition's evidence publication, and the observers of a recenter; the render resources and
-//! flip state its teardown releases; and the observer of the engine resizes it requests. The body
-//! frame filter, which the frame also advances, reaches it through the head pose's participants
+//! observer of a recenter, and the kind a manual recenter asks for; the flip state its teardown
+//! releases; and the observer of the engine resizes it requests. The body frame filter, which the
+//! frame also advances, reaches it through the head pose's participants
 //! ([`crate::headpose::BodyFrameFilter`]).
 //!
-//! The frame ([`crate::vr::frame`]), the recenter ([`crate::vr::recenter`]), the teardown, and the
+//! The frame ([`crate::vr::frame`]), the recenter ([`mod@crate::vr::recenter`]), the teardown, and the
 //! native-resolution driver call these at fixed points of their own sequence, so the order is
 //! theirs. The owners live above the VR runtime, so they hand it their tables at install
 //! ([`register_frame_participants`], [`register_teardown_participant`], and

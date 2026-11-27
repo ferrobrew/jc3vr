@@ -1,7 +1,7 @@
 //! The overlay's submission types: what a producer asks the overlay to draw.
 //!
 //! Positions are in the game's world space. A position may instead be anchored to a hand, so that
-//! the renderer places it from the render-time hand pose ([`crate::controllers::hands::late`]) and
+//! the renderer places it from the render-time hand pose (`jc3vr_body::controllers::hands::late`) and
 //! a hand-attached end tracks the controller at frame rate even when its producer submits at the
 //! sim tick's rate.
 
@@ -18,7 +18,7 @@ pub enum Source {
     GrappleBeam,
     /// The guns' dot or laser.
     GunReadout,
-    /// The grip targets' markers ([`crate::controllers::grab::markers`]).
+    /// The grip targets' markers (`jc3vr_body::controllers::grab::markers`).
     GrabMarkers,
     /// The ghosts of yielded hands at their controllers.
     GhostHands,
@@ -28,7 +28,7 @@ pub enum Source {
     WingGuide,
     /// The ring at a hand holding a primed grenade, warning of its fuse.
     GrenadeWarning,
-    /// The armed grapple snatch's latch on its target ([`crate::controllers::snatch`]).
+    /// The armed grapple snatch's latch on its target (`jc3vr_grapple::controllers::snatch`).
     SnatchLatch,
     /// The sight tuning tool's line-up marker.
     SightTuning,
@@ -41,19 +41,21 @@ pub enum Source {
     /// The body mirror's render-time pouch models and copied input targets.
     BodyMirrorPouches,
     /// The grounded body rig's neck and waist pivots, spine, and lean rings
-    /// ([`crate::controllers::visual`]).
+    /// (`jc3vr_body::controllers::body::rig::visual`).
     BodyRig,
     /// The docked guns' marks: where each gun on a socket of the body is placed, and whether its
-    /// model is shown ([`crate::controllers::weapons::inventory::docked_view`]).
+    /// model is shown (`jc3vr_weapons::controllers::weapons::inventory::docked_view`).
     DockedGuns,
     /// The grab view: the reach rays, the lines to the grip targets, the palms' state, the refused
     /// grabs, and the candidates near the hands
-    /// ([`crate::controllers::physical_hands::grab_view`]).
+    /// (`jc3vr_physical::controllers::physical_hands::grab_view`).
     GrabView,
     /// The collider view's bodies, joints, and contacts. Last, so that it gives way first to the
     /// overlay's cap.
     ColliderView,
+    /// The virtual aircraft controls' handles, grips, and lever rails.
     AircraftControls,
+    /// The reload's guide to inserting a magazine or a round.
     AmmoInsertionGuide,
 }
 

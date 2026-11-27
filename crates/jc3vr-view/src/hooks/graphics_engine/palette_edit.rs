@@ -2,9 +2,9 @@
 //! block's palette stores its matrices, the edit a draw applies to the palette copy, and the
 //! provider that settles the edit for each draw of the body.
 //!
-//! The render blocks (`jc3vr_render::hooks::graphics_engine::render_block`) only apply the edit. What it
-//! re-poses, and from what tracking, is the provider's, which registers itself at startup; until it
-//! does, the body draws with the engine's palette.
+//! The render blocks (`jc3vr_render::hooks::graphics_engine::scene::render_block`) only apply the
+//! edit. What it re-poses, and from what tracking, is the provider's, which the composition
+//! registers at startup; until one is registered, the body draws with the engine's palette.
 
 use std::sync::OnceLock;
 
@@ -12,7 +12,7 @@ use glam::Mat4;
 use jc3gi::graphics_engine::render_block::Matrix3x4;
 
 /// How a block's palette stores a 3x4 affine matrix (see the layout detection in
-/// `jc3vr_render::hooks::graphics_engine::render_block`).
+/// `jc3vr_render::hooks::graphics_engine::scene::render_block`).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PaletteLayout {
     /// Four 3-float columns: the images of the X, Y, and Z axes, then the translation.

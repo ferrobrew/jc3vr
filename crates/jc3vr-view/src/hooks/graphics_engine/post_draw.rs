@@ -3,8 +3,8 @@
 //!
 //! The post-draw (`jc3vr_render::hooks::graphics_engine::engine`) runs, per dispatch: the dispatch
 //! ticks, outside the engine's context lock; then, under it, the render crate's own passes, the
-//! eye layers, and on the frame's last near dispatch the [`FramePass`]es; and after the eye copies,
-//! the [`EyeFrameRecorder`]. Each contribution is registered once at startup by the module that
+//! eye layers, and on the frame's last dispatch the [`FramePass`]es; and after the eye copies, on
+//! the frame's last dispatch, the [`EyeFrameRecorder`]. Each contribution is registered once at startup by the module that
 //! owns it, so the render hooks name none of them. The dispatch ticks and the eye layers run in
 //! the order their one registrant declares them in, and the frame passes in [`FramePass`] order,
 //! whatever order the registrations ran in. A registrant reports what it registers to the install's
@@ -29,7 +29,7 @@ pub(crate) type FrameDraw = fn(&ID3D11DeviceContext, &Device, &Texture);
 /// locks.
 pub type DispatchTick = fn(usize);
 
-/// A pass run once per frame, on its last near dispatch, in this order.
+/// A pass run once per frame, on its last dispatch, in this order.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum FramePass {
     /// The flat debug overlay, rendered offscreen for the desktop mirror.
@@ -60,7 +60,7 @@ pub struct EyeFrameRecorder {
     /// Whether the eye captures must be copied every frame, even where the eyes go straight to
     /// the headset.
     pub wants_eye_captures: fn() -> bool,
-    /// Note a rendered frame, on its last near dispatch; returns the frame's ordinal while a
+    /// Note a rendered frame, on its last dispatch; returns the frame's ordinal while a
     /// recording runs.
     pub frame_rendered: fn() -> Option<u32>,
     /// Record both eyes' captures, which hold the frame `frame_rendered` returned, under the

@@ -1,12 +1,13 @@
 //! The payload's view layer: the OpenXR runtime, the head pose, the engine camera, and the frame
 //! state the render layer reads per draw, naming nothing above it.
 //!
-//! The crate sits above the core and input crates and below the render and gameplay crates
-//! (`docs/architecture.md`, "Crate layering"). It owns:
+//! The crate sits above the core and input crates and below the render and body crates and
+//! everything above them (`docs/architecture.md`, "Crate layering"). It owns:
 //!
 //! - [`vr`]: the OpenXR runtime, its frame loop and deferred tail, the input sampling, the eye
 //!   blit, the foveation, the desktop mirror, and the per-eye render parameters.
-//! - [`headpose`]: the head pose the camera hooks read, and its anchors and follow model.
+//! - [`headpose`]: the head pose the camera hooks read, its two sources, its anchors and follow
+//!   model, and the gameplay participants and body frame filter the layers above register.
 //! - [`hooks`]: the camera and window-focus detours, and the dependency-free registries the render
 //!   crate's graphics-engine hooks read and the layers above fill (the eye captures, the post-draw,
 //!   the palette edit, and the player's draw inputs).

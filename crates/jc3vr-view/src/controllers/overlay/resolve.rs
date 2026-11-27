@@ -39,7 +39,7 @@ pub struct Frame {
     /// The head's world pose: the centre between the eyes, which the sprites face, the
     /// primitives are sorted from, and [`Anchor::Head`] offsets are taken from.
     pub head: Pose,
-    /// Each hand's render-time poses, indexed by [`Hand::index`].
+    /// Each hand's render-time poses, indexed by [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub hands: [Option<HandPoses>; 2],
 }
 

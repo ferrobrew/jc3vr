@@ -1,7 +1,7 @@
 //! The frame's scope lens as the scopes plan it and the lens pass reads it: the lens's geometry,
 //! the constants of the lens shaders derived from it, and the pass's readout.
 //!
-//! The scopes, in the gameplay layer, hand the frame's [`LensFrame`] over once per frame with
+//! The scopes, in the weapons layer, hand the frame's [`LensFrame`] over once per frame with
 //! [`set_frame`]; the lens pass reads it with [`frame`] on every dispatch and records what it drew
 //! here.
 

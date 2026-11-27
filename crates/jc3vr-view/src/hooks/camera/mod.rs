@@ -1,3 +1,11 @@
+//! The camera detours: they place the engine's active camera from the head pose
+//! (`Camera::UpdateRender` and `CameraTree::UpdateRenderContexts`), give the scene render camera
+//! its per-eye projection and offset (`Camera::SetupRenderCamera`), hand the sim-phase readers the
+//! same camera (`GameCameraManager::GetCameraMatrix`), and hold the light-propagation volume on the
+//! capture harness's frozen camera (`LightManager::UpdatePlayerLightingTransforms`). The module
+//! also owns the eye point the cockpit frame composes onto, and the loading view the render camera
+//! is head-tracked around while the game owns its camera outside gameplay.
+
 use std::ffi::c_void;
 
 use body_rig::math::angle::heading;
@@ -105,9 +113,9 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         // stale value can't leak into the sun-shadow cascade correction when disparity is off.
         stereo.shadow_anchor_delta = glam::Vec3::ZERO;
         // The frame's first dispatch opens a new real frame: last frame's view-projection
-        // snapshots become "previous". Keyed on the dispatch ordinal, not the eye index — a share
-        // frame's far dispatch and eye 0's near dispatch both carry eye index 0, and rotating
-        // twice would collapse the FSR reprojection history to intra-frame deltas.
+        // snapshots become "previous". Keyed on the dispatch ordinal, not the eye index: a plan
+        // may render the right eye first or one eye alone, and rotating anywhere but once at the
+        // frame's start would collapse the FSR reprojection history to intra-frame deltas.
         if stereo.dispatch_ordinal == 0 {
             stereo.vp_history.rotate();
         }
@@ -123,10 +131,10 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // replaced the engine AA.
     let jitter = jitter && !fsr_enabled && !stereo_active;
 
-    // The VR per-eye off-axis projection and world offset (docs/mod/vr-runtime.md blockers 1 & 3).
-    // Fetch this eye's parameters once; `None` on flatscreen frames. Write the standard-depth
-    // off-axis projection into `m_Projection` *before* SetupRenderCamera so
-    // the engine applies its reverse-Z remap and TAA jitter to it exactly once (§2.7).
+    // The VR per-eye off-axis projection and world offset, `None` on flatscreen frames. Write the
+    // standard-depth off-axis projection into `m_Projection` *before* SetupRenderCamera so the
+    // engine applies its reverse-Z remap and TAA jitter to it exactly once
+    // (`docs/engine/rendering/rendering.md` section 2.7).
     let vr_eye = is_render_camera
         .then(|| crate::vr::render_params(crate::stereo::draw_index()))
         .flatten();
@@ -231,8 +239,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
                     let eye1 = crate::stereo::draw_index() == 1;
                     let half_ipd = VIEW.get().camera.flatscreen_ipd_m * 0.5;
                     // Eye 0 is the LEFT eye (shift -right), eye 1 the RIGHT (shift +right), so view 0
-                    // == left (OpenXR convention). The reverse assignment fuses the debug pair
-                    // cross-eyed when the "parallel" toggle is off.
+                    // is the left one, as in OpenXR.
                     let offset = if eye1 { half_ipd } else { -half_ipd };
                     let mut transform = glam::Mat4::from(camera.m_TransformF);
                     let delta = offset * transform.x_axis.truncate();
@@ -358,7 +365,7 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 // Both position and orientation come from the tick-spaced pose pair, so the
                 // engine's dtf Lerp smooths the whole camera placement — the bone reads
                 // (`GetSafeBoneMatrix`) only carry the finalized sim-rate pose, and placing T0/T1
-                // from them stepped the camera at the tick rate even though the mesh itself
+                // from them steps the camera at the tick rate even though the mesh itself
                 // interpolates via the skinning-palette pose pair.
                 let cur = query();
                 let prev = query_prev();
@@ -712,11 +719,11 @@ static LAST_DTF: RenderFrameSlot<f32> = RenderFrameSlot::new();
 static LAST_CAMERA_WORLD: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
 /// The active (main) camera's near/far clip planes (`m_Near`/`m_Far`), captured each frame from the
-/// engine. The graphics-engine hooks' reconstruction override keys on
-/// these to recognize the main-view depth passes -- whose off-axis inverse it must substitute -- and
-/// skip auxiliary cameras (reflections) with different planes. The engine writes a runtime far that
-/// differs from the `Camera` constructor default (~40 km vs the constructor's 38.4 km), so gating that
-/// override on a hardcoded config plane misses every main pass. `None` until the camera hook first runs.
+/// engine. The graphics-engine hooks' reconstruction override keys on these to recognize the
+/// main-view depth passes, whose off-axis inverse it must substitute, and skip auxiliary cameras
+/// (reflections) with different planes. The engine writes a runtime far that differs from the
+/// `Camera` constructor's default, so gating that override on a hardcoded plane misses every main
+/// pass. `None` until the camera hook first runs.
 static MAIN_CAMERA_PLANES: RenderFrameSlot<(f32, f32)> = RenderFrameSlot::new();
 
 /// The active camera's near/far as of the last `Camera::UpdateRender`, or `None` before the first.
