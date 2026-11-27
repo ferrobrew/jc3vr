@@ -570,7 +570,7 @@ Either way, **no geometry snapshot/restore is needed** — the draw is non-destr
 
 ## 12. Per-eye output routing
 
-**There is no final resolve.** The `EndDraw` call in `HandleDrawThreadTask` (§1.4 step 15) is not `Graphics::CopySurfaceToTexture`, an MSAA resolve of the composite into the device's presentable surface, as its IDB name suggests: two mislabelled symbols in the IDB swap a pair of `Graphics::` functions (`docs/mod/stereo/swapchain-ownership.md` §2):
+**There is no final resolve.** The `EndDraw` call in `HandleDrawThreadTask` (§1.4 step 15) is not `Graphics::CopySurfaceToTexture`, an MSAA resolve of the composite into the device's presentable surface, as its IDB name suggests: two mislabelled symbols in the IDB swap a pair of `Graphics::` functions ([swapchain-ownership.md §11](../../mod/stereo/swapchain-ownership.md#11-a-note-on-symbols)):
 
 - The function labelled `Graphics::CopySurfaceToTexture` is really **[`Graphics::EndDraw(ctx)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-EndDraw)** — it reads no argument beyond the context, takes the context critical section, and submits the frame's two prebuilt command objects from the command-slot ring. This is the call in §1.4 step 15.
 - The function labelled `NGraphicsEngine::CGPUProfiler::BeginScope` is really **[`Graphics::CopySurfaceToTexture(ctx, dst, src)`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-CopySurfaceToTexture)** — a whole-resource `CopyResource`. Its one call in `HandleDrawThreadTask` is the VFX depth copy of the EffectInfo slot machine (§5.1), nothing to do with the back buffer.
