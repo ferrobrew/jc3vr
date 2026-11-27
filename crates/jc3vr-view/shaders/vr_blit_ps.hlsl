@@ -7,7 +7,7 @@
 // render-target view applies a hardware linear->sRGB encode. To reproduce the original bytes the
 // shader linearizes the sampled colour first (g_linearize != 0), so the hardware re-encode cancels
 // it out. g_linearize == 0 passes the colour through unchanged (for a genuine-linear source or a
-// non-sRGB target). See vr::config::BlitGamma for the reasoning and the runtime toggle.
+// non-sRGB target); the blit (crate::vr::blit) always sets it.
 //
 // g_brightness scales the colour for the comfort fade (1 leaves the image as it is, 0 is black).
 //
