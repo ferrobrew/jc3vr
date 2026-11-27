@@ -24,7 +24,7 @@ use crate::controllers::vehicles::{
 
 /// A push button in the cockpit frame: a disc facing the driver.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PushButton {
+pub(crate) struct PushButton {
     /// The middle of its face.
     pub centre: Vec3,
     /// The face's normal, toward the driver, a unit vector.
@@ -73,7 +73,7 @@ pub enum PushPhase {
 }
 
 /// `phase` for a hand whose grip is now at `point`, `None` while untracked.
-pub fn push_step(
+pub(crate) fn push_step(
     phase: PushPhase,
     button: &PushButton,
     point: Option<Vec3>,
@@ -116,13 +116,13 @@ impl TwistGrip {
 
 /// How far a hand that took the collective at orientation `grab` and holds it at `now` has twisted
 /// it, radians, about the fore-aft axis, either way.
-pub fn grip_twist(grab: Quat, now: Quat) -> f32 {
+pub(crate) fn grip_twist(grab: Quat, now: Quat) -> f32 {
     twist_angle(now * grab.inverse(), Vec3::Z).abs()
 }
 
 /// Whether a twist grip at `twist` radians burns the nitrous, given whether it did on the last
 /// tick: past the twist to engage, and until it comes back by a margin.
-pub fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsTuning) -> bool {
+pub(crate) fn twist_engaged(twist: f32, was: bool, config: &CockpitButtonsTuning) -> bool {
     let engage = config.twist_deg.to_radians();
     let release = (config.twist_deg - config.twist_hysteresis_deg)
         .max(0.0)
@@ -197,10 +197,10 @@ impl ButtonEvent {
 
 /// The buttons a seat has.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ButtonPlacement {
+pub(crate) struct ButtonPlacement {
     pub horn: Option<PushButton>,
     pub nitrous: Option<PushButton>,
-    pub collective_twist: bool,
+    pub(crate) collective_twist: bool,
 }
 
 impl ButtonPlacement {
@@ -231,13 +231,13 @@ impl ButtonPlacement {
 
 /// What the buttons ask of the vehicle this tick.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ButtonOutputs {
+pub(crate) struct ButtonOutputs {
     pub horn: bool,
     pub nitrous: bool,
 }
 
 /// One tick's inputs for the buttons.
-pub struct ButtonInputs<'a> {
+pub(crate) struct ButtonInputs<'a> {
     pub placement: &'a ButtonPlacement,
     pub config: &'a CockpitButtonsTuning,
     /// Each hand's grip position, `None` while untracked.
@@ -250,7 +250,7 @@ pub struct ButtonInputs<'a> {
 
 /// Advance the buttons by one tick: the free hands press the push buttons, and a hand holding the
 /// collective twists for the nitrous.
-pub fn step_buttons(
+pub(crate) fn step_buttons(
     state: &mut ButtonState,
     inputs: &ButtonInputs,
     events: &mut Vec<ButtonEvent>,

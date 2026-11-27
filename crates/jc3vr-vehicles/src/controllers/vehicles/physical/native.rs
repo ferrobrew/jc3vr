@@ -8,10 +8,10 @@ use crate::controllers::vehicles::{
 };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct NativeStick {
+pub(crate) struct NativeStick {
     pub kind: ControlKind,
     pub target: RenderWheel,
-    pub part_to_cockpit: Mat4,
+    pub(crate) part_to_cockpit: Mat4,
     pub pivot: Vec3,
     pub grip: Vec3,
 }
@@ -56,8 +56,8 @@ pub struct CockpitAsset {
     /// ([`ControlKind::Yoke`]): `stick_grip` is then its hub.
     pub yoke: Option<YokeAsset>,
     pub seat: u8,
-    pub stick_kind: ControlKind,
-    pub stick_grip: Vec3,
+    pub(crate) stick_kind: ControlKind,
+    pub(crate) stick_grip: Vec3,
     pub lever: Option<(ControlKind, Vec3)>,
 }
 
@@ -71,9 +71,9 @@ pub struct YokeAsset {
     /// Across the wheel, to the pilot's right.
     pub right: Vec3,
     /// From the hub to each horn's grip, across the wheel, metres.
-    pub half_span: f32,
+    pub(crate) half_span: f32,
     /// From the hub up to the horns' grips, metres.
-    pub grip_height: f32,
+    pub(crate) grip_height: f32,
 }
 
 /// The live part transform for a cockpit whose controls share its body mesh, and the lever the
@@ -81,11 +81,11 @@ pub struct YokeAsset {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CockpitFit {
     pub target: RenderWheel,
-    pub part_to_cockpit: Mat4,
+    pub(crate) part_to_cockpit: Mat4,
     pub asset: CockpitAsset,
     /// The lever the mesh does not model, placed from the tuning relative to the pilot's eyes and
     /// kept inside the part's bounds, in the part's own space.
-    pub fallback_lever: Option<(ControlKind, Vec3)>,
+    pub(crate) fallback_lever: Option<(ControlKind, Vec3)>,
 }
 
 impl CockpitFit {
@@ -130,17 +130,17 @@ impl CockpitFit {
         }
     }
 
-    pub fn stick_top(self) -> Vec3 {
+    pub(crate) fn stick_top(self) -> Vec3 {
         self.part_to_cockpit.transform_point3(self.asset.stick_grip)
     }
 
-    pub fn stick_handle(self, deflection: Vec2) -> Vec3 {
+    pub(crate) fn stick_handle(self, deflection: Vec2) -> Vec3 {
         self.stick_top()
             + self.direction(Vec3::X) * deflection.x
             + self.direction(Vec3::Z) * deflection.y
     }
 
-    pub fn stick_displacement(self, point: Vec3) -> Vec3 {
+    pub(crate) fn stick_displacement(self, point: Vec3) -> Vec3 {
         let delta = point - self.stick_top();
         Vec3::new(
             delta.dot(self.direction(Vec3::X)),
@@ -168,7 +168,7 @@ impl CockpitFit {
         )
     }
 
-    pub fn lever_rest(self, kind: ControlKind) -> Option<Vec3> {
+    pub(crate) fn lever_rest(self, kind: ControlKind) -> Option<Vec3> {
         let (lever_kind, grip) = self.asset.lever.or(self.fallback_lever)?;
         (kind == lever_kind).then(|| self.part_to_cockpit.transform_point3(grip))
     }
@@ -182,7 +182,7 @@ impl CockpitFit {
 
 /// Measure the merged cockpit in its part's coordinates. The pilot selects a physical seat;
 /// controller handedness does not change which seat's controls are offered.
-pub fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
+pub(crate) fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
     if !pilot_in_part.is_finite() {
         return None;
     }

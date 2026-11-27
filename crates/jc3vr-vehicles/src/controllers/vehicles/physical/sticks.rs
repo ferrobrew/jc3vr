@@ -36,14 +36,14 @@ pub fn stick_deflection(spec: &StickSpec, top: Vec3, top_now: Vec3) -> Vec2 {
 
 /// What a stick deflected by `deflection` outputs (+X rolls right, +Y pushes forward): its share of
 /// the full deflection past the deadzone, rescaled so that it still reaches one.
-pub fn stick_value(spec: &StickSpec, deflection: Vec2) -> Vec2 {
+pub(crate) fn stick_value(spec: &StickSpec, deflection: Vec2) -> Vec2 {
     let max = spec.max_deflection_m.max(1e-3);
     let share = Vec2::new(deflection.x, -deflection.y) / max;
     radial_past_deadzone(share, spec.deadzone.clamp(0.0, 0.9), 1.0)
 }
 
 /// The released stick's deflection after `dt` seconds of its centring spring.
-pub fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
+pub(crate) fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
     if spec.return_s <= 0.0 || !deflection.is_finite() {
         return Vec2::ZERO;
     }
@@ -58,7 +58,7 @@ pub fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
 /// The yaw, `-1..=1` with positive right, for a hand that took a stick at orientation `grab` and
 /// holds it at `now`: its twist about the shaft (the cockpit frame's vertical), turning the top to
 /// the right for a right yaw, past the deadzone and fully at the full twist.
-pub fn twist_rudder(config: &FlightControlsTuning, grab: Quat, now: Quat) -> f32 {
+pub(crate) fn twist_rudder(config: &FlightControlsTuning, grab: Quat, now: Quat) -> f32 {
     twist_rudder_about_axis(config, grab, now, Vec3::Y)
 }
 

@@ -72,7 +72,11 @@ impl Default for TravelCues {
 /// The cue a lever gives on moving to `after` (`-1..=1`), with its gate starting at `gate` along
 /// the positive half, if it has one. One cue fires a tick, the gate's first and then the stop's; a
 /// neutral passed on the same tick cues on the next.
-pub fn lever_cue(arming: &mut TravelCues, after: f32, gate: Option<f32>) -> Option<ControlCue> {
+pub(crate) fn lever_cue(
+    arming: &mut TravelCues,
+    after: f32,
+    gate: Option<f32>,
+) -> Option<ControlCue> {
     if !after.is_finite() {
         return None;
     }
@@ -118,7 +122,7 @@ pub fn stick_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
 
 /// The centre cue of a control at `share` of its travel from centre: armed once the control has
 /// left centre by the margin, it fires on coming back within the tuning's `at_centre`.
-pub fn centre_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
+pub(crate) fn centre_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
     if share > cues().rearm {
         arming.neutral_due = true;
     }
@@ -131,7 +135,7 @@ pub fn centre_cue(arming: &mut TravelCues, share: f32) -> Option<ControlCue> {
 
 /// Which of the throttle's cues may fire.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ThrottleCues {
+pub(crate) struct ThrottleCues {
     /// The step of the forward section the throttle was last in, `None` until it is moved.
     step: Option<i32>,
     /// Whether the zero stop may fire: the throttle has left zero by the margin since it last
@@ -161,7 +165,7 @@ impl Default for ThrottleCues {
 
 /// What the throttle did this tick, for its cue.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ThrottleMove {
+pub(crate) struct ThrottleMove {
     /// The share of the forward section the throttle is at, `0..=1`, zero in reverse.
     pub forward: f32,
     /// The share of the reverse section, `0..=1`, zero in forward.
@@ -173,7 +177,7 @@ pub struct ThrottleMove {
 /// The cue the throttle gives on a move, with its afterburner gate at `gate` along the forward
 /// section and steps every `step` of it. One cue fires a tick: the zero gate's, then the zero
 /// stop's, the afterburner gate's, a stop's, and a step's.
-pub fn throttle_cue(
+pub(crate) fn throttle_cue(
     arming: &mut ThrottleCues,
     moved: ThrottleMove,
     gate: Option<f32>,

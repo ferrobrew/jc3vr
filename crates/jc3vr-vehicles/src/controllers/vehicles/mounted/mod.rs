@@ -71,7 +71,7 @@ pub struct Reference {
     /// Which hands held it: a change re-takes the reference.
     pub hands: [bool; 2],
     /// The hands' midpoint in the cockpit frame.
-    pub hands_mid: Vec3,
+    pub(crate) hands_mid: Vec3,
     /// From the handles to the pivot, in the cockpit frame.
     pub lever: Vec3,
     /// The turn from the lever onto the barrel at the moment the reference was taken.
@@ -80,7 +80,7 @@ pub struct Reference {
 
 /// Take the reference for hands at `hands_mid` on a gun whose pivot, handle midpoint (if placed),
 /// and barrel are given in the cockpit frame. `None` for a degenerate barrel.
-pub fn take_reference(
+pub(crate) fn take_reference(
     weapon: usize,
     hands: [bool; 2],
     hands_mid: Vec3,
@@ -113,7 +113,7 @@ pub fn aim_direction(reference: &Reference, hands_mid: Vec3) -> Option<Vec3> {
 }
 
 /// The midpoint of the tracked hands' grips, and which hands were tracked.
-pub fn hands_midpoint(grips: [Option<Vec3>; 2]) -> Option<(Vec3, [bool; 2])> {
+pub(crate) fn hands_midpoint(grips: [Option<Vec3>; 2]) -> Option<(Vec3, [bool; 2])> {
     let tracked = grips.map(|g| g.is_some());
     let points: Vec<Vec3> = grips.into_iter().flatten().collect();
     (!points.is_empty()).then(|| (points.iter().sum::<Vec3>() / points.len() as f32, tracked))
@@ -121,7 +121,7 @@ pub fn hands_midpoint(grips: [Option<Vec3>; 2]) -> Option<(Vec3, [bool; 2])> {
 
 /// The aim point published for the per-weapon update.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct MountedTarget {
+pub(crate) struct MountedTarget {
     pub weapon: usize,
     pub point: Vec3,
 }

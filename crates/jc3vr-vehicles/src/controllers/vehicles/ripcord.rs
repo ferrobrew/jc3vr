@@ -102,7 +102,7 @@ pub fn candidate(
 }
 
 /// The ripcord's wider reach while it is free, which takes a press no other volume claims.
-pub fn reach_candidate(state: &RipcordState, centre: Vec3, side: Hand) -> Option<Candidate> {
+pub(crate) fn reach_candidate(state: &RipcordState, centre: Vec3, side: Hand) -> Option<Candidate> {
     state.hold.is_none().then_some(Candidate {
         volume: GrabVolume::Ripcord,
         centre,
@@ -165,7 +165,7 @@ pub fn release_all(state: &mut RipcordState, events: &mut Vec<RipcordEvent>) {
 
 /// The shortest pull distance the tuning can ask for, metres: shorter, the hand's own tremor on
 /// taking the ripcord would pull it.
-pub const MIN_PULL_M: f32 = 0.05;
+pub(crate) const MIN_PULL_M: f32 = 0.05;
 
 fn release(state: &mut RipcordState, why: Release, events: &mut Vec<RipcordEvent>) {
     if let Some(hold) = state.hold.take() {

@@ -60,12 +60,12 @@ pub struct Fit {
     /// The vehicle's wheel part to turn with the steering, when it was found and is whole.
     pub render: Option<RenderWheel>,
     /// The vehicle's own steering, `None` outside a vehicle.
-    pub steering_turn: Option<f32>,
+    pub(crate) steering_turn: Option<f32>,
     /// The driving view's correction for the seat, while the player drives a vehicle whose hub was
     /// measured.
     pub view: Option<Target>,
     pub readout: Option<FitReadout>,
-    pub native_stick: Option<NativeStick>,
+    pub(crate) native_stick: Option<NativeStick>,
     /// The cockpit's handles measured within its body mesh, with a lever the mesh does not model
     /// placed from the tuning; never a render-animation target.
     pub cockpit: Option<CockpitFit>,
@@ -73,11 +73,11 @@ pub struct Fit {
 
 /// What the fit reads besides the vehicle.
 #[derive(Debug, Copy, Clone)]
-pub struct FitInputs<'a> {
+pub(crate) struct FitInputs<'a> {
     pub physical: &'a PhysicalControlsTuning,
     /// Whether the driving view is switched on
     /// ([`DrivingViewConfig::enabled`](jc3vr_body::controllers::roomscale::config::DrivingViewConfig::enabled)).
-    pub view_enabled: bool,
+    pub(crate) view_enabled: bool,
     pub seat: Option<VehicleSeat>,
     pub xf: &'a CockpitTransform,
     /// The character's eyes, world space: the head pose's anchor (his animated head) with the
@@ -126,7 +126,7 @@ pub struct SeatReadout {
 
 /// What the fit keeps for the vehicle the player drives, for as long as they drive it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct VehicleLatch {
+pub(crate) struct VehicleLatch {
     since: Instant,
     /// The fallback wheel, held in the vehicle's space.
     local: Option<WheelFrame>,

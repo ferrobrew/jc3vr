@@ -77,16 +77,16 @@ impl PhysicalControlsTuning {
 #[serde(deny_unknown_fields)]
 pub struct SteeringWheelTuning {
     /// [`WheelSpec::centre_m`].
-    pub centre_m: Vec3,
+    pub(crate) centre_m: Vec3,
     pub radius_m: f32,
     /// [`WheelSpec::tilt_deg`].
     pub tilt_deg: f32,
     /// [`WheelSpec::response`].
     pub response: f32,
     /// [`WheelSpec::deadzone_deg`].
-    pub deadzone_deg: f32,
+    pub(crate) deadzone_deg: f32,
     /// [`WheelSpec::return_deg_per_s`].
-    pub return_deg_per_s: f32,
+    pub(crate) return_deg_per_s: f32,
 }
 
 /// A steering wheel: a rim in a plane facing the driver, tilted back with its column. The hub,
@@ -96,7 +96,7 @@ pub struct SteeringWheelTuning {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct WheelSpec {
     /// The wheel's hub.
-    pub centre_m: Vec3,
+    pub(crate) centre_m: Vec3,
     pub radius_m: f32,
     /// How far the wheel's face tilts up from vertical toward the driver, degrees.
     pub tilt_deg: f32,
@@ -106,11 +106,11 @@ pub struct WheelSpec {
     /// around centre and as fully at the lock.
     pub response: f32,
     /// Wheel angles within this of centre steer nothing, degrees.
-    pub deadzone_deg: f32,
+    pub(crate) deadzone_deg: f32,
     /// [`WheelConfig::turned_by`].
     pub turned_by: WheelTracking,
     /// How fast the released wheel returns to centre, degrees per second.
-    pub return_deg_per_s: f32,
+    pub(crate) return_deg_per_s: f32,
 }
 
 impl WheelSpec {
@@ -135,14 +135,14 @@ impl WheelSpec {
 #[serde(deny_unknown_fields)]
 pub struct HandlebarsSpec {
     /// The middle of the bars.
-    pub centre_m: Vec3,
+    pub(crate) centre_m: Vec3,
     /// From the middle to each grip, metres.
     pub half_width_m: f32,
     /// The bars' turn that steers fully, degrees. The bars stop there.
-    pub max_steer_deg: f32,
+    pub(crate) max_steer_deg: f32,
     /// Bar turns within this of centre steer nothing, degrees, so that a resting hand's tremor and
     /// the small turns a wrist makes do not weave the bike.
-    pub deadzone_deg: f32,
+    pub(crate) deadzone_deg: f32,
     /// The exponent the share of the lock past the deadzone is raised to: one is linear, above one
     /// steers more gently around centre and as fully at the lock.
     pub response: f32,
@@ -151,10 +151,10 @@ pub struct HandlebarsSpec {
     /// them less exactly than a wheel's rim.
     pub grab_radius_m: f32,
     /// The share of the half width from the middle where a hand's half of the bars starts to grab.
-    pub grab_from_middle: f32,
+    pub(crate) grab_from_middle: f32,
     /// The share of the half width from the middle to where a hand's half of the bars stops
     /// grabbing.
-    pub grab_past_end: f32,
+    pub(crate) grab_past_end: f32,
 }
 
 /// A joystick whose top moves in the horizontal plane. Let go, a spring returns it to centre.
@@ -164,7 +164,7 @@ pub struct StickSpec {
     /// The stick's top at rest, given on the dominant side.
     pub top_m: Vec3,
     /// How far the top moves for a full deflection, metres.
-    pub max_deflection_m: f32,
+    pub(crate) max_deflection_m: f32,
     /// The share of the full deflection around centre that outputs nothing, `0..1`, so that a
     /// resting hand's tremor does not fly the vehicle.
     pub deadzone: f32,
@@ -180,7 +180,7 @@ pub struct StickSpec {
 #[serde(deny_unknown_fields)]
 pub struct YokeSpec {
     /// The turn either way that rolls fully, degrees. The yoke stops there.
-    pub max_roll_deg: f32,
+    pub(crate) max_roll_deg: f32,
     /// How far the yoke moves along its column either way for a full pitch, metres.
     pub travel_m: f32,
     /// The share of each axis's range around centre that outputs nothing, `0..1`.
@@ -198,29 +198,29 @@ pub struct YokeSpec {
 #[serde(deny_unknown_fields)]
 pub struct CockpitButtonsTuning {
     /// The hub's share of the wheel's radius that presses the horn.
-    pub hub_share: f32,
+    pub(crate) hub_share: f32,
     /// The nitrous button from the wheel's rim on its right: along the wheel's right, its up, and
     /// its axis toward the driver, metres.
-    pub nitrous_from_rim_m: Vec3,
-    pub nitrous_radius_m: f32,
+    pub(crate) nitrous_from_rim_m: Vec3,
+    pub(crate) nitrous_radius_m: f32,
     /// How far past a button's face a hand pushes to press it, metres.
-    pub press_depth_m: f32,
+    pub(crate) press_depth_m: f32,
     /// The share of the press depth a pressed button gives before it lets go, so a hand resting on
     /// it does not chatter.
-    pub release_depth: f32,
+    pub(crate) release_depth: f32,
     /// How far, as a multiple of its radius, a hand may slide across a pressed button and keep it
     /// pressed.
-    pub held_radius: f32,
+    pub(crate) held_radius: f32,
     /// How far in front of a push button's face a hand may be to arm it, metres.
-    pub arm_reach_m: f32,
+    pub(crate) arm_reach_m: f32,
     /// How far past a push button's face a hand may be and still press it, metres: further is a
     /// hand through the dash.
-    pub max_push_m: f32,
+    pub(crate) max_push_m: f32,
     /// How far the collective's grip is twisted from where the hand took it to burn the nitrous,
     /// degrees: well past the roll a wrist makes while it raises and lowers the lever.
     pub twist_deg: f32,
     /// How far a twist grip comes back from its engaging twist before it lets go, degrees.
-    pub twist_hysteresis_deg: f32,
+    pub(crate) twist_hysteresis_deg: f32,
 }
 
 /// The plane's flight stick and throttle beyond a plain stick and lever (see
@@ -229,27 +229,27 @@ pub struct CockpitButtonsTuning {
 #[serde(deny_unknown_fields)]
 pub struct FlightControlsTuning {
     /// Twists within this of where the hand took the stick work nothing, degrees.
-    pub twist_deadzone_deg: f32,
+    pub(crate) twist_deadzone_deg: f32,
     /// The twist that gives a full rudder, degrees.
-    pub twist_full_deg: f32,
+    pub(crate) twist_full_deg: f32,
     /// Where the throttle's gate at the top of its travel starts, as a share of its forward travel,
     /// `0..1`. Below the gate the throttle stops short of the thrust that lights the afterburner,
     /// and pushed through it, the throttle is full and the afterburner burns where the game allows
     /// it.
-    pub gate_at: f32,
+    pub(crate) gate_at: f32,
     /// The share of the throttle's whole travel, at its back, that is the reverse section behind
     /// the zero gate, `0..0.9`. The rest, in front of the gate, is forward thrust from nothing to
     /// full.
-    pub reverse_share: f32,
+    pub(crate) reverse_share: f32,
     /// How far past zero the hand pulls (or pushes) the throttle to take it through the zero gate
     /// into the other section, as a share of the whole travel. Short of it, the throttle stays at
     /// zero.
-    pub zero_pull: f32,
+    pub(crate) zero_pull: f32,
     /// The share of either section next to zero that gives nothing, and in which a released
     /// throttle snaps to zero.
-    pub zero_snap: f32,
+    pub(crate) zero_snap: f32,
     /// The share of the forward section between the ticks the held throttle gives its hand.
-    pub thrust_step: f32,
+    pub(crate) thrust_step: f32,
 }
 
 /// A lever that slides along one axis.
@@ -257,14 +257,14 @@ pub struct FlightControlsTuning {
 #[serde(deny_unknown_fields)]
 pub struct LeverSpec {
     /// The handle's neutral position, given on the off-hand side.
-    pub rest_m: Vec3,
+    pub(crate) rest_m: Vec3,
     pub axis: LeverAxis,
     /// The handle's whole travel, from full negative to full positive, metres.
     pub travel_m: f32,
     /// The share of the travel around neutral that outputs nothing, `0..1`.
     pub detent: f32,
     /// Keep the lever where it was let go, as a throttle does, rather than returning it to neutral.
-    pub hold_on_release: bool,
+    pub(crate) hold_on_release: bool,
 }
 
 /// The direction a lever's handle travels in for a positive output.
@@ -290,16 +290,16 @@ impl LeverAxis {
 #[serde(deny_unknown_fields)]
 pub struct SteeringTuning {
     /// Over this last stretch of its return, the released wheel slows, degrees.
-    pub return_ease_deg: f32,
+    pub(crate) return_ease_deg: f32,
     /// The slowest the easing lets the return go, as a share of the return rate.
-    pub return_ease_floor: f32,
+    pub(crate) return_ease_floor: f32,
     /// A returning wheel this close to centre is at centre, degrees.
     pub settled_deg: f32,
     /// How far the wheel must leave its stop or centre before that cue may fire again, degrees.
-    pub cue_rearm_deg: f32,
+    pub(crate) cue_rearm_deg: f32,
     /// A hand closer to the hub than this share of the radius turns nothing by its travel; one past
     /// twice it counts fully.
-    pub hub_share: f32,
+    pub(crate) hub_share: f32,
 }
 
 /// How the sticks, the yoke, and the handlebars move beyond their specs (see
@@ -309,20 +309,20 @@ pub struct SteeringTuning {
 pub struct ControlMotionTuning {
     /// How long the handlebars stay in a hand whose grip has opened, seconds: long enough for
     /// fingers lifted off the handle a moment to close again.
-    pub bars_grip_grace_s: f32,
+    pub(crate) bars_grip_grace_s: f32,
     /// A returning stick closer to centre than this, metres, is at centre.
-    pub stick_settled_m: f32,
+    pub(crate) stick_settled_m: f32,
     /// A hand nearer the yoke's column than this, metres, has no angle about it to turn the yoke
     /// by.
-    pub yoke_min_radius_m: f32,
+    pub(crate) yoke_min_radius_m: f32,
     /// A returning yoke within this turn of centre, radians, and [`Self::yoke_settled_m`] along its
     /// column, is at centre.
-    pub yoke_settled_rad: f32,
-    pub yoke_settled_m: f32,
+    pub(crate) yoke_settled_rad: f32,
+    pub(crate) yoke_settled_m: f32,
     /// Where a helicopter's missing collective sits from its cyclic's grip, in the cockpit part's
     /// own space (+X to the pilot's right, +Y up, +Z back), metres: by the pilot's left thigh, left
     /// of the cyclic, below it, and further back. A placement, not a measurement.
-    pub collective_from_cyclic_m: Vec3,
+    pub(crate) collective_from_cyclic_m: Vec3,
 }
 
 /// When the sticks' and levers' haptic cues fire (see
@@ -334,9 +334,9 @@ pub struct ControlCuesTuning {
     /// the cue may fire again.
     pub rearm: f32,
     /// The share of the travel that counts as at the stop.
-    pub at_stop: f32,
+    pub(crate) at_stop: f32,
     /// The share of the travel from centre that counts as at centre.
-    pub at_centre: f32,
+    pub(crate) at_centre: f32,
 }
 
 /// What the box fit of a vehicle's own wheel and handlebars accepts and where it puts the grips
@@ -347,11 +347,11 @@ pub struct WheelFitTuning {
     /// The steepest tilt the box fit gives, degrees: a bus's wheel lies about this flat.
     pub max_tilt_deg: f32,
     /// The smallest wheel the box fit accepts, metres.
-    pub min_wheel_radius_m: f32,
+    pub(crate) min_wheel_radius_m: f32,
     /// How far in from the bars' ends and rear the grips sit, metres.
-    pub grip_inset_m: f32,
+    pub(crate) grip_inset_m: f32,
     /// The narrowest handlebars the box fit accepts, metres from the middle to a grip.
-    pub min_bars_half_width_m: f32,
+    pub(crate) min_bars_half_width_m: f32,
 }
 
 /// The largest offset from the eyes any control may sit at, metres.

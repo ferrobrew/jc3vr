@@ -60,7 +60,7 @@ pub(super) fn offset() -> Vec2 {
 
 /// The kick `offset` (back, down) as a move of the handles in the cockpit frame, for a gun whose
 /// barrel points along `barrel` there.
-pub fn handle_shift(offset: Vec2, barrel: Vec3) -> Vec3 {
+pub(crate) fn handle_shift(offset: Vec2, barrel: Vec3) -> Vec3 {
     let Some(barrel) = barrel.try_normalize() else {
         return Vec3::ZERO;
     };

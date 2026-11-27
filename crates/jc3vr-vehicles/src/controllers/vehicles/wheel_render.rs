@@ -56,7 +56,10 @@ pub fn publish(target: Option<(RenderWheel, f32)>) {
     publish_controls(target, None);
 }
 
-pub fn publish_controls(wheel: Option<(RenderWheel, f32)>, native: Option<(RenderWheel, Mat4)>) {
+pub(crate) fn publish_controls(
+    wheel: Option<(RenderWheel, f32)>,
+    native: Option<(RenderWheel, Mat4)>,
+) {
     let target = native
         .or_else(|| {
             wheel

@@ -239,7 +239,7 @@ pub struct Placement {
     pub dominant: Hand,
     pub wheel: WheelFrame,
     pub bars: BarsFrame,
-    pub native_stick: Option<native::NativeStick>,
+    pub(crate) native_stick: Option<native::NativeStick>,
     /// The controls measured within a merged cockpit mesh, without moving that mesh.
     pub cockpit: Option<native::CockpitFit>,
     /// Whether the vehicle has nitrous, and so a nitrous button beside its wheel.
@@ -485,12 +485,12 @@ pub struct StepInputs<'a> {
     /// The control each hand's grip press latched as a grab this tick.
     pub grabs: [Option<ControlKind>; 2],
     /// Whether the stick's turn axis is out of its deadzone this tick.
-    pub stick_steers: bool,
+    pub(crate) stick_steers: bool,
     /// Whether the tables write the cyclic's or the flight stick's axes this tick: the thumbstick
     /// is out of its deadzone.
-    pub stick_moves: bool,
+    pub(crate) stick_moves: bool,
     /// Whether the tables write the collective's or the throttle's axis this tick.
-    pub lever_moves: bool,
+    pub(crate) lever_moves: bool,
     pub dt: f32,
 }
 
@@ -727,7 +727,7 @@ pub fn release_all(state: &mut ControlState, events: &mut Vec<ControlEvent>) {
 /// `grips`: the rim point at the hand's angle, the nearest point on the hand's half of the bars as
 /// both hands turn them, or the stick's or lever's handle where the hand has moved it, within its
 /// travel.
-pub fn anchor_point(
+pub(crate) fn anchor_point(
     state: &ControlState,
     placement: &Placement,
     hold: Hold,

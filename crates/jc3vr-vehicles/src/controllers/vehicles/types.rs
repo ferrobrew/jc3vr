@@ -41,7 +41,7 @@ pub struct ArmReadout {
     /// the vector held from when the aim began.
     pub arms: Option<Vec2>,
     /// Whether the arms are held where they were because the grapple is aimed.
-    pub held_for_grapple: bool,
+    pub(crate) held_for_grapple: bool,
     /// The player's stick (+X right, +Y forward).
     pub stick: Vec2,
     /// The stick vector written to the move half-axes: the stick and the arms together.

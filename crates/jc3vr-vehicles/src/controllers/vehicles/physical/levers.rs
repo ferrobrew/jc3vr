@@ -40,7 +40,7 @@ pub fn detent(value: f32, detent: f32) -> f32 {
 /// What a lever at `value` outputs, with a detent of `detent` around neutral and its gate starting
 /// at `gate`, if it has one: below the gate the positive half reaches [`DRY_FULL`], and in the gate
 /// it is full.
-pub fn lever_output(value: f32, detent_share: f32, gate: Option<f32>) -> f32 {
+pub(crate) fn lever_output(value: f32, detent_share: f32, gate: Option<f32>) -> f32 {
     let Some(gate) = gate.filter(|_| value > 0.0) else {
         return detent(value, detent_share);
     };
@@ -54,11 +54,11 @@ pub fn lever_output(value: f32, detent_share: f32, gate: Option<f32>) -> f32 {
 
 /// The highest thrust the throttle gives below its gate: a little under the thrust that lights the
 /// afterburner, so that the game's threshold is never reached by the dry throttle.
-pub const DRY_FULL: f32 = AirPlane::NITROUS_THRUST_THRESHOLD - 0.02;
+pub(crate) const DRY_FULL: f32 = AirPlane::NITROUS_THRUST_THRESHOLD - 0.02;
 
 /// The throttle's zero, as a lever position along its whole travel (`-1` at the back stop, `1` at
 /// the front): the gate between the reverse section behind it and the forward section in front.
-pub fn throttle_zero(flight: &FlightControlsTuning) -> f32 {
+pub(crate) fn throttle_zero(flight: &FlightControlsTuning) -> f32 {
     -1.0 + 2.0 * reverse_share(flight)
 }
 
@@ -90,7 +90,7 @@ impl ThrottleState {
 /// put it at `hand` (the same measure), while it is in `section`. The hand moves it freely within
 /// its section; at zero the throttle stops until the hand is past zero by the gate's pull, which
 /// takes it through into the other section. Returns the offset and the section it is then in.
-pub fn throttle_constrain(
+pub(crate) fn throttle_constrain(
     flight: &FlightControlsTuning,
     section: ThrottleSection,
     hand: f32,
@@ -114,7 +114,7 @@ pub fn throttle_constrain(
 
 /// The shares of the forward and the reverse sections the throttle is at for an offset `offset`
 /// from its zero, each `0..=1`.
-pub fn throttle_shares(flight: &FlightControlsTuning, offset: f32) -> (f32, f32) {
+pub(crate) fn throttle_shares(flight: &FlightControlsTuning, offset: f32) -> (f32, f32) {
     let zero = throttle_zero(flight);
     let forward = (offset / (1.0 - zero).max(1e-3)).clamp(0.0, 1.0);
     let reverse = (-offset / (1.0 + zero).max(1e-3)).clamp(0.0, 1.0);
@@ -129,7 +129,11 @@ pub fn throttle_shares(flight: &FlightControlsTuning, offset: f32) -> (f32, f32)
 /// zero, then forward thrust rising to full, reaching [`DRY_FULL`] below the afterburner gate at
 /// `gate` along the forward section, if it has one, and full in it; behind zero, reverse rising to
 /// full.
-pub fn throttle_output(flight: &FlightControlsTuning, gate: Option<f32>, offset: f32) -> f32 {
+pub(crate) fn throttle_output(
+    flight: &FlightControlsTuning,
+    gate: Option<f32>,
+    offset: f32,
+) -> f32 {
     let snap = flight.zero_snap.clamp(0.0, 0.5);
     let (forward, reverse) = throttle_shares(flight, offset);
     if reverse > 0.0 {

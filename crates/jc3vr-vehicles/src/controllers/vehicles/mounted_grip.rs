@@ -17,7 +17,7 @@ use crate::controllers::vehicles::{physical::Release, tuning::VEHICLES};
 
 /// The hands' hold on the handles.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct MountedGrip {
+pub(crate) struct MountedGrip {
     /// Whether each hand holds its handle, indexed by [`Hand::index`].
     pub holds: [bool; 2],
     /// Each hand's share of the pose on its handle, blending in on a grab and out on a release.
@@ -45,14 +45,14 @@ impl MountedGrip {
 
 /// A grab or a release of a handle, the release with why.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum MountedGripEvent {
+pub(crate) enum MountedGripEvent {
     Grabbed(Hand),
     Released(Hand, Release),
 }
 
 /// One tick's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GripStep {
+pub(crate) struct GripStep {
     /// Each hand's handle in the cockpit frame, where the gun places one; `None` off the gun.
     pub handles: [Option<Vec3>; 2],
     /// Each hand's grip position in the cockpit frame, `None` while untracked.

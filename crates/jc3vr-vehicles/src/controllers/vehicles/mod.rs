@@ -64,7 +64,7 @@ mod handle_tick;
 
 pub mod look_steer;
 pub mod mounted;
-pub mod mounted_grip;
+pub(crate) mod mounted_grip;
 pub mod mounted_recoil;
 mod mounted_tick;
 pub mod parachute;

@@ -49,7 +49,7 @@ pub struct SeatOverride {
 
 /// The seats whose derived correction is replaced, for tuning in the headset: the logged `driving
 /// position` line gives each vehicle's wheel part and measurement.
-pub const SEAT_OVERRIDES: &[SeatOverride] = &[
+pub(crate) const SEAT_OVERRIDES: &[SeatOverride] = &[
     // A ship's wheel at a standing helm, where the seated standard does not apply.
     SeatOverride {
         part: "transport_steering_wheel",
@@ -58,7 +58,7 @@ pub const SEAT_OVERRIDES: &[SeatOverride] = &[
 ];
 
 /// The override for the wheel part named `part`, if any.
-pub fn find_override(part: &str) -> Option<&'static SeatOverride> {
+pub(crate) fn find_override(part: &str) -> Option<&'static SeatOverride> {
     SEAT_OVERRIDES.iter().find(|o| o.part == part)
 }
 
@@ -112,7 +112,7 @@ pub fn derive(hub_from_eyes: Vec3, seat_override: Option<&SeatOverride>) -> Corr
 
 /// The correction for a gunner seat whose gun's handles' midpoint sits at `handles_from_eyes`
 /// from the character's eyes, as [`derive`] for a wheel's hub.
-pub fn derive_handles(handles_from_eyes: Vec3) -> Correction {
+pub(crate) fn derive_handles(handles_from_eyes: Vec3) -> Correction {
     derive_from(
         handles_from_eyes,
         VEHICLES.get().driving_view.handles_from_eyes_m,

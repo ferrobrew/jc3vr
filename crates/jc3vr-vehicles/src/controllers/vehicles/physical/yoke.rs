@@ -30,9 +30,9 @@ pub struct YokeFrame {
     /// Across the wheel, to the pilot's right, square to the axis. Unit.
     pub right: Vec3,
     /// From the hub to each horn's grip, across the wheel, metres.
-    pub half_span: f32,
+    pub(crate) half_span: f32,
     /// From the hub up to the horns' grips, metres.
-    pub grip_height: f32,
+    pub(crate) grip_height: f32,
 }
 
 impl YokeFrame {
@@ -68,7 +68,7 @@ impl YokeFrame {
     }
 
     /// The hub with the yoke pulled `pitch` metres toward the pilot.
-    pub fn hub_at(&self, pitch: f32) -> Vec3 {
+    pub(crate) fn hub_at(&self, pitch: f32) -> Vec3 {
         self.hub + self.axis * pitch
     }
 
@@ -101,7 +101,7 @@ impl YokeFrame {
 /// A hand's hold on the yoke: where it was about and along the column when it grabbed, and the
 /// yoke's turn and pull then.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct YokeGrip {
+pub(crate) struct YokeGrip {
     angle: Option<f32>,
     along: f32,
     roll: f32,
@@ -165,7 +165,7 @@ impl YokeState {
 /// What the yoke turned by `roll` and pulled by `pitch` outputs, as the flight stick does (+X rolls
 /// right, +Y pushes forward): each axis's share of its range past its deadzone, rescaled so that
 /// it still reaches one.
-pub fn yoke_value(spec: &YokeSpec, roll: f32, pitch: f32) -> Vec2 {
+pub(crate) fn yoke_value(spec: &YokeSpec, roll: f32, pitch: f32) -> Vec2 {
     let roll_share = roll / spec.max_roll_deg.to_radians().max(1e-3);
     let pitch_share = pitch / spec.travel_m.max(1e-3);
     let deadzone = spec.deadzone.clamp(0.0, 0.9);

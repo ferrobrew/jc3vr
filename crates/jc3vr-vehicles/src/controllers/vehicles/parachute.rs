@@ -108,7 +108,7 @@ pub fn candidates(
 
 /// The handles' wider reach: the free handles' volumes grown to the reach, which take a press that
 /// no other volume claims.
-pub fn reach_candidates(
+pub(crate) fn reach_candidates(
     state: &HandleState,
     centres: [Vec3; 2],
 ) -> impl Iterator<Item = Candidate> {
@@ -204,7 +204,7 @@ pub fn steer(pulls: [f32; 2], config: &ParachuteHandlesTuning) -> Vec2 {
 
 /// Where the hand holding `hold` sits on its handle for its grip at `grip`: where it took the
 /// handle, moved down, up, or forward with the hand by no more than a full pull.
-pub fn anchor_point(config: &ParachuteHandlesTuning, hold: HandleHold, grip: Vec3) -> Vec3 {
+pub(crate) fn anchor_point(config: &ParachuteHandlesTuning, hold: HandleHold, grip: Vec3) -> Vec3 {
     let full = config.full_pull_m.max(0.0);
     let offset = grip - hold.rest;
     if !offset.is_finite() {

@@ -140,7 +140,7 @@ pub struct Throw {
 
 /// One tick's observation.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct EvadeInput {
+pub(crate) struct EvadeInput {
     /// The arms' bank, degrees, or `None` while the arms are not spread wide enough to read one.
     pub bank_deg: Option<f32>,
     /// The arms' pitch as the move stick's vertical (+Y forward), `-1..=1`.
@@ -152,7 +152,7 @@ pub struct EvadeInput {
 
 /// The throw recognizer. Pure: it reads only its inputs.
 #[derive(Debug, Clone)]
-pub struct EvadeRecognizer {
+pub(crate) struct EvadeRecognizer {
     clock: f32,
     /// Recent banks, oldest first, as (clock, bank in degrees), within the throw window.
     samples: VecDeque<(f32, f32)>,

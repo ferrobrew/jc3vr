@@ -41,7 +41,7 @@ use crate::controllers::vehicles::{
 
 /// One hand, as the arm steering reads it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ArmHand {
+pub(crate) struct ArmHand {
     /// The grip's position in the cockpit frame.
     pub position: Vec3,
     /// The wrist frame's orientation in the cockpit frame: -Z toward the fingers, +Y out of the
@@ -51,11 +51,11 @@ pub struct ArmHand {
 
 /// Where the pose is measured from.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ArmBody {
+pub(crate) struct ArmBody {
     /// The head (the eye midpoint) in the cockpit frame.
     pub head: Vec3,
     /// How far the shoulder joints sit below the eyes, metres.
-    pub eyes_above_shoulders: f32,
+    pub(crate) eyes_above_shoulders: f32,
     /// Fingertip to fingertip with the arms spread, metres.
     pub arm_span: f32,
 }
@@ -87,7 +87,7 @@ pub enum PitchInput {
 }
 
 /// Measure the pose of `hands` (`[left, right]`) against `body`.
-pub fn arm_pose(hands: [ArmHand; 2], body: &ArmBody) -> ArmPose {
+pub(crate) fn arm_pose(hands: [ArmHand; 2], body: &ArmBody) -> ArmPose {
     let [left, right] = hands;
     let across = right.position - left.position;
     let forward = Vec3::Y
@@ -109,12 +109,12 @@ pub fn arm_pose(hands: [ArmHand; 2], body: &ArmBody) -> ArmPose {
 
 /// The wrists' mean tilt, radians, positive with the leading edges down, for the `left` and
 /// `right` wrist frames' orientations (-Z toward the fingers, +Y out of the back of the hand).
-pub fn wrists_tilt(left: Quat, right: Quat) -> f32 {
+pub(crate) fn wrists_tilt(left: Quat, right: Quat) -> f32 {
     (wrist_tilt(left, 1.0) + wrist_tilt(right, -1.0)) * 0.5
 }
 
 /// The pitch input `config`'s measure reads from `pose`.
-pub fn pitch_input(pose: &ArmPose, config: &ArmSteeringConfig) -> PitchInput {
+pub(crate) fn pitch_input(pose: &ArmPose, config: &ArmSteeringConfig) -> PitchInput {
     match config.pitch_by {
         ArmPitch::Height => PitchInput::Height(pose.height_m),
         ArmPitch::WristTilt => {
@@ -161,7 +161,11 @@ pub fn needed_spread(engaged: bool) -> f32 {
 /// off-hand, and pointing that hand at a target narrows the spread or lowers it against the other
 /// hand, which would stop the steering or bank the suit; holding the last vector keeps the flight
 /// line the player had while they aim.
-pub fn hold_while_aiming(fresh: Option<Vec2>, held: Option<Vec2>, aiming: bool) -> Option<Vec2> {
+pub(crate) fn hold_while_aiming(
+    fresh: Option<Vec2>,
+    held: Option<Vec2>,
+    aiming: bool,
+) -> Option<Vec2> {
     if aiming { held } else { fresh }
 }
 

@@ -45,7 +45,7 @@ pub fn status() -> PassengerStatus {
 /// The point the seated body aims at this update: the gun hand's aim point, the acting hand's
 /// first, while the player is in a vehicle out of the driver's seat and off a mounted gun. `None`
 /// leaves the game's point.
-pub fn body_aim_point(
+pub(crate) fn body_aim_point(
     seat: Option<VehicleSeat>,
     mounted: bool,
     gun_targets: [Option<Vec3>; 2],

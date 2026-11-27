@@ -12,7 +12,7 @@ use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 /// Why a free handle has no normal or wider-reach target.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum RestUnavailable {
+pub(crate) enum RestUnavailable {
     Inactive,
     MissingSample,
     SessionChanged,
@@ -53,11 +53,11 @@ pub(super) struct RigIdentity {
 pub(super) struct NativeRestSnapshot {
     pub session: Session,
     pub sequence: u64,
-    pub sampled_at: Instant,
+    pub(crate) sampled_at: Instant,
     pub rig: RigIdentity,
     pub character_world: Mat4,
-    pub rig_world: Option<Mat4>,
-    pub rest_model: [Option<Vec3>; 2],
+    pub(crate) rig_world: Option<Mat4>,
+    pub(crate) rest_model: [Option<Vec3>; 2],
 }
 
 impl NativeRestSnapshot {

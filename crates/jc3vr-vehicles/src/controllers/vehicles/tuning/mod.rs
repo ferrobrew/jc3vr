@@ -57,7 +57,7 @@ pub struct VehiclesTuning {
     pub steering: SteeringTuning,
     pub controls: ControlMotionTuning,
     pub cues: ControlCuesTuning,
-    pub wheel_fit: WheelFitTuning,
+    pub(crate) wheel_fit: WheelFitTuning,
     pub arm_steering: ArmSteeringTuning,
     pub wingsuit_gestures: WingsuitGesturesTuning,
     pub wingsuit_evade: WingsuitEvadeTuning,
@@ -69,7 +69,7 @@ pub struct VehiclesTuning {
     pub driving_view: DrivingViewTuning,
     pub calibration: CalibrationTuning,
     pub mounted: MountedTuning,
-    pub gunner_seat: GunnerSeatTuning,
+    pub(crate) gunner_seat: GunnerSeatTuning,
 }
 
 impl Tuning for VehiclesTuning {
@@ -101,31 +101,31 @@ pub struct RailTuning {
     /// How far the skid's line reaches either way from where Rico lands on it, metres.
     pub half_length_m: f32,
     /// How far off the line, level, the feet go before Rico has stepped off, metres.
-    pub step_off_m: f32,
+    pub(crate) step_off_m: f32,
     /// The sticky pull's time constant: the offset off the line closes at this rate, seconds.
     /// Longer is less sticky.
-    pub pull_s: f32,
+    pub(crate) pull_s: f32,
     /// The time constant that holds the feet at the skid's height, seconds.
-    pub height_s: f32,
+    pub(crate) height_s: f32,
     /// The fastest walk the rail passes on, metres per second.
-    pub max_walk_mps: f32,
+    pub(crate) max_walk_mps: f32,
     /// How far below the skid's line the feet go before the rail lets them go, metres.
     pub max_drop_m: f32,
     /// How long after its arrival a noted airframe stands for the door side's, milliseconds.
-    pub airframe_fresh_ms: u64,
+    pub(crate) airframe_fresh_ms: u64,
     /// How long after the rail takes Rico the input tick's mode is trusted, milliseconds: the mode
     /// reads the fall the graph's exit starts until the first carried step lands him.
-    pub mode_grace_ms: u64,
+    pub(crate) mode_grace_ms: u64,
 }
 
 impl RailTuning {
     /// [`Self::airframe_fresh_ms`].
-    pub fn airframe_fresh(&self) -> Duration {
+    pub(crate) fn airframe_fresh(&self) -> Duration {
         Duration::from_millis(self.airframe_fresh_ms)
     }
 
     /// [`Self::mode_grace_ms`].
-    pub fn mode_grace(&self) -> Duration {
+    pub(crate) fn mode_grace(&self) -> Duration {
         Duration::from_millis(self.mode_grace_ms)
     }
 

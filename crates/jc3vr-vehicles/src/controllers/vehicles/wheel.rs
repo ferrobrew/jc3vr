@@ -37,7 +37,7 @@ pub struct WheelFrame {
 impl WheelFrame {
     /// The wheel the spec describes, centred on the driver as the spec gives it. A car's wheel does
     /// not move with the driver's handedness, so the spec is never mirrored.
-    pub fn from_spec(spec: &WheelSpec) -> Self {
+    pub(crate) fn from_spec(spec: &WheelSpec) -> Self {
         let (right, up) = tilted_axes(spec.tilt_deg.to_radians());
         Self {
             centre: spec.centre_m,
@@ -49,14 +49,14 @@ impl WheelFrame {
 
     /// The angle of `point` around the hub in the wheel's plane, radians clockwise from the top as
     /// the driver sees it. `None` at the hub itself.
-    pub fn hand_angle(&self, point: Vec3) -> Option<f32> {
+    pub(crate) fn hand_angle(&self, point: Vec3) -> Option<f32> {
         let d = point - self.centre;
         let (x, y) = (d.dot(self.right), d.dot(self.up));
         (x * x + y * y > 1e-6 && x.is_finite() && y.is_finite()).then(|| x.atan2(y))
     }
 
     /// The point on the rim at `angle` (clockwise from the top).
-    pub fn rim_point(&self, angle: f32) -> Vec3 {
+    pub(crate) fn rim_point(&self, angle: f32) -> Vec3 {
         let (sin, cos) = angle.sin_cos();
         self.centre + (self.right * sin + self.up * cos) * self.radius
     }
@@ -77,7 +77,7 @@ pub struct BarsFrame {
 impl BarsFrame {
     /// The handlebars the spec describes. They are centred on the driver, so the spec is never
     /// mirrored.
-    pub fn from_spec(spec: &HandlebarsSpec) -> Self {
+    pub(crate) fn from_spec(spec: &HandlebarsSpec) -> Self {
         Self {
             centre: spec.centre_m,
             half_width: spec.half_width_m,
@@ -109,7 +109,7 @@ impl PartWheel {
 
 /// The wheel a thin disc fitted to the part's model-space box `min..max` would be. `None` for a
 /// box too small or malformed to hold a wheel.
-pub fn wheel_from_box(min: Vec3, max: Vec3) -> Option<PartWheel> {
+pub(crate) fn wheel_from_box(min: Vec3, max: Vec3) -> Option<PartWheel> {
     let extent = max - min;
     if !(min.is_finite() && max.is_finite()) || extent.min_element() < 0.0 {
         return None;
@@ -135,7 +135,7 @@ pub fn wheel_from_box(min: Vec3, max: Vec3) -> Option<PartWheel> {
 /// The handlebars' grips' middle and half width, in the steering-fork part's own space, from its
 /// model-space box `min..max`. The bars span the box's width; the grips sit at its rear (toward
 /// the rider) and its mid-height, inset from its ends by a hand's half width.
-pub fn bars_from_box(min: Vec3, max: Vec3) -> Option<(Vec3, f32)> {
+pub(crate) fn bars_from_box(min: Vec3, max: Vec3) -> Option<(Vec3, f32)> {
     let extent = max - min;
     if !(min.is_finite() && max.is_finite()) || extent.min_element() < 0.0 {
         return None;
@@ -155,7 +155,7 @@ pub fn bars_from_box(min: Vec3, max: Vec3) -> Option<(Vec3, f32)> {
 
 /// A wheel whose part's box misleads, given directly in the part's own space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WheelOverride {
+pub(crate) struct WheelOverride {
     /// The steering wheel part's name.
     pub part: &'static str,
     pub hub: Vec3,
@@ -182,7 +182,7 @@ impl WheelOverride {
 ///   tilted nearly flat;
 /// - the old jeep's mesh includes the column, which reads as a steep tilt;
 /// - the transport boat's ship's wheel spans its handles, so its rim is inside the box.
-pub const WHEEL_OVERRIDES: &[WheelOverride] = &[
+pub(crate) const WHEEL_OVERRIDES: &[WheelOverride] = &[
     WheelOverride {
         part: "moderncircuitracer_steeringwheel",
         hub: Vec3::new(0.0, 0.54, -0.40),
@@ -216,18 +216,18 @@ pub const WHEEL_OVERRIDES: &[WheelOverride] = &[
 ];
 
 /// The override for the steering wheel part named `part`, if it has one.
-pub fn find_override(part: &str) -> Option<&'static WheelOverride> {
+pub(crate) fn find_override(part: &str) -> Option<&'static WheelOverride> {
     WHEEL_OVERRIDES.iter().find(|o| o.part == part)
 }
 
 /// Whether a part named `name` is a steering wheel. The mirrors of a few vehicles carry the
 /// steering wheel's damage type, so the name decides.
-pub fn is_wheel_part(name: &str) -> bool {
+pub(crate) fn is_wheel_part(name: &str) -> bool {
     name.ends_with("_steeringwheel") || name.ends_with("_steering_wheel")
 }
 
 /// Whether a part named `name` with behaviour `behavior` is a steering fork: the handlebars.
-pub fn is_fork_part(name: &str, behavior: &str) -> bool {
+pub(crate) fn is_fork_part(name: &str, behavior: &str) -> bool {
     behavior == "SteeringFork" || name.ends_with("_upper_steering")
 }
 
@@ -275,7 +275,7 @@ impl Fallback {
 
 /// What the vehicle's steering wheel part looks like, as read from the game.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WheelPartView<'a> {
+pub(crate) struct WheelPartView<'a> {
     pub name: &'a str,
     /// The part's model-space box, `None` without a model.
     pub bounds: Option<(Vec3, Vec3)>,
@@ -284,7 +284,7 @@ pub struct WheelPartView<'a> {
 
 /// The wheel to use for a vehicle whose steering wheel part is `part`: the override for the part,
 /// else the fit to its box, else the configured spec.
-pub fn choose_wheel(part: Option<WheelPartView>) -> (Option<PartWheel>, WheelSource) {
+pub(crate) fn choose_wheel(part: Option<WheelPartView>) -> (Option<PartWheel>, WheelSource) {
     let Some(part) = part else {
         return (None, WheelSource::Fallback(Fallback::NoPart));
     };
@@ -303,7 +303,7 @@ pub fn choose_wheel(part: Option<WheelPartView>) -> (Option<PartWheel>, WheelSou
 /// The turn of the wheel by `angle` radians, clockwise as the driver sees it, about the axis
 /// through `hub` along `axis` (the face normal, toward the driver), as a transform of the wheel's
 /// own space.
-pub fn turn_about_hub(hub: Vec3, axis: Vec3, angle: f32) -> Mat4 {
+pub(crate) fn turn_about_hub(hub: Vec3, axis: Vec3, angle: f32) -> Mat4 {
     let Some(axis) = axis.try_normalize() else {
         return Mat4::IDENTITY;
     };
@@ -318,7 +318,7 @@ pub fn turn_about_hub(hub: Vec3, axis: Vec3, angle: f32) -> Mat4 {
 
 /// The wheel and the handlebars carried between the vehicle and the cockpit frame. A trait
 /// rather than an inherent impl because the cockpit transform belongs to the render layer.
-pub trait CockpitParts {
+pub(crate) trait CockpitParts {
     /// `wheel`, in the space `to_world` maps to the world, in the cockpit frame.
     fn wheel(&self, to_world: Mat4, wheel: &PartWheel) -> Option<WheelFrame>;
 

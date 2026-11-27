@@ -17,7 +17,7 @@ use crate::controllers::vehicles::tuning::millis;
 #[serde(deny_unknown_fields)]
 pub struct MountedTuning {
     /// How old the mounted gun read for the tick may be and still stand, milliseconds.
-    pub max_age_ms: u64,
+    pub(crate) max_age_ms: u64,
     /// How far from a handle a hand's grip may be for a grip press to take it, metres.
     pub grab_radius_m: f32,
     /// How far a held part of the holder's vehicle may be from the gun's centre to count as its
@@ -25,24 +25,24 @@ pub struct MountedTuning {
     pub handle_reach_m: f32,
     /// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the game
     /// does not place, or places at the pivot, swings about a pivot this far ahead of them.
-    pub min_lever_m: f32,
+    pub(crate) min_lever_m: f32,
     /// How near a hand must be to a mounted gun's handles or pivot to select it without the native
     /// mounted state, metres.
-    pub nearby_reach_m: f32,
+    pub(crate) nearby_reach_m: f32,
     /// How far past the hand's target the gun must sit before a pull tears it from its mount,
     /// metres.
-    pub tear_lag_m: f32,
+    pub(crate) tear_lag_m: f32,
     /// The share of the hand's strongest pull the tear needs.
-    pub tear_load: f32,
+    pub(crate) tear_load: f32,
     /// How long the tearing pull must be held, seconds.
-    pub tear_hold_s: f32,
+    pub(crate) tear_hold_s: f32,
     /// How long a torn-off gun takes to slide into the hand, seconds.
-    pub take_slide_s: f32,
+    pub(crate) take_slide_s: f32,
     /// How long after asking for the seat exit it is asked again if the player is still seated,
     /// milliseconds.
-    pub seat_exit_retry_ms: u64,
+    pub(crate) seat_exit_retry_ms: u64,
     /// How long a tear from the seat waits for the player to leave it, milliseconds.
-    pub seat_exit_timeout_ms: u64,
+    pub(crate) seat_exit_timeout_ms: u64,
     pub recoil: MountedRecoilTuning,
 }
 
@@ -53,12 +53,12 @@ impl MountedTuning {
     }
 
     /// [`Self::seat_exit_retry_ms`].
-    pub fn seat_exit_retry(&self) -> Duration {
+    pub(crate) fn seat_exit_retry(&self) -> Duration {
         Duration::from_millis(self.seat_exit_retry_ms)
     }
 
     /// [`Self::seat_exit_timeout_ms`].
-    pub fn seat_exit_timeout(&self) -> Duration {
+    pub(crate) fn seat_exit_timeout(&self) -> Duration {
         Duration::from_millis(self.seat_exit_timeout_ms)
     }
 }
@@ -68,16 +68,16 @@ impl MountedTuning {
 #[serde(deny_unknown_fields)]
 pub struct MountedRecoilTuning {
     /// How far a shot kicks the handles back along the barrel, metres.
-    pub kick_back_m: f32,
+    pub(crate) kick_back_m: f32,
     /// How far a shot kicks the handles down as the muzzle climbs, metres.
-    pub kick_dip_m: f32,
+    pub(crate) kick_dip_m: f32,
     /// The handles' spring: stiff, so a single shot settles within a tenth of a second or so.
     pub stiffness: f32,
     pub damping_ratio: f32,
     /// How many shots' kick the handles can carry at once.
-    pub max_shots: f32,
+    pub(crate) max_shots: f32,
     /// The fastest the kick moves the handles, as the carried kick's reach covered per second.
-    pub max_speed_per_s: f32,
+    pub(crate) max_speed_per_s: f32,
 }
 
 /// Where the gunner stands to take a manned gun on foot (see
@@ -86,17 +86,17 @@ pub struct MountedRecoilTuning {
 #[serde(deny_unknown_fields)]
 pub struct GunnerSeatTuning {
     /// How far behind the handles, on the level, the gunner stands, metres.
-    pub spot_behind_m: f32,
+    pub(crate) spot_behind_m: f32,
     /// How far from the gunner's spot, on the level, the head may be, metres.
-    pub spot_radius_m: f32,
+    pub(crate) spot_radius_m: f32,
     /// How far below the handles the head may be and still stand at the spot, metres.
-    pub spot_below_m: f32,
+    pub(crate) spot_below_m: f32,
     /// How long the head stands at the spot before the entry starts, milliseconds, so a player
     /// walking across a vehicle's roof is not seated.
-    pub dwell_ms: u64,
+    pub(crate) dwell_ms: u64,
     /// How long the entry action is held at most, milliseconds: past the game's hold time for a
     /// seat change, and long enough for the entry to begin.
-    pub hold_timeout_ms: u64,
+    pub(crate) hold_timeout_ms: u64,
 }
 
 impl GunnerSeatTuning {
@@ -106,7 +106,7 @@ impl GunnerSeatTuning {
     }
 
     /// [`Self::hold_timeout_ms`].
-    pub fn hold_timeout(&self) -> Duration {
+    pub(crate) fn hold_timeout(&self) -> Duration {
         Duration::from_millis(self.hold_timeout_ms)
     }
 }
@@ -121,17 +121,17 @@ pub struct DrivingViewTuning {
     /// wheel's centre about a quarter to a third of a metre below the driver's eyes and about half
     /// a metre ahead of them. It is a little nearer than a road car's, because a VR rim holds no
     /// weight and a long reach tires the arms.
-    pub hub_from_eyes_m: Vec3,
+    pub(crate) hub_from_eyes_m: Vec3,
     /// Where a manned gun's handles' midpoint sits from the eyes in the standard gunner position,
     /// cockpit frame, metres: ahead of the chest and below the eyes, as a two-handled gun is held.
-    pub handles_from_eyes_m: Vec3,
+    pub(crate) handles_from_eyes_m: Vec3,
     /// The longest correction applied, metres; a longer one is shortened to this along its
     /// direction.
-    pub max_correction_m: f32,
+    pub(crate) max_correction_m: f32,
     /// How long after entering a vehicle the fallback wheel is carried into its space and the
     /// driving view begins measuring the hub, milliseconds: by then the driver has settled into
     /// the seat.
-    pub settle_ms: u64,
+    pub(crate) settle_ms: u64,
     /// How long after the driver has settled the hub is averaged over, milliseconds.
     pub sample_window_ms: u64,
 }
@@ -157,7 +157,7 @@ pub struct CalibrationTuning {
     pub countdown_ms: u64,
     /// How long a request waits for the player to sit at a cockpit's controls before it is
     /// dropped, milliseconds.
-    pub expire_after_ms: u64,
+    pub(crate) expire_after_ms: u64,
 }
 
 impl CalibrationTuning {
@@ -167,7 +167,7 @@ impl CalibrationTuning {
     }
 
     /// [`Self::expire_after_ms`].
-    pub fn expire_after(&self) -> Duration {
+    pub(crate) fn expire_after(&self) -> Duration {
         Duration::from_millis(self.expire_after_ms)
     }
 }

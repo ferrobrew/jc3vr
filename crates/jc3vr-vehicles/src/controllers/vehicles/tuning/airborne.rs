@@ -20,24 +20,24 @@ pub struct ArmSteeringTuning {
     /// and sweep pitches, share it.
     pub deadzone_m: f32,
     /// The height difference between the hands that banks fully, metres.
-    pub full_bank_m: f32,
+    pub(crate) full_bank_m: f32,
     /// How far apart the hands must be, as a share of the arm span, for the arms to count as
     /// spread. Closer together, the arms steer nothing and the stick steers alone.
-    pub min_spread: f32,
+    pub(crate) min_spread: f32,
     /// How much narrower than the engaging spread the arms may come in, as a share of the arm
     /// span, before they stop steering.
-    pub spread_hysteresis: f32,
+    pub(crate) spread_hysteresis: f32,
     /// How far both hands must be above or below the shoulders to pitch fully, metres, under
     /// [`crate::controllers::vehicles::config::ArmPitch::Height`].
-    pub full_pitch_m: f32,
+    pub(crate) full_pitch_m: f32,
     /// How far the wrists must tilt from the neutral to pitch fully, degrees, under
     /// [`crate::controllers::vehicles::config::ArmPitch::WristTilt`].
-    pub full_tilt_deg: f32,
+    pub(crate) full_tilt_deg: f32,
     /// Wrist tilts within this of the neutral pitch nothing, degrees.
-    pub tilt_deadzone_deg: f32,
+    pub(crate) tilt_deadzone_deg: f32,
     /// How far both hands must be swept ahead of or behind the shoulders to pitch fully, metres,
     /// under [`crate::controllers::vehicles::config::ArmPitch::Sweep`].
-    pub full_sweep_m: f32,
+    pub(crate) full_sweep_m: f32,
 }
 
 /// The bilateral wingsuit gestures: fresh-pose deployment, bilateral withdrawal, and palms-forward
@@ -95,25 +95,25 @@ pub struct WingsuitGesturesTuning {
 #[serde(deny_unknown_fields)]
 pub struct WingsuitEvadeTuning {
     /// The bank, either way, a throw must reach, degrees.
-    pub throw_bank_deg: f32,
+    pub(crate) throw_bank_deg: f32,
     /// How far the bank must swing toward the throw's side within [`Self::throw_window_s`],
     /// degrees.
-    pub throw_sweep_deg: f32,
+    pub(crate) throw_sweep_deg: f32,
     /// The time the swing must happen in, seconds.
-    pub throw_window_s: f32,
+    pub(crate) throw_window_s: f32,
     /// The bank, either way, the arms must come back within before another throw counts, degrees.
-    pub rearm_bank_deg: f32,
+    pub(crate) rearm_bank_deg: f32,
     /// The time after a throw before another is taken, seconds.
     pub cooldown_s: f32,
     /// The arms' pitch, as a share of a full pitch, that turns the throw's side roll into its
     /// diagonal: below it the evade rolls straight to the side.
-    pub diagonal_pitch: f32,
+    pub(crate) diagonal_pitch: f32,
     /// How long a throw's direction is written over the move stick, seconds: long enough for the
     /// animation graph to pick the roll from it on the ticks after the click.
-    pub direction_hold_s: f32,
+    pub(crate) direction_hold_s: f32,
     /// The hands' smallest separation, as a share of the arm span, at which their height
     /// difference reads as a bank: the arms spread as wings, not drawn in.
-    pub min_separation: f32,
+    pub(crate) min_separation: f32,
 }
 
 /// How the parachute's handles pull (see [`crate::controllers::vehicles::parachute`]).
@@ -121,10 +121,10 @@ pub struct WingsuitEvadeTuning {
 #[serde(deny_unknown_fields)]
 pub struct ParachuteHandlesTuning {
     /// How far down from where it was taken a handle is pulled to act fully, metres.
-    pub full_pull_m: f32,
+    pub(crate) full_pull_m: f32,
     /// How far both handles must be pulled, as a share of a full pull, before they brake. Below it,
     /// both pulled together only bank by their difference.
-    pub brake_threshold: f32,
+    pub(crate) brake_threshold: f32,
     /// How far from a handle's centre a hand's grip may be for a grip press to take it, metres.
     /// Within it, the handle and any other target in reach go to the nearer, so a press right at a
     /// shoulder socket takes the socket.
@@ -165,12 +165,12 @@ pub struct TakeOffTuning {
     /// enough that a tap to pick something up or use it does not turn the body, and well short of
     /// the hold that starts the take-off's wind-up, so the body has the rest of the hold to come
     /// around.
-    pub turn_after_s: f32,
+    pub(crate) turn_after_s: f32,
 }
 
 impl TakeOffTuning {
     /// [`Self::turn_after_s`], to the millisecond.
-    pub fn turn_after(&self) -> Duration {
+    pub(crate) fn turn_after(&self) -> Duration {
         Duration::from_millis((self.turn_after_s * 1000.0) as u64)
     }
 
@@ -188,7 +188,7 @@ pub struct RipcordTuning {
     /// The ripcord's centre from the hip joint along the torso's axes (+X out, +Y up, +Z back),
     /// metres: a little outside, above, and behind the joint, at the back of the hip, behind the
     /// holster.
-    pub from_hip_m: Vec3,
+    pub(crate) from_hip_m: Vec3,
     /// How far from the ripcord's centre a hand's grip may be for a grip press to take it over
     /// every other volume, metres.
     pub radius_m: f32,

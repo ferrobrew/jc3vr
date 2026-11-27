@@ -48,13 +48,13 @@ impl RailLine {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct RailMotion {
     /// How far off the line, level, the feet go before Rico has stepped off, metres.
-    pub step_off_m: f32,
+    pub(crate) step_off_m: f32,
     /// The sticky pull's time constant: the offset off the line closes at this rate, seconds.
-    pub pull_s: f32,
+    pub(crate) pull_s: f32,
     /// The time constant that holds the feet at the line's height, seconds.
-    pub height_s: f32,
+    pub(crate) height_s: f32,
     /// The fastest walk the rail passes on, metres per second.
-    pub max_walk_mps: f32,
+    pub(crate) max_walk_mps: f32,
     /// How far below the line the feet go before the rail lets them go, as a hand climb lowering
     /// Rico off the skid takes them, metres.
     pub max_drop_m: f32,

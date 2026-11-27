@@ -55,7 +55,7 @@ use crate::controllers::vehicles::{
 
 /// A hand on the wheel: the wheel as it took hold, and where the hand was on the last tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WheelGrip {
+pub(crate) struct WheelGrip {
     /// The wheel as the hand took it, which the hand's turns are measured against for the hold.
     frame: WheelFrame,
     /// The hand's place on the rim less the wheel's angle when it took hold, radians clockwise;
@@ -104,7 +104,7 @@ impl WheelGrip {
 
     /// Where the hand holds the rim with the wheel turned to `wheel_angle`: its place when it took
     /// hold, carried round with the wheel. `None` for a hand that took hold at the hub.
-    pub fn rim_angle(&self, wheel_angle: f32) -> Option<f32> {
+    pub(crate) fn rim_angle(&self, wheel_angle: f32) -> Option<f32> {
         self.rim_offset.map(|offset| offset + wheel_angle)
     }
 
@@ -160,7 +160,7 @@ impl WheelGrip {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Turn {
     /// Radians clockwise.
-    pub radians: f32,
+    pub(crate) radians: f32,
     /// How much of the turn counts, `0..=1`: less for a hand near the hub whose travel alone
     /// measures it.
     pub weight: f32,
@@ -201,7 +201,7 @@ pub struct WheelTravel {
     /// Radians clockwise, within the lock.
     pub angle: f32,
     /// The hands' turn past the lock, radians clockwise; zero within it.
-    pub past_lock: f32,
+    pub(crate) past_lock: f32,
 }
 
 /// The wheel at `travel` turned by `turn`, stopped at the lock either way. A turn past the lock is
@@ -258,7 +258,12 @@ pub fn cue(arming: &mut CueArming, before: f32, after: f32, spec: &WheelSpec) ->
 /// The cue a held control turning from `before` to `after` radians gives against its `lock`, if
 /// any: the stop at the lock, and the tick through centre, each re-armed once the control has left
 /// it by a margin. The wheel's ([`cue`]) and the handlebars'.
-pub fn cue_at_lock(arming: &mut CueArming, before: f32, after: f32, lock: f32) -> Option<WheelCue> {
+pub(crate) fn cue_at_lock(
+    arming: &mut CueArming,
+    before: f32,
+    after: f32,
+    lock: f32,
+) -> Option<WheelCue> {
     if !before.is_finite() || !after.is_finite() || !lock.is_finite() {
         return None;
     }
@@ -283,7 +288,7 @@ pub fn cue_at_lock(arming: &mut CueArming, before: f32, after: f32, lock: f32) -
 
 /// The released wheel at `angle` after `dt` seconds of returning to centre: at the return rate,
 /// slowing over the last stretch so that it settles rather than stops.
-pub fn return_step(angle: f32, spec: &WheelSpec, dt: f32) -> f32 {
+pub(crate) fn return_step(angle: f32, spec: &WheelSpec, dt: f32) -> f32 {
     if !angle.is_finite() {
         return 0.0;
     }
@@ -301,12 +306,12 @@ pub fn return_step(angle: f32, spec: &WheelSpec, dt: f32) -> f32 {
 
 /// The steering, `-1..=1` with positive right, the wheel at `angle` (clockwise) gives: past the
 /// deadzone, the rest of the way to the lock shaped by the response exponent.
-pub fn steer_for_angle(angle: f32, spec: &WheelSpec) -> f32 {
+pub(crate) fn steer_for_angle(angle: f32, spec: &WheelSpec) -> f32 {
     shaped(angle, deadzone(spec), lock(spec), spec.response)
 }
 
 /// The wheel angle that gives the steering `steer`: the inverse of [`steer_for_angle`].
-pub fn angle_for_steer(steer: f32, spec: &WheelSpec) -> f32 {
+pub(crate) fn angle_for_steer(steer: f32, spec: &WheelSpec) -> f32 {
     unshaped(steer, deadzone(spec), lock(spec), spec.response)
 }
 
