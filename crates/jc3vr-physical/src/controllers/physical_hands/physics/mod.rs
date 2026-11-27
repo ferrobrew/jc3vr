@@ -67,7 +67,6 @@ mod types;
 
 pub(crate) use blows::queue_shove;
 pub use blows::{Shove, ShoveForce};
-pub use callback::{rail_step_registered, register_rail_step};
 pub use config::HandBodiesConfig;
 pub(crate) use lifecycle::release_body_joints;
 

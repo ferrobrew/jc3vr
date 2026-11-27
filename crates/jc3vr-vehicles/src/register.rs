@@ -3,9 +3,8 @@
 //!
 //! [`register`] fills the physical crate's contributions
 //! ([`jc3vr_physical::contributions::PhysicalContributions`]): the vehicle rail's carry in the hand
-//! bodies' pre-simulation step and the vehicle controls' targets in the hand bodies' drive. It
-//! reports them to the install's registration check if they are still missing, which stops the
-//! startup naming them. The body's registrations are still in
+//! bodies' pre-simulation step. It reports them to the install's registration check if they are
+//! still missing, which stops the startup naming them. The body's registrations are still in
 //! [`register_body`](crate::controllers::vehicles::register_body) and
 //! [`register_mounted`](crate::controllers::vehicles::register_mounted), which the gameplay crate's
 //! install calls.
@@ -17,17 +16,13 @@ use jc3vr_core::registration::RegistrationCheck;
 use jc3vr_physical::contributions::{self as physical, PhysicalContributions};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{vehicles, vehicles::rail},
-    hooks::equipment,
-};
+use crate::{controllers::vehicles::rail, hooks::equipment};
 
 /// Register the vehicle handling's contributions to the crates below it, before any hook is
 /// enabled, and report each one still missing to `check`.
 pub fn register(check: &mut RegistrationCheck) -> Registered {
     physical::register(PhysicalContributions {
         rail_step: rail::step_physics,
-        vehicle_targets: vehicles::apply,
     });
     check.require(
         "hand bodies",

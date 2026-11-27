@@ -8,12 +8,9 @@
 //! engine's walk over them), and removed by the shutdown cleanup before the payload unloads.
 //!
 //! The vehicle rail's carry runs in the same callback, through the step the vehicle handling
-//! registers ([`register_rail_step`]).
+//! contributes ([`rail_step`](crate::contributions::PhysicalContributions::rail_step)).
 
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicBool, AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use jc3gi::{
     physics::{
@@ -23,22 +20,7 @@ use jc3gi::{
 };
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-/// Register the vehicle rail's part of the pre-simulation step, which carries the player along the
-/// skid. It runs after the drawn body's step and before the hand step, so a gripping hand's carry
-/// is the one the proxy keeps. One step: a second registration is refused and logged.
-///
-/// The step is called on the thread that steps the physics world, outside the step, after the
-/// characters' proxy updates.
-pub fn register_rail_step(step: unsafe fn()) {
-    if RAIL_STEP.set(step).is_err() {
-        tracing::error!("hand bodies: a rail step is already registered; keeping the first");
-    }
-}
-
-/// Whether the vehicle rail's step is registered.
-pub fn rail_step_registered() -> bool {
-    RAIL_STEP.get().is_some()
-}
+use crate::contributions;
 
 /// Register the callback once, when the physics system exists. Returns whether it is registered.
 ///
@@ -94,7 +76,6 @@ pub(super) fn firing_thread() -> u32 {
     FIRING_THREAD.load(Ordering::Relaxed)
 }
 
-static RAIL_STEP: OnceLock<unsafe fn()> = OnceLock::new();
 static REGISTERED: AtomicBool = AtomicBool::new(false);
 static REGISTERING_THREAD: AtomicU32 = AtomicU32::new(0);
 static FIRST_FIRE: AtomicBool = AtomicBool::new(true);
@@ -158,8 +139,8 @@ unsafe extern "system" fn pre_simulation(
         }
         crate::controllers::physical_hands::physics::drawn_body::step();
         // Before the hand step, so a gripping hand's carry is the one the proxy keeps.
-        if let Some(rail_step) = RAIL_STEP.get() {
-            rail_step();
+        if let Some(contributions) = contributions::get() {
+            (contributions.rail_step)();
         }
         crate::controllers::physical_hands::physics::step();
         {

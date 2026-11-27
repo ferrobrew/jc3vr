@@ -6,37 +6,32 @@
 //! whether the record was registered at all is reported to the install's registration check through
 //! [`registered`].
 
-use jc3vr_body::controllers::hands::CockpitHand;
+use std::sync::OnceLock;
 
-use crate::controllers::physical_hands::physics as hand_bodies;
-
-/// The contributions the hand bodies run every frame.
+/// The contributions the hand bodies run every step.
 pub struct PhysicalContributions {
     /// The vehicle rail's part of the hand bodies' pre-simulation step, which carries the player
     /// along the skid. It runs after the drawn body's step and before the hand step, so a gripping
     /// hand's carry is the one the proxy keeps. Called on the thread that steps the physics world,
     /// outside the step, after the characters' proxy updates.
     pub rail_step: unsafe fn(),
-    /// The vehicle controls' targets: called with the cockpit-frame hands, it draws a hand holding
-    /// a control or a handle there, for the hand bodies' drive.
-    pub vehicle_targets: fn(&mut [Option<CockpitHand>; 2]),
 }
 
 /// Register the contributions. One registration: a second is refused and logged.
 pub fn register(contributions: PhysicalContributions) {
-    if registered() {
+    if CONTRIBUTIONS.set(contributions).is_err() {
         tracing::error!("physical: the contributions are already registered; keeping the first");
-        return;
     }
-    let PhysicalContributions {
-        rail_step,
-        vehicle_targets,
-    } = contributions;
-    hand_bodies::register_rail_step(rail_step);
-    hand_bodies::guns::targets::register_vehicle_targets(vehicle_targets);
 }
 
 /// Whether the contributions are registered.
 pub fn registered() -> bool {
-    hand_bodies::rail_step_registered() && hand_bodies::guns::targets::vehicle_targets_registered()
+    CONTRIBUTIONS.get().is_some()
 }
+
+/// The registered contributions, or `None` before the install (and in the crate's own tests).
+pub(crate) fn get() -> Option<&'static PhysicalContributions> {
+    CONTRIBUTIONS.get()
+}
+
+static CONTRIBUTIONS: OnceLock<PhysicalContributions> = OnceLock::new();

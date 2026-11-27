@@ -1,46 +1,24 @@
 //! The support and weight targets shared by the physical hand drive and its drawn reference.
 //!
-//! The vehicle controls' targets come first, through the vehicle handling's registration
-//! ([`register_vehicle_targets`]), as in the hand composition; the held guns' support and weight
-//! targets follow, through the weapon handling's registration with the held guns' store
-//! ([`held_guns::register_targets`]).
-
-use std::sync::OnceLock;
+//! The targets are the hand composition's target stages ([`stages::apply_targets`]), in the order
+//! the composition registers them.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    hands::CockpitHand,
+    hands::{CockpitHand, stages},
     held::{guns as held_guns, guns::GunHolds},
 };
 use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
-
-/// Register the vehicle controls' targets: called with the cockpit-frame hands, it draws a hand
-/// holding a control or a handle there. One registration: a second is refused and logged.
-pub fn register_vehicle_targets(apply: fn(&mut [Option<CockpitHand>; 2])) {
-    if VEHICLE_TARGETS.set(apply).is_err() {
-        tracing::error!("hand bodies: vehicle targets are already registered; keeping the first");
-    }
-}
-
-/// Whether the vehicle controls' targets are registered.
-pub fn vehicle_targets_registered() -> bool {
-    VEHICLE_TARGETS.get().is_some()
-}
 
 /// Give the physical drive the support and weight targets of the currently published guns.
 /// Reads no native objects and does not compose active hands recursively.
 pub(crate) fn apply_physical(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
     let holds = held_guns::holds_at(Step::now()).unwrap_or_default();
     let raw = *hands;
-    if let Some(vehicle_targets) = VEHICLE_TARGETS.get() {
-        vehicle_targets(hands);
-    }
-    held_guns::apply_targets(hands, head);
+    stages::apply_targets(hands, head);
     retain_gun_targets(hands, raw, holds);
 }
-
-static VEHICLE_TARGETS: OnceLock<fn(&mut [Option<CockpitHand>; 2])> = OnceLock::new();
 
 fn retain_gun_targets(
     hands: &mut [Option<CockpitHand>; 2],
