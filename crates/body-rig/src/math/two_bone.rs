@@ -76,6 +76,23 @@ mod tests {
 
     proptest! {
         #[test]
+        fn an_end_out_of_reach_straightens_the_limb_toward_it(
+            direction in proptest::array::uniform3(-1.0f32..1.0),
+            pole in proptest::array::uniform3(-1.0f32..1.0),
+            upper in 0.2f32..0.4,
+            lower in 0.2f32..0.4,
+            beyond in 0.05f32..1.0,
+        ) {
+            let direction = Vec3::from(direction).normalize_or_zero();
+            prop_assume!(direction != Vec3::ZERO);
+            let end = direction * (upper + lower + beyond);
+            if let Some(joint) = middle_joint(Vec3::ZERO, end, upper, lower, Vec3::from(pole)) {
+                prop_assert!((joint.length() - upper).abs() < 1e-3);
+                prop_assert!(joint.normalize().dot(direction) > 0.99);
+            }
+        }
+
+        #[test]
         fn the_bones_keep_their_lengths_within_reach(
             end in proptest::array::uniform3(-0.5f32..0.5),
             pole in proptest::array::uniform3(-1.0f32..1.0),

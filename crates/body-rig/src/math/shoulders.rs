@@ -37,7 +37,43 @@ pub fn level_eyes(eyes: Vec3, head: Quat, torso: Quat) -> Vec3 {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
+
+    fn yaw_rotation() -> impl Strategy<Value = Quat> {
+        (-3.1f32..3.1).prop_map(Quat::from_rotation_y)
+    }
+
+    proptest! {
+        #[test]
+        fn the_shoulders_stay_the_width_apart_and_centred_below_the_eyes(
+            eyes in proptest::array::uniform3(-50.0f32..50.0),
+            torso in yaw_rotation(),
+            drop in 0.05f32..0.4,
+            width in 0.2f32..0.6,
+        ) {
+            let eyes = Vec3::from(eyes);
+            let [left, right] = shoulders(eyes, torso, eyes_to_right_shoulder(drop, width));
+            prop_assert!((left.distance(right) - width).abs() < 1e-3);
+            let middle = (left + right) * 0.5;
+            let expected = eyes + torso * Vec3::new(0.0, -drop, EYES_FORWARD_OF_SHOULDERS);
+            prop_assert!(middle.abs_diff_eq(expected, 1e-3));
+        }
+
+        #[test]
+        fn any_nod_or_glance_leaves_the_level_eyes_in_place(
+            torso in yaw_rotation(),
+            nod in -1.2f32..1.2,
+            glance in -1.5f32..1.5,
+        ) {
+            let neck = Vec3::new(0.1, 1.5, 0.2);
+            let eyes_of = |head: Quat| neck - head * EYES_TO_NECK;
+            let level = level_eyes(eyes_of(torso), torso, torso);
+            let head = Quat::from_rotation_y(glance) * torso * Quat::from_rotation_x(nod);
+            prop_assert!(level_eyes(eyes_of(head), head, torso).abs_diff_eq(level, 1e-4));
+        }
+    }
 
     #[test]
     fn the_shoulders_sit_below_behind_and_either_side_of_the_eyes() {

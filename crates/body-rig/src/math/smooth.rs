@@ -161,6 +161,42 @@ mod tests {
         }
 
         #[test]
+        fn damp_is_the_per_axis_spring(
+            value in proptest::array::uniform3(-10.0f32..10.0),
+            rate in proptest::array::uniform3(-10.0f32..10.0),
+            target in proptest::array::uniform3(-10.0f32..10.0),
+            smooth_s in 0.01f32..2.0,
+            dt in 0.0f32..0.5,
+        ) {
+            let (v, r) = damp(value.into(), rate.into(), target.into(), smooth_s, dt);
+            for i in 0..3 {
+                prop_assert_eq!(
+                    (v[i], r[i]),
+                    critically_damped(value[i], rate[i], target[i], smooth_s, dt)
+                );
+            }
+        }
+
+        #[test]
+        fn the_heading_spring_stays_wrapped_and_never_moves_away_from_rest(
+            from in -3.1f32..3.1,
+            to in -3.1f32..3.1,
+            smooth_s in 0.01f32..2.0,
+            dt in 0.0f32..0.1,
+        ) {
+            use std::f32::consts::PI;
+            let (mut heading, mut rate) = (from, 0.0);
+            let mut distance = wrap(from - to).abs();
+            for _ in 0..100 {
+                (heading, rate) = damp_heading(heading, to, rate, smooth_s, dt);
+                prop_assert!(heading > -PI - 1e-4 && heading <= PI + 1e-4);
+                let next = wrap(heading - to).abs();
+                prop_assert!(next <= distance + 1e-3, "{distance} to {next}");
+                distance = next;
+            }
+        }
+
+        #[test]
         fn critically_damped_never_overshoots_from_rest(
             from in -10.0f32..10.0,
             to in -10.0f32..10.0,
