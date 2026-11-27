@@ -140,6 +140,8 @@ pub enum Requested {
     Nothing,
 }
 
+/// What the latest request for `target` asks for, queued, on its way, or waiting for its hand to
+/// draw it.
 pub fn requested(target: GiveTarget) -> Option<Requested> {
     let queue = QUEUE.lock();
     if let Some(selection) = queue.requested(target) {
@@ -344,7 +346,7 @@ static QUEUE: Mutex<RequestQueue> = Mutex::new(RequestQueue {
     dispatching: Vec::new(),
 });
 /// The weapons given to a hand that came onto their socket on the last tick, for the hand to draw
-/// on the next: the hand, the socket, and the definition's name.
+/// on the next.
 static DRAWS: Mutex<Vec<Draw>> = Mutex::new(Vec::new());
 static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -459,8 +461,8 @@ unsafe fn cancel_target(socket: Option<Socket>, hand: Option<Hand>) {
     }
 }
 
-/// Spawn a weapon of the definition `name` for `socket`, clearing the socket once the spawn is asked
-/// for, and for `hand` to draw once it is there.
+/// Spawn a weapon of the definition `name` for `socket`, clearing the socket once the spawn is
+/// asked for, and for `hand` to draw once it is there.
 unsafe fn give(
     game: &GameTick<'_>,
     owner: &Character,

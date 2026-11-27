@@ -1,5 +1,6 @@
-//! The missions' and the challenges' holds of the player's weapons, and the mission manager's
-//! checkpoint snapshot. The engine side is in `docs/engine/gameplay/weapon-gives-and-restores.md`.
+//! The missions' holds of the player's weapons, the stash and the give-back of the carried weapons
+//! that the missions and the challenges share, and the mission manager's checkpoint snapshot. The
+//! engine side is in `docs/engine/gameplay/weapon-gives-and-restores.md`.
 //!
 //! - A mission that takes the player's weapons away caches the slots in a graph script's weapon
 //!   cache and forces the weapons out ([`NodeWeaponCache::CacheAllWeaponSlots`] with its removal
@@ -8,16 +9,17 @@
 //!   no grab volumes, still carried. The give-back is [`NodeWeaponCache::RestoreWeapons`]
 //!   (detoured): the next input tick shows the carried weapons again, and the table restores its
 //!   snapshot once the slots' spawns arrive.
-//! - The challenges take and give back the same way ([`crate::controllers::weapons::inventory::challenges`]).
+//! - The challenges take and give back the same way
+//!   ([`crate::controllers::weapons::inventory::challenges`]).
 //! - At each mission checkpoint the mission manager snapshots the slots
 //!   ([`MissionManager::CacheWeapons`], detoured): the table snapshots itself first, the slots are
 //!   given the store projection, and the carried weapons are recorded for a restart. A death, a
-//!   failure, or a checkpoint restart replays the snapshot ([`MissionManager::RestoreCachedWeapons`],
-//!   detoured, after the player's respawn): the reset that follows respawns the checkpoint's
-//!   carried weapons, and the table returns to its snapshot.
+//!   failure, or a checkpoint restart replays the snapshot
+//!   ([`MissionManager::RestoreCachedWeapons`], detoured, after the player's respawn): the reset
+//!   that follows respawns the checkpoint's carried weapons, and the table returns to its snapshot.
 //!
-//! The pistol slot's weapon goes the same way: what it was (one pistol or the game's pair) is noted
-//! as the cache takes it, so the give-back restores it as it was
+//! The pistol slot's weapon goes the same way: what it was (one pistol or the game's pair) is
+//! noted as the cache takes it, so the give-back restores it as it was
 //! ([`crate::controllers::weapons::dual_wield::single`]).
 //!
 //! The detours run on whatever thread runs the graph script and the mission manager, so they only

@@ -3,8 +3,8 @@
 //!
 //! A slot's weapon on the socket the game docks its slot on keeps the game's dock bone. Any other
 //! weapon on a socket is placed by the mod on one of the game's dock bones, with an offset in the
-//! character's frame, so a weapon beyond the slots sits
-//! beside the slot's weapon on the same bone rather than inside it ([`placed_offset`]).
+//! character's frame, so a weapon beyond the slots sits beside the slot's weapon on the same bone
+//! rather than inside it ([`placed_offset`]).
 
 use glam::Vec3;
 use jc3gi::character::character::SafeBoneIndex;

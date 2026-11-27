@@ -30,11 +30,11 @@
 //! single = true
 //! ```
 //!
-//! With the pistols made separate, `slot_pistol_single = true` says the pistol slot's weapon is one
-//! pistol rather than the game's pair, so that a load brings it back as one pistol instead of
-//! splitting it again, and `single = true` says the same of a carried pistol. A file without them
-//! (written before the pistols were separate) leaves the slot's pistol to be split as a pair the
-//! game handed over, and its carried pistols pairs.
+//! `slot_pistol_single = true` says the pistol slot's weapon is one pistol rather than the game's
+//! pair, so that a load brings it back as one pistol instead of splitting it again, and
+//! `single = true` says the same of a carried pistol. A file without them (written before the
+//! pistols were separate) leaves the slot's pistol to be split as a pair the game handed over, and
+//! its carried pistols pairs.
 
 use std::fmt;
 
@@ -53,8 +53,8 @@ pub(crate) const RESERVES: usize = 17;
 /// The maximum encoded input, including comments and whitespace.
 pub const MAX_BYTES: usize = 64 * 1024;
 
-/// The saved values compared with a sidecar: each slot's weapon type as its spawn tag hash (zero for
-/// an empty slot, and for the heavy slot, which the save never stores), and every reserve.
+/// The saved values compared with a sidecar: each slot's weapon type as its spawn tag hash (zero
+/// for an empty slot, and for the heavy slot, which the save never stores), and every reserve.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Fingerprint {
     pub slots: [u32; SLOTS],
@@ -252,7 +252,8 @@ impl Sidecar {
         })
     }
 
-    /// The carried weapons a load restores: those whose type the game knows now.
+    /// The carried weapons a load restores, those whose type the game knows, and how many it skips
+    /// for a type the game does not know.
     pub(crate) fn restorable(&self, known: impl Fn(u32) -> bool) -> (Vec<Record>, usize) {
         let (known, unknown): (Vec<Record>, Vec<Record>) =
             self.carried.iter().partition(|r| known(r.tag_hash));

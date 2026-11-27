@@ -8,9 +8,9 @@
 //! cache, keeping the first snapshot through a retry or a restart, and the slots are given the
 //! store projection, so the challenge records what the player has. When either took a weapon from
 //! the slots, the table takes every weapon on the body and the carried weapons are stashed, as for
-//! a mission. Its give-back is the challenge's abort ([`ROMManager::AbortROM`]) or the restore of its
-//! record ([`ROMObject::RestoreWeaponsAndAmmo`]); after it the carried weapons come back and the
-//! table restores its snapshot once the slots settle.
+//! a mission. Its give-back is the challenge's abort ([`ROMManager::AbortROM`]) or the restore of
+//! its record ([`ROMObject::RestoreWeaponsAndAmmo`]); after it the carried weapons come back and
+//! the table restores its snapshot once the slots settle.
 //!
 //! The detours run on the game thread, outside the world update, and only fold the table's events
 //! and give the slots what the table's projection puts there.

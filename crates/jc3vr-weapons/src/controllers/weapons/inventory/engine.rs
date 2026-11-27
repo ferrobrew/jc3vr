@@ -61,9 +61,9 @@ pub(crate) enum Fate {
 
 /// The slots whose weapons the inventory tracks and carries: the pistols, the two-handed weapons,
 /// the special weapons, and the heavy weapons, which it keeps beyond the slots, docks on the back,
-/// and arms in a hand, never wielding them from their slot, whose unequip drops them. The grenade, the
-/// planted explosive, and the beacon are in use while holstered, and the sun gun drops itself, so
-/// the game keeps those.
+/// and arms in a hand, never wielding them from their slot, whose unequip drops them. The grenade,
+/// the planted explosive, and the beacon are in use while holstered, and the sun gun drops itself,
+/// so the game keeps those.
 pub(crate) const TRACKED_SLOTS: [WeaponSlot; 4] = [
     WeaponSlot::E_SLOT_DUAL_WIELD,
     WeaponSlot::E_SLOT_TWO_HANDED,
@@ -71,12 +71,12 @@ pub(crate) const TRACKED_SLOTS: [WeaponSlot; 4] = [
     WeaponSlot::E_SLOT_HEAVY,
 ];
 
-/// Whether the inventory tracks `slot`'s weapons now.
+/// Whether the inventory tracks `slot`'s weapons.
 pub(crate) fn tracks(slot: WeaponSlot) -> bool {
     TRACKED_SLOTS.contains(&slot)
 }
 
-/// The slots the inventory tracks now.
+/// The slots the inventory tracks.
 pub(crate) fn tracked_slots() -> impl Iterator<Item = WeaponSlot> {
     TRACKED_SLOTS.into_iter().filter(|&slot| tracks(slot))
 }
@@ -146,8 +146,8 @@ pub(crate) unsafe fn restored(weapon: &WeaponBase, socket: Socket) -> Option<Res
     })
 }
 
-/// `weapon`'s type as the loadout knows it: its spawn tag's hash, its slot, and its size class. `None`
-/// for a weapon of a slot whose items a hand does not hold.
+/// `weapon`'s type as the loadout knows it: its spawn tag's hash, its slot, and its size class.
+/// `None` for a weapon of a slot whose items a hand does not hold.
 ///
 /// # Safety
 ///

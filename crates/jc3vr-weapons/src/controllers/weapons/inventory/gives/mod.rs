@@ -3,10 +3,10 @@
 //! `docs/engine/gameplay/weapon-gives-and-restores.md`.
 //!
 //! Every weapon the game gives the player (a mission's, a challenge's, the graph script's, an
-//! event's, a reward, and a rack's copy) takes one chain: [`Inventory::GivePlayerWeapon`] writes the
-//! slot's respawn-table entry, and the spawned weapon arrives through [`Inventory::WeaponSpawned`],
-//! which equips it when the entry says so (putting the wielded weapon away) and replaces the slot's
-//! occupant. An ordinary world weapon never passes through it, and the respawn after a spawn reset
+//! event's, a reward, and a rack's copy) takes one chain: [`Inventory::GivePlayerWeapon`] writes
+//! the slot's respawn-table entry, and the spawned weapon arrives through
+//! [`Inventory::WeaponSpawned`], which equips it when the entry says so (putting the wielded weapon
+//! away) and replaces the slot's occupant. An ordinary world weapon never passes through it, and the respawn after a spawn reset
 //! is the reset's own.
 //!
 //! So the give's detour records each give to the local player's inventory while the table runs and
@@ -27,7 +27,7 @@
 //! A give the reset owns (one made before the reset began, as a checkpoint's restore is, or during
 //! it) is left to the game and to the reset's completion, as is a give while a mission holds the
 //! player's weapons (its give-back is the table's cache restored) and everything while the table
-//! does not run or the weapons keep the game's own layout.
+//! does not run.
 
 mod authority;
 #[cfg(test)]
@@ -83,7 +83,9 @@ pub(crate) fn within_copy_start(start: impl FnOnce()) {
     start();
 }
 
-/// Request the next native rack give for exactly one physical source member.
+/// Run `start` as the request of the rack member `member`: the give it makes is recorded for that
+/// member, as a rack's copy, and staged rather than placed. Does nothing while member requests are
+/// closed.
 pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
     if STATE.lock().members_closed.is_some() {
         return;
@@ -92,12 +94,13 @@ pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
     within_copy_start(start);
 }
 
-/// Initialize the finite pair's only additional actor, without invoking its source pickup.
+/// Ask the game for a finite rack pair's one additional actor: a give of the spawn tag `tag` into
+/// the pistol slot, made as `member`'s request, without running the source's pickup.
 ///
 /// # Safety
 ///
-/// The owner is the live local player on the game thread before the world update, and no pistol
-/// spawn is pending. The tag is read from the live native source, not a placement-rule selector.
+/// `owner` must be the live local player on the game thread before the world update, with no
+/// pistol spawn pending, and `tag` the live source's own spawn tag.
 pub(crate) unsafe fn request_member_copy(owner: &Character, member: Member, tag: i32) {
     within_member_start(member, || unsafe {
         let inventory = &raw const owner.m_Inventory as *mut Inventory;
@@ -105,7 +108,7 @@ pub(crate) unsafe fn request_member_copy(owner: &Character, member: Member, tag:
     });
 }
 
-/// Why paired rack-member admission stays closed until the game process restarts.
+/// Why the paired rack members' requests stay closed until the game process restarts.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum MemberClosure {
     ReplacedGive,
@@ -127,12 +130,13 @@ impl MemberClosure {
     }
 }
 
-/// Whether rack copy and member requests are closed until the game process restarts.
+/// Whether the rack members' requests are closed until the game process restarts.
 pub(crate) fn members_closed() -> bool {
     STATE.lock().members_closed.is_some()
 }
 
-/// Whether a native source request still owns the pistol callback, including a canceled request.
+/// Whether a rack member's request may still own the pistol slot's arrival: one is recorded or
+/// queued, or the requests are closed, since a canceled one is not known to have retired.
 pub(crate) fn member_pending() -> bool {
     let state = STATE.lock();
     state.members_closed.is_some()
@@ -140,8 +144,8 @@ pub(crate) fn member_pending() -> bool {
         || state.queued.iter().any(|a| a.member.is_some())
 }
 
-/// Forget the gives recorded: the spawn reset owns every give made before it. Called at the reset's
-/// pre-reset event.
+/// Forget the gives recorded and queued: the spawn reset owns every give made before it. Called at
+/// the reset's pre-reset event.
 pub(crate) fn on_reset() {
     let queued = {
         let mut state = STATE.lock();
@@ -225,7 +229,8 @@ struct State<W = Strong> {
 
 impl<W> State<W> {
     fn replace_record(&mut self, slot: usize, record: Option<Record>, why: MemberClosure) {
-        // Slot/tag callbacks cannot prove that a superseded member request has retired.
+        // An arrival matches its record only by slot and tag, so nothing shows that a superseded
+        // member request has retired.
         if self.records[slot].is_some_and(|old| old.member.is_some())
             && self.members_closed.is_none()
         {
@@ -296,13 +301,14 @@ fn is_local(inventory: *const Inventory) -> bool {
     local != 0 && unsafe { inventory.as_ref() }.is_some_and(|i| i.m_Character as usize == local)
 }
 
-/// Whether the table places the gives now: it runs, no reset is under way, and no mission holds the
-/// player's weapons (whose give-back the table restores from its cache).
+/// Whether the table places the gives now: it runs, no reset is under way, and no mission holds
+/// the player's weapons (whose give-back the table restores from its cache).
 fn table_places() -> bool {
     live::running() && !live::resetting() && !live::mission_holds()
 }
 
-/// A strong `boost::shared_ptr<CWeaponBase>` given up from `strong`, for a callee that releases it.
+/// A strong `boost::shared_ptr<CWeaponBase>` given up from `strong`, for a callee that releases
+/// it.
 fn shared_weapon(strong: Strong) -> SharedPtr<WeaponBase> {
     let shared = strong.into_raw();
     SharedPtr {
@@ -375,7 +381,8 @@ unsafe fn hand_over(game: &GameTick<'_>, owner: &mut Character, arrival: Arrival
     );
 }
 
-/// Initialize a source member through the game's arrival without adopting it into the loadout.
+/// Initialize a rack member's actor through the game's arrival, without its equip, then take it out
+/// of the slot and hand it to the rack rather than to the loadout table.
 unsafe fn stage_member(
     game: &GameTick<'_>,
     owner: &mut Character,
@@ -397,7 +404,7 @@ unsafe fn stage_member(
         tracing::warn!(target: "controllers", "rack: cannot preserve the slot occupant while staging a source member");
         return;
     }
-    // Keep a second reference while WeaponSpawned consumes its by-value shared pointer.
+    // A second reference, since the arrival consumes the shared pointer it is handed by value.
     let Some(retained) = (unsafe { engine::strong_to(&*engine::weapon_of(&weapon)) }) else {
         unsafe { reconcile::apply(owner) };
         return;

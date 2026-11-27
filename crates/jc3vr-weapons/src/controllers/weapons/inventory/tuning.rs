@@ -92,7 +92,7 @@ impl DockedViewTuning {
     }
 }
 
-/// How long the restore of the carried weapons and the game's gives wait for the engine
+/// How long the restore of the carried weapons and the debug UI's gives wait for the engine
 /// (`weapons::inventory::restore`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]

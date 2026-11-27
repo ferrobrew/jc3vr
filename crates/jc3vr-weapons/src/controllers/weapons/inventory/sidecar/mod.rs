@@ -1,8 +1,11 @@
-//! One retained sidecar writer serializes atomic replacements outside game and UI locks.
+//! The save sidecar's writer: one thread, started by the first store and kept until shutdown, that
+//! replaces the file atomically outside the game's and the UI's locks.
 //!
-//! The queue holds one in-flight snapshot and only the newest pending sequence. Shutdown closes
-//! admission and drains both before a confirmed join permits unload. A timeout retains the owner;
-//! the caller must pin the module. The worker reports each attempt only after releasing its queue lock.
+//! The queue keeps only the newest pending snapshot, by its sequence, beside the one the worker is
+//! writing. Shutdown ([`shutdown`]) closes admission, lets the worker write both, and joins it
+//! before the payload may unload; when the worker has not exited within the budget, the caller
+//! keeps the payload mapped. The worker reports each attempt only after it releases the queue's
+//! lock.
 
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},

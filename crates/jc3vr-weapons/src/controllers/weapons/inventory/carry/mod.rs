@@ -12,7 +12,7 @@
 //!   has it ([`crate::controllers::loadout::live::place_of`]): on a socket, through the weapon's
 //!   placement virtual ([`WeaponBase::UpdateAttachmentTransforms`]) with its guns' holstered
 //!   attach-bone entries naming the socket's bone, and then moved by the socket's offset in the
-//!   character's frame; in a hand, on the hand's bone that the second weapon writes ([`place`]); a
+//!   character's frame; in a hand, on the hand's bone that its arming writes ([`place`]); a
 //!   single pistol on the left hip takes its second gun's attach offset for the placement
 //!   ([`borrows_second_offset`]), as the pair's left pistol does;
 //! - it shows or hides the carried weapons the table has on the body whenever the inventory's
@@ -161,9 +161,9 @@ pub(crate) fn release(object: ObjectKey) -> Option<Strong> {
     take(object).map(|c| c.strong)
 }
 
-/// Keep `weapon`, a table weapon on the body the reconcile takes out of its slot, alive in the set,
-/// on `socket` (where it sits, or for a hand's weapon where it last sat). Returns whether it is
-/// kept.
+/// Keep `weapon`, a table weapon on the body the reconcile takes out of its slot, alive in the
+/// set, on `socket` (where it sits, or for a hand's weapon where it last sat). Returns whether it
+/// is kept.
 ///
 /// # Safety
 ///
@@ -184,8 +184,9 @@ pub(crate) unsafe fn keep(weapon: &WeaponBase, socket: Socket) -> bool {
     true
 }
 
-/// Hide the carried weapons and take their grab volumes away while a mission holds the player's
-/// weapons, or show them again with `false`. Returns whether that changed anything.
+/// Hide the carried weapons and take their grab volumes away while a mission or a challenge holds
+/// the player's weapons or the table is stopped, or show them again with `false`. Returns whether
+/// that changed anything.
 ///
 /// # Safety
 ///
@@ -204,7 +205,7 @@ pub(crate) unsafe fn set_stashed(stashed: bool) -> bool {
     true
 }
 
-/// Whether the carried weapons are stashed for a mission.
+/// Whether the carried weapons are stashed ([`set_stashed`]).
 pub(crate) fn stashed() -> bool {
     STASHED.load(Ordering::Relaxed)
 }
@@ -214,15 +215,15 @@ pub(crate) fn count() -> usize {
     COUNT.load(Ordering::Relaxed)
 }
 
-/// Set each socket's offset from its bone, in the character's frame, from the settings.
+/// Set each socket's offset from its bone, in the character's frame, from the tuning.
 pub(crate) fn set_offsets(offset_of: impl Fn(Socket) -> Vec3) {
     *OFFSETS.lock() = Socket::ALL.map(&offset_of);
 }
 
 /// Take the weapon `strong` keeps alive, which no inventory holds, into the carry set on `socket`:
 /// the weapon's pickup ([`WeaponBase::OnPickup`]) makes the player its holder and holsters it (a
-/// heavy weapon, which the pickup leaves dropped, is holstered here), and
-/// the HUD's weapon list, which the pickup shows the weapon in, is rebuilt from the slots.
+/// heavy weapon, which the pickup leaves dropped, is holstered here), and the HUD's weapon list,
+/// which the pickup shows the weapon in, is rebuilt from the slots.
 ///
 /// # Safety
 ///
@@ -276,8 +277,9 @@ pub(crate) unsafe fn carry_loose(
     Ok(object)
 }
 
-/// The carried weapons as the save sidecar records them: each one's type, magazine, and socket, the
-/// one the loadout table has it on, or for a weapon in a hand the one it came into the set on.
+/// The carried weapons as the save sidecar records them: each one's type, magazine, and socket (the
+/// one the loadout table has it on, or for a weapon in a hand the one it came into the set on), and
+/// whether it is a single pistol.
 pub(crate) fn records() -> Vec<Record> {
     CARRY
         .lock()
@@ -312,7 +314,7 @@ pub(crate) fn release_all() -> usize {
 
 /// Let every carried weapon fall where it is and release it: its drop ([`WeaponBase::OnDrop`])
 /// clears its holder, puts its bodies in the world, and gives it back its pickup, so it is a
-/// weapon lying in the world again. Called when carrying is switched off.
+/// weapon lying in the world again. Called when the table stops.
 ///
 /// # Safety
 ///
@@ -509,7 +511,7 @@ static CARRY: Mutex<Vec<Carried>> = Mutex::new(Vec::new());
 static OFFSETS: Mutex<[Vec3; Socket::COUNT]> = Mutex::new([Vec3::ZERO; Socket::COUNT]);
 /// How many weapons are carried: the detours' check before any lock.
 static COUNT: AtomicUsize = AtomicUsize::new(0);
-/// Whether the carried weapons are stashed for a mission.
+/// Whether the carried weapons are stashed ([`set_stashed`]).
 static STASHED: AtomicBool = AtomicBool::new(false);
 
 fn push(carried: Carried) {
@@ -575,10 +577,10 @@ unsafe fn write_bone(weapon: &mut WeaponBase, socket: Socket) {
 }
 
 /// Whether `weapon` on `socket` is placed with its second gun's attach offset
-/// ([`WeaponData::m_AttachOffset`]): a single pistol on the left hip. A single pistol shows its first
-/// gun alone ([`single`]), and that gun's offset is the one its pair places it with in the right
-/// holster, relative to that holster's bone; on the left holster's bone it does not put the gun
-/// where the pair's left pistol sits. The second gun's offset is the one the pair uses there.
+/// ([`WeaponData::m_AttachOffset`]): a single pistol on the left hip. A single pistol shows its
+/// first gun alone ([`single`]), and that gun's offset is the one its pair places it with in the
+/// right holster, relative to that holster's bone; on the left holster's bone it does not put the
+/// gun where the pair's left pistol sits. The second gun's offset is the one the pair uses there.
 ///
 /// # Safety
 ///

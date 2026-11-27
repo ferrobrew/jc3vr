@@ -2,13 +2,14 @@
 //! loads. The format is [`crate::controllers::weapons::inventory::persist`]; the engine side is in
 //! `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
 //!
-//! A reset (a load, and possibly a death or a fast travel) releases every spawned object and
-//! replaces the slots' weapons by type. The carried weapons are the mod's to replace:
+//! A reset (a load, a respawn, or a travel) releases every spawned object and replaces the slots'
+//! weapons by type. The carried weapons are the mod's to replace:
 //!
 //! - at the reset's pre-reset event, the carried weapons are recorded (type, magazine, socket)
 //!   before the carry set lets them go ([`on_pre_reset`]);
 //! - each store of the player's save data writes the save sidecar, the carried weapons with the
-//!   fingerprint of what the store writes ([`on_store`]), through one coalescing owned writer;
+//!   fingerprint of what the store writes ([`on_store`]), through the one writer thread that
+//!   coalesces the writes ([`crate::controllers::weapons::inventory::sidecar`]);
 //! - each load of the player's save data reads the sidecar and keeps its weapons when its
 //!   fingerprint matches what the load put into the inventory, and nothing extra otherwise
 //!   ([`on_load`]);
@@ -17,9 +18,11 @@
 //!   the reset and from the reset's own record otherwise, and adopts each into the carry set on its
 //!   socket with its magazine as it was when its spawn comes back ([`input_tick`]).
 //!
-//! The store, load, and reset run on their native callers. The spawn callback runs inline on the
-//! caller of `SpawnSystem::PreUpdate`, including reset-time service. The callback hands retained
-//! results to the input tick; the module and carry locks are taken separately.
+//! The store, the load, and the reset's events run on the threads the game calls them on. The spawn
+//! callback ([`spawned`]) runs inline on the caller of `SpawnSystem::PreUpdate`, the reset's own
+//! service of the spawn system included, and only queues a strong reference to each weapon for the
+//! input tick. The restore's lock and the carry set's are taken separately, never one inside the
+//! other.
 
 pub(crate) mod adoption;
 pub mod give;
@@ -745,6 +748,8 @@ pub(super) enum SpawnToken {
 impl SpawnToken {
     /// The bits of the user data that hold the generation.
     const GENERATION_MASK: u64 = (1 << Self::SOCKET_SHIFT) - 1;
+    /// Where the bits above the generation start, which every token leaves clear, so that user data
+    /// with any of them set is no request of the restore's or the give's.
     const SOCKET_SHIFT: u32 = 56;
     /// The bit that marks a second pistol's request.
     const TWIN: u64 = 1 << 62;

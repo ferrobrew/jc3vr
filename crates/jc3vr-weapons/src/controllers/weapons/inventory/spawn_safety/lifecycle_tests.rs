@@ -1,5 +1,5 @@
-//! Inventory spawn safety as a shutdown participant, alongside the others, in a lifecycle of its
-//! own.
+//! The inventory spawns' safety as a shutdown participant, alongside the others, in a lifecycle of
+//! its own.
 
 use std::sync::Arc;
 

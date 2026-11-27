@@ -3,14 +3,14 @@
 //! and the pins' strong references.
 //!
 //! The table says where each of the player's weapons is; this says what the game did with the ones
-//! the old handling no longer keeps in a slot, the carry set, or a hand. Each input tick, for each
-//! such weapon of the table's, the weak reference ([`WeaponBase::m_WeakThis`]) gives its fate: gone,
-//! held by another character (its holder), or lying in the world at a distance from the player,
-//! which the pins plan from ([`crate::controllers::weapons::inventory::pins`]).
+//! that no slot, the carry set, or a hand keeps. Each input tick, for each such weapon of the
+//! table's, the weak reference ([`WeaponBase::m_WeakThis`]) gives its fate: gone, held by another
+//! character (its holder), or lying in the world at a distance from the player, which the pins plan
+//! from ([`crate::controllers::weapons::inventory::pins`]).
 //!
 //! A weapon another character takes leaves the table, since the game's word on ownership is final,
-//! but it is still watched while that character holds it near the player, so the readouts can count
-//! it and a single pistol stays one pistol in their hands
+//! but it is still watched while that character holds it near the player, so the readouts can
+//! count it and a single pistol stays one pistol in their hands
 //! ([`crate::controllers::weapons::dual_wield::single`]).
 //!
 //! Everything here runs in the game stage, on the game thread before the world update.
@@ -176,8 +176,8 @@ impl World {
             .count()
     }
 
-    /// Where each of `lying` lies and its icon, for the HUD's markers
-    /// (`hud::lost_weapons`), while it lives and its place can be read.
+    /// Where each of `lying` lies and its icon, for the HUD's lost-weapon markers
+    /// (`jc3vr_hud::hud::lost_weapons`), while it lives and its place can be read.
     pub(super) fn markers(&self, lying: &[ObjectAddress]) -> Vec<LostWeapon> {
         lying
             .iter()

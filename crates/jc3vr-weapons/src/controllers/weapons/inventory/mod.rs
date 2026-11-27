@@ -3,10 +3,11 @@
 //! `docs/mod/input/two-handed-inventory.md`, the engine side in
 //! `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
 //!
-//! - [`world`]: the game's side of the loadout table's weapons, what became of each the old
-//!   handling no longer keeps, and the pins' references;
+//! - [`world`]: the game's side of the loadout table's weapons, what became of each that no slot,
+//!   the carry set, or a hand keeps, and the pins' references;
 //! - [`pins`]: which weapons lying in the world are kept from the game's despawn;
 //! - [`sockets`]: the places on the body a weapon beyond the slots docks;
+//! - [`slots`]: the inventory's weapon slots, read in one place;
 //! - [`carry`]: the table's weapons on the body that no slot holds, kept alive, placed, and shown;
 //! - [`reconcile`]: the game's slots, its wielded weapon, and the weapons armed in the hands, made
 //!   to follow the table each tick;
@@ -19,6 +20,10 @@
 //! - [`ammo`]: the ammunition auto-pickup, for every weapon the table has on the body;
 //! - [`engine`]: the engine reads behind them;
 //! - [`game_view`]: the game's own inventory, captured for the readouts;
+//! - [`docked_view`]: the docked guns' in-world diagnostic;
+//! - [`sidecar`]: the writer of the carried weapons' sidecar file, off the game thread;
+//! - [`spawn_safety`]: the unload containment for the restore's and the second pistol's spawn
+//!   callbacks;
 //! - [`reset`]: the spawn system's reset, which replaces or removes every weapon;
 //! - [`tuning`]: the tuning, with the loadout table's and the weapon wheel's.
 //!
@@ -429,7 +434,7 @@ pub(crate) fn stand_down(game: &GameTick<'_>) {
         return;
     };
     let owner = local_player.character_mut();
-    // SAFETY: as this function's own contract.
+    // SAFETY: the live local player, in the game stage on the game thread before the world update.
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     unsafe { stop(owner, "the controllers are not in use") };
 }
@@ -593,7 +598,9 @@ fn live_slot(object: ObjectKey) -> Option<SlotObject> {
 /// The spawn system is resetting: release every weapon the inventory keeps and forget them all,
 /// since the reset removes the weapons in the world and replaces the slots' weapons.
 ///
-/// Each part of the weapon handling resets its own state, in this order:
+/// Each part of the weapon handling resets its own state, in this order, which matters where a step
+/// reads what a later one releases or forgets (the safe grenades and the gives depend on no other
+/// step):
 ///
 /// 1. the reload's records and ammunition, while the weapons they name are still alive;
 /// 2. the safe grenades, whose actors retire;

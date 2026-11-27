@@ -1,7 +1,7 @@
 //! The docked guns' in-world diagnostic: each gun the loadout table has on a socket of the body,
-//! marked where its last placement put it, with a short line along its barrel, green while the gun's
-//! model is shown and red while it is hidden. It tells apart a docked gun the game hides from one
-//! placed off the body or turned into it (`docs/mod/input/two-handed-inventory.md`, "The docked
+//! marked where its last placement put it, with a short line along its barrel, green while the
+//! gun's model is shown and red while it is hidden. It tells apart a docked gun the game hides from
+//! one placed off the body or turned into it (`docs/mod/input/two-handed-inventory.md`, "The docked
 //! guns' view").
 
 use std::time::Duration;

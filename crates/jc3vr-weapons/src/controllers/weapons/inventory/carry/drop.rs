@@ -1,4 +1,6 @@
-//! Carry-off ordering keeps the retained actor alive through every owner transition.
+//! The order in which a carried weapon is let go of: disarmed in each hand that has it armed, then
+//! dropped in the loadout table, then dropped by the game, all while the carry set's strong
+//! reference keeps it alive.
 
 use jc3vr_input::frame::Hand;
 

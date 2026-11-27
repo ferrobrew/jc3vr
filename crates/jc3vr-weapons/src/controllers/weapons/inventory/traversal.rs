@@ -65,8 +65,8 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&FORCE_NEUTRAL_STATE_BINDER)
 }
 
-/// Publish whether the tasks are refused: the setting is on and the table runs. Called each input
-/// tick.
+/// Publish whether the tasks are refused, which they are while the table runs. Set on each input
+/// tick the table runs, and cleared when it stops.
 pub(crate) fn publish(keep: bool) {
     KEEP.store(keep, Ordering::Relaxed);
 }

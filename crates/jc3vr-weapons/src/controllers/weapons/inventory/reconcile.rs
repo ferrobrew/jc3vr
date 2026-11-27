@@ -5,14 +5,14 @@
 //!
 //! The table says where every weapon is; the reconcile makes the game agree, in three passes:
 //!
-//! - the slots ([`input_tick`]): each slot the inventory tracks holds the weapon the table's play
-//!   projection puts there. A weapon that leaves its slot stays alive in the carry set, which keeps
-//!   a strong reference to every table weapon off the slots
-//!   ([`crate::controllers::weapons::inventory::carry`]), and goes out through
-//!   [`Inventory::RemoveWeapon`], which takes it out without dropping it; one that comes in goes in
-//!   through [`Inventory::AddWeapon`] without being equipped. A weapon in a slot that the table does
-//!   not know is left where it is, since the game's word on ownership is final. The heavy slot
-//!   stays the game's;
+//! - the slots: each slot the inventory tracks holds the weapon the table's projection puts there.
+//!   A weapon that leaves its slot stays alive in the carry set, which keeps a strong reference to
+//!   every table weapon off the slots ([`crate::controllers::weapons::inventory::carry`]), and goes
+//!   out through [`Inventory::RemoveWeapon`], which takes it out without dropping it; one that
+//!   comes in goes in through [`Inventory::AddWeapon`] without being equipped. A weapon in a slot
+//!   that the table does not know is left where it is, since the game's word on ownership is final.
+//!   The projection keeps the heavy slot empty, but a heavy weapon the game wields from it stays,
+//!   since its unequip would drop it;
 //! - the primary: the primary hand's weapon is wielded. Moving the primary unequips the old weapon
 //!   and equips the new one ([`WeaponBase::OnUnequip`], then [`WeaponBase::OnEquip`]), with no act,
 //!   which is what the draw clip's own equip message does. A draw, holster, or switch clip still
@@ -110,7 +110,7 @@ pub(crate) unsafe fn vacate(owner: &mut Character, slot: WeaponSlot) -> bool {
 
 /// Put the table back into the game's slots, as a store would write them: the table is about to
 /// stop, so the game's own one-weapon model takes over with the best of what the player has in its
-/// slots. The heavy slot stays the game's.
+/// slots.
 ///
 /// # Safety
 ///
@@ -129,10 +129,9 @@ pub(crate) unsafe fn project_back(owner: &mut Character) {
     tracing::info!(target: "controllers", "reconcile: put the table back into the game's slots");
 }
 
-/// Before the game stores its save or a mission caches the slots, give the tracked slots what the
-/// store projection `store` puts there. In play the projection already keeps them so, since the two
-/// differ only in the heavy slot, which stays the game's; this catches a move the hands made since
-/// the last pass.
+/// Before the game stores its save, or a mission or a challenge caches the slots, give the tracked
+/// slots what the store projection `store` puts there. In play the slots already follow the same
+/// projection; this catches a move the hands made since the last pass.
 ///
 /// # Safety
 ///
@@ -157,7 +156,6 @@ unsafe fn slots(
     projection: &Projection,
 ) -> bool {
     let mut changed = false;
-    // The consumables' slots stay the game's, and the heavy slot while heavy weapons do.
     for slot in inventory_engine::tracked_slots() {
         let Some(fill) = projection.slots.iter().find(|f| f.slot == slot) else {
             continue;

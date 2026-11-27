@@ -1,12 +1,13 @@
-//! Unload containment for the inventory's restore and second-pistol spawn callbacks.
+//! The unload's containment of the inventory's spawn callbacks: the restore's, the second
+//! pistols', and the debug UI's gives'.
 //!
-//! Native request retirement is not established here: the engine can keep a restore or second-pistol
-//! callback queued after the request appears to finish, and a callback that fires after the image
-//! unmaps crashes the game. Exposure therefore remains latched for the process lifetime, even after a
-//! callback returns, a timeout, or a world reset. It does not veto the unload, because an unload that
-//! can never run cannot show whether the risk is real; preparation and the post-unpatch check log the
-//! exposure as a warning instead. They defer only while a submission or callback is executing right
-//! now. Preparation excludes new submissions and performs no native work.
+//! Nothing shows when the engine retires a spawn request: it can keep a callback queued after the
+//! request appears to finish, and a callback that fires after the image unmaps crashes the game.
+//! So the exposure stays latched for the process's lifetime, even after a callback returns, a
+//! timeout, or a world reset. It does not veto the unload, because an unload that can never run
+//! cannot show whether the risk is real; the preparation and the post-unpatch check log the
+//! exposure as a warning instead. They defer only while a submission or a callback is running. The
+//! preparation closes admission to new submissions and does no native work.
 
 use std::{
     fmt,
@@ -26,11 +27,11 @@ use parking_lot::Mutex;
 pub(crate) enum RequestKind {
     Restore,
     Twin,
-    /// The debug UI's give of a weapon onto a socket.
+    /// The debug UI's give of a weapon onto a socket or into a hand.
     Give,
 }
 
-/// Refusal occurs before the native submission closure runs.
+/// A submission refused because admission is closed, before its native call runs.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct AdmissionClosed;
 
@@ -42,9 +43,10 @@ impl fmt::Display for AdmissionClosed {
 
 impl std::error::Error for AdmissionClosed {}
 
-/// A failed final check requires the existing module-pin path after hook removal.
+/// The post-unpatch check's failure, on which the payload keeps its image mapped after the hooks are
+/// removed.
 ///
-/// It fails only while payload code is executing for a submission or callback, or when admission
+/// It fails only while payload code is running for a submission or a callback, or when admission
 /// never committed. A latched exposure alone passes with a warning.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct UnloadBlocked {
@@ -78,7 +80,8 @@ pub fn participant() -> Arc<dyn ShutdownParticipant> {
     SAFETY.clone()
 }
 
-/// Open only after shutdown participation and the inventory hooks are installed.
+/// Open admission. Called once the shutdown participant is registered and the inventory's hooks are
+/// enabled.
 pub fn activate() {
     SAFETY.activate();
 }

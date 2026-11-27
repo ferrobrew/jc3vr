@@ -96,7 +96,7 @@ pub(crate) struct LostTick<'a> {
     pub lying: Vec<(Lying, Option<Strong>)>,
 }
 
-/// Measure the player's speed, let fall the weapons brought to the feet last tick, and return
+/// Measure the player's speed, let fall the weapons brought to the feet last tick, and bring back
 /// every weapon lost since.
 ///
 /// # Safety

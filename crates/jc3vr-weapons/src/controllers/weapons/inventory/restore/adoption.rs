@@ -1,4 +1,7 @@
-//! Restored callback adoption uses one table admission for the physical and table destination.
+//! The adoption of a weapon the spawn system handed over for the restore or a give: it comes into
+//! the carry set and onto its place in the table through one admission of the table's restore
+//! ([`transfer`]), so that the socket it is carried on and the socket the table has it on are the
+//! same, and a commit the table refuses lets it go again.
 
 use jc3gi::{character::character::Character, equipment::weapon::WeaponBase};
 use jc3vr_body::controllers::physics::refs::Strong;
@@ -108,7 +111,9 @@ pub(super) fn carry_onto(
     (outcome, carried)
 }
 
-/// Adopt current-generation results only after the live table has completed its restoration.
+/// Carry each respawned weapon the spawn callback handed over in the current generation onto its
+/// record's socket, restoring its magazine, and count the spawns that never came. Runs only on an
+/// input tick the table is ready, so it lands in the table the reset left.
 pub(super) unsafe fn adopt(owner: &mut Character) {
     let generation = PLAN.lock().generation;
     let spawned = SPAWNED.take();

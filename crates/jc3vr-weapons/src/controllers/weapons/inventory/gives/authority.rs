@@ -1,4 +1,7 @@
-//! Give records and retained arrivals share one inventory/world identity.
+//! The identity a give's record and its queued arrival carry: the local player's inventory and the
+//! world it was made in, counted by the resets, so that a record or an arrival of another
+//! inventory or an earlier world is never handed over. The count stops rather than wrap, and once
+//! exhausted admits nothing.
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct Identity {
