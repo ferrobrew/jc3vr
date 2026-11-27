@@ -1,45 +1,11 @@
 # Session output
 
-Every file the mod writes during a run lands in one folder, `<sessions root>/<session stamp>/`. The session stamp is the injection time. Every stamp, the session's and each capture's, is the local wall clock as `YYYY-MM-DD_HH-MM-SS_mmm`; the milliseconds keep an uninject and reinject within one second apart.
+Every file the mod writes during a run lands in `<sessions root>/<session stamp>/`, stamped with the injection time. Every stamp is the local wall clock as `YYYY-MM-DD_HH-MM-SS_mmm`; the milliseconds keep an uninject and reinject within one second apart.
 
 ## The sessions root
 
-The payload reads `JC3VR_SESSIONS_DIR` from the game process's environment at injection (`crates/jc3vr-core/src/session/root.rs`):
-
-- A value starting with `/` is a host (Unix) path. Under wine or Proton the payload converts it to the Windows path it opens with wine's `wine_get_dos_file_name`, resolved from `kernel32` at run time; on native Windows, where that export does not exist, the value is refused.
-- Any other value is a Windows path, taken as it is.
-- Unset, blank, or refused, the root is `sessions/` in the local data directory that `directories::ProjectDirs` names for jc3vr: `%LOCALAPPDATA%\philpax\jc3vr\data\sessions` on Windows, and the same inside the game's prefix under Proton. The settings live beside it ([settings.md](settings.md)).
-
-`scripts/vr_launch.sh` sets the variable, unless it is already set, to `sessions/` in the workspace (the repository root, found from the script's own location; ignored by git), creates the folder, and names it in `JC3BOOT_FORWARD_ENV` so jc3boot passes it into the container. The pressure-vessel container shares `$HOME`, so the path is the same on both sides. The variable has to be in the game's environment: setting it for `scripts/proton_run.sh` or `scripts/run.ps1`, which inject into a running game, has no effect. On native Windows the root is the local data directory unless the game was started with the variable set.
-
-When the root is not a Unix path already, the payload asks wine for its Unix form with `wine_get_unix_file_name`; on native Windows there is none. The startup log names the session folder in both forms and where the root came from, with a warning when a set variable was refused, and the debug UI's Status page shows the same below the rows. Both forms go to the capture host with each take: the relay writes the video into the Unix form, and the injector, which runs in the game's Windows environment, into the Windows form ([capture.md](capture.md)).
+The payload reads `JC3VR_SESSIONS_DIR` from the game's environment at injection (`crates/jc3vr-core/src/session/root.rs`). A value starting with `/` is a host path, converted under Wine with `wine_get_dos_file_name` and refused on native Windows; any other value is a Windows path. Unset or refused, the root is `sessions/` in jc3vr's local data directory, beside the settings ([settings.md](settings.md)). `scripts/vr_launch.sh` sets it to the workspace's `sessions/` and forwards it into the container; setting it for a script that injects into a running game has no effect. The startup log and the debug UI's Status page name the folder in both Windows and Unix forms, and both go to the capture host, since the relay and the injector write from different sides ([capture.md](capture.md)).
 
 ## Layout
 
-What lands where is fixed per kind of output, in `crates/jc3vr-core/src/session/mod.rs`. Folder names are plural, and file names do not repeat the kind their folder names. A folder is created only when its first file is written, so a session holds only the folders its run used.
-
-| Path in the session | What writes it | Read by |
-| --- | --- | --- |
-| `session.log` | the tracing log | |
-| `crash.log` | the crash handler, appended through a raw handle so a record survives a broken logging path | |
-| `markers.jsonl` | take markers made while no video recording runs, one JSON object per line ([capture.md](capture.md)) | |
-| `profiles/<stamp>.json` | an F9 profiler capture ([performance.md](performance/performance.md#the-profiler)) | `tools/analysis/analyze_profile.py`, ui.perfetto.dev |
-| `screenshots/<stamp>.png` and `<stamp>.json` | an F12 screenshot and its single-pass sidecar | |
-| `grapple-logs/<stamp>.csv` | a grapple telemetry capture ([grapple-comfort.md](body/grapple-comfort.md)) | |
-| `recordings/<stamp>/` | a recording, holding whichever halves it has (below) | |
-| `traces/<stamp>/` | a render trace: `trace.ndjson` ([render-trace.md](rendering/render-trace.md)) | |
-
-A recording's folder holds:
-
-| File | What writes it | Read by |
-| --- | --- | --- |
-| `tracking.jc3trk` | a tracking recording ([testing/recorder.md](testing/recorder.md)) | `tracking-synth` (`dump`, `rig-eval`, `export-rerun`, and the rest) |
-| `lookback.jc3trk` | a save of the tracking lookback, in a folder of its own | `tracking-synth` |
-| `frames.jsonl` | a video recording's per-frame sidecar, with its mirror layouts and take markers ([capture.md](capture.md)) | `tools/capture/reframe.py` |
-| `frame_map.jsonl` | a streamed take's record of each video frame's source frame ([capture.md](capture.md)) | |
-| `video.mkv`, `stream.json`, and for a mirror take `video.mkv.ts` | the capture host's video, its metadata, and gpu-screen-recorder's first-frame time, written there by the host rather than the game ([capture.md](capture.md#files-and-alignment)) | `tools/capture/reframe.py`, `scripts/rerun_take.sh`, an editor |
-| `take.rrd`, `rerun.log`, and `view-scan.md` | the relay's export of the take after it ends ([testing/rerun.md](testing/rerun.md)) | Rerun |
-
-A standalone tracking recording is a folder with only `tracking.jc3trk`, and an F1 session recording has both halves, while one whose capture host never answered keeps its tracking half.
-
-A kind that writes one file per capture names it `<stamp>[_<qualifier>].<ext>`; a kind that writes several gets a `<stamp>/` folder whose files are named by their role. Images are written by one writer, `crates/jc3vr-render/src/image_writer.rs`, on its own thread, and follow one rule wherever they land: `<stem>.png` for an image of the whole frame (both eyes side by side in stereo) and `<stem>_eye<N>.png` for one eye, with any sidecar beside it as `<stem>.json`.
+The layout is fixed in `crates/jc3vr-core/src/session/mod.rs`, and a folder is created only when its first file is written. The session holds `session.log`, `crash.log`, `markers.jsonl`, and folders for profiler captures, screenshots, grapple logs, render traces, and `recordings/<stamp>/`. A recording's folder holds whichever of `tracking.jc3trk` ([testing/recorder.md](testing/recorder.md)), the video take's files ([capture.md](capture.md#files-and-alignment)), and the Rerun export and view scan ([testing/rerun.md](testing/rerun.md)) it has; a lookback save gets a folder of its own. A kind that writes one file per capture names it `<stamp>[_<qualifier>].<ext>`, and one that writes several gets a `<stamp>/` folder. Images go through one writer (`crates/jc3vr-render/src/image_writer.rs`): `<stem>.png` for the whole frame and `<stem>_eye<N>.png` for one eye.
