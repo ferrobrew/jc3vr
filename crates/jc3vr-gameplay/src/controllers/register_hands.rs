@@ -1,8 +1,7 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
-//! order, the observers of each world weapon at its render update in theirs, the hand bodies'
-//! post-step sample taken before each rendered frame's composition, and the grapple's pump of the
-//! hang swing the anchor drives. The weapon handling fills its held-item source and its held guns'
-//! targets in its own `register_body` (`register_below`).
+//! order, the observers of each world weapon at its render update in theirs, and the grapple's pump
+//! of the hang swing the anchor drives. The weapon handling fills its held-item source and its held
+//! guns' targets in its own `register_body` (`register_below`).
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's
 //! registration check ([`jc3vr_body::contributions::register`]). The tables here declare the
@@ -21,7 +20,7 @@ use jc3vr_body::{
     },
 };
 use jc3vr_grapple::grapple::physical::swing;
-use jc3vr_physical::controllers::{physical_hands, physical_hands::physics};
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::weapons::{ads, collide, grenade, hold::rack, recoil};
 
@@ -29,7 +28,6 @@ pub(super) fn register(body: &mut BodyContributions) {
     body.target_stages = &TARGET_STAGES;
     body.hand_stages = &HAND_STAGES;
     body.weapon_observers = &WEAPON_OBSERVERS;
-    body.post_step_sample = Some(post_step_sample);
     body.hang_pump = Some(swing::HANG_PUMP);
 }
 
@@ -91,10 +89,4 @@ fn hand_bodies(c: &mut HandComposition) {
 
 fn grapple_anchor(c: &mut HandComposition) {
     anchor::apply(&mut c.hands, c.head, c.world_scale);
-}
-
-fn post_step_sample() {
-    // SAFETY: the late update's frame begins on the game thread from `Game::UpdateRender`, after
-    // the simulation and outside its step.
-    unsafe { physics::sample_render_offsets() };
 }
