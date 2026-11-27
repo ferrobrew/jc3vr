@@ -225,7 +225,7 @@ pub(crate) enum WatchedAct {
     Holster,
 }
 
-/// What the `QueueAct` detour does with a watched act for the local player.
+/// What the mental-state cuts do with a watched act for the local player.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum ActVerdict {
     Pass,

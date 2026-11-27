@@ -15,6 +15,8 @@
 //! - [`gamepad_setting`]: the game's active-input-device setting held at the gamepad under the
 //!   controller scheme;
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;
+//! - [`acts`]: the act arbiter, the one place that drops, replaces, and queues the local player's
+//!   character acts;
 //! - [`hands`]: controller-owned hands: the wrist IK, the hand tiers, and the render-time late
 //!   update;
 //! - [`presentation`]: the render-rate presentation layer: the upper body re-posed every rendered
