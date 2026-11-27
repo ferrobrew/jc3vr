@@ -86,9 +86,8 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [single-pass-stereo.md](mod/stereo/single-pass-stereo.md): both eyes in one geometry walk: the technique, the shader rewrites, the payload integration, the switches, and the known gaps.
 - [single-pass-collapse-defects.md](mod/stereo/single-pass-collapse-defects.md): what goes wrong when a pass runs once over the double-wide target, and the correction for each.
 - [single-pass-per-eye-inputs.md](mod/stereo/single-pass-per-eye-inputs.md): giving a draw that covers both eyes each eye's camera, lights, screen position, and motion, and the asymmetric and canted eyes.
-- [single-pass-draw-calls.md](mod/stereo/single-pass-draw-calls.md): the draw census, the accounting against multipass, and the draws converted to one submission.
-- [single-pass-validation.md](mod/stereo/single-pass-validation.md): comparing single-pass with the isolated eyes and multipass: the variants, the staged scenes, the rigs, and the expected residuals.
-- [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md): what single-pass stereo needs from each render block.
+- [single-pass-validation.md](mod/stereo/single-pass-validation.md): comparing single-pass with the isolated eyes and multipass: the variants, the staged scenes, the rigs, the draw census, and the expected residuals.
+- [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md): the render blocks that need their own intercept, the draws converted to one submission, and what is still drawn twice.
 - [foveation.md](mod/stereo/foveation.md): static foveated rendering.
 - [swapchain-ownership.md](mod/stereo/swapchain-ownership.md): the mod-owned back buffer in place of the engine's swapchain-derived setups.
 - [culling.md](mod/stereo/culling.md): widening the engine's culls to both eyes.
