@@ -5,10 +5,8 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
 };
 use jc3vr_body::controllers::{
-    hands::{
-        tiers,
-        tiers::{HandTier, TierState},
-    },
+    body_frame,
+    hands::tiers::{HandTier, TierState},
     mode::{AirborneVariant, Mode, OnFootVariant},
 };
 use jc3vr_input::frame::{self, Hand};
@@ -128,7 +126,7 @@ pub fn fire_ready_now(ready: [bool; 2], block_actions: bool) -> [bool; 2] {
     let animation = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
         .is_some_and(|owner| unsafe { permission::shooting_allowed(owner) });
     let owners = gun_owners_now();
-    let action = tiers::status();
+    let action = body_frame::tiers();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
         ready[i]

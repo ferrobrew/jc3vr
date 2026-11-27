@@ -413,9 +413,6 @@ pub struct TierFrame {
     pub anchor_weights: [f32; 2],
 }
 
-/// The tiers' readout, which is the section itself.
-pub type TierStatus = TierFrame;
-
 impl TierFrame {
     /// The section before the first readable tick.
     pub(crate) const INITIAL: TierFrame = TierFrame {
@@ -429,13 +426,8 @@ impl TierFrame {
 
 /// The last tick's classification, for the debug UI. Code acting on the tiers reads
 /// [`body_frame::tiers`].
-pub fn status() -> TierStatus {
+pub fn status() -> TierFrame {
     body_frame::tiers()
-}
-
-/// Each hand's controller weight, indexed by [`Hand::index`].
-pub fn weights() -> [f32; 2] {
-    body_frame::tiers().weights
 }
 
 /// Classify this input tick and advance the blends. Called from the game stage after the mode
@@ -446,12 +438,16 @@ pub fn tick(game: &GameTick<'_>, dt: f32) {
     };
     let dominant = scheme::acting_hand();
     let signals = read_signals(game);
-    // The weapon handling's last tick: one tick behind, which the anchor's blend absorbs.
+    // The wielded guns are the weapon handling's last tick's, one tick behind, which the anchor's
+    // blend absorbs. They come from their own read because, unlike the contents, it has none while
+    // the weapon handling is stood down and counts the planting mode's C4 as a gun.
     let gun_hands = held::wielded_gun_hands();
+    let contents = held::contents();
     // A hand holds something when it has a gun of the wielded weapon, a weapon armed in it, or any
     // item of the table's.
     let holding = Hand::BOTH.map(|hand| {
-        gun_hands[hand.index()] || held::armed_in(hand).is_some() || held::item(hand).is_some()
+        let held = contents[hand.index()];
+        gun_hands[hand.index()] || held.armed.is_some() || held.item.is_some()
     });
     // The game stage is the section's only writer, so the read and the publication cannot
     // interleave with another tick's.

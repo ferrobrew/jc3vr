@@ -100,7 +100,7 @@ fn ik_state(status: ik::HandIkStatus) -> IkState {
     }
 }
 
-fn tier_state(status: tiers::TierStatus) -> TierState {
+fn tier_state(status: tiers::TierFrame) -> TierState {
     TierState {
         state: status.state.map(|state| Label::Borrowed(state.label())),
         hands: Hand::BOTH.map(|hand| {

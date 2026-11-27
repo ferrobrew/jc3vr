@@ -13,19 +13,13 @@
 //! Reading before the source is registered is a programming error and panics; the controllers'
 //! install registers it before any hook is enabled.
 //!
-//! - [`armed_in`], [`armed_hand_of`]: the weapon armed in a hand, by the hand or by the weapon;
+//! - [`armed_hand_of`]: the hand a weapon is armed in;
 //! - [`armed_weapon`]: the weapon armed in a hand, as the native object a character holds;
 //! - [`owned_holder`]: the hand holding a weapon while the mod owns its attach bones;
 //! - [`holder`]: the hand a weapon is in by either of the two;
 //! - [`contents`]: what each hand holds, one record per hand ([`HeldContents`]);
-//! - [`item`]: the kind of item the loadout table has in a hand ([`HeldItem`]);
 //! - [`wielded_gun_hands`]: which hands hold a gun of the wielded weapon;
 //! - [`detonator_hand`]: the hand the C4 detonate act draws the detonator in;
-//! - [`last_wielded_hands`]: which hands hold a gun of the wielded weapon, kept through a
-//!   stand-down;
-//! - [`two_hand_holder`]: the holding hand of the engaged two-hand grip;
-//! - [`throwing_hand`], [`detonator_holder`], [`grenade_in`]: the hands holding a primed C4 charge,
-//!   the detonator, and a grenade;
 //! - [`long_gun_muzzle`]: the muzzle of the long gun in a hand, as the input tick measured it;
 //! - [`steal_offer`]: the character whose gun the last input tick offered a hand;
 //! - [`reload_views`]: the reload's zones on the held guns ([`zones`]);
@@ -98,8 +92,6 @@ pub struct HeldContents {
 /// the address of their native object, as the weapon handling names them.
 #[derive(Clone, Copy)]
 pub struct HeldSource {
-    /// The weapon armed in a hand.
-    pub armed_in: fn(Hand) -> Option<usize>,
     /// The hand a weapon is armed in.
     pub armed_hand_of: fn(usize) -> Option<Hand>,
     /// The weapon armed in a hand, when the character's inventory or the carry set holds it.
@@ -112,24 +104,11 @@ pub struct HeldSource {
     pub owned_holder: fn(usize) -> Option<Hand>,
     /// What each hand holds now, by [`Hand::index`].
     pub contents: fn() -> [HeldContents; 2],
-    /// The kind of item the loadout table has in a hand.
-    pub item: fn(Hand) -> Option<HeldItem>,
     /// Which hands hold a gun of the wielded weapon, as of the weapon handling's last tick, by
     /// [`Hand::index`]; neither while the weapon handling is inactive.
     pub wielded_gun_hands: fn() -> [bool; 2],
     /// The hand the C4 detonate act draws a weapon's detonator in, while the act plays.
     pub detonator_hand: fn(usize) -> Option<Hand>,
-    /// Which hands hold a gun of the wielded weapon as the weapon handling's last tick left them,
-    /// by [`Hand::index`], kept while the weapon handling is stood down.
-    pub last_wielded_hands: fn() -> [bool; 2],
-    /// The holding hand of the engaged two-hand grip; `None` while the weapon is held in one hand.
-    pub two_hand_holder: fn() -> Option<Hand>,
-    /// The hand holding a primed C4 charge to throw.
-    pub throwing_hand: fn() -> Option<Hand>,
-    /// The hand holding the C4 detonator.
-    pub detonator_holder: fn() -> Option<Hand>,
-    /// Whether a hand holds a grenade: a safe one, the beacon, or one it caught.
-    pub grenade_in: fn(Hand) -> bool,
     /// The muzzle of the long gun in a hand, in the holding wrist's frame, cockpit metres, as the
     /// input tick measured it.
     pub long_gun_muzzle: fn(Hand) -> Option<Vec3>,
@@ -188,12 +167,6 @@ pub fn is_registered() -> bool {
     SOURCE.get().is_some()
 }
 
-/// The weapon armed in `hand`.
-#[inline]
-pub fn armed_in(hand: Hand) -> Option<usize> {
-    (source().armed_in)(hand)
-}
-
 /// The hand the weapon at `address` is armed in.
 #[inline]
 pub fn armed_hand_of(address: usize) -> Option<Hand> {
@@ -231,12 +204,6 @@ pub fn contents() -> [HeldContents; 2] {
     (source().contents)()
 }
 
-/// The kind of item the loadout table has in `hand`.
-#[inline]
-pub fn item(hand: Hand) -> Option<HeldItem> {
-    (source().item)(hand)
-}
-
 /// Which hands hold a gun of the wielded weapon, as of the weapon handling's last tick, by
 /// [`Hand::index`].
 #[inline]
@@ -249,37 +216,6 @@ pub fn wielded_gun_hands() -> [bool; 2] {
 #[inline]
 pub fn detonator_hand(address: usize) -> Option<Hand> {
     (source().detonator_hand)(address)
-}
-
-/// Which hands hold a gun of the wielded weapon as the weapon handling's last tick left them, by
-/// [`Hand::index`], kept while the weapon handling is stood down.
-#[inline]
-pub fn last_wielded_hands() -> [bool; 2] {
-    (source().last_wielded_hands)()
-}
-
-/// The holding hand of the engaged two-hand grip; `None` while the weapon is held in one hand.
-#[inline]
-pub fn two_hand_holder() -> Option<Hand> {
-    (source().two_hand_holder)()
-}
-
-/// The hand holding a primed C4 charge to throw.
-#[inline]
-pub fn throwing_hand() -> Option<Hand> {
-    (source().throwing_hand)()
-}
-
-/// The hand holding the C4 detonator.
-#[inline]
-pub fn detonator_holder() -> Option<Hand> {
-    (source().detonator_holder)()
-}
-
-/// Whether `hand` holds a grenade: a safe one, the beacon, or one it caught.
-#[inline]
-pub fn grenade_in(hand: Hand) -> bool {
-    (source().grenade_in)(hand)
 }
 
 /// The muzzle of the long gun in `hand`, in the holding wrist's frame, cockpit metres, as the

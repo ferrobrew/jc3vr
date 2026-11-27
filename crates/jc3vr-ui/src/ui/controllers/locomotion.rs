@@ -3,7 +3,7 @@
 
 use egui::Ui;
 use jc3vr_body::controllers::locomotion::{
-    LocomotionStatus,
+    LocomotionFrame,
     anchor::{AnchorStatus, remeasure},
     strokes::StrokeStatus,
 };
@@ -14,7 +14,7 @@ use crate::{
     ui::{controllers::vec3, status_row::headlines},
 };
 
-pub(super) fn locomotion_readout(ui: &mut Ui, stick: &LocomotionStatus, anchor: &AnchorStatus) {
+pub(super) fn locomotion_readout(ui: &mut Ui, stick: &LocomotionFrame, anchor: &AnchorStatus) {
     headlines(
         ui,
         &[

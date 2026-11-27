@@ -12,7 +12,7 @@ use jc3vr_body::controllers::{
         anchor,
         anchor::AnchorStatus,
         tiers,
-        tiers::{TierState, TierStatus},
+        tiers::{TierFrame, TierState},
     },
     intent::yank::Yank,
 };
@@ -68,7 +68,7 @@ use crate::{
 pub(super) struct WeaponsReadout {
     status: WeaponsStatus,
     foregrip: ForegripStatus,
-    tiers: TierStatus,
+    tiers: TierFrame,
     recoil: RecoilStatus,
     hold: HoldStatus,
     regions: RegionsStatus,

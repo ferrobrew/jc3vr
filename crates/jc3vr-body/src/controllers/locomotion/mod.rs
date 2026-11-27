@@ -74,9 +74,6 @@ pub struct LocomotionFrame {
     pub velocity: Option<Vec2>,
 }
 
-/// The locomotion's readout, which is the section itself.
-pub type LocomotionStatus = LocomotionFrame;
-
 impl LocomotionFrame {
     /// Whether the movement task ran within the last few ticks before `now`: Rico is on foot on
     /// the ground.
@@ -102,7 +99,7 @@ impl LocomotionFrame {
 
 /// The last tick's status, for the debug UI. Code acting on the locomotion reads
 /// [`body_frame::locomotion`].
-pub fn status() -> LocomotionStatus {
+pub fn status() -> LocomotionFrame {
     body_frame::locomotion()
 }
 

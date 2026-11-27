@@ -10,7 +10,7 @@ use jc3vr_body::controllers::{
         ik::HandIkStatus,
         late::{HandLateStatus, LateStatus},
         parts, rig,
-        tiers::{TierState, TierStatus},
+        tiers::{TierFrame, TierState},
     },
 };
 use jc3vr_input::frame::Hand;
@@ -26,7 +26,7 @@ use crate::{
 pub(super) fn hands_readout(
     ui: &mut Ui,
     ik: &[HandIkStatus; 2],
-    tiers: &TierStatus,
+    tiers: &TierFrame,
     late: &LateStatus,
 ) {
     headlines(ui, &[&RENDER_RATE_BODY]);

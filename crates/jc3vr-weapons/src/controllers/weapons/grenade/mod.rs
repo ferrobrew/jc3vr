@@ -313,7 +313,7 @@ pub fn pin_in_hand(hand: Hand) -> bool {
 }
 
 /// Whether `hand` holds a grenade of any kind. Both hands can hold independent safe grenades.
-pub fn holds(hand: Hand) -> bool {
+fn holds(hand: Hand) -> bool {
     in_hand(hand).is_some()
 }
 

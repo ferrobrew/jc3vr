@@ -235,7 +235,7 @@ pub(crate) fn pouch_offered() -> bool {
 }
 
 /// The hand holding the detonator.
-pub fn detonator_hand() -> Option<Hand> {
+pub(crate) fn detonator_hand() -> Option<Hand> {
     STATE.lock().detonator.hand()
 }
 
@@ -265,11 +265,6 @@ pub(crate) unsafe fn remove_placed(owner: &mut Character) -> Option<i32> {
     let (live, max) = unsafe { (weapon.NumActiveExplosives(), weapon.MaxActiveExplosives()) };
     STATE.lock().status.charges = Some((live, max));
     Some(removed - live)
-}
-
-/// The hand a throw holds, from the grab at the pouch until the charge leaves it.
-pub fn throwing_hand() -> Option<Hand> {
-    STATE.lock().stage.hand()
 }
 
 /// The C4 throw that belongs to `hand`: its primed charge when one is in the hand.

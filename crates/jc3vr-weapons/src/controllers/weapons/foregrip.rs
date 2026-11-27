@@ -160,7 +160,7 @@ pub struct Turn {
 
 /// An engaged two-hand grip, for the recoil spring.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TwoHandGrip {
+pub(crate) struct TwoHandGrip {
     pub holder: Hand,
     /// The share of the two-handed pose, `0..=1`: one once the grip has fully engaged.
     pub weight: f32,
@@ -169,7 +169,7 @@ pub struct TwoHandGrip {
 }
 
 /// The engaged two-hand grip, or `None` while the weapon is held in one hand.
-pub fn two_hand_grip() -> Option<TwoHandGrip> {
+pub(crate) fn two_hand_grip() -> Option<TwoHandGrip> {
     STATE
         .lock()
         .hold

@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use jc3gi::{equipment::weapon::WeaponBase, input::input_action_map::Action};
 use jc3vr_body::controllers::{
+    body_frame,
     fingers::{
         grip,
         grip::{Grip, GripSource},
@@ -12,7 +13,7 @@ use jc3vr_body::controllers::{
     grab::{GrabVolume, resolve::dock_target},
     hands,
     hands::{
-        ActiveHands, tiers,
+        ActiveHands,
         tiers::{HandTier, TierState},
     },
     haptics, intent,
@@ -692,7 +693,7 @@ pub(super) fn hold_fire_back(desired: &mut Vec<Desired>) {
 /// Whether a reload, a draw, or a holster is playing with `gun_hand`, the hand holding the weapon
 /// (or the hand the last one rode, during a draw), in the action-runs tier.
 fn weapon_action_running(gun_hand: Hand) -> bool {
-    let status = tiers::status();
+    let status = body_frame::tiers();
     status.state == Some(TierState::WeaponAction)
         && status.effective[gun_hand.index()] == HandTier::ActionRuns
 }

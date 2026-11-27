@@ -1,7 +1,7 @@
 //! Registers the weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]): the
-//! query functions behind each hand's contents, armed weapon, item kind, wielded gun, two-hand grip,
-//! grenade, C4, and long gun, the steal offer, rack and slide state, the reload's zones, and the rigid
-//! grip's placement reads, whose captures the loadout table's hand moves invalidate.
+//! query functions behind each hand's contents, armed weapon, wielded gun, C4 detonate act, and long
+//! gun, the steal offer, rack and slide state, the reload's zones, and the rigid grip's placement
+//! reads, whose captures the loadout table's hand moves invalidate.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -19,7 +19,7 @@ use crate::controllers::{
     weapons::{
         c4, collide, contents,
         dual_wield::single,
-        foregrip, grenade, hold,
+        hold,
         hold::{act, armed, rack::paired::stack_offset, take},
         regions, reload,
         reload::{knock, zones},
@@ -31,19 +31,12 @@ use crate::controllers::{
 pub fn register() {
     live::register_hands_moved(take::invalidate_handle_placements);
     held::register_held_source(HeldSource {
-        armed_in: armed::in_hand,
         armed_hand_of: armed::hand_of,
         armed_weapon: armed::weapon_of,
         owned_holder: hold::owned_holder,
         contents: hand_contents,
-        item,
         wielded_gun_hands,
         detonator_hand: c4::act_detonator_hand,
-        last_wielded_hands,
-        two_hand_holder,
-        throwing_hand: c4::throwing_hand,
-        detonator_holder: c4::detonator_hand,
-        grenade_in: grenade::holds,
         long_gun_muzzle,
         steal_offer: take::steal_offer,
         reload_views,
@@ -76,11 +69,6 @@ fn hand_contents() -> [HeldContents; 2] {
     })
 }
 
-/// The kind of the loadout table's item in `hand`.
-fn item(hand: Hand) -> Option<HeldItem> {
-    live::held_kind(hand).map(held_item)
-}
-
 fn held_item(kind: ItemKind) -> HeldItem {
     match kind {
         ItemKind::Weapon(_) => HeldItem::Weapon,
@@ -96,17 +84,6 @@ fn wielded_gun_hands() -> [bool; 2] {
     wielded
         .filter(|_| active)
         .map_or([false; 2], |w| w.wielded.hands)
-}
-
-/// The hands holding a gun of the wielded weapon, from the weapon handling's last tick, whether or
-/// not it is active.
-fn last_wielded_hands() -> [bool; 2] {
-    last_wielded().0.map_or([false; 2], |w| w.wielded.hands)
-}
-
-/// The holding hand of the engaged two-hand grip.
-fn two_hand_holder() -> Option<Hand> {
-    foregrip::two_hand_grip().map(|grip| grip.holder)
 }
 
 /// The muzzle of the long gun the input tick measured in `hand`.
