@@ -20,7 +20,7 @@ Slow enough and low enough, the act goes to `S_JC_WINGSUIT_TO_LAND_SLIDE`, then 
 
 ## The air brake
 
-The air physics ([`NAirMovement_UpdateAirPhysics`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/input::parachute##func-NAirMovement_UpdateAirPhysics)) brakes while `CANCEL` is pressed in the wingsuit, outside the stall's turn segment, without `RETRACT_GRAPPLE`, and with the `upgrade_wingsuit_air_brake` gear mod bought and enabled. The brake multiplies the drag, and while the body descends it multiplies the lift by its share of the descent. The steering's sideways input weakens both, the lift by its own factor and the drag by half of the input at most (the statics `s_max_airbrake_drag`, `s_max_airbrake_lift`, and their sideways-input factors, unbound), so a brake held while turning slows less than a level one.
+The air physics ([`NAirMovement_UpdateAirPhysics`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/input::parachute##func-NAirMovement_UpdateAirPhysics)) brakes while `CANCEL` is pressed in the wingsuit, outside the stall's turn segment, without `RETRACT_GRAPPLE`, and with the `upgrade_wingsuit_air_brake` gear mod bought and enabled. The brake multiplies the drag, and while the body descends it multiplies the lift by its share of the descent. The steering's sideways input weakens both, the lift by its own factor and the drag by a capped share of the input (the statics `s_max_airbrake_drag`, `s_max_airbrake_lift`, and their sideways-input factors, unbound), so a brake held while turning slows less than a level one.
 
 The stall closes the brake and the close act alike while its turn segment runs, so a suit that slows into a stall with its nose raised cannot land until the stall ends.
 
@@ -38,4 +38,4 @@ Each is a recovery onto the feet rather than a ragdoll. The plain suit's close a
 
 Every wingsuit state also takes `ACT_CRASH_LAND` to `S_CRASH_LAND_RAGDOLL`. No code names the act, and what queues it on contact is not found (unverified).
 
-The parameters above are the shipped graph's (`rico_base`), read from its condition definitions, and the gear mods' names are the graph's and the symbol dump's. `CSpeedCondition`'s evaluator was checked against the release IDB. The task's close act, the air brake's gates and multipliers, and `CHeightOverGroundCondition`'s evaluator are read from the symbol dump (unverified); the heights it reads, and their writes, were checked against the release IDB.
+The parameters above are the shipped graph's (`rico_base`), read from its condition definitions, and the gear mods' names are the graph's. `CSpeedCondition`'s evaluator was checked against the IDB. The task's close act, the air brake's gates and multipliers, and `CHeightOverGroundCondition`'s evaluator are unverified; the heights it reads, and their writes, were checked against the IDB.

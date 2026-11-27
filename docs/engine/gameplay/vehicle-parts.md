@@ -24,7 +24,7 @@ The vehicle keeps its world transform at both ends of the simulation step, `m_Wo
 
 `UpdateRender_ModelMatrices` walks the valid parts through `NPfxBreakable::ForEachValidRenderablePart`. For each part that has a model, whose damage owner is this vehicle, and that has not broken off, it sets the model matrix to the part's root-space transform times the vehicle's transform. A zero frame fraction, or a vehicle flagged to snap, initialises the model matrix instead of updating it. One part behaviour gets an extra scale from the vehicle's state before the multiply; what it is for has not been traced. After the parts, the function copies the root-space transforms of the parts that attached objects hang from into those attachments.
 
-The root-space transform is the only input the drawn part takes from the part itself, so a part can be drawn turned by changing its root-space transform for the duration of the call.
+The root-space transform is the only input the drawn part takes from the part itself.
 
 ## Steering wheels
 
