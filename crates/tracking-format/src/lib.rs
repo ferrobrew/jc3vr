@@ -2,8 +2,8 @@
 //! the mod published it.
 //!
 //! This crate is the file's data model and codec and nothing else, so that it builds on any host:
-//! the payload records through it, converting between its own types and this model, and host tools
-//! read and write recordings with it.
+//! the mod's recorder writes through it, converting between the mod's types and this model, and
+//! host tools read and write recordings with it.
 //!
 //! # Layout
 //!
@@ -13,9 +13,10 @@
 //! 2. The format version, a `u16` ([`VERSION`]).
 //! 3. The header's length, a `u32`, then the [`Header`].
 //! 4. Records until the end of the file, each a tag byte, a `u32` payload length, and the payload.
-//!    [`TAG_FRAME`] carries a [`Frame`]; [`TAG_INPUT`] carries independently versioned input history.
-//!    Version 2 keeps the version 1 frame/header layouts. Version 1 reads return no input history
-//!    and cannot reproduce within-sync order, source interpretation, or logical input timing.
+//!    [`TAG_FRAME`] carries a [`Frame`]; [`TAG_INPUT`] carries independently versioned input
+//!    history. Version 2 keeps the version 1 frame and header layouts. Version 1 reads return no
+//!    input history and cannot reproduce within-sync order, source interpretation, or logical input
+//!    timing.
 //!    Version 3 stores complete serialized frame/input batches inside [`TAG_CHUNK`] records.
 //!    Each chunk independently selects raw or LZ4 block storage and verifies metadata and stored
 //!    bytes with CRC-32. The expanded records retain their original bytes and order.
@@ -37,25 +38,26 @@
 //!    ([`event`]). Dense samples are quantised (`quant`). An earlier container reads those kinds as
 //!    unknown.
 //!
-//! Versions 1 and 2 skip unknown tags. Versions 3 through 8 reject unknown required tags; only unknown
-//! tags with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or required unknown
-//! records. A cut final outer record leaves all earlier records readable and marks
+//! Versions 1 and 2 skip unknown tags. Versions 3 through 8 reject unknown required tags; only
+//! unknown tags with [`OPTIONAL_TAG_BIT`] set are skippable. Chunks cannot contain chunks or
+//! required unknown records. A cut final outer record leaves all earlier records readable and marks
 //! [`Recording::truncated`]. A complete malformed chunk, unread inner bytes, a bad checksum, or a
 //! resource-budget violation is an error. [`decode_with_limits`] bounds aggregate resource use.
 //!
 //! Each joint retains its pose, radius, and one flag byte. Versions 1 through 3 read bits 0 and 1
 //! as aggregate validity and tracking, ignore all upper joint bits, and mirror each aggregate into
-//! both component fields. Their encoders store the conjunctions, losing independent flags.
-//! Version 4 uses bits 0 and 1 for the same conjunctions and bits 2 through 5 for position validity,
+//! both component fields. Their encoders store the conjunctions, losing independent flags. From
+//! version 4, bits 0 and 1 hold the same conjunctions and bits 2 through 5 hold position validity,
 //! orientation validity, position tracking, and orientation tracking. Bits 6 and 7 must be zero;
 //! aggregates must match their components. No component flag implies any other flag. Input and
 //! decision schemas remain independently versioned. Legacy preamble and frame entry points are
-//! pinned; version 4 writers use the `encode_latest_*` APIs or an explicit [`FrameSchema`].
+//! pinned; version 4 and later writers use the `encode_latest_*` APIs or an explicit
+//! [`FrameSchema`].
 //!
 //! The poses are in the cockpit frame, as the mod publishes them (the eye views and the controller
 //! spaces re-based against the recenter baseline): metres, +X right, +Y up, -Z forward. A reader
-//! therefore needs no baseline of its own. A recenter during the recording is recorded as an event
-//! on the frame it took effect in.
+//! therefore needs no baseline of its own. A recenter during the recording is recorded in the
+//! [`Frame::recenters`] of the frame it took effect in.
 
 mod chunk;
 mod codec;
@@ -250,7 +252,7 @@ pub struct RecenterEvent {
 /// The tag of a [`Frame`] record.
 pub const TAG_FRAME: u8 = 1;
 
-/// A snapshot-only preamble. Existing writers remain v1 until they also capture input history.
+/// A version 1 preamble, for a snapshot-only writer that records no input history.
 pub fn encode_preamble(header: &Header) -> Vec<u8> {
     preamble(header, 1)
 }

@@ -16,8 +16,9 @@ pub const MAX_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 /// Maximum complete records in one chunk.
 pub const MAX_CHUNK_RECORDS: usize = 4096;
 
-/// Store complete frame, input, and event records without changing any serialized byte. LZ4 is used only
-/// when its block is smaller than the original bytes. This function belongs on the writer thread.
+/// Store complete frame, input, and event records without changing any serialized byte. LZ4 is used
+/// only when its block is smaller than the original bytes. The compression is costly enough that
+/// this belongs on a writer thread.
 pub fn encode_chunk(records: &[u8]) -> Result<Vec<u8>, DecodeError> {
     bounded(records.len(), MAX_CHUNK_BYTES, "chunk expanded bytes", 0)?;
     let count = validate_records(records)?;

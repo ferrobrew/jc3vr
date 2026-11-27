@@ -1,15 +1,16 @@
 //! The values a [`Frame`](crate::Frame) carries: the controllers' poses and inputs, the STAGE
 //! information, the recenters' kinds, and the semantic actions' states.
 //!
-//! These are the file's own types rather than the payload's, so the format does not change when
-//! the payload's types do. The payload converts between the two exhaustively, so a field added on
-//! either side fails to build until the format, and its version, account for it. The orders that
-//! the encoding depends on ([`ActionSetKind::ALL`], [`Button::ALL`], [`SemanticSet::ALL`]) are the
-//! payload's, and are part of the format.
+//! These are the file's own types rather than the mod's, so the format does not change when the
+//! mod's types do. The recorder (in the view crate) converts between the two exhaustively, so a
+//! field added on either side fails to build until the format, and its version, account for it.
+//! The orders that the encoding depends on ([`ActionSetKind::ALL`], [`Button::ALL`], and
+//! [`SemanticSet::ALL`]) follow the input crate's, and are part of the format.
 //!
-//! The one exception is [`Pose`], the body rig's rigid transform, which the payload's controller
-//! frame uses as well: a position and an orientation are the same in the file as anywhere, and the
-//! codec writes their components explicitly, so the type carries no format of its own.
+//! The one exception is [`Pose`], the body rig's rigid transform, which the input crate's
+//! controller frame uses as well: a position and an orientation are the same in the file as
+//! anywhere, and the codec writes their components explicitly, so the type carries no format of its
+//! own.
 
 /// A rigid transform; the file's poses are in the cockpit frame unless a field says otherwise.
 pub use body_rig::math::Pose;

@@ -1,6 +1,6 @@
 //! The encoding of the event kinds a version 7 container adds: the body's animation state, throws,
-//! grip releases, and the wingsuit gesture and snatch phases. Each is a moment the mod notes when it
-//! happens, not a per-frame sample.
+//! grip releases, and the wingsuit gesture and snatch phases. Each is a moment the mod notes when
+//! it happens, not a per-frame sample.
 
 use crate::{
     codec::{hand_code, read_hand},

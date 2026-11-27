@@ -594,8 +594,8 @@ impl BodyState {
     }
 }
 
-/// An item that left a hand with a requested motion: a gun let go, a grenade, a charge, or a carried
-/// object thrown.
+/// An item that left a hand with a requested motion: a gun let go, a grenade, a charge, or a
+/// carried object thrown.
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Throw {

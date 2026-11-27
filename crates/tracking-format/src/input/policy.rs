@@ -73,9 +73,9 @@ pub struct DirectDecision {
 
 /// Direct routes are recenter-left, recenter-right, panel-left, and panel-right. Raw flags are
 /// down, pressed, and released. Command bits are recenter, panel, and mark; disjoint sources may
-/// coexist. The mark chord shares the panel join window, so the timing carries no window of its own.
-/// The timing also records whether the developer chords were withheld in a vehicle set, which the
-/// context identifies.
+/// coexist. The mark chord shares the panel join window, so the timing carries no window of its
+/// own. The timing also records whether the developer chords were withheld in a vehicle set, which
+/// the context identifies.
 /// Playback compares the resolved decision before exposing any command or accepted transition.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PolicyEvaluation {
