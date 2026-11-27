@@ -12,6 +12,7 @@
 
 use body_rig::math::smooth::follow_factor;
 use glam::{Affine3A, Quat, Vec2, Vec3};
+use jc3vr_input::motion::{ReleaseShape, shaped_release};
 
 /// One gripping hand: where the body and the palm were when it took hold, and where the palm is
 /// in the rig now.
@@ -131,10 +132,7 @@ pub fn carry_velocity(points: impl IntoIterator<Item = Vec3>, max_speed_mps: f32
 
 /// The velocity a release keeps: `scale` of the smoothed climbing velocity, capped at `max_speed`.
 pub fn fling(smoothed: Vec3, scale: f32, max_speed: f32) -> Vec3 {
-    if !smoothed.is_finite() || !scale.is_finite() {
-        return Vec3::ZERO;
-    }
-    (smoothed * scale.max(0.0)).clamp_length_max(max_speed.max(0.0))
+    release_velocity(smoothed, Vec3::ZERO, scale, max_speed)
 }
 
 /// Filter total and carry together, resetting both when the contributing grip set changes.
@@ -155,12 +153,17 @@ pub fn smooth_motion(
     }
 }
 
-/// Keep inherited point velocity separate from the capped, scaled hand-generated release.
+/// Keep inherited point velocity separate from the capped, scaled hand-generated release. A shim
+/// over [`shaped_release`].
 pub fn release_velocity(total: Vec3, carry: Vec3, scale: f32, max_speed: f32) -> Vec3 {
-    if !(total.is_finite() && carry.is_finite()) {
-        return Vec3::ZERO;
-    }
-    carry + fling(total - carry, scale, max_speed)
+    shaped_release(
+        total,
+        carry,
+        ReleaseShape {
+            scale,
+            max_speed_mps: max_speed,
+        },
+    )
 }
 
 /// The velocity a fling of `kept` carries `elapsed_s` seconds after the release: thrown, under

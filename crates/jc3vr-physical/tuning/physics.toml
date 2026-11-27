@@ -98,7 +98,6 @@ max_turn_rad = 1.5
 
 [rig]
 max_carrier_speed_mps = 80.0
-jump_rad = 0.2
 
 [lifecycle]
 placed_mute_steps = 3

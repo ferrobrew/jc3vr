@@ -14,7 +14,10 @@ use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
     physics::rigid::BodyPose,
 };
-use jc3vr_input::frame::Pose;
+use jc3vr_input::{
+    frame::Pose,
+    motion::{ReleaseShape, shaped_release},
+};
 
 use crate::controllers::physical_hands::{pickup::PickupTuning, tuning::PHYSICAL_HANDS};
 
@@ -206,12 +209,17 @@ pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupTuning) -> bool 
     }
 }
 
-/// The velocity a body's grab point leaves the hand with: the hand's own, scaled and capped.
+/// The velocity a body's grab point leaves the hand with: the hand's own, scaled and capped. A shim
+/// over [`shaped_release`] with nothing carrying the hand.
 pub fn throw_velocity(hand_velocity: Vec3, config: &PickupTuning) -> Vec3 {
-    if !hand_velocity.is_finite() {
-        return Vec3::ZERO;
-    }
-    (hand_velocity * config.throw_scale.max(0.0)).clamp_length_max(config.max_throw_speed_mps)
+    shaped_release(
+        hand_velocity,
+        Vec3::ZERO,
+        ReleaseShape {
+            scale: config.throw_scale,
+            max_speed_mps: config.max_throw_speed_mps,
+        },
+    )
 }
 
 /// A palm's motion on a tick: its place, and its linear and angular velocity, world space.

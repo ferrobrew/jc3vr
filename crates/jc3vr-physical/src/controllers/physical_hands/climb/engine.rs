@@ -2,9 +2,9 @@
 //! (`docs/engine/character/hands-locomotion-and-state.md`, "The proxy's support and the fall").
 //!
 //! The game decides whether the player is on the ground from the proxy's support
-//! ([`PfxCharacterInstance::m_GroundInformation`]), which the proxy's update
-//! ([`PfxCharacterInstance::UpdateContext`]) finds afresh before each physics step and which the
-//! state machines read before the next proxy update. The physics system's pre-simulation
+//! ([`jc3gi::physics::PfxCharacterInstance::m_GroundInformation`]), which the proxy's update
+//! ([`jc3gi::physics::PfxCharacterInstance::UpdateContext`]) finds afresh before each physics step
+//! and which the state machines read before the next proxy update. The physics system's pre-simulation
 //! callbacks run after every character's proxy update, so a support written there is the one the
 //! state machines, the fall bookkeeping, and the ground raycasts see until the next proxy update:
 //! the player hanging from the hands stays on foot rather than falling. The proxy's update has
@@ -19,15 +19,16 @@ use std::{fmt, ptr};
 use glam::{Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
-    havok::hkSimdFloat32,
-    physics::{PfxCharacterInstance, PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
+    physics::{PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
 };
 use jc3vr_body::controllers::{
     facts::climb::{BodyFrame, BodyIdentity},
     physics::{
         bodies::slot,
         characters::character_position,
+        error::PhysicsError,
         havok::{affine as havok_affine, vector as havok_vector},
+        proxy,
     },
 };
 
@@ -75,7 +76,7 @@ pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
     let proxy =
         unsafe { character.m_PfxCharacter.px.as_ref() }.ok_or(ClimbEngineError::NoPlayer)?;
     let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
-    let slot = unsafe { proxy_slot(world.world(), proxy) }?;
+    let slot = unsafe { proxy::proxy_slot(world.world(), proxy) }.map_err(climb_error)?;
     let body = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
     let feet = character_position(character);
     if !(body.is_finite() && feet.is_finite()) {
@@ -221,11 +222,7 @@ pub fn climbable(frame: &BodyFrame, min_mass_kg: f32) -> bool {
 ///
 /// The thread that steps the physics world, outside the step, after the proxy's update.
 pub unsafe fn support() -> Option<f32> {
-    let proxy = unsafe { proxy() }.ok()?;
-    let info = &proxy.m_GroundInformation;
-    (info.m_supportedState == hknpCharacterSurfaceInfo::SUPPORTED)
-        .then_some(info.m_surfaceNormal.data[1])
-        .filter(|y| y.is_finite())
+    unsafe { proxy::support() }
 }
 
 /// Hold the player up: give the proxy `velocity` for the coming step, as its own update does, and
@@ -245,7 +242,7 @@ pub unsafe fn hold(
         return Err(ClimbEngineError::BadVelocity);
     }
     unsafe { set_velocity(velocity) }?;
-    let proxy = unsafe { proxy() }?;
+    let proxy = unsafe { proxy::local_proxy() }.map_err(climb_error)?;
     let info = &mut proxy.m_GroundInformation;
     info.m_isSurfaceDynamic = surface_velocity != Vec3::ZERO;
     info.m_supportedState = hknpCharacterSurfaceInfo::SUPPORTED;
@@ -263,18 +260,7 @@ pub unsafe fn hold(
 ///
 /// The thread that steps the physics world, outside the step, after the proxy's update.
 pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
-    if !velocity.is_finite() {
-        return Err(ClimbEngineError::BadVelocity);
-    }
-    let proxy = unsafe { proxy() }?;
-    let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
-    unsafe { proxy_slot(world.world(), proxy) }?;
-    let body = unsafe { proxy.m_CharacterRigidBody.as_mut() }.ok_or(ClimbEngineError::NoPlayer)?;
-    let timestep = hkSimdFloat32 {
-        m_real: [physics::step_seconds(); 4],
-    };
-    unsafe { body.setLinearVelocity(&havok_vector(velocity), &timestep, false) };
-    Ok(())
+    unsafe { proxy::set_proxy_velocity(velocity, physics::step_seconds()) }.map_err(climb_error)
 }
 
 /// The velocity of the local player's proxy body, as its motion holds it.
@@ -283,19 +269,7 @@ pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
 ///
 /// The thread that steps the physics world, outside the step.
 pub unsafe fn proxy_velocity() -> Result<Vec3, ClimbEngineError> {
-    let proxy = unsafe { proxy() }?;
-    let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
-    let slot = unsafe { proxy_slot(world.world(), proxy) }?;
-    let motions = world.world().m_motions;
-    if motions.is_null() {
-        return Err(ClimbEngineError::NoPlayer);
-    }
-    let motion = unsafe { &*motions.add(slot.m_motionId as usize) };
-    let velocity = Vec3::from_array(motion.m_linearVelocity.data);
-    velocity
-        .is_finite()
-        .then_some(velocity)
-        .ok_or(ClimbEngineError::BadVelocity)
+    unsafe { proxy::proxy_velocity() }.map_err(climb_error)
 }
 
 /// Whether the local player is in the air as the game judges it ([`Character::IsInAir`]).
@@ -309,20 +283,14 @@ pub unsafe fn in_air() -> Option<bool> {
     Some(unsafe { character.IsInAir() })
 }
 
-unsafe fn proxy() -> Result<&'static mut PfxCharacterInstance, ClimbEngineError> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .ok_or(ClimbEngineError::NoPlayer)?;
-    unsafe { character.m_PfxCharacter.px.as_mut() }.ok_or(ClimbEngineError::NoPlayer)
-}
-
-/// The world's slot of the proxy's body, checked to hold a body.
-unsafe fn proxy_slot<'w>(
-    world: &'w hknpWorld,
-    proxy: &PfxCharacterInstance,
-) -> Result<&'w hknpBody, ClimbEngineError> {
-    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
-    unsafe { proxy.GetCharacterRigidBodyId(&mut body) };
-    unsafe { slot(world, body) }.ok_or(ClimbEngineError::NoPlayer)
+/// The climb's cause for a substrate error: a value that is not finite is the velocity's, and
+/// anything else but a missing world is the player's.
+fn climb_error(error: PhysicsError) -> ClimbEngineError {
+    match error {
+        PhysicsError::NoPhysicsWorld => ClimbEngineError::NoPhysicsWorld,
+        PhysicsError::BadMotion => ClimbEngineError::BadVelocity,
+        _ => ClimbEngineError::NoPlayer,
+    }
 }
 
 #[cfg(test)]

@@ -5,8 +5,8 @@
 //! ([`VehicleDoorController`](jc3gi::vehicle::vehicle::VehicleDoorController)), kept in a
 //! red-black tree keyed by [`DoorSlot`]. A closed door is merged into the vehicle's body; an open
 //! one hangs on its hinge as a body of its own ([`PartInstance::GetPfxVehiclePartIfAny`]) owned by
-//! a [`VehiclePartGameObject`]. The latch is undone the way the door controller undoes it, without
-//! the hinge's motor: [`Vehicle::OpenDoor`] puts the vehicle's body in the world and the vehicle in
+//! a [`VehiclePartGameObject`](jc3gi::vehicle::parts::VehiclePartGameObject). The latch is undone
+//! the way the door controller undoes it, without the hinge's motor: [`Vehicle::OpenDoor`] puts the vehicle's body in the world and the vehicle in
 //! the update, so that the controller's own latch runs on the door afterwards, and its opening
 //! request is withdrawn before the controller acts on it;
 //! [`PfxBreakable::EnablePart`](jc3gi::vehicle::parts::PfxBreakable::EnablePart) then loosens the
@@ -18,14 +18,18 @@ use std::{ffi::CStr, fmt, num::NonZeroUsize, ptr};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    physics::PfxRigidBody,
     types::math::Vector3,
     vehicle::{
-        parts::{PartEventReason, PartInstance, VehiclePartGameObject},
+        parts::{PartEventReason, PartInstance},
         vehicle::{DoorInfo, DoorMapNode, DoorSlot, DoorState, Vehicle},
     },
 };
-use jc3vr_body::controllers::physics::bodies::{is_type, owner_of};
+/// The vehicle lookups, which live in the physics substrate: shims for the callers that still name
+/// them here.
+pub use jc3vr_body::controllers::physics::vehicles::{
+    is_vehicle_part, vehicle_body, vehicle_frame, vehicle_of,
+};
+use jc3vr_body::controllers::physics::{bodies::owner_of, vehicles};
 
 use crate::controllers::physical_hands::doors::{geometry::DoorBox, hinge};
 
@@ -77,34 +81,6 @@ pub struct DoorRead {
     pub part_hash: Option<u32>,
 }
 
-/// The vehicle a ray hit on `object` belongs to: the vehicle itself, or the vehicle a loosened
-/// part such as an open door came from.
-///
-/// # Safety
-///
-/// `object` must be a live physics game object, from a cast this tick.
-#[inline]
-pub unsafe fn vehicle_of(object: NonZeroUsize) -> Option<NonZeroUsize> {
-    if unsafe { is_type(object, Vehicle::TYPE_ID()) } {
-        return Some(object);
-    }
-    if !unsafe { is_type(object, VehiclePartGameObject::TYPE_ID()) } {
-        return None;
-    }
-    let part = object.get() as *mut VehiclePartGameObject;
-    NonZeroUsize::new(unsafe { (*part).GetVehicle() } as usize)
-}
-
-/// Whether the physics game object at `object` is a loosened vehicle part.
-///
-/// # Safety
-///
-/// `object` must be a live physics game object.
-#[inline]
-pub unsafe fn is_vehicle_part(object: NonZeroUsize) -> bool {
-    unsafe { is_type(object, VehiclePartGameObject::TYPE_ID()) }
-}
-
 /// Whether the physics game object at `object`, owning its body `body`, is a vehicle part that has
 /// come off its vehicle: no part of the vehicle still hangs from it by that body, such as a door or
 /// hood torn off, or the vehicle is gone. A part hanging by its own constraint is still on the
@@ -140,17 +116,6 @@ pub unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
     detached(parts, body)
 }
 
-/// The vehicle's world transform at the end of the current simulation step.
-///
-/// # Safety
-///
-/// `vehicle` must be a live vehicle.
-#[inline]
-pub unsafe fn vehicle_frame(vehicle: NonZeroUsize) -> Mat4 {
-    let vehicle = unsafe { &*(vehicle.get() as *const Vehicle) };
-    Mat4::from(vehicle.m_WorldMatrixT1)
-}
-
 /// Every door of `vehicle` that has not broken off.
 ///
 /// # Safety
@@ -174,26 +139,14 @@ pub(crate) unsafe fn doors(vehicle: NonZeroUsize) -> Vec<DoorRead> {
     doors
 }
 
-/// Whether `vehicle` still owns its body `vehicle_body`, which proves it is alive.
+/// Whether `vehicle` still owns its body `vehicle_body`, which proves it is alive. A shim over
+/// [`vehicles::owns_body`].
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn alive(vehicle: NonZeroUsize, vehicle_body: u32) -> bool {
-    (unsafe { owner_of(vehicle_body) }) == Some(vehicle)
-}
-
-/// The vehicle's native rigid body, verified against its current owner.
-///
-/// # Safety
-///
-/// The game thread, outside the physics step; `vehicle` must be a live vehicle.
-#[inline]
-pub unsafe fn vehicle_body(vehicle: NonZeroUsize) -> Option<u32> {
-    let vehicle_ref = unsafe { &*(vehicle.get() as *const Vehicle) };
-    let pfx = unsafe { vehicle_ref.m_PfxVehicle.cast::<PfxRigidBody>().as_ref() }?;
-    let body = pfx.m_BodyId;
-    unsafe { alive(vehicle, body) }.then_some(body)
+    unsafe { vehicles::owns_body(vehicle, vehicle_body) }
 }
 
 /// The door of `vehicle` at part index `part_index`, read now.

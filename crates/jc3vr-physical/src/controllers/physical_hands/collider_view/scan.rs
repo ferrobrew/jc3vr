@@ -25,12 +25,16 @@ use jc3gi::{
     },
     types::vector_math::AlignedVector3,
 };
-use jc3vr_body::controllers::physics::havok::affine as havok_affine;
+use jc3vr_body::controllers::physics::{
+    error::PhysicsError,
+    havok::affine as havok_affine,
+    scan::{self, Space, motion_kind},
+};
 
 use crate::controllers::physical_hands::{
     collider_view::model::{
         Aabb, Body, Geometry, Ground, Joint, JointKind, KindInputs, Layer, ModBody, MotionKind,
-        Snapshot, capsule_radius, classify, hull_edges, nearest, restore_aabb,
+        Snapshot, capsule_radius, classify, hull_edges, nearest,
     },
     world::World,
 };
@@ -65,6 +69,17 @@ impl fmt::Display for ScanError {
 }
 
 impl std::error::Error for ScanError {}
+
+impl From<PhysicsError> for ScanError {
+    /// The scan's cause for a substrate scan's error: a missing world, or a world without its body
+    /// array, the only two the substrate's scans fail with.
+    fn from(error: PhysicsError) -> Self {
+        match error {
+            PhysicsError::NoPhysicsWorld => ScanError::NoPhysicsWorld,
+            _ => ScanError::NoBodies,
+        }
+    }
+}
 
 /// Read the bodies whose boxes come within `radius_m` of `centre` (game space), the nearest
 /// `max_bodies` of them; static bodies only with `static_bodies`, but for the player's ground.
@@ -161,37 +176,16 @@ pub(super) unsafe fn scan(
 }
 
 /// The ids and boxes of the dynamic bodies in the simulation whose boxes `keep` accepts, at most
-/// `max_bodies` of them in id order, without reading their shapes.
+/// `max_bodies` of them in id order. A shim over [`scan::dynamic_boxes`].
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step.
 pub(super) unsafe fn dynamic_boxes(
-    mut keep: impl FnMut(&Aabb) -> bool,
+    keep: impl FnMut(&Aabb) -> bool,
     max_bodies: usize,
 ) -> Result<Vec<(u32, Aabb)>, ScanError> {
-    let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
-    let w = world.world();
-    if w.m_bodies.is_null() {
-        return Err(ScanError::NoBodies);
-    }
-    let space = Space::of(w);
-    let mut kept = Vec::new();
-    for id in 0..w.m_peakBodyIndex.saturating_add(1) {
-        if kept.len() >= max_bodies {
-            break;
-        }
-        // SAFETY: every id up to the peak has a slot.
-        let slot = unsafe { &*w.m_bodies.add(id as usize) };
-        if motion_kind(slot) != Some(MotionKind::Dynamic) {
-            continue;
-        }
-        let aabb = space.restore(slot, world.shift);
-        if keep(&aabb) {
-            kept.push((id, aabb));
-        }
-    }
-    Ok(kept)
+    unsafe { scan::dynamic_boxes(keep, max_bodies) }.map_err(ScanError::from)
 }
 
 /// Refresh retained bodies at render time without re-reading their shape geometry.
@@ -227,33 +221,6 @@ pub(super) unsafe fn refresh(snapshot: &mut Snapshot, centre: Vec3) -> Result<()
     Ok(())
 }
 
-/// The world's integer space.
-pub(super) struct Space {
-    scale_inv: Vec3,
-    offset_low: Vec3,
-}
-
-impl Space {
-    pub(super) fn of(world: &hknpWorld) -> Self {
-        let space = &world.m_intSpaceUtil;
-        Self {
-            scale_inv: Vec3::from_array(space.m_bitScaleInv.data),
-            offset_low: Vec3::from_array(space.m_bitOffsetLow.data),
-        }
-    }
-
-    /// A body's box, game space.
-    pub(super) fn restore(&self, body: &hknpBody, shift: Vec3) -> Aabb {
-        restore_aabb(
-            body.m_aabb.m_min,
-            body.m_aabb.m_max,
-            self.scale_inv,
-            self.offset_low,
-        )
-        .translated(shift)
-    }
-}
-
 /// The player's proxy body and what it stands on.
 #[derive(Debug, Copy, Clone)]
 pub(super) struct PlayerProxy {
@@ -279,25 +246,6 @@ pub(super) unsafe fn player_proxy() -> Option<PlayerProxy> {
             normal: Vec3::from_array(info.m_surfaceNormal.data),
         });
     Some(PlayerProxy { body, ground })
-}
-
-/// The motion of a slot holding a body in the simulation, or `None` for a freed slot, an empty
-/// one, or a body out of the simulation.
-pub(super) fn motion_kind(body: &hknpBody) -> Option<MotionKind> {
-    let flags = body.m_flags;
-    if body.m_motionId == hknpBody::INVALID_MOTION_ID
-        || flags & (hknpBody::IS_STATIC | hknpBody::IS_DYNAMIC) == 0
-        || body.m_broadPhaseId == hknpBody::INVALID_BROAD_PHASE_ID
-    {
-        return None;
-    }
-    Some(if flags & hknpBody::IS_STATIC != 0 {
-        MotionKind::Static
-    } else if flags & hknpBody::IS_KEYFRAMED != 0 {
-        MotionKind::Keyframed
-    } else {
-        MotionKind::Dynamic
-    })
 }
 
 /// The layer of a collision-filter word, as far as the kinds tell layers apart.

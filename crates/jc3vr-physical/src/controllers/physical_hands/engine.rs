@@ -10,12 +10,14 @@ use std::{fmt, num::NonZeroUsize};
 use glam::Vec3;
 use jc3gi::{
     character::{character::Character, player::Player},
-    physics::{PfxCharacterInstance, PhysicsSystem},
+    physics::PfxCharacterInstance,
 };
 use jc3vr_body::controllers::{
     aim::raycast::RayHit,
-    physics::{bodies::is_type, havok::vector as havok_vector},
-    telemetry::{Applied, note_force},
+    physics::{
+        bodies::{self, is_type},
+        error::PhysicsError,
+    },
 };
 
 use crate::controllers::physical_hands::contact::{Surface, SurfaceHit};
@@ -85,24 +87,17 @@ pub(super) unsafe fn melee_damage(character: &Character) -> Option<i32> {
 }
 
 /// Push the body `body` by `impulse` at the game-space point `at`. A static or keyframed body is
-/// left alone by the engine.
+/// left alone by the engine. A shim over [`bodies::push`] until the touch calls it.
 ///
 /// # Safety
 ///
 /// Main thread, outside the physics step; `body` must come from a cast this tick.
 #[track_caller]
 pub(super) unsafe fn push_body(body: u32, impulse: Vec3, at: Vec3) -> Result<(), EngineError> {
-    if body == PfxCharacterInstance::INVALID_BODY_ID || !impulse.is_finite() || !at.is_finite() {
-        return Err(EngineError::InvalidBody);
-    }
-    note_force(body, Applied::Impulse { impulse, at }, None);
-    let physics = unsafe { PhysicsSystem::get() }.ok_or(EngineError::NoPhysicsWorld)?;
-    let shift = Vec3::from_array(physics.m_AccumulatedShift.data);
-    let world = unsafe { physics.m_World.as_mut() }.ok_or(EngineError::NoPhysicsWorld)?;
-    let impulse = havok_vector(impulse);
-    let position = havok_vector(at - shift);
-    unsafe { world.applyBodyImpulseAt(body, &impulse, &position) };
-    Ok(())
+    unsafe { bodies::push(body, impulse, at) }.map_err(|error| match error {
+        PhysicsError::NoPhysicsWorld => EngineError::NoPhysicsWorld,
+        _ => EngineError::InvalidBody,
+    })
 }
 
 /// The body the player's character proxy stands on, as its last update found it, or `None` without

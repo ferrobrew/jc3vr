@@ -17,9 +17,10 @@
 
 use body_rig::math::{rotation::rotation_error, smooth::follow_factor};
 use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
-use jc3vr_body::controllers::clock::TimeScale;
-
-use crate::controllers::physical_hands::physics::tuning::PHYSICS;
+use jc3vr_body::controllers::{
+    clock::TimeScale,
+    physics::rig::{self, RigSample},
+};
 
 /// How a hand body is driven.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -277,17 +278,18 @@ pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_sp
         .clamp_length_max(max_speed.max(0.0))
 }
 
-/// Whether the rig moved under the hands between two palms' ticks without the hands moving: the
-/// body's facing turned by more than the tuning's `rig.jump_rad` ([`RigTuning::jump_rad`]; a snap
-/// turn, not the body turning), or the recenter count changed. `last` is the facing and the count
-/// of the last tick, if there was one.
-///
-/// [`RigTuning::jump_rad`]: crate::controllers::physical_hands::physics::tuning::RigTuning::jump_rad
+/// Whether the rig moved under the hands between two palms' ticks without the hands moving: a
+/// snap turn or a recenter. `last` is the facing and the count of the last tick, if there was one.
+/// A shim over [`rig::jumped`], whose tuning is the substrate's `rig.jump_rad`.
 pub fn rig_jumped(last: Option<(Quat, u32)>, rotation: Quat, recenters: u32) -> bool {
-    last.is_some_and(|(last_rotation, last_recenters)| {
-        last_recenters != recenters
-            || last_rotation.angle_between(rotation) > PHYSICS.get().rig.jump_rad
-    })
+    let sample = |rotation, recenters| RigSample {
+        rotation,
+        recenters,
+    };
+    rig::jumped(
+        last.map(|(rotation, recenters)| sample(rotation, recenters)),
+        sample(rotation, recenters),
+    )
 }
 
 /// Where a body at `body` goes when the rig carries its hand's palm from `from` to `to` in one
@@ -368,6 +370,7 @@ mod tests {
     use std::f32::consts::FRAC_PI_2;
 
     use super::*;
+    use crate::controllers::physical_hands::physics::tuning::PHYSICS;
 
     const STEP: f32 = 1.0 / 30.0;
 

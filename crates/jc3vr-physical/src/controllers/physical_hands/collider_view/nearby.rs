@@ -10,27 +10,22 @@ use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 use jc3gi::physics::hknpBody;
-use jc3vr_body::controllers::physics::{bodies, havok::affine as havok_affine};
+/// Where a slice of the walk ended: the substrate's, under the name the recorder still uses.
+pub use jc3vr_body::controllers::physics::scan::Slice;
+use jc3vr_body::controllers::physics::{
+    bodies,
+    havok::affine as havok_affine,
+    scan::{self, Space, motion_kind},
+};
 
 use crate::controllers::physical_hands::{
     collider_view::{
         mod_ids,
         model::{Aabb, KindInputs, ModBody, MotionKind, classify},
-        scan::{ScanError, Space, geometry, layer, mass, motion_kind, player_proxy},
+        scan::{ScanError, geometry, layer, mass, player_proxy},
     },
     world::World,
 };
-
-/// Where a slice of the walk ended.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Slice {
-    /// The slots the slice went through.
-    pub walked: u32,
-    /// The world's peak slot.
-    pub peak: u32,
-    /// The slot the next slice starts at.
-    pub next: u32,
-}
 
 /// A dynamic body's pose and velocities, game space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -54,7 +49,7 @@ pub struct BodyDescription {
 }
 
 /// Walk up to `count` slots from `start`, wrapping at the world's peak, and hand `keep` each
-/// dynamic body in the simulation with its box, game space.
+/// dynamic body in the simulation with its box, game space. A shim over [`scan::walk_dynamic`].
 ///
 /// # Safety
 ///
@@ -62,33 +57,9 @@ pub struct BodyDescription {
 pub unsafe fn walk_dynamic(
     start: u32,
     count: u32,
-    mut keep: impl FnMut(u32, &Aabb),
+    keep: impl FnMut(u32, &Aabb),
 ) -> Result<Slice, ScanError> {
-    let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
-    let w = world.world();
-    if w.m_bodies.is_null() {
-        return Err(ScanError::NoBodies);
-    }
-    let space = Space::of(w);
-    let slots = w.m_peakBodyIndex.saturating_add(1);
-    let count = count.min(slots);
-    let mut id = if start < slots { start } else { 0 };
-    for _ in 0..count {
-        // SAFETY: every id up to the peak has a slot.
-        let slot = unsafe { &*w.m_bodies.add(id as usize) };
-        if motion_kind(slot) == Some(MotionKind::Dynamic) {
-            keep(id, &space.restore(slot, world.shift));
-        }
-        id += 1;
-        if id >= slots {
-            id = 0;
-        }
-    }
-    Ok(Slice {
-        walked: count,
-        peak: w.m_peakBodyIndex,
-        next: id,
-    })
+    unsafe { scan::walk_dynamic(start, count, keep) }.map_err(ScanError::from)
 }
 
 /// The dynamic body `id`'s pose, velocities, and box, or `None` when its slot no longer holds a

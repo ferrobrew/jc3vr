@@ -3,6 +3,9 @@
 //! the gaze. The engine side that fills it is [`crate::controllers::physical_hands::collider_view::scan`].
 
 use glam::{Affine3A, Quat, Vec3, Vec3A};
+/// The box and the motion kind, which live in the physics substrate: shims for the callers that
+/// still name them here.
+pub use jc3vr_body::controllers::physics::scan::{Aabb, MotionKind, restore_aabb};
 
 /// What a body is, for its colour and the readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -91,24 +94,6 @@ pub struct KindInputs {
     pub player: bool,
 }
 
-/// A body's motion, from its flags.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum MotionKind {
-    Static,
-    Dynamic,
-    Keyframed,
-}
-
-impl MotionKind {
-    pub const fn label(self) -> &'static str {
-        match self {
-            MotionKind::Static => "static",
-            MotionKind::Dynamic => "dynamic",
-            MotionKind::Keyframed => "keyframed",
-        }
-    }
-}
-
 /// The layers the kinds are told apart by, from the engine's own layer list.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Layer {
@@ -135,87 +120,6 @@ pub fn classify(inputs: KindInputs) -> BodyKind {
         (None, false, Layer::Other(_), MotionKind::Static) => BodyKind::Static,
         (None, false, Layer::Other(_), MotionKind::Keyframed) => BodyKind::Keyframed,
         (None, false, Layer::Other(_), MotionKind::Dynamic) => BodyKind::Dynamic,
-    }
-}
-
-/// A box with its least and greatest corners.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Aabb {
-    pub min: Vec3,
-    pub max: Vec3,
-}
-
-impl Aabb {
-    pub fn centre(&self) -> Vec3 {
-        (self.min + self.max) * 0.5
-    }
-
-    pub fn translated(&self, by: Vec3) -> Aabb {
-        Aabb {
-            min: self.min + by,
-            max: self.max + by,
-        }
-    }
-
-    /// How far `point` is from the box: zero inside it.
-    pub fn distance(&self, point: Vec3) -> f32 {
-        (self.min - point)
-            .max(point - self.max)
-            .max(Vec3::ZERO)
-            .length()
-    }
-
-    /// The box's volume, cubic metres.
-    pub fn volume(&self) -> f32 {
-        (self.max - self.min).max(Vec3::ZERO).element_product()
-    }
-
-    /// Where the ray from `origin` along the unit `direction` enters the box, metres along it,
-    /// within `max_m`: zero when it starts inside, `None` when it misses.
-    pub fn ray_entry(&self, origin: Vec3, direction: Vec3, max_m: f32) -> Option<f32> {
-        let mut near = 0.0f32;
-        let mut far = max_m;
-        for axis in 0..3 {
-            let (o, d) = (origin[axis], direction[axis]);
-            let (lo, hi) = (self.min[axis], self.max[axis]);
-            if d.abs() < 1e-9 {
-                if o < lo || o > hi {
-                    return None;
-                }
-                continue;
-            }
-            let (a, b) = ((lo - o) / d, (hi - o) / d);
-            near = near.max(a.min(b));
-            far = far.min(a.max(b));
-            if near > far {
-                return None;
-            }
-        }
-        Some(near)
-    }
-
-    /// The box's twelve edges.
-    pub fn edges(&self) -> [(Vec3, Vec3); 12] {
-        let corner = |i: usize| {
-            Vec3::new(
-                if i & 1 == 0 { self.min.x } else { self.max.x },
-                if i & 2 == 0 { self.min.y } else { self.max.y },
-                if i & 4 == 0 { self.min.z } else { self.max.z },
-            )
-        };
-        BOX_EDGES.map(|(a, b)| (corner(a), corner(b)))
-    }
-}
-
-/// A box quantized into the world's integer space, restored as the engine restores it
-/// ([`hknpWorld::getBodyAabb`]): each corner times the inverse scale, less the low offset.
-///
-/// [`hknpWorld::getBodyAabb`]: jc3gi::physics::hknpWorld::getBodyAabb
-pub fn restore_aabb(min: [u16; 3], max: [u16; 3], scale_inv: Vec3, offset_low: Vec3) -> Aabb {
-    let restore = |q: [u16; 3]| Vec3::from(q.map(f32::from)) * scale_inv - offset_low;
-    Aabb {
-        min: restore(min),
-        max: restore(max),
     }
 }
 
@@ -400,23 +304,6 @@ pub fn gazed<'a>(
         .min_by(|a, b| a.aabb.volume().total_cmp(&b.aabb.volume()))
 }
 
-/// The corners each of a box's edges joins, the corner index's bits picking the greatest x, y,
-/// and z.
-const BOX_EDGES: [(usize, usize); 12] = [
-    (0, 1),
-    (2, 3),
-    (4, 5),
-    (6, 7),
-    (0, 2),
-    (1, 3),
-    (4, 6),
-    (5, 7),
-    (0, 4),
-    (1, 5),
-    (2, 6),
-    (3, 7),
-];
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -485,67 +372,6 @@ mod tests {
         for (i, kind) in BodyKind::ALL.into_iter().enumerate() {
             assert_eq!(kind.index(), i);
         }
-    }
-
-    #[test]
-    fn a_quantized_box_is_restored_by_the_inverse_scale_less_the_low_offset() {
-        let aabb = restore_aabb(
-            [100, 200, 300],
-            [110, 220, 330],
-            Vec3::splat(0.5),
-            Vec3::new(10.0, 20.0, 30.0),
-        );
-        assert_eq!(aabb.min, Vec3::new(40.0, 80.0, 120.0));
-        assert_eq!(aabb.max, Vec3::new(45.0, 90.0, 135.0));
-    }
-
-    #[test]
-    fn a_point_is_as_far_from_a_box_as_from_its_nearest_point() {
-        let aabb = Aabb {
-            min: Vec3::ZERO,
-            max: Vec3::ONE,
-        };
-        assert_eq!(aabb.distance(Vec3::splat(0.5)), 0.0);
-        assert_eq!(aabb.distance(Vec3::new(3.0, 0.5, 0.5)), 2.0);
-        assert!((aabb.distance(Vec3::new(2.0, 2.0, 0.5)) - 2f32.sqrt()).abs() < 1e-6);
-    }
-
-    #[test]
-    fn a_ray_enters_a_box_where_it_crosses_its_nearest_face() {
-        let aabb = Aabb {
-            min: Vec3::new(-1.0, -1.0, 4.0),
-            max: Vec3::new(1.0, 1.0, 6.0),
-        };
-        assert_eq!(aabb.ray_entry(Vec3::ZERO, Vec3::Z, 10.0), Some(4.0));
-        assert_eq!(aabb.ray_entry(Vec3::ZERO, Vec3::Z, 3.0), None);
-        assert_eq!(aabb.ray_entry(Vec3::ZERO, Vec3::NEG_Z, 10.0), None);
-        assert_eq!(
-            aabb.ray_entry(Vec3::new(2.0, 0.0, 0.0), Vec3::Z, 10.0),
-            None
-        );
-        assert_eq!(
-            aabb.ray_entry(Vec3::new(0.0, 0.0, 5.0), Vec3::X, 10.0),
-            Some(0.0)
-        );
-    }
-
-    #[test]
-    fn a_box_has_twelve_distinct_edges_along_the_axes() {
-        let aabb = Aabb {
-            min: Vec3::ZERO,
-            max: Vec3::new(1.0, 2.0, 3.0),
-        };
-        let edges = aabb.edges();
-        for (a, b) in edges {
-            let d = (b - a).abs();
-            assert_eq!(
-                [d.x, d.y, d.z].iter().filter(|&&c| c > 0.0).count(),
-                1,
-                "{a} {b}"
-            );
-        }
-        let total: f32 = edges.iter().map(|(a, b)| a.distance(*b)).sum();
-        assert_eq!(total, 4.0 * (1.0 + 2.0 + 3.0));
     }
 
     #[test]

@@ -601,17 +601,14 @@ impl HandRenderTuning {
     }
 }
 
-/// The rig that carries the hands: the motion the drive feeds forward, and the jump it carries the
-/// bodies through.
+/// The rig that carries the hands: the motion the drive feeds forward. What counts as a jump of the
+/// rig is the physics substrate's (`jc3vr_body::controllers::physics::rig`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RigTuning {
     /// The fastest carrier the drive feeds forward, metres per second: past a fall's terminal
     /// speed, so an estimate thrown by a jump of the rig cannot fling a hand.
     pub max_carrier_speed_mps: f32,
-    /// The turn of the body's facing between two palms' ticks past which it is a snap turn,
-    /// radians.
-    pub jump_rad: f32,
 }
 
 impl RigTuning {
@@ -620,8 +617,7 @@ impl RigTuning {
             "rig.max_carrier_speed_mps",
             self.max_carrier_speed_mps,
             1000.0,
-        )?;
-        range("rig.jump_rad", self.jump_rad, 0.0, PI)
+        )
     }
 }
 
