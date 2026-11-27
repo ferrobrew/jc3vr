@@ -16,7 +16,7 @@ use jc3gi::graphics_engine::texture::Texture;
 use jc3vr_view::controllers::overlay::resolve::GpuPrimitive;
 use windows::{
     Win32::Graphics::{
-        Direct3D::{D3D_PRIMITIVE_TOPOLOGY, D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP},
+        Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
         Direct3D11::{
             D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE, D3D11_BLEND_DESC,
             D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA,
@@ -24,14 +24,15 @@ use windows::{
             D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID, D3D11_MAP_WRITE_DISCARD,
             D3D11_MAPPED_SUBRESOURCE, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
             D3D11_RESOURCE_MISC_BUFFER_STRUCTURED, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
-            ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView,
-            ID3D11Device, ID3D11DeviceContext, ID3D11InputLayout, ID3D11PixelShader,
-            ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11Resource,
-            ID3D11ShaderResourceView, ID3D11VertexShader,
+            ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState, ID3D11Device,
+            ID3D11DeviceContext, ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
+            ID3D11Resource, ID3D11ShaderResourceView, ID3D11VertexShader,
         },
     },
     core::Interface as _,
 };
+
+use crate::controllers::draw_state::DrawStateGuard;
 
 /// The per-eye constants, matching the HLSL `cbuffer Eye` of both overlay shaders.
 #[repr(C)]
@@ -233,7 +234,7 @@ impl Renderer {
             std::ptr::write(mapped.pData.cast::<EyeConstants>(), eye.constants);
             context.Unmap(&self.constants, 0);
 
-            let saved = SavedState::capture(context);
+            let _state = DrawStateGuard::capture(context);
 
             // The render target first, so the depth texture is no longer bound as a depth target
             // when it is bound as a shader resource.
@@ -261,7 +262,6 @@ impl Renderer {
 
             context.VSSetShaderResources(0, Some(&[None]));
             context.PSSetShaderResources(1, Some(&[None]));
-            saved.restore(context);
         }
         Ok(())
     }
@@ -337,98 +337,6 @@ fn target_view(
     let rtv = rtv.context("overlay: no render-target view was created")?;
     *cache = Some((target.m_Texture.clone(), rtv.clone()));
     Ok(rtv)
-}
-
-/// The pipeline state the draw changes, other than the viewport (see the module docs).
-struct SavedState {
-    render_targets: [Option<ID3D11RenderTargetView>; 8],
-    depth_target: Option<ID3D11DepthStencilView>,
-    blend: Option<ID3D11BlendState>,
-    blend_factor: [f32; 4],
-    sample_mask: u32,
-    depth_stencil: Option<ID3D11DepthStencilState>,
-    stencil_ref: u32,
-    rasterizer: Option<ID3D11RasterizerState>,
-    input_layout: Option<ID3D11InputLayout>,
-    topology: D3D_PRIMITIVE_TOPOLOGY,
-    vertex_shader: Option<ID3D11VertexShader>,
-    pixel_shader: Option<ID3D11PixelShader>,
-    vs_resource: [Option<ID3D11ShaderResourceView>; 1],
-    vs_constants: [Option<ID3D11Buffer>; 1],
-    ps_resource: [Option<ID3D11ShaderResourceView>; 1],
-    ps_constants: [Option<ID3D11Buffer>; 1],
-}
-
-impl SavedState {
-    /// # Safety
-    ///
-    /// `context` must be the caller-locked immediate context.
-    unsafe fn capture(context: &ID3D11DeviceContext) -> Self {
-        let mut s = SavedState {
-            render_targets: Default::default(),
-            depth_target: None,
-            blend: None,
-            blend_factor: [0.0; 4],
-            sample_mask: 0,
-            depth_stencil: None,
-            stencil_ref: 0,
-            rasterizer: None,
-            input_layout: None,
-            topology: D3D_PRIMITIVE_TOPOLOGY::default(),
-            vertex_shader: None,
-            pixel_shader: None,
-            vs_resource: Default::default(),
-            vs_constants: Default::default(),
-            ps_resource: Default::default(),
-            ps_constants: Default::default(),
-        };
-        // SAFETY: every out-pointer is a live local; the getters AddRef what they return, which the
-        // `Option` wrappers release.
-        unsafe {
-            context.OMGetRenderTargets(Some(&mut s.render_targets), Some(&mut s.depth_target));
-            context.OMGetBlendState(
-                Some(&mut s.blend),
-                Some(&mut s.blend_factor),
-                Some(&mut s.sample_mask),
-            );
-            context.OMGetDepthStencilState(Some(&mut s.depth_stencil), Some(&mut s.stencil_ref));
-            s.rasterizer = context.RSGetState().ok();
-            s.input_layout = context.IAGetInputLayout().ok();
-            s.topology = context.IAGetPrimitiveTopology();
-            context.VSGetShader(&mut s.vertex_shader, None, None);
-            context.PSGetShader(&mut s.pixel_shader, None, None);
-            context.VSGetShaderResources(0, Some(&mut s.vs_resource));
-            context.VSGetConstantBuffers(0, Some(&mut s.vs_constants));
-            context.PSGetShaderResources(1, Some(&mut s.ps_resource));
-            context.PSGetConstantBuffers(0, Some(&mut s.ps_constants));
-        }
-        s
-    }
-
-    /// # Safety
-    ///
-    /// `context` must be the caller-locked immediate context the state was captured from.
-    unsafe fn restore(self, context: &ID3D11DeviceContext) {
-        // SAFETY: rebinding objects the context itself returned.
-        unsafe {
-            context.OMSetRenderTargets(Some(&self.render_targets), self.depth_target.as_ref());
-            context.OMSetBlendState(
-                self.blend.as_ref(),
-                Some(&self.blend_factor),
-                self.sample_mask,
-            );
-            context.OMSetDepthStencilState(self.depth_stencil.as_ref(), self.stencil_ref);
-            context.RSSetState(self.rasterizer.as_ref());
-            context.IASetInputLayout(self.input_layout.as_ref());
-            context.IASetPrimitiveTopology(self.topology);
-            context.VSSetShader(self.vertex_shader.as_ref(), None);
-            context.PSSetShader(self.pixel_shader.as_ref(), None);
-            context.VSSetShaderResources(0, Some(&self.vs_resource));
-            context.VSSetConstantBuffers(0, Some(&self.vs_constants));
-            context.PSSetShaderResources(1, Some(&self.ps_resource));
-            context.PSSetConstantBuffers(0, Some(&self.ps_constants));
-        }
-    }
 }
 
 #[cfg(test)]
