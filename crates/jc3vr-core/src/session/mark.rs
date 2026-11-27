@@ -20,4 +20,9 @@ pub fn set_mark_handler(handler: fn()) {
     }
 }
 
+/// Whether a take-marker handler is registered, for the install's registration check.
+pub fn mark_handler_registered() -> bool {
+    MARK_HANDLER.get().is_some()
+}
+
 static MARK_HANDLER: OnceLock<fn()> = OnceLock::new();

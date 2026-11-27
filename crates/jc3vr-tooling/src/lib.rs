@@ -25,16 +25,18 @@
 //! payload's frame driver, composition, and settings aggregate. Everything else keeps its
 //! crate-private visibility.
 //!
-//! The crate defines no detours. The payload's composition runs its registrations before the hooks
-//! are installed, in its own order with the other layers' (the order is load-bearing):
-//! [`recorder::register_render::register`], [`recorder::register_mark::register`],
-//! [`diagnostics::install`], and [`director::register_tracking::register`]. Each group's settings
-//! slot ([`recorder::RECORDER_CONFIG`], [`director::DIRECTOR_CONFIG`], and
-//! [`testing::TESTING_CONFIG`]) sits beside the group's type, and the payload binds them to its
-//! aggregate.
+//! The crate defines no detours. Its registrations with the layers below it (the recorder's mirror
+//! observer, eye-frame recorder, and take-marker handler, the diagnostics' observers, and the
+//! directing tools' start-marker source) are gathered in [`register()`], which the payload's
+//! composition calls once before the hooks are installed. Each group's settings slot
+//! ([`recorder::RECORDER_CONFIG`], [`director::DIRECTOR_CONFIG`], and [`testing::TESTING_CONFIG`])
+//! sits beside the group's type, and the payload binds them to its aggregate.
 
 pub mod diagnostics;
 pub mod director;
 pub mod recorder;
+mod register;
 pub mod testing;
 pub mod tuning;
+
+pub use crate::register::register;

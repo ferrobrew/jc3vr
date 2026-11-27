@@ -69,8 +69,6 @@ pub(crate) mod layout;
 mod owners;
 mod pacing;
 pub(crate) mod protocol;
-pub mod register_mark;
-pub mod register_render;
 pub mod session_recording;
 mod stream;
 mod take;

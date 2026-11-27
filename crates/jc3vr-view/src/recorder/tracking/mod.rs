@@ -51,7 +51,7 @@ use tracking_format::{
 pub use crate::recorder::tracking::{
     notes::note_settings,
     register_frame_timing::register_frame_timing,
-    start_source::{NamedPlace, StartSource, register_start_source},
+    start_source::{NamedPlace, StartSource, register_start_source, start_source_registered},
 };
 use crate::{
     recorder::tracking::{

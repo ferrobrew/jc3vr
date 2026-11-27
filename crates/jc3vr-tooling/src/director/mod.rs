@@ -25,7 +25,6 @@ use serde::{Deserialize, Serialize};
 pub mod heat;
 pub mod keymap;
 pub mod markers;
-pub mod register_tracking;
 pub mod safety;
 pub mod teleport;
 pub mod time;

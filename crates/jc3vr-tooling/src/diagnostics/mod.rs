@@ -12,17 +12,16 @@
 //! ([`body_state`]). The controller state combines independently read subsystem snapshots; it does
 //! not claim an atomic cross-subsystem instant; its world groups are [`world_state`]'s.
 //!
-//! The other samplers observe the game where it acts, through the observers [`install`] registers:
-//! Rico's pose before and after the solves ([`pose`]), at the character hooks' pose-finalization
+//! The other samplers observe the game where it acts, through the observers the crate's
+//! registration installs ([`crate::register`]): Rico's pose before and after the solves ([`pose`]), at the character hooks' pose-finalization
 //! observer, and the bodies near Rico and what his hands hold ([`bodies`]), after each simulation
 //! step. The notes the controller subsystems write as they act (refusals, forces, injected actions,
 //! haptic cues, the rig's frames) are [`jc3vr_body::controllers::telemetry`]'s, and the
 //! settings and the frame timing are the tracking recorder's own.
 
-mod bodies;
+pub(crate) mod bodies;
 mod body_state;
-mod pose;
-mod register_observers;
+pub(crate) mod pose;
 mod sample;
 mod state_names;
 mod world_state;
@@ -32,12 +31,6 @@ use std::time::Instant;
 use jc3gi::character::character::Character;
 use jc3vr_body::{controllers::body::procedural, hooks::animation::active_state_type_id};
 use jc3vr_view::recorder::tracking::{events, events::EventKind};
-
-/// Register the samplers that observe the game: the pose-finalization observer and the post-step
-/// observer. Call once, before the hooks are installed.
-pub fn install() {
-    register_observers::register();
-}
 
 /// Note the controller subsystems' state when a recording or the lookback collects it.
 pub fn record() {

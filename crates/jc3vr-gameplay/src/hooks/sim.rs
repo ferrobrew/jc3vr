@@ -58,6 +58,11 @@ pub fn register_post_step(observer: unsafe fn()) {
     }
 }
 
+/// Whether the post-step observer is registered, for the install's registration check.
+pub fn post_step_registered() -> bool {
+    POST_STEP.get().is_some()
+}
+
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_GAME_BINDER)

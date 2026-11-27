@@ -34,7 +34,6 @@ use jc3vr_render::{
     hooks::{clock, draw_count, graphics_engine},
     stereo,
 };
-use jc3vr_tooling::{diagnostics, director, recorder};
 use jc3vr_ui::pause_menu;
 use jc3vr_vehicles::{Registered as VehiclesRegistered, register as register_vehicles};
 use jc3vr_view::hooks::{camera, window_focus};
@@ -51,24 +50,20 @@ pub(crate) fn install() -> Result<(), InstallError> {
     debug::register_unpatch::register();
     // The render layer's own passes in the post-draw.
     register_passes::register();
-    // What the HUD contributes to the layers below it: the post-draw, the mirror, the flip, the
-    // input capture, and the pointers. It fills slots of its own.
+    // What the HUD and the tooling contribute to the layers below them: the post-draw, the mirror,
+    // the flip, the input capture, the pointers, the session, the sim, the character hooks, and the
+    // tracking recorder. Each fills slots of its own.
     jc3vr_hud::register(&mut check);
-    // What the tooling contributes to the post-draw and the mirror.
-    recorder::register_render::register();
+    jc3vr_tooling::register(&mut check);
     // What the debug tools and the graphics-engine hooks contribute to the VR runtime and the
     // camera hooks below them.
     debug::register_view::register();
     graphics_engine::register_vr_teardown::register();
     // What the capture tooling observes in the render hooks.
     register_probes::register();
-    // What the input tick reads from the HUD and the recorder, registered before any tick runs.
-    recorder::register_mark::register();
     // What the vehicle handling contributes to the physical crate, and its equipment detours.
     let vehicles = register_vehicles(&mut check);
     controllers::install(&mut check).map_err(InstallError::Participant)?;
-    diagnostics::install();
-    director::register_tracking::register();
     check.finish().map_err(InstallError::Missing)?;
     core_hooks::install(|| compose(&vehicles));
     Ok(())

@@ -35,7 +35,7 @@ use std::{
 
 use crate::session::root::{Resolution, RootError};
 pub use crate::session::{
-    mark::{request_mark, set_mark_handler},
+    mark::{mark_handler_registered, request_mark, set_mark_handler},
     root::{ENV_VAR, Source},
 };
 

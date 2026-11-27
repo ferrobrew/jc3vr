@@ -28,6 +28,11 @@ pub fn register_start_source(source: StartSource) {
     }
 }
 
+/// Whether the start marker's source is registered, for the install's registration check.
+pub fn start_source_registered() -> bool {
+    SOURCE.get().is_some()
+}
+
 /// The player character's world matrix, or `None` without a player character or a source.
 pub(super) fn player_transform() -> Option<[f32; 16]> {
     SOURCE.get().and_then(|source| (source.player_transform)())
