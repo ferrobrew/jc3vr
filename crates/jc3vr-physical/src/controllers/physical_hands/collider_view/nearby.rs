@@ -1,6 +1,6 @@
-//! The reads the tracking recorder's near set makes of the physics world: a slice of the body
-//! slots walked for dynamic bodies whose boxes a test accepts, one dynamic body's pose and
-//! velocities, and a body's identity and shape for its introduction. The set itself, and what it
+//! The reads the tracking recorder's near set makes of the physics world beyond the substrate's
+//! walk of the body slots ([`jc3vr_body::controllers::physics::scan::walk_dynamic`]): one dynamic
+//! body's pose and velocities, and a body's identity and shape for its introduction. The set itself, and what it
 //! records, is `jc3vr_body::controllers::telemetry`'s.
 //!
 //! A walk of every slot up to the world's peak streams the whole body array, so the recorder walks
@@ -10,19 +10,17 @@ use std::num::NonZeroUsize;
 
 use glam::{Quat, Vec3};
 use jc3gi::physics::hknpBody;
-/// Where a slice of the walk ended: the substrate's, under the name the recorder still uses.
-pub use jc3vr_body::controllers::physics::scan::Slice;
 use jc3vr_body::controllers::physics::{
     bodies,
     havok::affine as havok_affine,
-    scan::{self, Space, motion_kind},
+    scan::{Aabb, MotionKind, Space, motion_kind},
 };
 
 use crate::controllers::physical_hands::{
     collider_view::{
         mod_ids,
-        model::{Aabb, KindInputs, ModBody, MotionKind, classify},
-        scan::{ScanError, geometry, layer, mass, player_proxy},
+        model::{KindInputs, ModBody, classify},
+        scan::{geometry, layer, mass, player_proxy},
     },
     world::World,
 };
@@ -46,20 +44,6 @@ pub struct BodyDescription {
     pub shape: &'static str,
     pub half_extents: Vec3,
     pub filter: u32,
-}
-
-/// Walk up to `count` slots from `start`, wrapping at the world's peak, and hand `keep` each
-/// dynamic body in the simulation with its box, game space. A shim over [`scan::walk_dynamic`].
-///
-/// # Safety
-///
-/// The game thread, outside the physics step.
-pub unsafe fn walk_dynamic(
-    start: u32,
-    count: u32,
-    keep: impl FnMut(u32, &Aabb),
-) -> Result<Slice, ScanError> {
-    unsafe { scan::walk_dynamic(start, count, keep) }.map_err(ScanError::from)
 }
 
 /// The dynamic body `id`'s pose, velocities, and box, or `None` when its slot no longer holds a

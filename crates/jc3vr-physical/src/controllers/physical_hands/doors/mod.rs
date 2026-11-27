@@ -34,7 +34,10 @@ use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
-use jc3vr_body::controllers::grab::world_reach::{DoorTarget, Reach, TargetKind};
+use jc3vr_body::controllers::{
+    grab::world_reach::{DoorTarget, Reach, TargetKind},
+    physics::vehicles,
+};
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Pose;
 
@@ -85,11 +88,13 @@ pub(crate) unsafe fn observed_reach(
     if hit.position.distance(palm) > reach.box_m.max(reach.handle_m) {
         return None;
     }
-    let vehicle = unsafe { engine::vehicle_of(object) }?;
+    let vehicle = unsafe { vehicles::vehicle_of(object) }?;
     let doors = unsafe { engine::doors(vehicle) };
-    let origin = unsafe { engine::vehicle_frame(vehicle) }.w_axis.truncate();
+    let origin = unsafe { vehicles::vehicle_frame(vehicle) }
+        .w_axis
+        .truncate();
     let tuning = &DOORS.get().grip;
-    if unsafe { engine::is_vehicle_part(object) } {
+    if unsafe { vehicles::is_vehicle_part(object) } {
         // An open door's own body: the door is held where the hand touched it.
         let door = doors
             .iter()
@@ -220,10 +225,10 @@ impl Latch {
     /// The game thread, outside the physics step; the door's vehicle must be live.
     pub unsafe fn take(door: DoorTarget, point: Vec3, palm: Pose) -> Option<Self> {
         let vehicle_body = door.vehicle_body?;
-        if !unsafe { engine::alive(door.vehicle, vehicle_body) } {
+        if !unsafe { vehicles::owns_body(door.vehicle, vehicle_body) } {
             return None;
         }
-        let world = unsafe { engine::vehicle_frame(door.vehicle) };
+        let world = unsafe { vehicles::vehicle_frame(door.vehicle) };
         Self::at(door, vehicle_body, point, palm, world)
     }
 
@@ -286,13 +291,13 @@ impl Latch {
     /// The game thread, outside the physics step.
     pub unsafe fn step(&mut self, palm: Vec3, unlatch_pull_m: f32) -> LatchStep {
         let vehicle = self.door.vehicle;
-        if !unsafe { engine::alive(vehicle, self.vehicle_body) } {
+        if !unsafe { vehicles::owns_body(vehicle, self.vehicle_body) } {
             return LatchStep::Lost(DoorError::VehicleGone);
         }
         let Some(door) = (unsafe { engine::door(vehicle, self.door.part_index) }) else {
             return LatchStep::Lost(DoorError::NoDoor);
         };
-        let world = unsafe { engine::vehicle_frame(vehicle) };
+        let world = unsafe { vehicles::vehicle_frame(vehicle) };
         let decision = latch_decision(world, self, palm, unlatch_pull_m, door.latched);
         match decision {
             LatchDecision::Hold(pin) => LatchStep::Pin(pin),

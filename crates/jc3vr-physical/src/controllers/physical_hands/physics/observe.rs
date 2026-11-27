@@ -5,7 +5,9 @@
 use std::{sync::atomic::Ordering, time::Duration};
 
 use glam::Vec3;
-use jc3vr_body::controllers::{clock::TimeScale, hands::CockpitHand, haptics, held, held::guns};
+use jc3vr_body::controllers::{
+    clock::TimeScale, hands::CockpitHand, haptics, held, held::guns, physics::rig::RigSample,
+};
 use jc3vr_core::{
     game_tick::GameTick,
     published::{Published, Stage, Stamp, Step},
@@ -14,12 +16,11 @@ use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Sustain,
 };
-use jc3vr_view::{headpose, headpose::teleport, vr::recenter_count};
+use jc3vr_view::{headpose, headpose::teleport};
 
 use crate::controllers::physical_hands::{
     physics::{
         PHYSICS, blows, callback, drawn_body,
-        drive::rig_jumped,
         lifecycle::HANDS,
         render::{RenderOffset, apply_offsets},
         state::{CLEANUP_REGISTERED, SHARED, TRACKERS_AT_REST, Target, acting_palms},
@@ -92,8 +93,7 @@ pub fn observe(dt: f32) {
     let palms = acting
         .filter(|a| a.palms.iter().any(Option::is_some))
         .map(|a| (a.palms, a.world_scale, a.origin));
-    let body_rotation = headpose::xr::body_rotation();
-    let recenters = recenter_count();
+    let rig = RigSample::now();
     let mut loads = [0.0; 2];
     {
         let mut shared = SHARED.lock();
@@ -104,8 +104,7 @@ pub fn observe(dt: f32) {
         }
         // A snap turn or a recenter moves every palm at once without the hands moving: the
         // palms' motion starts afresh, and the next step carries the bodies with the rig.
-        let jumped = rig_jumped(shared.rig, body_rotation, recenters);
-        shared.rig = Some((body_rotation, recenters));
+        let jumped = shared.rig.observe(rig);
         if jumped {
             shared.trackers = TRACKERS_AT_REST;
             shared.carrier.reset();
@@ -163,7 +162,7 @@ pub fn observe(dt: f32) {
             let i = hand.index();
             shared.shown[i] = show && targets[i].is_some();
             shared.cockpit_offsets[i] = if shared.shown[i] {
-                offsets[i].to_cockpit(body_rotation, scale)
+                offsets[i].to_cockpit(rig.rotation, scale)
             } else {
                 RenderOffset::NONE
             };
@@ -226,7 +225,8 @@ pub unsafe fn sample_render_offsets() {
             shared.targets,
             shared
                 .rig
-                .map_or_else(headpose::xr::body_rotation, |rig| rig.0),
+                .last()
+                .map_or_else(headpose::xr::body_rotation, |rig| rig.rotation),
             shared.world_scale.max(1e-3),
             shared.shown,
             shared.offset_timeline.at(now),

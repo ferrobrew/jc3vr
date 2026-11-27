@@ -14,7 +14,9 @@ use jc3gi::{
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
 use jc3vr_body::controllers::{
-    aim::grapple_weapons, grab::world_reach::TargetKind, physics::bodies::*,
+    aim::grapple_weapons,
+    grab::world_reach::TargetKind,
+    physics::{bodies::*, vehicles},
 };
 
 use crate::controllers::physical_hands::doors::engine as door_engine;
@@ -58,7 +60,7 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
     }
     // A part still on its vehicle, such as a door hanging on its hinge, is the doors' to take; one
     // that has come off, such as a door torn off, is a loose object like any other.
-    if unsafe { door_engine::is_vehicle_part(object) }
+    if unsafe { vehicles::is_vehicle_part(object) }
         && !unsafe { door_engine::broken_off(object, body) }
     {
         return Err(Unclassified::VehiclePart);

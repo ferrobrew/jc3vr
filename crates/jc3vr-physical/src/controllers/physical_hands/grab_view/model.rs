@@ -3,12 +3,11 @@
 //! a grip target, and the colours and sizes each of those is drawn with.
 
 use glam::Vec3;
+use jc3vr_body::controllers::physics::scan::Aabb;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::overlay::primitive::Rgba;
 
-use crate::controllers::physical_hands::{
-    PalmReadout, collider_view::model::Aabb, status::Idle, views::GrabDrawTuning,
-};
+use crate::controllers::physical_hands::{PalmReadout, status::Idle, views::GrabDrawTuning};
 
 /// One of a palm's reach rays as the tick cast it, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]

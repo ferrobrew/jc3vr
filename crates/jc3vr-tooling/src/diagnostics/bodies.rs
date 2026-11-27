@@ -12,6 +12,7 @@
 use std::time::{Duration, Instant};
 
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::physics::scan::{self, Aabb};
 use jc3vr_core::{
     frame_timing::{self, Slot},
     hooks,
@@ -19,10 +20,7 @@ use jc3vr_core::{
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::{
     self, HeldBody,
-    collider_view::{
-        model::Aabb,
-        nearby::{self, BodyState},
-    },
+    collider_view::nearby::{self, BodyState},
     physics,
 };
 use jc3vr_view::recorder::tracking::{events, events::EventKind, format::hand_to_file};
@@ -73,7 +71,7 @@ pub(crate) unsafe fn after_step() {
     let mut candidates: Vec<u32> = state.kept.iter().map(|(id, _)| *id).collect();
     // SAFETY: forwarded from the caller.
     let slice = unsafe {
-        nearby::walk_dynamic(state.cursor, slice_len, |id, aabb| {
+        scan::walk_dynamic(state.cursor, slice_len, |id, aabb| {
             if near(aabb) && !candidates.contains(&id) {
                 candidates.push(id);
             }

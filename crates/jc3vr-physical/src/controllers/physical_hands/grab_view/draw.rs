@@ -431,13 +431,15 @@ const CANDIDATE_PRIMITIVES: usize = 13;
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
-    use jc3vr_body::controllers::grab::{
-        GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame, socket::Socket,
+    use jc3vr_body::controllers::{
+        grab::{
+            GrabVolume, Mark, MarkAt, Reach, Resolved, Tier, markers::test_frame, socket::Socket,
+        },
+        physics::scan::Aabb,
     };
 
     use super::*;
     use crate::controllers::physical_hands::{
-        collider_view::model::Aabb,
         grab_view::model::{CandidateKind, RayOutcome, ReachRay},
         views::VIEWS,
     };

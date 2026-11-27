@@ -91,10 +91,10 @@ pub struct DoorRead {
 ///
 /// `object` must be a live physics game object, on the game thread outside the physics step.
 pub unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
-    if !unsafe { is_vehicle_part(object) } {
+    if !unsafe { vehicles::is_vehicle_part(object) } {
         return false;
     }
-    let Some(vehicle) = (unsafe { vehicle_of(object) }) else {
+    let Some(vehicle) = (unsafe { vehicles::vehicle_of(object) }) else {
         return true;
     };
     let vehicle = unsafe { &mut *(vehicle.get() as *mut Vehicle) };
@@ -122,7 +122,7 @@ pub unsafe fn broken_off(object: NonZeroUsize, body: u32) -> bool {
 ///
 /// `vehicle` must be a live vehicle.
 pub(crate) unsafe fn doors(vehicle: NonZeroUsize) -> Vec<DoorRead> {
-    let world = unsafe { vehicle_frame(vehicle) };
+    let world = unsafe { vehicles::vehicle_frame(vehicle) };
     let mut doors = Vec::new();
     unsafe {
         each_door(vehicle, |_, slot, part| {
@@ -137,16 +137,6 @@ pub(crate) unsafe fn doors(vehicle: NonZeroUsize) -> Vec<DoorRead> {
         })
     };
     doors
-}
-
-/// Whether `vehicle` still owns its body `vehicle_body`, which proves it is alive. A shim over
-/// [`vehicles::owns_body`].
-///
-/// # Safety
-///
-/// The game thread, outside the physics step.
-pub(crate) unsafe fn alive(vehicle: NonZeroUsize, vehicle_body: u32) -> bool {
-    unsafe { vehicles::owns_body(vehicle, vehicle_body) }
 }
 
 /// The door of `vehicle` at part index `part_index`, read now.
@@ -207,7 +197,7 @@ pub(crate) unsafe fn unlatch(
             }
         })
     };
-    if let Some(vehicle_body) = unsafe { vehicle_body(vehicle) } {
+    if let Some(vehicle_body) = unsafe { vehicles::vehicle_body(vehicle) } {
         hinge::opened(vehicle, vehicle_body, part_index, read.slot);
     }
     Ok(body)

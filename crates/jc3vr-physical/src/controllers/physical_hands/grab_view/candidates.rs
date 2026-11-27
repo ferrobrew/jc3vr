@@ -6,14 +6,17 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3vr_body::controllers::{grab::world_reach::TargetKind, physics::bodies};
+use jc3vr_body::controllers::{
+    grab::world_reach::TargetKind,
+    physics::{bodies, vehicles},
+};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
     bodies::classify,
     collider_view,
     collider_view::{ScanError, model::BodyKind},
-    doors::engine::{broken_off, vehicle_of},
+    doors::engine::broken_off,
     grab_view::model::{Candidate, CandidateKind},
     grasp,
     pickup::PICKUP,
@@ -103,7 +106,7 @@ unsafe fn kind_of(
     body: u32,
     standing_on: Option<u32>,
 ) -> Option<CandidateKind> {
-    if unsafe { vehicle_of(object) }.is_some() && !unsafe { broken_off(object, body) } {
+    if unsafe { vehicles::vehicle_of(object) }.is_some() && !unsafe { broken_off(object, body) } {
         return Some(CandidateKind::Vehicle);
     }
     if standing_on == Some(body) {

@@ -8,7 +8,11 @@ use jc3gi::{equipment::weapon::WeaponBase, physics::PfxLayer, vehicle::vehicle::
 use jc3vr_body::controllers::{
     aim::{ray::Ray, raycast, raycast::CastOptions},
     grab::world_reach::{Reach, TargetKind},
-    physics::bodies,
+    physics::{
+        bodies,
+        scan::{self, Aabb},
+        vehicles,
+    },
 };
 use parking_lot::Mutex;
 
@@ -16,7 +20,7 @@ use crate::controllers::physical_hands::{
     articulated,
     bodies::{classify, describe},
     characters,
-    collider_view::{model::Aabb, nearby},
+    collider_view::nearby,
     contact::{Surface, SurfaceHit},
     doors,
     doors::{acquisition::PanelReach, tuning::DOORS},
@@ -94,7 +98,7 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
     let discovery_radius = radius + spread + tuning.discovery_margin_m;
     let next = scan.next;
     let result = unsafe {
-        nearby::walk_dynamic(next, tuning.walk_budget, |body, bounds| {
+        scan::walk_dynamic(next, tuning.walk_budget, |body, bounds| {
             if bounds.distance(*first) <= discovery_radius
                 && scan.bodies.len() < tuning.max_bodies
                 && !scan.bodies.contains(&body)
@@ -661,7 +665,7 @@ unsafe fn articulated_kind(
     body: u32,
     tuning: &ReachTuning,
 ) -> Option<TargetKind> {
-    if unsafe { doors::engine::vehicle_of(object) }.is_some()
+    if unsafe { vehicles::vehicle_of(object) }.is_some()
         && !unsafe { doors::engine::broken_off(object, body) }
     {
         return None;

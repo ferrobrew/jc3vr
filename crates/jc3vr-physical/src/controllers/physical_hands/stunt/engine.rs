@@ -23,7 +23,7 @@ use jc3gi::{
         vehicle::{Helicopter, Vehicle},
     },
 };
-use jc3vr_body::controllers::physics::{bodies::is_type, local_player::LocalPlayer, vehicles};
+use jc3vr_body::controllers::physics::{bodies::is_type, local_player::LocalPlayer};
 use jc3vr_core::game_tick::GameTick;
 
 use crate::controllers::physical_hands::{physics, stunt::solve::StuntKind};
@@ -102,16 +102,6 @@ unsafe fn position_ready(character: &Character) -> PositionRead {
         owns_movement,
         vehicle_speed_mps,
     }
-}
-
-/// The vehicle that owns the body `body`, if a vehicle does. A shim over
-/// [`vehicles::vehicle_owning`].
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn vehicle_of(body: u32) -> Option<NonZeroUsize> {
-    unsafe { vehicles::vehicle_owning(body) }
 }
 
 /// Whether the live vehicle `vehicle` is a helicopter.

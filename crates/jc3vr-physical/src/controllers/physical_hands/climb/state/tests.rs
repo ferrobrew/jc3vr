@@ -1,4 +1,5 @@
 use jc3vr_body::controllers::facts::climb::BodyIdentity;
+use jc3vr_input::motion::{ReleaseShape, shaped_release};
 
 use super::*;
 
@@ -233,20 +234,14 @@ fn captured_point_carry_is_bounded_once_and_responds_to_active_limit_changes() {
             panic!("mantle must move")
         };
         assert!(motion.velocity.abs_diff_eq(relative + expected, 1e-6));
-        let released = crate::controllers::physical_hands::climb::solve::release_velocity(
-            motion.velocity,
-            motion.carry,
-            1.0,
-            100.0,
-        );
+        let shape = |scale| ReleaseShape {
+            scale,
+            max_speed_mps: 100.0,
+        };
+        let released = shaped_release(motion.velocity, motion.carry, shape(1.0));
         assert!(released.abs_diff_eq(expected + relative, 1e-6));
         assert_eq!(
-            crate::controllers::physical_hands::climb::solve::release_velocity(
-                motion.velocity,
-                motion.carry,
-                0.0,
-                100.0
-            ),
+            shaped_release(motion.velocity, motion.carry, shape(0.0)),
             motion.carry
         );
     }

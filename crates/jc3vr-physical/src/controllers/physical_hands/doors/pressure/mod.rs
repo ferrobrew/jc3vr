@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{
         raycast,
         raycast::{CastOptions, RaycastError},
     },
-    physics::bodies,
+    physics::{bodies, vehicles},
 };
 
 use crate::controllers::glass::bullets::names_hidden_pane;
@@ -220,7 +220,7 @@ impl Press {
             return Ok(None);
         };
         self.open = None;
-        if !unsafe { engine::alive(target.vehicle, vehicle_body) } {
+        if !unsafe { vehicles::owns_body(target.vehicle, vehicle_body) } {
             self.reject(Reason::NativeFailure(DoorError::VehicleGone));
             return Err(self.native_failure(DoorError::VehicleGone));
         }
@@ -228,12 +228,12 @@ impl Press {
             self.reject(Reason::NativeFailure(DoorError::NoDoor));
             return Err(self.native_failure(DoorError::NoDoor));
         };
-        let world = unsafe { engine::vehicle_frame(target.vehicle) };
+        let world = unsafe { vehicles::vehicle_frame(target.vehicle) };
         if !panel_hit(&door, &hit, doors.grip.panel_slack_m) {
             self.reject(panel_rejection(door, hit));
             return Ok(None);
         }
-        if unsafe { engine::vehicle_body(target.vehicle) } != Some(vehicle_body) {
+        if unsafe { vehicles::vehicle_body(target.vehicle) } != Some(vehicle_body) {
             self.reject(Reason::InvalidSample);
             return Ok(None);
         }
@@ -271,15 +271,15 @@ impl Press {
             return false;
         };
         let target = contact.target;
-        if !unsafe { engine::alive(target.vehicle, target.body) }
-            || unsafe { engine::vehicle_body(target.vehicle) } != Some(target.body)
+        if !unsafe { vehicles::owns_body(target.vehicle, target.body) }
+            || unsafe { vehicles::vehicle_body(target.vehicle) } != Some(target.body)
         {
             return false;
         }
         let Some(door) = (unsafe { engine::door(target.vehicle, target.part) }) else {
             return false;
         };
-        let world = unsafe { engine::vehicle_frame(target.vehicle) };
+        let world = unsafe { vehicles::vehicle_frame(target.vehicle) };
         let local = world.inverse().transform_point3(palm);
         if !contact.near(local, scale, tuning) || !valid_frame(world) {
             return false;
@@ -371,12 +371,12 @@ impl Press {
                 body: reach.body,
             })
             || unsafe { bodies::owner_of(reach.body) } != Some(reach.object)
-            || unsafe { engine::vehicle_of(reach.object) } != Some(target.vehicle)
+            || unsafe { vehicles::vehicle_of(reach.object) } != Some(target.vehicle)
         {
             self.reject(Reason::NoPanel);
             return Ok(None);
         }
-        let Some(vehicle_body) = (unsafe { engine::vehicle_body(target.vehicle) }) else {
+        let Some(vehicle_body) = (unsafe { vehicles::vehicle_body(target.vehicle) }) else {
             self.open = None;
             return Err(self.native_failure(DoorError::VehicleGone));
         };
@@ -400,7 +400,7 @@ impl Press {
         }
         self.diagnostics.reason(Reason::OpenPanel);
         self.diagnostics.movement(0.0, scale);
-        let world = unsafe { engine::vehicle_frame(target.vehicle) };
+        let world = unsafe { vehicles::vehicle_frame(target.vehicle) };
         let local = world.inverse().transform_point3(palm);
         if !local.is_finite() || !hit.normal.is_finite() {
             self.reject(Reason::InvalidSample);

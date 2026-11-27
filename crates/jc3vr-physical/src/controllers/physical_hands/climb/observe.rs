@@ -6,6 +6,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     haptics, mode,
     mode::{Mode, OnFootVariant},
+    physics::rig::RigSample,
 };
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::{
@@ -24,7 +25,6 @@ use crate::controllers::physical_hands::{
     },
     contact::{Surface, SurfaceHit},
     palm::PalmBox,
-    physics::drive::rig_jumped,
     pickup::REACH_DIRECTIONS,
 };
 
@@ -88,11 +88,13 @@ pub fn observe(observed: Observed) {
         let mut state = STATE.lock();
         // A recenter or a snap turn moves every palm in the rig at once without the hands moving;
         // the grips are taken afresh from where the body is then, rather than pulling it.
-        let recenters = recenter_count();
-        if rig_jumped(state.rig, body_rotation, recenters) {
+        let rig = RigSample {
+            rotation: body_rotation,
+            recenters: recenter_count(),
+        };
+        if state.rig.observe(rig) {
             state.rig_epoch = state.rig_epoch.wrapping_add(1);
         }
-        state.rig = Some((body_rotation, recenters));
         state.palms = palms;
         state.pressing = pressing;
         state.published = player.is_some().then(Stamp::now);

@@ -12,7 +12,6 @@
 
 use body_rig::math::smooth::follow_factor;
 use glam::{Affine3A, Quat, Vec2, Vec3};
-use jc3vr_input::motion::{ReleaseShape, shaped_release};
 
 /// One gripping hand: where the body and the palm were when it took hold, and where the palm is
 /// in the rig now.
@@ -130,11 +129,6 @@ pub fn carry_velocity(points: impl IntoIterator<Item = Vec3>, max_speed_mps: f32
     (sum / count as f32).clamp_length_max(max_speed_mps.max(0.0))
 }
 
-/// The velocity a release keeps: `scale` of the smoothed climbing velocity, capped at `max_speed`.
-pub fn fling(smoothed: Vec3, scale: f32, max_speed: f32) -> Vec3 {
-    release_velocity(smoothed, Vec3::ZERO, scale, max_speed)
-}
-
 /// Filter total and carry together, resetting both when the contributing grip set changes.
 pub fn smooth_motion(
     previous: (Vec3, Vec3),
@@ -151,19 +145,6 @@ pub fn smooth_motion(
             smooth(previous.1, current.1, step_s, seconds),
         )
     }
-}
-
-/// Keep inherited point velocity separate from the capped, scaled hand-generated release. A shim
-/// over [`shaped_release`].
-pub fn release_velocity(total: Vec3, carry: Vec3, scale: f32, max_speed: f32) -> Vec3 {
-    shaped_release(
-        total,
-        carry,
-        ReleaseShape {
-            scale,
-            max_speed_mps: max_speed,
-        },
-    )
 }
 
 /// The velocity a fling of `kept` carries `elapsed_s` seconds after the release: thrown, under
@@ -334,6 +315,8 @@ impl Mantle {
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_input::motion::{ReleaseShape, shaped_release};
+
     use super::*;
 
     const STEP: f32 = 1.0 / 30.0;
@@ -441,17 +424,6 @@ mod tests {
     }
 
     #[test]
-    fn release_keeps_vehicle_speed_and_caps_only_relative_motion() {
-        let carry = Vec3::X * 60.0;
-        assert_eq!(
-            release_velocity(carry + Vec3::Y * 20.0, carry, 2.0, 8.0),
-            carry + Vec3::Y * 8.0
-        );
-        assert_eq!(release_velocity(carry, carry, 3.0, 8.0), carry);
-        assert_eq!(release_velocity(carry + Vec3::Y, carry, 0.0, 8.0), carry);
-    }
-
-    #[test]
     fn moving_static_and_two_different_bodies_share_carry_without_last_hand_bias() {
         assert_eq!(
             carry_velocity([Vec3::X * 20.0, Vec3::ZERO], 100.0),
@@ -462,10 +434,6 @@ mod tests {
             Vec3::new(10.0, 0.0, 5.0)
         );
         assert_eq!(carry_velocity([Vec3::ZERO], 100.0), Vec3::ZERO);
-        assert_eq!(
-            release_velocity(Vec3::Y * 2.0, Vec3::ZERO, 1.0, 8.0),
-            Vec3::Y * 2.0
-        );
     }
 
     #[test]
@@ -474,7 +442,11 @@ mod tests {
         let static_motion = (Vec3::Y * 2.0, Vec3::ZERO);
         let now = smooth_motion(previous, static_motion, true, 0.03, 0.1);
         assert_eq!(now, static_motion);
-        assert_eq!(release_velocity(now.0, now.1, 1.0, 8.0), Vec3::Y * 2.0);
+        let shape = ReleaseShape {
+            scale: 1.0,
+            max_speed_mps: 8.0,
+        };
+        assert_eq!(shaped_release(now.0, now.1, shape), Vec3::Y * 2.0);
         let other_body = (Vec3::Z * 10.0 + Vec3::Y, Vec3::Z * 10.0);
         assert_eq!(
             smooth_motion(previous, other_body, true, 0.03, 0.1),
@@ -566,9 +538,6 @@ mod tests {
             smoothed = smooth(smoothed, Vec3::Y * 3.0, STEP, 0.08);
         }
         assert!((smoothed.y - 3.0).abs() < 1e-3);
-        assert!(fling(smoothed, 1.0, 8.0).abs_diff_eq(smoothed, 1e-6));
-        assert!((fling(smoothed, 4.0, 8.0).length() - 8.0).abs() < 1e-4);
-        assert_eq!(fling(Vec3::splat(f32::NAN), 1.0, 8.0), Vec3::ZERO);
         // One step of a sudden change moves the smoothed speed only part of the way.
         let once = smooth(Vec3::ZERO, Vec3::Y, STEP, 0.08);
         assert!(once.y > 0.0 && once.y < 1.0);

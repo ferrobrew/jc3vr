@@ -12,7 +12,10 @@ use jc3vr_body::controllers::{
     telemetry::{Released, Thrown, note_release, note_throw},
 };
 use jc3vr_core::published::Stamp;
-use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_input::{
+    frame::{Hand, Pose},
+    motion::shaped_release,
+};
 
 use crate::controllers::physical_hands::{
     carry_collision, characters,
@@ -1197,7 +1200,11 @@ fn release_velocities(
         return None;
     }
     let anchor = held.grip.anchor(body.pose);
-    let point = grasp::throw_velocity(palm.point_velocity(anchor), config);
+    let point = shaped_release(
+        palm.point_velocity(anchor),
+        Vec3::ZERO,
+        config.throw_shape(),
+    );
     let spin = body.velocities.angular;
     let linear = (point - spin.cross(anchor - body.pose.centre))
         .clamp_length_max(config.max_throw_speed_mps.max(0.0));

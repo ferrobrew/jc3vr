@@ -22,7 +22,7 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     aim::{targets, targets::TargetSet},
     grab::world_reach::{DoorTarget, Reach, TargetKind},
-    physics::bodies::is_type,
+    physics::{bodies::is_type, vehicles},
 };
 use parking_lot::Mutex;
 
@@ -63,7 +63,7 @@ pub(crate) unsafe fn near(palms: &[Vec3], world_scale: f32) -> Vec<NonZeroUsize>
         if !unsafe { is_type(object, Vehicle::TYPE_ID()) } || out.contains(&object) {
             continue;
         }
-        let at = unsafe { engine::vehicle_frame(object) }.w_axis.truncate();
+        let at = unsafe { vehicles::vehicle_frame(object) }.w_axis.truncate();
         if palms.iter().any(|p| p.distance(at) <= range) {
             out.push(object);
         }
@@ -412,7 +412,7 @@ unsafe fn holdable(
             break;
         }
     }
-    let body = body.or_else(|| unsafe { engine::vehicle_body(vehicle) })?;
+    let body = body.or_else(|| unsafe { vehicles::vehicle_body(vehicle) })?;
     Some((vehicle, body, Some(body)))
 }
 

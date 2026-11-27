@@ -26,6 +26,7 @@ use jc3vr_body::controllers::physics::{
     bodies,
     bodies::BodyState,
     rigid::{BodyPose, Velocities},
+    vehicles,
 };
 use parking_lot::Mutex;
 
@@ -80,7 +81,7 @@ pub(crate) unsafe fn tick(dt: f32, held: &[u32], active: bool, gravity_mps2: f32
     if !active {
         for door in doors.drain(..) {
             // SAFETY: the vehicle is proven alive by its body before it is touched.
-            if unsafe { engine::alive(door.vehicle, door.vehicle_body) } {
+            if unsafe { vehicles::owns_body(door.vehicle, door.vehicle_body) } {
                 unsafe { engine::set_native_latch(door.vehicle, door.part_index, true) };
             }
         }
@@ -348,7 +349,7 @@ static OPENED: Mutex<Vec<Opened>> = Mutex::new(Vec::new());
 ///
 /// The game thread, outside the physics step.
 unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeTuning, g: f32) -> bool {
-    if !unsafe { engine::alive(door.vehicle, door.vehicle_body) } {
+    if !unsafe { vehicles::owns_body(door.vehicle, door.vehicle_body) } {
         return false;
     }
     let Some(hinge) = (unsafe { engine::hinge(door.vehicle, door.part_index) }) else {

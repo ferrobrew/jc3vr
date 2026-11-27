@@ -5,7 +5,7 @@
 use std::sync::atomic::AtomicBool;
 
 use glam::{Quat, Vec2, Vec3};
-use jc3vr_body::controllers::{hands, hands::CockpitHand, mode, scheme};
+use jc3vr_body::controllers::{hands, hands::CockpitHand, mode, physics::rig::RigWatch, scheme};
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
@@ -173,7 +173,7 @@ pub(super) struct Shared {
     pub(super) carrier: VelocityTracker,
     pub(super) epoch: u64,
     /// The body's facing and the recenter count of the last palms' tick.
-    pub(super) rig: Option<(Quat, u32)>,
+    pub(super) rig: RigWatch,
     /// Each palm's move with the rig since the last step, from and to, world space.
     pub(super) rig_moves: [Option<(Goal, Goal)>; 2],
     /// Each body against its controller's palm, world space.
@@ -224,7 +224,7 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
     trackers: TRACKERS_AT_REST,
     carrier: VelocityTracker::new(),
     epoch: 0,
-    rig: None,
+    rig: RigWatch::new(),
     rig_moves: [None; 2],
     world_offsets: [RenderOffset::NONE; 2],
     cockpit_offsets: [RenderOffset::NONE; 2],

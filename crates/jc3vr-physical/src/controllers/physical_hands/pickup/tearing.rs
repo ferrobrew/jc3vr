@@ -4,11 +4,10 @@ use std::num::NonZeroUsize;
 
 use body_rig::math::geometry::point_velocity;
 use glam::{Mat4, Vec3};
-use jc3vr_body::controllers::physics::bodies;
+use jc3vr_body::controllers::physics::{bodies, vehicles};
 
 use crate::controllers::physical_hands::{
     doors::{
-        engine as door_engine,
         tearing::{self, Acquisition, Gesture, TearGrip, TearResult},
         tuning::TearTuning,
     },
@@ -233,7 +232,7 @@ impl TearEngine for NativeTearing {
     }
 
     fn vehicle_frame(&mut self, grip: &TearGrip) -> Mat4 {
-        unsafe { door_engine::vehicle_frame(grip.door.vehicle) }
+        unsafe { vehicles::vehicle_frame(grip.door.vehicle) }
     }
 
     fn hinge(&mut self, grip: &mut TearGrip, anchor: Vec3) -> Option<(f32, f32, Vec3)> {

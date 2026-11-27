@@ -28,13 +28,13 @@ use jc3gi::{
 use jc3vr_body::controllers::physics::{
     error::PhysicsError,
     havok::affine as havok_affine,
-    scan::{self, Space, motion_kind},
+    scan::{MotionKind, Space, motion_kind},
 };
 
 use crate::controllers::physical_hands::{
     collider_view::model::{
-        Aabb, Body, Geometry, Ground, Joint, JointKind, KindInputs, Layer, ModBody, MotionKind,
-        Snapshot, capsule_radius, classify, hull_edges, nearest,
+        Body, Geometry, Ground, Joint, JointKind, KindInputs, Layer, ModBody, Snapshot,
+        capsule_radius, classify, hull_edges, nearest,
     },
     world::World,
 };
@@ -173,19 +173,6 @@ pub(super) unsafe fn scan(
         scanned: slots,
         in_range,
     })
-}
-
-/// The ids and boxes of the dynamic bodies in the simulation whose boxes `keep` accepts, at most
-/// `max_bodies` of them in id order. A shim over [`scan::dynamic_boxes`].
-///
-/// # Safety
-///
-/// The game thread, outside the physics step.
-pub(super) unsafe fn dynamic_boxes(
-    keep: impl FnMut(&Aabb) -> bool,
-    max_bodies: usize,
-) -> Result<Vec<(u32, Aabb)>, ScanError> {
-    unsafe { scan::dynamic_boxes(keep, max_bodies) }.map_err(ScanError::from)
 }
 
 /// Refresh retained bodies at render time without re-reading their shape geometry.

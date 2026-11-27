@@ -28,6 +28,7 @@ use jc3vr_body::controllers::{
     },
     haptics,
     intent::hold::{Desired, MapKind, Target, Want},
+    physics::vehicles,
 };
 use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::{
@@ -119,7 +120,7 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
     let landing = landing_offer.as_ref().map(|offer| {
         let landing = offer.landing;
         // SAFETY: as above.
-        let vehicle = unsafe { engine::vehicle_of(landing.body) };
+        let vehicle = unsafe { vehicles::vehicle_owning(landing.body) };
         // SAFETY: as above; the vehicle owns a body of the live world.
         let distance =
             vehicle.and_then(|v| unsafe { engine::stunt_area_distance(v, landing.feet) });
@@ -208,7 +209,7 @@ unsafe fn helicopter_grip(grip: Option<climb::Hold>) -> bool {
     if !grip.moving || !unsafe { grip.valid() } {
         return false;
     }
-    unsafe { engine::vehicle_of(grip.body) }
+    unsafe { vehicles::vehicle_owning(grip.body) }
         .is_some_and(|vehicle| unsafe { engine::is_helicopter(vehicle) })
 }
 

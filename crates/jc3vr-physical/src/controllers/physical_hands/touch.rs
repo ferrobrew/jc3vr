@@ -5,7 +5,10 @@
 //! tick ([`crate::controllers::physical_hands::main_thread_tick`]) only on that thread.
 
 use glam::Vec3;
-use jc3vr_body::controllers::{haptics, physics::bodies};
+use jc3vr_body::controllers::{
+    haptics,
+    physics::{bodies, error::PhysicsError},
+};
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{Event, Sustain},
@@ -14,7 +17,7 @@ use jc3vr_input::{
 use crate::controllers::physical_hands::{
     HandStatus, ShoveReport, State,
     contact::{Surface, SurfaceHit},
-    engine, shove,
+    shove,
     shove::ShoveTuning,
     sounds,
     sounds::{Impact, ImpactKind},
@@ -95,7 +98,7 @@ impl State {
         let impulse = direction
             * (melee_impulse * palms.object_impulse * strength.max(palms.min_object_strength));
         // SAFETY: forwarded from the caller.
-        match unsafe { engine::push_body(body, impulse, hit.position) } {
+        match unsafe { bodies::push(body, impulse, hit.position) } {
             Ok(()) => self.status.object_pushes += 1,
             Err(e) => self.status.last_error = Some(e.to_string()),
         }
@@ -126,7 +129,7 @@ impl State {
         // SAFETY: forwarded from the caller.
         let state = match unsafe { bodies::read(body, object) } {
             Ok(state) => state,
-            Err(bodies::BodyError::NotDynamic) => {
+            Err(PhysicsError::NotDynamic) => {
                 self.gives[i].reset();
                 return None;
             }

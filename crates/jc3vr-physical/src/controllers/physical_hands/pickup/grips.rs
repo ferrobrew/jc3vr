@@ -4,7 +4,7 @@
 
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, SeatAccess, TargetKind},
-    physics::bodies,
+    physics::{bodies, vehicles},
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
@@ -85,7 +85,7 @@ pub(super) unsafe fn keep_latch(
                         body,
                         "physical hands: doors: the latch gave, and the hand holds the door"
                     );
-                    let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
+                    let world = unsafe { vehicles::vehicle_frame(latch.door.vehicle) };
                     state.carry_body(object, body);
                     state.set_held(
                         i,
@@ -120,7 +120,7 @@ pub(super) unsafe fn keep_latch(
                     ) && now.saturating_duration_since(opening_at).as_secs_f32()
                         < config.unlatch_settle_s
                     {
-                        let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
+                        let world = unsafe { vehicles::vehicle_frame(latch.door.vehicle) };
                         state.latches[i] = Some(latch);
                         outcome.pins[i] = Some(latch.handle_palm(world).position);
                     } else {

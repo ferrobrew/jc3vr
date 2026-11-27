@@ -11,6 +11,7 @@ use jc3vr_body::controllers::{
     grab::GrabVolume,
     mode,
     mode::{AirborneVariant, Mode, OnFootVariant},
+    physics::rig::RigWatch,
 };
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::frame::Hand;
@@ -302,7 +303,7 @@ pub(super) struct State {
     /// Whether each driven hand's body presses into something that holds it back.
     pub(super) pressing: [bool; 2],
     /// The body's facing and the recenter count the palms were last published with.
-    pub(super) rig: Option<(Quat, u32)>,
+    pub(super) rig: RigWatch,
     /// Counts the recenters and snap turns that moved the rig under the palms.
     pub(super) rig_epoch: u64,
     pub(super) published: Option<Stamp>,
@@ -540,7 +541,7 @@ impl State {
             grips: [None; 2],
             palms: [None; 2],
             pressing: [false; 2],
-            rig: None,
+            rig: RigWatch::new(),
             rig_epoch: 0,
             published: None,
             published_step: None,

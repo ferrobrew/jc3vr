@@ -9,14 +9,13 @@ use jc3gi::{
     vehicle::vehicle::Vehicle,
 };
 use jc3vr_body::controllers::{
-    physics::{bodies, characters::proxy_body},
+    physics::{bodies, characters::proxy_body, vehicles},
     scheme,
 };
 use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    doors::engine::is_vehicle_part,
     physics::drawn_body,
     stale_after,
     tuning::{CarryCollisionTuning, PHYSICAL_HANDS},
@@ -450,7 +449,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 ///
 /// `owner` must be a live physics game object, on the thread stepping the carry collision.
 unsafe fn vehicle_owned(owner: NonZeroUsize) -> bool {
-    unsafe { bodies::is_type(owner, Vehicle::TYPE_ID()) || is_vehicle_part(owner) }
+    unsafe { bodies::is_type(owner, Vehicle::TYPE_ID()) || vehicles::is_vehicle_part(owner) }
 }
 
 #[cfg(test)]

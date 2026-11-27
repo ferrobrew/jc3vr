@@ -9,7 +9,11 @@ use glam::Vec3;
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     grab::world_reach::{DoorTarget, Reach, TargetKind},
-    physics::{bodies, bodies::BodyError},
+    physics::{
+        bodies,
+        bodies::BodyError,
+        scan::{self, Aabb},
+    },
 };
 use jc3vr_input::frame::Hand;
 
@@ -17,8 +21,6 @@ use crate::controllers::physical_hands::{
     STATE,
     bodies::classify,
     characters::ragdoll::{Bone, Ragdoll},
-    collider_view,
-    collider_view::model::Aabb,
     contact::{Surface, SurfaceHit},
     doors,
     doors::{acquisition::PanelReach, engine as door_engine},
@@ -267,7 +269,7 @@ pub enum NearKind {
 /// The main thread, outside the physics step.
 pub unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
     let max = PHYSICAL_HANDS.get().remote.max_near_bodies;
-    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, max) }) else {
+    let Ok(boxes) = (unsafe { scan::dynamic_boxes(keep, max) }) else {
         return Vec::new();
     };
     boxes

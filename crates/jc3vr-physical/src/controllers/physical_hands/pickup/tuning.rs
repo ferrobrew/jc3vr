@@ -6,6 +6,7 @@ use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
     tuning::Tuning,
 };
+use jc3vr_input::motion::ReleaseShape;
 use serde::Deserialize;
 
 use crate::controllers::physical_hands::physics::tuning::PHYSICS;
@@ -142,6 +143,16 @@ impl HandStrength {
         Self {
             force_n: bodies.max_force_n,
             torque_nm: bodies.max_torque_nm,
+        }
+    }
+}
+
+impl PickupTuning {
+    /// How a released object's velocity is shaped from the palm's at its grab point.
+    pub fn throw_shape(&self) -> ReleaseShape {
+        ReleaseShape {
+            scale: self.throw_scale,
+            max_speed_mps: self.max_throw_speed_mps,
         }
     }
 }

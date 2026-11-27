@@ -5,7 +5,10 @@ use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_core::published::{Stamp, Step};
-use jc3vr_input::frame::Hand;
+use jc3vr_input::{
+    frame::Hand,
+    motion::{ReleaseShape, shaped_release},
+};
 use jc3vr_view::headpose::teleport;
 
 use crate::controllers::physical_hands::{
@@ -13,7 +16,7 @@ use crate::controllers::physical_hands::{
         engine, native,
         solve::{
             Follow, MantleTuning, PullTuning, body_target, carry_velocity, climb_velocity,
-            fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
+            fling_carry, is_ledge, slope_follow, smooth_motion,
         },
         state::{Carry, Event, Grip, LOG_PERIOD, MantleStep, MantleTick, Request, STATE},
         tuning::CLIMB,
@@ -204,15 +207,17 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
             && !held_by_game
             && state.climbing
         {
-            let kept = release_velocity(
+            let kept = shaped_release(
                 state.smoothed,
                 state.smoothed_carry,
-                if state.mantle.is_none() {
-                    climb.fling_scale
-                } else {
-                    0.0
+                ReleaseShape {
+                    scale: if state.mantle.is_none() {
+                        climb.fling_scale
+                    } else {
+                        0.0
+                    },
+                    max_speed_mps: climb.max_fling_speed_mps,
                 },
-                climb.max_fling_speed_mps,
             );
             // SAFETY: forwarded from the caller.
             match unsafe { engine::set_velocity(kept) } {

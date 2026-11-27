@@ -5,7 +5,9 @@ use std::{fmt, mem::MaybeUninit, num::NonZeroUsize};
 use glam::{Mat4, Vec3};
 use jc3gi::vehicle::{parts::ConstraintInfo, vehicle::Vehicle};
 use jc3vr_body::controllers::{
-    grab::world_reach::DoorTarget, physics::bodies::owner_of, telemetry::report,
+    grab::world_reach::DoorTarget,
+    physics::{bodies::owner_of, vehicles},
+    telemetry::report,
 };
 
 use crate::controllers::physical_hands::doors::{engine, tuning::TearTuning};
@@ -136,7 +138,7 @@ pub(crate) enum TearResult {
 /// # Safety
 /// The held body must prove the door's object alive this tick, outside the physics step.
 pub(crate) unsafe fn hinge(grip: &mut TearGrip, anchor: Vec3) -> Option<(f32, f32, Vec3)> {
-    if !unsafe { engine::alive(grip.door.vehicle, grip.vehicle_body) } {
+    if !unsafe { vehicles::owns_body(grip.door.vehicle, grip.vehicle_body) } {
         return None;
     }
     let read = unsafe { engine::door(grip.door.vehicle, grip.door.part_index) }?;
@@ -163,7 +165,7 @@ pub(crate) unsafe fn hinge(grip: &mut TearGrip, anchor: Vec3) -> Option<(f32, f3
 /// # Safety
 /// The held object's body ownership must have been checked this tick.
 pub(crate) unsafe fn continuity(grip: &TearGrip, object: NonZeroUsize, body: u32) -> TearResult {
-    if !unsafe { engine::alive(grip.door.vehicle, grip.vehicle_body) } {
+    if !unsafe { vehicles::owns_body(grip.door.vehicle, grip.vehicle_body) } {
         return TearResult::Lost;
     }
     let vehicle = unsafe { &mut *(grip.door.vehicle.get() as *mut Vehicle) };
@@ -307,15 +309,15 @@ impl AcquisitionEngine for NativeAcquisition {
     }
 
     fn alive(&mut self, vehicle: NonZeroUsize, body: u32) -> bool {
-        unsafe { engine::alive(vehicle, body) }
+        unsafe { vehicles::owns_body(vehicle, body) }
     }
 
     fn vehicle_of(&mut self, object: NonZeroUsize) -> Option<NonZeroUsize> {
-        unsafe { engine::vehicle_of(object) }
+        unsafe { vehicles::vehicle_of(object) }
     }
 
     fn vehicle_body(&mut self, vehicle: NonZeroUsize) -> Option<u32> {
-        unsafe { engine::vehicle_body(vehicle) }
+        unsafe { vehicles::vehicle_body(vehicle) }
     }
 
     fn continuity(&mut self, grip: &TearGrip, object: NonZeroUsize, body: u32) -> TearResult {

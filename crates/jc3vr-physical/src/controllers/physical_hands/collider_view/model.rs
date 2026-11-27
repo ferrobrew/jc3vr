@@ -3,9 +3,10 @@
 //! the gaze. The engine side that fills it is [`crate::controllers::physical_hands::collider_view::scan`].
 
 use glam::{Affine3A, Quat, Vec3, Vec3A};
-/// The box and the motion kind, which live in the physics substrate: shims for the callers that
-/// still name them here.
-pub use jc3vr_body::controllers::physics::scan::{Aabb, MotionKind, restore_aabb};
+/// The box, which lives in the physics substrate: a shim for the grapple's snatch until it names
+/// the substrate's.
+pub use jc3vr_body::controllers::physics::scan::Aabb;
+use jc3vr_body::controllers::physics::scan::MotionKind;
 
 /// What a body is, for its colour and the readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

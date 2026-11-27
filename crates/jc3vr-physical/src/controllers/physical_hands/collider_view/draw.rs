@@ -9,12 +9,13 @@
 use std::collections::HashMap;
 
 use glam::{Affine3A, Vec3};
+use jc3vr_body::controllers::physics::scan::Aabb;
 use jc3vr_view::controllers::overlay::primitive::{
     Anchor, DepthMode, Facing, Primitive, Rgba, Shape, SpriteSize, scale_alpha,
 };
 
 use crate::controllers::physical_hands::{
-    collider_view::model::{Aabb, Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
+    collider_view::model::{Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
     views::ColliderDrawTuning,
 };
 
@@ -348,11 +349,12 @@ const GAZE: Rgba = [1.0, 1.0, 1.0, 0.9];
 
 #[cfg(test)]
 mod tests {
+    use jc3vr_body::controllers::physics::scan::MotionKind;
     use pretty_assertions::assert_eq;
 
     use super::*;
     use crate::controllers::physical_hands::{
-        collider_view::model::{Ground, Joint, MotionKind},
+        collider_view::model::{Ground, Joint},
         views::VIEWS,
     };
 

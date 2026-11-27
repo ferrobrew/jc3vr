@@ -1,48 +1,19 @@
-//! The physical hands' engine side: what a ray hit is, the player's melee impulse, and a push on a
-//! dynamic body.
+//! The physical hands' engine side: what a ray hit is, the player's melee impulse and damage, and
+//! the body the player stands on.
 //!
-//! An object is pushed through `hknpWorld::applyBodyImpulseAt`, which the game's melee hit uses on
-//! the objects it strikes and which leaves static and keyframed bodies alone. A fast hit's knock is
-//! scaled from the player's own melee impulse, so the hammer upgrades carry over.
+//! A fast hit's knock is scaled from the player's own melee impulse, so the hammer upgrades carry
+//! over; the knock itself is the physics substrate's push
+//! ([`jc3vr_body::controllers::physics::bodies::push`]).
 
-use std::{fmt, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
-use glam::Vec3;
 use jc3gi::{
     character::{character::Character, player::Player},
     physics::PfxCharacterInstance,
 };
-use jc3vr_body::controllers::{
-    aim::raycast::RayHit,
-    physics::{
-        bodies::{self, is_type},
-        error::PhysicsError,
-    },
-};
+use jc3vr_body::controllers::{aim::raycast::RayHit, physics::bodies::is_type};
 
 use crate::controllers::physical_hands::contact::{Surface, SurfaceHit};
-
-/// Why an engine call did not run.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum EngineError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
-    /// The hit has no valid body.
-    InvalidBody,
-}
-
-impl fmt::Display for EngineError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EngineError::NoPhysicsWorld => {
-                write!(f, "physical hands: the physics world does not exist")
-            }
-            EngineError::InvalidBody => write!(f, "physical hands: the hit body is invalid"),
-        }
-    }
-}
-
-impl std::error::Error for EngineError {}
 
 /// A ray hit as a palm's surface: a character, or anything else.
 ///
@@ -84,20 +55,6 @@ pub(super) unsafe fn melee_impulse(character: &Character) -> Option<f32> {
 /// `character` must be the live local player character.
 pub(super) unsafe fn melee_damage(character: &Character) -> Option<i32> {
     unsafe { player_of(character) }.map(|player| player.m_MeleeDamage)
-}
-
-/// Push the body `body` by `impulse` at the game-space point `at`. A static or keyframed body is
-/// left alone by the engine. A shim over [`bodies::push`] until the touch calls it.
-///
-/// # Safety
-///
-/// Main thread, outside the physics step; `body` must come from a cast this tick.
-#[track_caller]
-pub(super) unsafe fn push_body(body: u32, impulse: Vec3, at: Vec3) -> Result<(), EngineError> {
-    unsafe { bodies::push(body, impulse, at) }.map_err(|error| match error {
-        PhysicsError::NoPhysicsWorld => EngineError::NoPhysicsWorld,
-        _ => EngineError::InvalidBody,
-    })
 }
 
 /// The body the player's character proxy stands on, as its last update found it, or `None` without

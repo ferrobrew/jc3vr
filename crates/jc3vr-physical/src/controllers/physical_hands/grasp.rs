@@ -14,10 +14,7 @@ use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
     physics::rigid::BodyPose,
 };
-use jc3vr_input::{
-    frame::Pose,
-    motion::{ReleaseShape, shaped_release},
-};
+use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::{pickup::PickupTuning, tuning::PHYSICAL_HANDS};
 
@@ -207,19 +204,6 @@ pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupTuning) -> bool 
         TargetKind::Articulated { .. } => can_hold_articulated(mass_kg, config),
         _ => can_hold(mass_kg, config),
     }
-}
-
-/// The velocity a body's grab point leaves the hand with: the hand's own, scaled and capped. A shim
-/// over [`shaped_release`] with nothing carrying the hand.
-pub fn throw_velocity(hand_velocity: Vec3, config: &PickupTuning) -> Vec3 {
-    shaped_release(
-        hand_velocity,
-        Vec3::ZERO,
-        ReleaseShape {
-            scale: config.throw_scale,
-            max_speed_mps: config.max_throw_speed_mps,
-        },
-    )
 }
 
 /// A palm's motion on a tick: its place, and its linear and angular velocity, world space.
@@ -635,21 +619,6 @@ mod tests {
         );
         assert_eq!(ticks_held(&creeping, 1.0, 300), 300);
         assert!(ticks_held(&creeping, 0.5, 300) < 300);
-    }
-
-    #[test]
-    fn a_throw_is_the_hand_velocity_scaled_and_capped() {
-        let config = PickupTuning {
-            throw_scale: 2.0,
-            max_throw_speed_mps: 10.0,
-            ..*PICKUP.get()
-        };
-        assert!(
-            (throw_velocity(Vec3::new(1.0, 2.0, 0.0), &config) - Vec3::new(2.0, 4.0, 0.0)).length()
-                < 1e-5
-        );
-        assert!((throw_velocity(Vec3::new(0.0, 0.0, 9.0), &config).length() - 10.0).abs() < 1e-4);
-        assert_eq!(throw_velocity(Vec3::NAN, &config), Vec3::ZERO);
     }
 
     #[test]
