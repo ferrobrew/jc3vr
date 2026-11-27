@@ -1,7 +1,7 @@
 //! The seat grapple: in a vehicle seat, where the game takes no grapple fire, the grapple button
 //! fires the hook along the grapple hand's aim, and what the hook holds is tethered to the vehicle,
 //! by the steps of the game's own vehicle grapple run from the input tick. The mod side is in
-//! `docs/mod/input/physical-grapple.md` ("The grapple in a vehicle seat"); the game calls are in
+//! `docs/mod/grapple/grapple.md` ("The seat grapple"); the game calls are in
 //! `engine`.
 
 mod engine;

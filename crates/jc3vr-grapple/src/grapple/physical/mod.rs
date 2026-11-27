@@ -1,5 +1,5 @@
 //! The physical grapple: the grapple hand works the line instead of buttons. The mod side is in
-//! `docs/mod/input/physical-grapple.md` and the engine side in
+//! `docs/mod/grapple/grapple.md` ("The hand on the line") and the engine side in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! - [`pull`] measures the grapple hand's pull back along its aim when the reel or the retract

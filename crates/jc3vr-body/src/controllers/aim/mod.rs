@@ -1,5 +1,5 @@
-//! Per-hand aiming: `docs/mod/input/hands-and-aiming.md`
-//! ("Gun aim", "Grapple aim", and "Sight lines"), with the engine side in
+//! Per-hand aiming: `docs/mod/input/hands-and-aiming.md` ("Gun aim" and "Sight lines") and
+//! `docs/mod/grapple/grapple.md` ("The aim"), with the engine side in
 //! `docs/engine/gameplay/aim-pipeline.md` and `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! - [`ray`]: the pure ray math: the gun sight line, the aim-pose and grapple rays, the gun's aim

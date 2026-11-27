@@ -1,5 +1,4 @@
-//! Per-hand aim assist: the grapple's assist in `docs/mod/input/hands-and-aiming.md`
-//! ("Grapple aim").
+//! Per-hand aim assist: the grapple's assist in `docs/mod/grapple/grapple.md` ("The aim").
 //!
 //! The game's own aim assist works only around the gaze. Here each gun hand's ray is scored against
 //! the game's own candidates, the [`TargetSystem`](jc3gi::aim::target::TargetSystem)'s sets that

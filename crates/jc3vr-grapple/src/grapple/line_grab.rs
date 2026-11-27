@@ -2,7 +2,7 @@
 //! ([`crate::grapple::physical::lock`]) or the snatch's line swings its target
 //! ([`crate::controllers::snatch`]), the free, empty hand can take hold of the line ahead of the
 //! grapple hand's wrist ([`GrabVolume::GrappleLine`], provided by [`targets`]). The mod side is in
-//! `docs/mod/input/grapple-lock.md` ("The free hand on the line").
+//! `docs/mod/grapple/grapple.md` ("The free hand on the line").
 //!
 //! On the lock's line, the held line pulled back toward the body takes line in by the pull, as the
 //! grapple hand's own pull does ([`lock_hand`] hands the lock the free hand's grip and the line's

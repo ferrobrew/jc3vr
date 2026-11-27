@@ -1,5 +1,5 @@
 //! The grapple's aim sees weapons: the scoped patch of the grapple snatch
-//! (`docs/mod/input/grapple-snatch.md`, "Targeting"), with the engine side in "Weapons and the
+//! (`docs/mod/grapple/snatch.md`, "Targeting"), with the engine side in "Weapons and the
 //! grapple" in `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! The direct-aim ray's query layer never meets a weapon's body, and no query layer is that layer's

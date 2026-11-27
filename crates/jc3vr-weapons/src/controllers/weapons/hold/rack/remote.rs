@@ -1,5 +1,5 @@
 //! Rack and locker weapons beyond the hands' reach, for the grapple's snatch. The design is in
-//! `docs/mod/input/grapple-snatch.md`, "Racks and lockers".
+//! `docs/mod/grapple/snatch.md`, "Targets".
 //!
 //! The hands find a rack's weapon through the player's valid interaction entries
 //! ([`crate::controllers::weapons::hold::rack`]), which hold only what is within reach, and the

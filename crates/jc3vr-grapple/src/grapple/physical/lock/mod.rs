@@ -1,7 +1,7 @@
 //! The lock: while the reel carries the character toward the hook, holding the grapple button
 //! holds the line's length, and the character swings from it. The mod side is in
-//! `docs/mod/input/grapple-lock.md`, the engine side in "The reel's motion" and "The reel's
-//! endings" in `docs/engine/gameplay/grapple-pipeline.md`.
+//! `docs/mod/grapple/grapple.md` ("The lock"), the engine side in "The reel's motion" and
+//! "The reel's endings" in `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! The lock stays inside the game's reel: the reel task keeps running, with its animation, its
 //! turn toward the line, and the grapple comfort hold, while the reel's velocity detour

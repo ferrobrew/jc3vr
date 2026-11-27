@@ -1,5 +1,5 @@
 //! The grapple snatch: the empty grapple hand pulls a thing out of reach into itself. The design is
-//! in `docs/mod/input/grapple-snatch.md`, the engine side in "Weapons and the grapple" in
+//! in `docs/mod/grapple/snatch.md`, the engine side in "Weapons and the grapple" in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! The grapple's aim sees weapons lying in the world through a patch scoped to the grapple's pass
