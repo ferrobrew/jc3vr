@@ -145,13 +145,11 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [impacts.md](mod/input/impacts.md): impact sounds, and what a held object striking something does.
 - [breaking-glass.md](mod/input/breaking-glass.md): breaking window glass by hand.
 - [hand-views.md](mod/input/hand-views.md): the grab view and the collider view, the hands' overlay diagnostics.
-- [physical-weapons.md](mod/input/physical-weapons.md): weapons as physical objects in either hand.
+- [physical-weapons.md](mod/input/physical-weapons.md): weapons as one object in either hand: firing, handover, pickups, takes from characters and racks, separate pistols, aiming down the sights, and guns against walls.
 - [weapon-sockets.md](mod/input/weapon-sockets.md): drawing, docking, and swapping weapons at the body's sockets.
-- [long-gun-poses.md](mod/input/long-gun-poses.md): aiming down the sights and keeping a held long gun out of walls.
-- [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body.
+- [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body joined to the hand bodies.
 - [grenades.md](mod/input/grenades.md): grenades, the beacon, C4, and the detonator by hand, and the models on Rico's pouches.
-- [paired-rack-weapons.md](mod/input/paired-rack-weapons.md): rack weapons and their ammunition.
-- [reload.md](mod/input/reload.md): the hand-worked reload, and what each weapon loads.
+- [reload.md](mod/input/reload.md): the true reload: what each weapon loads, eject, pull, knock, the belt push, revolvers, and the chamber.
 - [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand, and the grapple from a vehicle seat.
 - [grapple-lock.md](mod/input/grapple-lock.md): the grapple lock, and the free hand on the line.
 - [grapple-snatch.md](mod/input/grapple-snatch.md): pulling things into the hand with the grapple, what it takes, and swinging heavy things on its line.
