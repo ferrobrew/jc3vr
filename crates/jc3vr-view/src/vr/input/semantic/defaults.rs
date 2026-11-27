@@ -3,8 +3,8 @@
 //! The table is written once, per action, as a side (the dominant hand, the off-hand, both hands,
 //! or a fixed physical hand) and a [`Component`] named by its position on the controller, which
 //! resolves to a component path per profile. It encodes the layout the binding tables
-//! (`controllers::bindings::tables`) use today, so a semantic action reads the same physical input
-//! as the raw input the tables read for that meaning.
+//! (`jc3vr_gameplay::controllers::bindings::tables`) assume, so a semantic action reads the same
+//! physical input as the raw input the tables read for that meaning.
 //!
 //! The right-handed table is resolved directly; the left-handed one is generated from it by
 //! [`mirror`], which moves every row that follows the handedness to the other hand. Rows on both
@@ -291,7 +291,7 @@ fn land_vehicle(action: LandVehicleAction) -> Option<DefaultBinding> {
         // Nitrous is also on the cockpit's button.
         VehicleMod => on(Dom, ThumbstickClick),
         Handbrake => on(Left, LowerFace),
-        // The off-hand stick click took the grapple; the horn is on the cockpit's button.
+        // The off-hand stick click carries the grapple; the horn is on the cockpit's button.
         Horn => None,
     }
 }

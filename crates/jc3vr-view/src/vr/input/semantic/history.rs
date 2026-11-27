@@ -115,8 +115,6 @@ pub fn take_capture() -> Vec<Publication> {
     SLOT.lock().take_capture()
 }
 
-/// Drain the active clock's observations independently of recording. The controller snapshot
-/// identity is retained so a later snapshot cannot authorize an older group's edges.
 /// Return the latest original group only when it belongs to this exact controller publication.
 /// This does not drain or reinterpret the gameplay evidence.
 pub fn original_group(frame_sequence: u64) -> Option<InputGroup> {
@@ -130,6 +128,8 @@ pub fn original_group(frame_sequence: u64) -> Option<InputGroup> {
         })
 }
 
+/// Drain the active clock's observations independently of recording. The controller snapshot
+/// identity is retained so a later snapshot cannot authorize an older group's edges.
 pub fn take_gameplay() -> Vec<Publication> {
     SLOT.lock().gameplay.pending.drain(..).collect()
 }

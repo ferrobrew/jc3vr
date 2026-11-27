@@ -3,7 +3,7 @@
 //! interface shows the player game meanings.
 //!
 //! There is one action set per control context plus `global`. `global` is always active; of the
-//! others exactly one is, chosen from the mode ([`ActionSetKind`]): `on_foot` (on foot, swimming,
+//! others exactly one is, chosen from the mode ([`ActionSetKind`](jc3vr_input::frame::ActionSetKind)): `on_foot` (on foot, swimming,
 //! falling, and the parachute), `wingsuit`, `land_vehicle` (cars, motorcycles, boats, and
 //! unresolved vehicles), `helicopter`, `plane`, and `menu` (the game's menus and the native map).
 //! Every set has priority 0, the same as the always-active `hands` set that holds the raw inputs,
@@ -19,12 +19,13 @@
 //!   of the dominant hand and the off-hand, and the left-handed table mirrored from the
 //!   right-handed one.
 //! - [`frame`] publishes each frame's per-hand state of the active set's and `global`'s actions.
-//!
-//! The binding tables read the semantic state ([`crate::controllers::bindings::intents`]); the
-//! gestures, grabs, chords, and pointers read the raw inputs of the `hands` set.
-//!
 //! - [`bound`] reduces the runtime's bound sources to the physical inputs each action reads on
 //!   each hand, which the bindings' masks act on.
+//! - [`history`] keeps the ordered input history, and [`admission`] marks the routes of a hand
+//!   whose tracking is lost in it.
+//!
+//! The binding tables read the semantic state (`jc3vr_gameplay::controllers::bindings::intents`);
+//! the gestures, grabs, chords, and pointers read the raw inputs of the `hands` set.
 
 pub mod admission;
 pub mod bound;

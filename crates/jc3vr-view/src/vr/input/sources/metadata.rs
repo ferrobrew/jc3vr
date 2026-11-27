@@ -1,4 +1,4 @@
-//! Runtime-owned, bounded names for opaque source paths. Enumeration remains uncached.
+//! Runtime-owned, bounded names for opaque source paths. The enumeration itself is not cached.
 
 use openxr as xr;
 

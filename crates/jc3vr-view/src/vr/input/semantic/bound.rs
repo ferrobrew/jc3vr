@@ -13,7 +13,7 @@
 //! Some runtimes report sources under no user path at all (Monado names them `/mnd/<n>`). Such an
 //! enumeration ([`opaque`]) says nothing the mod can read, so it counts as a failed one: the
 //! default bindings stand in for it here, and the shared chord arbiter
-//! (`controllers::bindings::policy_a`) attributes the action to its default binding by the same
+//! (`jc3vr_gameplay::controllers::bindings::policy_a`) attributes the action to its default binding by the same
 //! rule.
 //!
 //! The same matching, at the finer grain of a [`Component`], gives the controls summary its glyphs
@@ -276,7 +276,7 @@ impl SourceTable {
 
 /// A table of default bindings: action `index` of a set's default binding, or `None` when it ships
 /// unbound. The shipped table is [`crate::vr::input::semantic::defaults::default_binding`]; the
-/// tests also read the layout the tables used before the semantic actions.
+/// gameplay crate's layout tests also read the layout the raw-input binding tables encoded.
 pub type Layout = fn(SemanticSet, usize) -> Option<DefaultBinding>;
 
 /// The physical inputs every action of one set reads on each hand.

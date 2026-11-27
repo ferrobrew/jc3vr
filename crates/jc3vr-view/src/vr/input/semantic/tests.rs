@@ -238,7 +238,7 @@ fn the_left_handed_table_is_the_right_handed_one_with_the_hands_swapped() {
 }
 
 /// What decides which of the actions sharing an input is read: the state the binding tables
-/// branch on (`controllers::bindings::tables::declare::TableCtx`) and the seat.
+/// branch on (`jc3vr_gameplay::controllers::bindings::tables::declare::TableCtx`) and the seat.
 #[derive(Debug, Copy, Clone)]
 struct ReadCtx {
     dual_wield: bool,

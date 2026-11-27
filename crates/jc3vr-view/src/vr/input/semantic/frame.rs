@@ -11,8 +11,8 @@
 //!
 //! Each action also carries a digital state ([`ActionState::down`]): a boolean action's value, or
 //! a float action's value past its action-owned trigger, grip, or trackpad thresholds, with
-//! hysteresis against the previous frame. Suggested bindings do not define press behavior. The edges are those of
-//! the digital state.
+//! hysteresis against the previous frame. Suggested bindings do not define press behavior. The
+//! edges are those of the digital state.
 
 use std::time::Instant;
 
