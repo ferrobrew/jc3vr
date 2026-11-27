@@ -210,7 +210,7 @@ fn eject_and_wait(
         Some(REMOTE_EXPORT_TIMEOUT),
     ) {
         // The export is resolved from the mapped image's own file, so an absent export means the
-        // mapped build predates it: the game's own eject path is the only remaining way out.
+        // mapped build predates it: the payload's in-game eject hotkey is the only way out.
         if matches!(
             &error,
             injector::Error::Windows(injector::WindowsError::ExportNotFound { .. })
