@@ -5,7 +5,7 @@
 
 use jc3vr_body::{contributions::BodyContributions, hooks::character::BlocksAutoAttach};
 use jc3vr_physical::controllers::physical_hands;
-use jc3vr_vehicles::controllers::vehicles::rail;
+use jc3vr_vehicles::vehicles::rail;
 
 pub(super) fn register(body: &mut BodyContributions) {
     body.auto_attach_blockers = &AUTO_ATTACH_BLOCKERS;

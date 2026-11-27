@@ -36,7 +36,7 @@ use jc3vr_input::{
 use jc3vr_physical::controllers::{
     physical_hands, physical_hands::pickup::diagnostics::scan::Scan,
 };
-use jc3vr_vehicles::controllers::vehicles;
+use jc3vr_vehicles::vehicles;
 use jc3vr_view::{headpose, tuning::VIEW, vr::input::config::grip_press};
 use jc3vr_weapons::controllers::{weapons, weapons::StandDown};
 

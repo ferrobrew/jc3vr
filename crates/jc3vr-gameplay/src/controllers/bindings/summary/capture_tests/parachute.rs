@@ -3,7 +3,7 @@ use jc3vr_body::controllers::{
     grab,
     grab::{Mark, MarkAt},
 };
-use jc3vr_vehicles::controllers::vehicles::{
+use jc3vr_vehicles::vehicles::{
     parachute,
     parachute::{HandleState, StepInputs},
     tuning::VEHICLES,

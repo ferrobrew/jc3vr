@@ -10,7 +10,7 @@
 //!   held gun's parts, the guns in the world without a body (in characters' hands, on racks, in
 //!   lockers), the grenade's pin, a live grenade, a magazine in the world, and the carried weapons'
 //!   sockets;
-//! - the vehicle handling (`controllers::vehicles`): the driver's controls, the cockpit's
+//! - the vehicle handling (`vehicles`): the driver's controls, the cockpit's
 //!   buttons, the parachute's handles, and the mounted gun's handles;
 //! - the physical hands (`controllers::physical_hands`): what each hand's reach found in
 //!   the world (an object, a weapon, a door, a character), the vehicles' doors near the hands, a
@@ -88,18 +88,18 @@ pub enum GrabVolume {
     /// `controllers::weapons::c4::placed`).
     PlacedCharge,
     /// A physical vehicle control of the driver's seat (see
-    /// `controllers::vehicles::physical`).
+    /// `vehicles::physical`).
     VehicleControl(ControlKind),
     /// A cockpit button, pressed by the palm rather than taken by the grip (see
-    /// `controllers::vehicles::physical::buttons`).
+    /// `vehicles::physical::buttons`).
     CockpitButton(Button),
-    /// The parachute's handle on that side (see `controllers::vehicles::parachute`).
+    /// The parachute's handle on that side (see `vehicles::parachute`).
     ParachuteHandle(Hand),
     /// The ripcord at the hip, pulled to open the parachute from a fall or the wingsuit (see
-    /// `controllers::vehicles::ripcord`).
+    /// `vehicles::ripcord`).
     Ripcord,
     /// The mounted gun's handle for that hand (see
-    /// `controllers::vehicles::mounted_grip`).
+    /// `vehicles::mounted_grip`).
     MountedHandle(Hand),
     /// What the empty hand's reach found in the world, or a vehicle's door near it (see
     /// `controllers::physical_hands::pickup`).

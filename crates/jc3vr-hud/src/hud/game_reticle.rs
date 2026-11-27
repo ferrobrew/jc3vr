@@ -24,7 +24,7 @@
 
 use jc3vr_body::controllers::{body_frame, mode, mode::Mode, scheme};
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
-use jc3vr_vehicles::controllers::vehicles;
+use jc3vr_vehicles::vehicles;
 
 use crate::hud::tuning::HUD;
 

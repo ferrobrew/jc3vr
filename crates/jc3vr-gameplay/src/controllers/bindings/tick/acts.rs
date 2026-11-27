@@ -27,7 +27,7 @@ use jc3vr_input::{frame::Hand, semantic::vocabulary::OnFootAction};
 use jc3vr_physical::controllers::{
     physical_hands, physical_hands::pickup::diagnostics::InputContext,
 };
-use jc3vr_vehicles::controllers::{
+use jc3vr_vehicles::{
     vehicles,
     vehicles::wingsuit_gestures::{GestureCommands, SuitTransition},
 };

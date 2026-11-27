@@ -20,7 +20,7 @@ use jc3vr_body::{
     hooks::input::swim,
 };
 use jc3vr_core::{published::Stamp, registration::RegistrationCheck};
-use jc3vr_vehicles::controllers::vehicles::take_off;
+use jc3vr_vehicles::vehicles::take_off;
 use jc3vr_view::headpose::{
     HeadParticipants, head_participants_registered, register_head_participants,
 };

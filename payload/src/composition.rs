@@ -47,10 +47,7 @@ use jc3vr_physical::controllers::{
 use jc3vr_render::hooks::profiler;
 use jc3vr_render::hooks::{clock, draw_count, graphics_engine};
 use jc3vr_ui::pause_menu;
-use jc3vr_vehicles::{
-    Registered as VehiclesRegistered,
-    controllers::{vehicles, vehicles::mounted_recoil},
-};
+use jc3vr_vehicles::{Registered as VehiclesRegistered, vehicles, vehicles::mounted_recoil};
 use jc3vr_view::hooks::{camera, window_focus};
 use jc3vr_weapons::{
     contributions::{self as weapons_contributions, WeaponsContributions},

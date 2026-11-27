@@ -40,7 +40,7 @@ use jc3vr_physical::controllers::{
 use jc3vr_render::tuning::RENDER;
 use jc3vr_tooling::tuning::TOOLING;
 use jc3vr_ui::tuning::UI;
-use jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES;
+use jc3vr_vehicles::vehicles::tuning::VEHICLES;
 use jc3vr_view::tuning::{HAPTICS, VIEW};
 use jc3vr_weapons::controllers::weapons::{
     c4::tuning::C4, grenade::tuning::GRENADE, handling_tuning::HANDLING, hold::tuning::HOLD,

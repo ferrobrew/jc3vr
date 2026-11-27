@@ -4,7 +4,7 @@
 //! to the composed cockpit position ([`advance`]).
 //!
 //! The vehicle handling measures the seat and derives the correction
-//! (`controllers::vehicles::driving_view`). A correction the input tick stopped publishing
+//! (`vehicles::driving_view`). A correction the input tick stopped publishing
 //! goes stale, and the view eases back.
 
 use body_rig::math::smooth::smoothstep;

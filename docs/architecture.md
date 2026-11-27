@@ -95,7 +95,7 @@ The payload's code lives in the layer crates under `crates/`, each a library who
 - `jc3vr-body`: the body-bound controller subsystems (`controllers::{body, hands, fingers, presentation, grab, aim, aim_state, locomotion, roomscale, mode, scheme, clock, haptics, overlay, gamepad_setting, telemetry}`), the modules the subsystems above meet in (`controllers::{intent, held, physics, facts}`), and the body detours (`hooks::{character, animation, input}`, without the look detour).
 - `jc3vr-weapons`: the weapon handling, the loadout table, and the spawner with its shipped spawn definition table (`controllers::{weapons, loadout, spawn}`).
 - `jc3vr-physical`: the physical hands and the glass (`controllers::{physical_hands, glass}`).
-- `jc3vr-vehicles`: the vehicle handling with its settings checks (`controllers::vehicles`), and the equipment detours (`hooks::equipment`).
+- `jc3vr-vehicles`: the vehicle handling with its settings checks (`vehicles`), and the equipment detours (`hooks::equipment`).
 - `jc3vr-grapple`: the grapple, the grapple button's gestures and the yank, and the snatch (`grapple`, `controllers::{grapple_button, yank, snatch}`).
 - `jc3vr-gameplay`: the controller subsystems built on the body, weapons, physical, vehicles, and grapple crates (`controllers::{bindings, summary}`), the camera height readout (`controllers::camera_height`), the controllers' settings aggregate (`controllers::config`) and their registration, and the gameplay detours (`hooks::{input::look, sim, online}`).
 - `jc3vr-hud`: `hud`, `egui_impl`, the UI detours (`hooks::ui`), the controls map (`controllers::map`), and the summary's presentation (`controllers::summary`).

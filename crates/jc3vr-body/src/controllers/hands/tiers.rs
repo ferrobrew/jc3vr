@@ -17,9 +17,9 @@
 //!   armed there, a prop, a grenade, or a charge, as the loadout table has it) stays free instead,
 //!   so that what it holds stays where the controller puts it rather than going onto the line; on a
 //!   mounted gun both hands hold the handles, and their
-//!   positions aim the gun (`controllers::vehicles::mounted`). A state assigned the tier
+//!   positions aim the gun (`vehicles::mounted`). A state assigned the tier
 //!   where it is not built yields. The physical vehicle controls anchor a holding hand within the
-//!   seated state's free tier (`controllers::vehicles::physical`), because a hand holds a
+//!   seated state's free tier (`vehicles::physical`), because a hand holds a
 //!   control only while the player grips it;
 //! - [`HandTier::Yielded`]: the animation owns the hand, which blends out from the controller over
 //!   the hands tuning's `tiers.yield_blend_s` and back over `tiers.return_blend_s`.

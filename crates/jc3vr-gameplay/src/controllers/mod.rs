@@ -13,7 +13,7 @@
 //! crate's, under [`jc3vr_body::controllers`]. Physical weapon handling with the loadout table is
 //! the weapons crate's, under [`jc3vr_weapons::controllers`], the physical hands and the glass are
 //! the physical crate's, under [`jc3vr_physical::controllers`], and the vehicles, mounted guns, the
-//! wingsuit, and the parachute are the vehicles crate's, under [`jc3vr_vehicles::controllers`]. The
+//! wingsuit, and the parachute are the vehicles crate's, under [`jc3vr_vehicles::vehicles`]. The
 //! grapple snatch is the grapple crate's, under [`jc3vr_grapple::controllers::snatch`]. This module
 //! owns what builds on them:
 //!

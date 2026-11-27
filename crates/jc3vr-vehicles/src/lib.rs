@@ -6,7 +6,7 @@
 //! gameplay crate, beside the grapple crate with no edge between them (`docs/architecture.md`,
 //! "Crate layering"), and owns:
 //!
-//! - [`controllers::vehicles`]: the physical controls of the driver's seat and the cockpit's
+//! - [`vehicles`]: the physical controls of the driver's seat and the cockpit's
 //!   buttons, the driver's view, the hand-aimed mounted guns and driver weapons, the passenger's
 //!   seated aim, the wingsuit's arm steering, evade, and gestures, the parachute's handles and the
 //!   ripcord, the take-off from the ground, and the vehicle rail, with their settings group, its
@@ -29,22 +29,22 @@
 //!   the body's contributions (the take-off and the mounted-gun fact), which the composition calls
 //!   before any hook is installed. It returns [`Registered`], the only way to reach the equipment
 //!   detours ([`hooks::equipment`]), which the composition enables in their place in its order.
-//! - [`controllers::vehicles::hook_library`], which the composition enables in its place in the
+//! - [`vehicles::hook_library`], which the composition enables in its place in the
 //!   order.
-//! - [`controllers::vehicles::mounted_recoil::on_shot`], the handles' kick by each shot of the
+//! - [`vehicles::mounted_recoil::on_shot`], the handles' kick by each shot of the
 //!   mounted gun the hands aim, which the composition hands to the weapon handling's
 //!   contributions.
-//! - The settings: [`controllers::vehicles::config::VEHICLES_CONFIG`] declares the slot for the
+//! - The settings: [`vehicles::config::VEHICLES_CONFIG`] declares the slot for the
 //!   group beside its type, and the payload binds it to its aggregate. The gameplay crate's
 //!   controller settings checks run the group's own
-//!   ([`VehiclesConfig::validate`](controllers::vehicles::config::VehiclesConfig::validate)).
+//!   ([`VehiclesConfig::validate`](vehicles::config::VehiclesConfig::validate)).
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`), since the
 //! payload's aggregate is not there, and use the body crate's `test-support` fixtures.
 
-pub mod controllers;
 pub mod hooks;
 mod register;
+pub mod vehicles;
 
 pub use register::{Registered, register};
 

@@ -17,7 +17,7 @@
 //!
 //! The evade is a barrel roll ([`ACT_BOOST_WINGSUIT_BARREL_ROLL`]): the clip rolls the body a full
 //! turn and carries it sideways. The arms throw it
-//! (`controllers::vehicles::wingsuit_evade`), and the view rolls with the body. With the
+//! (`vehicles::wingsuit_evade`), and the view rolls with the body. With the
 //! evade switched off, it is a roll the player never asked for: the air physics queues it straight
 //! on the animated model, so the `Character::QueueAct` filters never see it, and the animated
 //! model's act queue asks [`drops_act`] instead, which drops it for the local player's model while

@@ -1,6 +1,6 @@
 //! The driver's controls and the cockpit's buttons as the grip model names them: the kinds of
 //! physical control a seat offers and the buttons a palm presses. The vehicle handling places and
-//! works them (`controllers::vehicles::physical`). Pure.
+//! works them (`vehicles::physical`). Pure.
 
 use crate::controllers::mode::VehicleClass;
 

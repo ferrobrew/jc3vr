@@ -21,7 +21,7 @@ use jc3vr_body::controllers::{
     roomscale::{RoomscaleStatus, SeatPhase, posture::HeadHeight},
 };
 use jc3vr_core::published::Stamp;
-use jc3vr_vehicles::controllers::vehicles::driving_view;
+use jc3vr_vehicles::vehicles::driving_view;
 use jc3vr_view::headpose::{anchor, eye_arm, neck_delta};
 use parking_lot::Mutex;
 

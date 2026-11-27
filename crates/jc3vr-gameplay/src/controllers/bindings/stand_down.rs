@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{body::firm_ragdoll, grab, intent::hold::DevicePoll
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_grapple::{controllers::snatch, grapple};
 use jc3vr_physical::controllers::physical_hands;
-use jc3vr_vehicles::controllers::vehicles;
+use jc3vr_vehicles::vehicles;
 use jc3vr_view::vr::input::semantic::{frame as semantic_frame, history};
 use jc3vr_weapons::controllers::{weapons, weapons::StandDown};
 

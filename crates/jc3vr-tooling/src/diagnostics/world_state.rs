@@ -12,7 +12,7 @@ use jc3vr_body::controllers::{haptics, physics::grapple_hook as hook};
 use jc3vr_core::frame_timing;
 use jc3vr_grapple::{controllers::snatch, grapple::physical::lock};
 use jc3vr_input::frame::Hand;
-use jc3vr_vehicles::controllers::vehicles;
+use jc3vr_vehicles::vehicles;
 use jc3vr_view::{
     headpose,
     hooks::camera::{eye_point, last_dtf},

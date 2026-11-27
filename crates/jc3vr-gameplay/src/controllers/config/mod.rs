@@ -41,7 +41,7 @@ use jc3vr_physical::controllers::{
     glass::{GlassConfig, config::GLASS_CONFIG},
     physical_hands::{PhysicalHandsConfig, config::PHYSICAL_HANDS_CONFIG},
 };
-use jc3vr_vehicles::controllers::vehicles::config::{VEHICLES_CONFIG, VehiclesConfig};
+use jc3vr_vehicles::vehicles::config::{VEHICLES_CONFIG, VehiclesConfig};
 use jc3vr_view::vr::input::config::{
     CONTROLLERS_ENABLED, DOMINANT_HAND, HAPTICS_CONFIG, HapticsConfig, INPUT_CONFIG, InputConfig,
 };

@@ -3,7 +3,7 @@
 //! The player stands or sits upright with the arms spread as wings while Rico flies prone, so the
 //! player's arms cannot be put where the hands are, as the hand IK does on foot: the flight pose's
 //! shoulders are not where an upright body's are. Instead each arm is carried over as the arm
-//! steering reads it (`controllers::vehicles::arm_steering`): in a frame that keeps the
+//! steering reads it (`vehicles::arm_steering`): in a frame that keeps the
 //! vertical and turns with the heading. The player's hand, measured from the player's estimated
 //! shoulder in the frame of the player's torso heading (the cockpit frame's vertical is the
 //! player's real vertical), is scaled from the player's arm to Rico's and placed from Rico's

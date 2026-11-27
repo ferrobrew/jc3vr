@@ -14,7 +14,7 @@ use jc3vr_body::controllers::{aim::gun, held::native::weapon_at};
 use jc3vr_weapons::controllers::weapons::hold::armed;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::vehicles::mounted;
+use crate::vehicles::mounted;
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()

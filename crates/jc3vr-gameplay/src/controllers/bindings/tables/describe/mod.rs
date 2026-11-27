@@ -26,7 +26,7 @@ use jc3vr_input::{
     frame::Hand,
     semantic::vocabulary::{ActionId, GlobalAction, MenuAction, OnFootAction},
 };
-use jc3vr_vehicles::controllers::vehicles::wingsuit_gestures::GestureAvailability;
+use jc3vr_vehicles::vehicles::wingsuit_gestures::GestureAvailability;
 use jc3vr_view::vr::input::semantic::{
     bound::{Layout, PhysicalSet, SourceName, SourceTable},
     defaults::{Component, default_binding},

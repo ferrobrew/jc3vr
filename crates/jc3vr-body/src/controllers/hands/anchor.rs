@@ -130,7 +130,7 @@ pub(crate) fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32) {
     let status = body_frame::tiers();
     // The mounted guns anchor the hands too, to their handles
-    // (the gameplay crate's `controllers::vehicles::apply`), which the line must not turn.
+    // (the gameplay crate's `vehicles::apply`), which the line must not turn.
     let mounted = status.state == Some(tiers::TierState::MountedGun);
     let weights = status.anchor_weights;
     if mounted || weights.iter().all(|w| *w <= 0.0) {

@@ -26,7 +26,7 @@ use crate::controllers::tuning::GAMEPLAY;
 /// thousand, beyond any vehicle, so only the minimum matters. The values are the graph asset's,
 /// not code's, so no binding holds them. The condition compares the squared length of the
 /// vehicle's ground-relative velocity at the seated character
-/// ([`jc3vr_vehicles::controllers::vehicles::seat_vehicle_speed_mps`]) against its squared bounds; the unit
+/// ([`jc3vr_vehicles::vehicles::seat_vehicle_speed_mps`]) against its squared bounds; the unit
 /// is unverified, and taken to be metres per second.
 pub(crate) const PARACHUTE_BAIL_MIN_SPEED_MPS: f32 = 6.0;
 

@@ -22,7 +22,7 @@ use jc3vr_body::controllers::{
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Button, ControllerFrame, Hand};
 use jc3vr_physical::controllers::physical_hands::grip_sources as physical_grips;
-use jc3vr_vehicles::controllers::vehicles::{
+use jc3vr_vehicles::vehicles::{
     tuning::WingsuitGesturesTuning,
     wingsuit_gestures::{
         Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands, GestureInput,

@@ -22,7 +22,7 @@ use jc3vr_body::{
     },
 };
 use jc3vr_physical::controllers::{physical_hands, physical_hands::grip_sources as physical_grips};
-use jc3vr_vehicles::controllers::{vehicles, vehicles::grip_sources as vehicle_grips};
+use jc3vr_vehicles::{vehicles, vehicles::grip_sources as vehicle_grips};
 use jc3vr_weapons::controllers::weapons::{
     ads, collide, grenade, grip_sources as weapon_grips, hold::rack, recoil,
 };

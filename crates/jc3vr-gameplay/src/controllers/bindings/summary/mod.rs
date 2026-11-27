@@ -26,9 +26,7 @@ use jc3vr_grapple::controllers::{
 };
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_physical::controllers::physical_hands::door_offer_current;
-use jc3vr_vehicles::controllers::vehicles::{
-    parachute::HandleHold, wingsuit_gestures::GestureAvailability,
-};
+use jc3vr_vehicles::vehicles::{parachute::HandleHold, wingsuit_gestures::GestureAvailability};
 use jc3vr_view::vr::input::semantic::bound::PhysicalSet;
 use jc3vr_weapons::controllers::{
     weapons,

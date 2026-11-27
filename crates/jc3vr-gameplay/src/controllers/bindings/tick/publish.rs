@@ -1,7 +1,7 @@
 //! The last stages: the triggers' ownership after the acts, the controls summary, and the writes.
 
 use jc3vr_input::frame::Hand;
-use jc3vr_vehicles::controllers::vehicles;
+use jc3vr_vehicles::vehicles;
 use jc3vr_weapons::controllers::weapons;
 
 use crate::controllers::bindings::{

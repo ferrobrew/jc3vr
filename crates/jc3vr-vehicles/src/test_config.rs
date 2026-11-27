@@ -25,7 +25,7 @@ use jc3vr_view::{
 };
 use jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG;
 
-use crate::controllers::vehicles::config::VEHICLES_CONFIG;
+use crate::vehicles::config::VEHICLES_CONFIG;
 
 jc3vr_core::test_root!(
     STEREO_CONFIG,

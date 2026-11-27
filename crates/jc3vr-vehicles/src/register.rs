@@ -18,7 +18,7 @@
 //! composition and the hand bodies' drive run) and the mounted gun's world weapon observer in the
 //! hands' tables, and the rail's refusal of the automatic entry into a vehicle's stunt area below
 //! the player in the refusals' table. The handles' kick by each shot of the mounted gun the hands
-//! aim ([`on_shot`](crate::controllers::vehicles::mounted_recoil::on_shot)) is the weapon
+//! aim ([`on_shot`](crate::vehicles::mounted_recoil::on_shot)) is the weapon
 //! handling's contribution, which the composition hands over.
 
 use glam::Vec3;
@@ -31,11 +31,9 @@ use jc3vr_physical::contributions::{self as physical, PhysicalContributions};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    controllers::{
-        vehicles,
-        vehicles::{passenger, rail, take_off},
-    },
     hooks::equipment,
+    vehicles,
+    vehicles::{passenger, rail, take_off},
 };
 
 /// Register the vehicle handling's contributions to the physical crate and fill its fields of

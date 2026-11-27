@@ -8,7 +8,7 @@ use jc3vr_body::controllers::{
     mode::AirborneVariant,
 };
 use jc3vr_input::frame::ActionSetKind;
-use jc3vr_vehicles::controllers::vehicles::{
+use jc3vr_vehicles::vehicles::{
     grip_sources as vehicle_grips,
     tuning::{VEHICLES, WingsuitGesturesTuning},
     wingsuit_gestures::{FlightPose, SuitTransition},

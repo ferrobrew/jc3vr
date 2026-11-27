@@ -1,6 +1,6 @@
 # The steering wheel and handlebars
 
-The physical wheel and handlebars ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) are placed where the driven vehicle's own are, the held wheel turns and steers as a wheel does, and the vehicle's rendered steering wheel turns with the steering. The code is in `crates/jc3vr-vehicles/src/controllers/vehicles/`: `wheel.rs` holds the pure geometry and the override table, `fit.rs` reads the vehicle on the input tick, `steering.rs` turns the held wheel, `physical/` grabs and releases it and the handlebars, and `wheel_render.rs` turns the rendered wheel. The engine side is in [vehicle-parts.md](../../engine/gameplay/vehicle-parts.md).
+The physical wheel and handlebars ([controllers.md, "Vehicles, mounted guns, and flight"](controllers.md#vehicles-mounted-guns-and-flight)) are placed where the driven vehicle's own are, the held wheel turns and steers as a wheel does, and the vehicle's rendered steering wheel turns with the steering. The code is in `crates/jc3vr-vehicles/src/vehicles/`: `wheel.rs` holds the pure geometry and the override table, `fit.rs` reads the vehicle on the input tick, `steering.rs` turns the held wheel, `physical/` grabs and releases it and the handlebars, and `wheel_render.rs` turns the rendered wheel. The engine side is in [vehicle-parts.md](../../engine/gameplay/vehicle-parts.md).
 
 ## Placing the wheel
 
@@ -45,7 +45,7 @@ Before the twist default, the wheel was taken by a grip press and held until the
 
 Where the hub sits from the seated character's eyes is a property of the seat: the driver animation and the wheel part between them decide it, and it differs from vehicle to vehicle. In the shipped data the hub sits 0.34 to 0.55 m ahead of the authored driver point and 0.55 to 0.73 m above it in the typical car, so the seats differ by a tenth of a metre or more in each direction, more than the grab radius. The player's tracked head adds their own posture on top.
 
-The driving view (`crates/jc3vr-vehicles/src/controllers/vehicles/driving_view.rs`, `vehicles.driving_view`) moves the view per vehicle so that the eyes sit at one standard offset from the hub. The view rather than the wheel moves because the rendered wheel cannot: it is the vehicle's own part, drawn where the vehicle puts it, so a grab volume moved away from it would have the hands closing on air beside the drawn rim.
+The driving view (`crates/jc3vr-vehicles/src/vehicles/driving_view.rs`, `vehicles.driving_view`) moves the view per vehicle so that the eyes sit at one standard offset from the hub. The view rather than the wheel moves because the rendered wheel cannot: it is the vehicle's own part, drawn where the vehicle puts it, so a grab volume moved away from it would have the hands closing on air beside the drawn rim.
 
 ### The standard
 
