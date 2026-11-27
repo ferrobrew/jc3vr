@@ -1,17 +1,16 @@
 //! The detonator: the C4 weapon's own trigger model, held in a hand like a gun, whose trigger
 //! detonates the placed charges.
 //!
-//! A hand comes to hold it in two ways: pulling the trigger of a hand holding a charge swaps the
-//! charge for it (the charge goes back into the pouch), and a grab at the C4 pouch with no charge
-//! left to give hands it over instead of a charge ([`Detonator::take`]). There is one detonator, so
-//! a hand taking it takes it from the other. It sits in the hand by its grip, upright in the fist as
-//! a pistol grip is held (the tuning's [`detonator_hold`]), and the hand closes on it as on a gun's
-//! grip. Opening the hand puts it back on the chest: it is never dropped into the world.
+//! A hand comes to hold it by a grab at the C4 pouch with no charge left to give, which hands it
+//! over instead of a charge ([`Detonator::take`]). There is one detonator, so a hand taking it
+//! takes it from the other. It sits in the hand by its grip, upright in the fist as a pistol grip
+//! is held (the tuning's [`detonator_hold`]), and the hand closes on it as on a gun's grip. Opening
+//! the hand puts it back on the chest: it is never dropped into the world.
 //!
 //! The trigger of the hand holding it detonates ([`Detonator::step`]): a press with charges placed
 //! asks the weapon to detonate them, and a press with none placed, or while the last detonation's
-//! charges are still going off, buzzes the hand and asks for nothing. The trigger press that
-//! swapped a charge for the detonator is not a detonation: the trigger has to let go before the
+//! charges are still going off, buzzes the hand and asks for nothing. A trigger already down as the
+//! detonator comes into the hand is not a detonation: the trigger has to let go before the
 //! detonator fires.
 //!
 //! The model is an instance the payload owns of the C4 weapon's base model
@@ -68,14 +67,13 @@ impl Detonator {
         armed: false,
     };
 
-    /// The hand that holds it.
     pub const fn hand(self) -> Option<Hand> {
         self.hand
     }
 
     /// Put the detonator in `hand`, whose trigger is `trigger` this tick, taking it from the other
-    /// hand if that held it. A trigger still down from the press that brought it does not
-    /// detonate until it has let go.
+    /// hand if that held it. A trigger already down as it comes into the hand does not detonate
+    /// until it has let go.
     pub fn take(&mut self, hand: Hand, trigger: ButtonControl) {
         *self = Detonator {
             hand: Some(hand),
@@ -102,8 +100,8 @@ impl Detonator {
             return Some(DetonatorStep::Returned(hand));
         }
         let trigger = triggers[hand.index()];
-        // A release this tick comes before a press this tick: a tap after the swap's press still
-        // detonates.
+        // A release this tick comes before a press this tick: a tap after a trigger that was down
+        // at the take still detonates.
         if trigger.released || !trigger.held() {
             self.armed = true;
         }
@@ -264,7 +262,7 @@ mod tests {
             let press = trigger(true, true, false);
             d.take(hand, press);
             assert_eq!(d.hand(), Some(hand));
-            // Still held from the swap's press.
+            // Still held from before the take.
             assert_eq!(
                 d.step([false; 2], on(hand, trigger(true, false, false))),
                 None

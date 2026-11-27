@@ -1,14 +1,15 @@
 //! The C4 throw's stages, from the grab at the pouch to the charge leaving the hand. Pure.
 //!
 //! The input tick reports the player's hand: a grab at the pouch, the grip's release with the
-//! hand's velocity, and a stand-down when the throw can no longer act ([`on_input`]). The C4
+//! hand's velocity, a hand-over, a press back onto the pouch, and a stand-down when the throw can
+//! no longer act ([`on_input`]). The C4
 //! weapon's own update acts on the weapon ([`before_update`], then [`after_action`] once the
 //! action has run).
 //!
 //! The game's own facts shape the order. A primed charge gets its physics body one update after it
 //! spawns, and dropping it needs the body, so a release waits for the body. Placing a charge beyond
 //! the most that may be live at once leaves it out of the live list, where nothing would detonate
-//! it, so a release with no room left takes the charge back instead of throwing it.
+//! it, so a release with no room left keeps the charge in the hand instead of throwing it.
 
 use jc3vr_input::frame::Hand;
 
@@ -76,8 +77,8 @@ pub(crate) enum InputEvent {
     HandOver(Hand),
     /// `hand` pressed its held charge back onto the C4 pouch.
     Return(Hand),
-    /// The throw cannot act: its toggle is off, the mode has no free hands, or the bindings stopped
-    /// injecting.
+    /// The throw cannot act: the control mode closes the pouches, the hands are not active, the
+    /// weapon handling stood down, or the throw's hand lost its input.
     StandDown,
 }
 

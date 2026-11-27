@@ -1,12 +1,14 @@
 //! Grenades taken from native weapon displays and verified static collection displays.
 //!
-//! Native weapons use weak references. Static displays use copied live-location model transforms and
-//! retire before their collection is destroyed. Each grenade on a display is one grenade: completion
-//! revalidates the source's identity, admits a safe item to the hand, and then removes that grenade
-//! from the display, without touching the grenade stock. A native display's grenade is consumed by
-//! the game's own pickup with its rounds emptied ([`stock::consume_through_pickup`]), so the
-//! placement rule that put it there hears of the pickup and restocks it as the game would; a static
-//! instance is hidden ([`collection::hide`]), and shows again only when its location loads again.
+//! Native weapons use weak references. Static displays use copied live-location model transforms
+//! and retire before their collection is destroyed. Each grenade on a display is one grenade:
+//! completion revalidates the source's identity, admits a safe item to the hand, and then removes
+//! that grenade from the display, without touching the grenade stock. A native display's grenade is
+//! consumed by the game's own pickup with its rounds emptied ([`stock::consume_through_pickup`]), so
+//! the placement rule that put it there hears of the pickup and restocks it as the game would; a
+//! finite native grenade dropped in the world is consumed outright instead
+//! ([`grenade::take_world_pickup`]); a static instance is hidden ([`collection::hide`]), and shows
+//! again only when its location loads again.
 
 pub(super) mod collection;
 mod format;
@@ -142,7 +144,8 @@ pub(super) unsafe fn begin(
     candidates
 }
 
-/// Revalidate the exact cached source before drawing the existing actor-free grenade item.
+/// Revalidate the exact cached source offered to `hand`, then draw a safe grenade into the hand and
+/// take the grenade off its display.
 pub(super) fn take(
     game: &GameTick<'_>,
     hand: Hand,

@@ -7,7 +7,11 @@
 //! it returns to the stock. Pulling the pin starts the fuse ([`pin`]): a trigger press on the hand
 //! holding it, the other hand's squeeze on the pin, or the teeth, with the grenade held at the mouth
 //! while the other hand is occupied. Nothing else does, and a grenade thrown or dropped with its pin
-//! in stays inert. Native live grenades can still be caught and thrown on.
+//! in stays inert. Native live grenades are caught and thrown on ([`catch`]).
+//!
+//! Grenades also come from weapon displays ([`locker`]) and from characters' drops, which become
+//! safe grenades lying in the world ([`world`]). The beacon is held and thrown by hand as a grenade
+//! is ([`beacon`]), and each live grenade's end is logged ([`fuse_log`]).
 
 mod beacon;
 pub mod catch;
@@ -80,7 +84,7 @@ use crate::controllers::{
     },
 };
 
-/// The grenade hooks, aggregated by the weapon controller.
+/// The grenade hooks, aggregated by [`crate::controllers::weapons::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_FROM_USER_BINDER)
@@ -181,8 +185,7 @@ pub struct GrenadeStatus {
     pub gone: u64,
     pub caught_hand: Option<Hand>,
     pub catch: CatchCounts,
-    /// The most recent throws, and how many grenades were primed and thrown since the payload
-    /// loaded.
+    /// The most recent native throws, and how many there have been since the payload loaded.
     pub events: EventLog<GrenadeEvent, 6>,
 }
 
@@ -201,7 +204,7 @@ pub fn status() -> GrenadeStatus {
     status
 }
 
-/// Native caught grenades only. Actor-free items are already owned by the loadout table.
+/// Native caught grenades only: the loadout table already owns the safe items.
 pub(crate) fn held() -> Option<(Hand, usize, TakeSource)> {
     catch::caught().map(|caught| (caught.hand, caught.explosive, TakeSource::Catch))
 }

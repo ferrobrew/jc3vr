@@ -1,3 +1,17 @@
+//! The beacon, held in the hand and thrown by it.
+//!
+//! Under the controller scheme, the primed beacon of the local player's selected beacon weapon is
+//! held in the dominant hand at the grenade's hold ([`observe`]), unless that hand holds a grenade.
+//! The game's own fire of that beacon is held back ([`fire_beacon`]), as is a fire with no beacon
+//! primed. Closing the hand's grip and opening it again throws the beacon with the release every
+//! hand-thrown item takes ([`throw_release`]): once its physics body exists, the weapon's own launch
+//! fires it with that release planned, and the release is written for the engine's deferred launch
+//! as well ([`render_frame`]). A beacon thrown this way is not caught.
+//!
+//! The beacon leaves the hand at rest when the hand never closes on it in time, its body never
+//! appears, the hand loses tracking or input, the weapon is no longer selected, or the controller
+//! scheme ends.
+
 use std::{
     cell::Cell,
     time::{Duration, Instant},

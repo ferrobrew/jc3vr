@@ -10,9 +10,11 @@
 //!
 //! Restocking is physical only: while the controller scheme runs the grenade pouch, the game's own
 //! grenade pickup ([`WeaponBase::PickupStart`]), which the proximity pickup and the use input both
-//! reach, credits nothing to the local player ([`should_block_pickup`]). A grenade the hands take from the
-//! world goes through the mod's own take, which consumes the native grenade without crediting it
-//! ([`consume_through_pickup`]).
+//! reach, credits nothing to the local player ([`should_block_pickup`]). A grenade the hands take
+//! from a display goes through the game's own pickup with its rounds emptied
+//! ([`consume_through_pickup`]), and a native grenade lying in the world is consumed outright
+//! ([`take_world_pickup`](crate::controllers::weapons::grenade::take_world_pickup)); neither credits
+//! the stock.
 //!
 //! [`Inventory::m_MaxAmmunition`]: jc3gi::character::inventory::Inventory::m_MaxAmmunition
 

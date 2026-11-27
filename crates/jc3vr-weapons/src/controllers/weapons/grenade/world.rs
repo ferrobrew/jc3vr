@@ -10,7 +10,7 @@
 //! under the draw's pool and stage rules ([`safe::spawn_in_world`]), and only then is the native
 //! grenade consumed ([`consume_world_pickup`]). A refused allocation leaves the native grenade
 //! where it lies, for the take of a native grenade lying in the world to reach
-//! ([`take_world_pickup`](super::take_world_pickup)). Only under the controller scheme: gamepad
+//! ([`take_world_pickup`](crate::controllers::weapons::grenade::take_world_pickup)). Only under the controller scheme: gamepad
 //! play keeps the game's pickups.
 
 use std::num::NonZeroUsize;
@@ -78,7 +78,7 @@ struct Pending {
 
 static PENDING: DetourQueue<Pending> = DetourQueue::new();
 
-/// How many drops wait at once; the oldest beyond it are left as pickups.
+/// How many drops wait at once; the newest beyond it are left as pickups.
 const MAX_PENDING: usize = 16;
 /// How many input ticks a refused replacement is tried again on before the drop is left a pickup.
 const MAX_TICKS: u32 = 30;

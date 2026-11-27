@@ -60,8 +60,9 @@
 //! ([`Grenade::UpdatePostSim`]). [`create`] therefore refuses unless the game stage allows spawning
 //! ([`stage::spawn`]), which it does only at the top of the queue, after the commit.
 //!
-//! Factory allocations inside an ammunition exemption ([`AMMO_NEUTRAL`]) disable reclamation under the allocator's own
-//! critical section. No reference outlives a removal, and only owned inert actors are removed.
+//! Factory allocations inside an ammunition exemption ([`AMMO_NEUTRAL`]) disable reclamation under
+//! the allocator's own critical section. No reference outlives a removal, and only owned inert
+//! actors are removed.
 
 mod ai;
 
@@ -231,7 +232,7 @@ pub(super) unsafe fn pull_pin(actor: &Actor) -> PinPull {
 /// outside the effect system's simulation and render updates, as a release's launch does.
 unsafe fn start_trail(explosive: &mut Explosive) {
     // The launch gives the grenade its trail resources just before it plays the trail, and the
-    // prime never does, so without them the pin's trail played nothing.
+    // prime never does, so without them the pin's trail plays nothing.
     let resourced = unsafe { give_trail_resources(explosive) };
     unsafe { explosive.PlayTrailEffect() };
     tracing::info!(

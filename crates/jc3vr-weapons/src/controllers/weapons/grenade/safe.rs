@@ -134,7 +134,8 @@ pub(crate) fn spawn_in_world(game: &GameTick<'_>, world: Mat4, release: Release)
     true
 }
 
-/// The safe item in a hand; unlike a caught grenade it has no explosive address to hand out.
+/// The safe item in a hand, named by its loadout identity rather than, as a caught grenade is, by
+/// an explosive address.
 pub(crate) fn in_hand(hand: Hand) -> Option<SafeItemView> {
     live::safe_items()
         .into_iter()
@@ -436,7 +437,7 @@ pub(super) fn dropped(item: SafeItemView) {
     }
 }
 
-/// Retire an item whose tree became a live grenade: the loadout no longer owns it.
+/// Retire an item whose actor became a live grenade: the loadout no longer owns it.
 pub(super) fn launched(item: SafeItemView) {
     retire(item, "launched item");
 }

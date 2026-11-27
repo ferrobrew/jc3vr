@@ -5,20 +5,22 @@
 //! each of its updates ([`read`]). On the input tick each charge within the tuning's
 //! [`offer_range_m`] of the player is a grab volume ([`GrabVolume::PlacedCharge`]) for each free
 //! hand, at the charge, in the cockpit frame the volumes live in ([`begin_tick`]); while a throw
-//! holds a charge or waits for one, nothing is offered. A grip press there takes the charge nearest the hand.
+//! holds a charge or waits for one, nothing is offered. A grip press there takes the charge nearest
+//! the hand.
 //!
 //! A take is refused, the placed charge left where it is, when the charge is no longer placed
 //! (it went off or was removed since the offer) and while the game's own planting holds the
 //! weapon; the grabbing hand buzzes and the refusal is logged at info level, as a refused grab at
 //! the pouch is. The game's planting permission does not refuse a take: a take plants nothing, and
 //! the permission is off while the grapple is busy, which it always is when the snatch catches a
-//! charge. A charge taken while planting is not allowed is held as any other; letting it go then
-//! puts it back in the pouch, as a release at the cap does.
+//! charge. A charge taken while planting is not allowed is held and thrown as any other, since the
+//! permission refuses no throw either.
 //!
 //! The grapple's snatch physically pulls a charge's native body before requesting [`take`] on a
 //! successful catch. The original stays live and counted during flight. The queued take carries
 //! its allocation identity, not a strong pooled-object reference. The weapon update checks that
-//! identity against the current live-list entry before removing anything.
+//! identity against the current live-list entry before it removes the original
+//! ([`PlantedExplosiveWeapon::RemoveFromActiveList`], [`Explosive::RemoveSelf`]).
 //!
 //! [`PlantedExplosiveWeapon::m_ActiveExplosives`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::m_ActiveExplosives
 //! [`PlantedExplosiveWeapon::RemoveFromActiveList`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::RemoveFromActiveList

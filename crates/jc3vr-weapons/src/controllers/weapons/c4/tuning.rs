@@ -42,7 +42,7 @@ pub struct C4Tuning {
     pub stick: StickTuning,
     /// Taking a placed charge back into a hand.
     pub placed: PlacedTuning,
-    /// The detonator's request to detonate the placed charges.
+    /// A trigger's request to detonate the placed charges.
     pub(crate) detonation: DetonationTuning,
 }
 
@@ -111,7 +111,8 @@ impl PlacedTuning {
     }
 }
 
-/// The detonator's request to detonate the placed charges.
+/// A trigger's request to detonate the placed charges: the detonator's, or that of the hand
+/// holding a charge.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DetonationTuning {

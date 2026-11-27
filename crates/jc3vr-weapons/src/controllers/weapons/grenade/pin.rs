@@ -79,9 +79,9 @@ pub(crate) fn at_mouth(pin: Vec3, mouth: Vec3, tuning: &PinTuning) -> bool {
 }
 
 /// The teeth pull for one hand's grenade: the grenade's pin held at the mouth for
-/// [`PinTuning::teeth_dwell_s`] while the other hand is occupied pulls the pin, once per visit to the mouth.
-/// A grenade only passing the face, or one brought there while the other hand is free to pull the
-/// pin itself, pulls nothing.
+/// [`PinTuning::teeth_dwell_s`] while the other hand is occupied pulls the pin, once per visit to
+/// the mouth. A grenade only passing the face, or one brought there while the other hand is free to
+/// pull the pin itself, pulls nothing.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct TeethPull {
     /// How long the pin has been at the mouth with the other hand occupied, seconds.

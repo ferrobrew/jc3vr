@@ -35,10 +35,11 @@
 //! A charge already placed is taken back by closing a free hand on it ([`placed`]): it is swapped
 //! for a primed charge in that hand, which is then held as one from the pouch is.
 //!
-//! The detonator is held in a hand like a gun and its trigger detonates ([`detonator`]). Pulling
-//! the trigger of the hand holding a charge swaps the charge for it, the charge going back into the
-//! pouch as one pressed back onto it does, and a grab at the pouch with no charge left to give
-//! hands over the detonator instead; opening the hand puts it back on the chest. Detonation goes
+//! The detonator is held in a hand like a gun and its trigger detonates ([`detonator`]): a grab at
+//! the pouch with no charge left to give hands it over, and opening the hand puts it back on the
+//! chest. The trigger of the hand holding a charge detonates the placed charges
+//! too, the charge staying in the hand. A charge once thrown or stuck leaves its hand free: of the
+//! C4, only a charge still held and the drawn detonator fill a hand. Detonation goes
 //! through the game's own detonate input ([`WeaponInput::E_INPUT_DETONATE_EXPLOSIVES`]): a
 //! detonator press with charges placed raises it for the weapon's serial update, which detonates
 //! every placed charge as the game's own detonation does, until the weapon starts the detonation or
@@ -394,12 +395,13 @@ pub(crate) fn press(hand: Hand, at: StickAt) {
 
 /// What the input tick hands the throw.
 pub(super) struct TickInputs {
-    /// Whether the throw may act this tick: its toggle is on and the mode has free hands.
+    /// Whether the throw may act this tick: the control mode lets the pouches give and take, and the
+    /// hands are active.
     pub acting: bool,
     /// The hand that grabbed the C4 pouch this tick.
     pub(crate) pouch_grab: Option<Hand>,
-    /// Each hand's trigger over the tick, indexed by [`Hand::index`]: it swaps a held charge for
-    /// the detonator, and the detonator's detonates.
+    /// Each hand's trigger over the tick, indexed by [`Hand::index`]: the trigger of the hand holding
+    /// a charge or the detonator detonates.
     pub triggers: [ButtonControl; 2],
     /// The hand that grabbed a placed charge this tick.
     pub(crate) placed_grab: Option<Hand>,
@@ -1052,7 +1054,7 @@ fn update_attachment_transforms(
     let matrix = held_matrix(grip, local);
     // SAFETY: the primed charge is live while the weak reference locks, on this thread.
     let charge = unsafe { primed_charge(&*weapon) };
-    // The tick's place moves the charge's transform; its in-hand model is drawn at the hand's
+    // The place below moves the charge's transform; its in-hand model is drawn at the hand's
     // render-time grip.
     in_hand::hold(
         Slot::Charge,
