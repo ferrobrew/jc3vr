@@ -56,6 +56,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::gun,
+    body_frame::{self, GRIP_FRAME},
     hands::{ik, pose as hand_pose, tuning::HANDS},
     held::{
         self, GripSlide, SnapStart, SnapView, placement::HandlePlacement, slide_offset,
@@ -96,6 +97,13 @@ pub struct HandGrip {
     pub sliding: bool,
 }
 
+/// The rigid grip's section of the body's handoff data ([`crate::controllers::body_frame`]).
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct GripFrame {
+    /// Each hand's gun at its last placement, indexed by [`Hand::index`].
+    pub hands: [Option<HandGrip>; 2],
+}
+
 /// The rigid grip's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct GripStatus {
@@ -105,9 +113,10 @@ pub struct GripStatus {
     pub pins: u64,
 }
 
+/// The readout, for the debug UI. Code acting on the grip reads [`body_frame::grip`].
 pub fn status() -> GripStatus {
     GripStatus {
-        hands: *LAST.lock(),
+        hands: body_frame::grip().hands,
         pins: PINS.load(Ordering::Relaxed),
     }
 }
@@ -298,12 +307,11 @@ pub unsafe fn after_placement(character: *const Character, placement: Placement)
     let to_world = Mat4::from(character.m_WorldMatrixT1);
     let (_, body, _) = to_world.to_scale_rotation_translation();
     let now = Stamp::now();
-    let mut last = LAST.lock();
+    // A hand this placement put no gun in holds none now: a record left from before would name a
+    // gun that has left it, perhaps for the other hand.
+    let mut hands = [None; 2];
     for hand in Hand::BOTH {
-        // A hand this placement put no gun in holds none now: a record left from before would name
-        // a gun that has left it, perhaps for the other hand.
         let Some(placed) = placement.guns[hand.index()] else {
-            last[hand.index()] = None;
             continue;
         };
         let data = unsafe { &*placed.data };
@@ -329,7 +337,7 @@ pub unsafe fn after_placement(character: *const Character, placement: Placement)
                 })
             };
         }
-        last[hand.index()] = Some(HandGrip {
+        hands[hand.index()] = Some(HandGrip {
             at: now,
             weapon: placed.weapon,
             gun: placed.gun,
@@ -346,6 +354,7 @@ pub unsafe fn after_placement(character: *const Character, placement: Placement)
             sliding: placed.read.sliding,
         });
     }
+    GRIP_FRAME.publish_at(GripFrame { hands }, now);
 }
 
 /// The guns one placement covers, from [`before_placement`] to [`after_placement`].
@@ -821,7 +830,6 @@ static FRAMES: Mutex<[Option<(FrameKey, Quat)>; 2]> = Mutex::new([None; 2]);
 /// The left hand's grip mirrored onto the right wrist, and the controller it was read for.
 static MIRRORED: Mutex<Option<(GripKey, Pose)>> = Mutex::new(None);
 static RIGHT_GRIP: Mutex<Option<RightGripRead>> = Mutex::new(None);
-static LAST: Mutex<[Option<HandGrip>; 2]> = Mutex::new([None; 2]);
 static PINS: AtomicU64 = AtomicU64::new(0);
 /// Each hand's last [`GripRead`] as its discriminant, `0` before the hand placed a gun.
 static READS: [AtomicU8; 2] = [const { AtomicU8::new(0) }; 2];

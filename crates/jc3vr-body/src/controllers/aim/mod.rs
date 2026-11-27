@@ -68,6 +68,7 @@ use crate::controllers::{
         raycast::{CastOptions, RayHit, RaycastError},
         tuning_file::AIM,
     },
+    body_frame::{self, AIM_FRAME},
     facts::{
         mounted,
         seat::{rides_in_seat, stands_in},
@@ -157,8 +158,27 @@ pub enum AimIdle {
     NoHands,
 }
 
-/// The aim's readout: the last update's per-hand results, for the debug UI and the world-space
-/// overlay layer.
+/// The last update's per-hand results: the aim's section of the body's handoff data
+/// ([`crate::controllers::body_frame`]).
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct AimFrame {
+    /// Why nothing was aimed, when nothing was.
+    pub idle: Option<AimIdle>,
+    /// Each hand's aim, indexed by [`Hand::index`]; `None` for an untracked hand or while idle.
+    pub hands: [Option<HandAim>; 2],
+    /// The grapple's aim, while the grapple follows the off-hand.
+    pub grapple: Option<GrappleAim>,
+    /// The wielded weapon the guns' aim points were published for.
+    pub weapon: Option<HeldWeapon>,
+    /// The weapon armed in each hand beside the wielded one, aimed along its own sight line, by
+    /// [`Hand::index`].
+    pub armed: [Option<HeldWeapon>; 2],
+    /// Each gun hand's aim-assist correction on the last update, indexed by [`Hand::index`].
+    pub assist: [Option<AssistCorrection>; 2],
+}
+
+/// The aim's readout: the last update's results with its diagnostics and counts, for the debug UI
+/// and the world-space overlay layer.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct AimStatus {
     /// Why nothing was aimed, when nothing was.
@@ -182,9 +202,21 @@ pub struct AimStatus {
     pub updates: u64,
 }
 
-/// The latest readout.
+/// The latest readout, for the debug UI. Code acting on the aim reads [`body_frame::aim`].
 pub fn status() -> AimStatus {
-    *STATUS.lock()
+    let counts = COUNTS.snapshot();
+    let section = body_frame::aim();
+    AimStatus {
+        idle: section.idle,
+        hands: section.hands,
+        grapple: section.grapple,
+        weapon: section.weapon,
+        armed: section.armed,
+        raycast_error: *RAYCAST_ERROR.lock(),
+        assist: section.assist,
+        assist_corrections: counts.assist_corrections,
+        updates: counts.updates,
+    }
 }
 
 /// The character-level weapon aim point while the guns follow the hands: the dominant hand's aim
@@ -474,19 +506,21 @@ unsafe fn finish(
         None => unsafe { aim.as_ref() }
             .map(|aim| grapple_readout(aim, ray, grapple_assist, fire_enabled)),
     });
-    let mut status = STATUS.lock();
-    let corrections = assist.iter().flatten().count() as u64;
-    *status = AimStatus {
+    AIM_FRAME.publish(AimFrame {
         idle: None,
         hands,
         grapple,
         weapon: held,
         armed: armed_weapons,
-        raycast_error,
         assist,
-        assist_corrections: status.assist_corrections + corrections,
-        updates: status.updates + 1,
-    };
+    });
+    *RAYCAST_ERROR.lock() = raycast_error;
+    // Counted after the publication, so that a reader that sees the count move (the overlay's
+    // producers) reads a section at least as new.
+    COUNTS
+        .assist_corrections
+        .add(assist.iter().flatten().count() as u64);
+    COUNTS.updates.bump();
 }
 
 /// The grapple slot after the game's targeting, as the grapple's readout. While the game takes no
@@ -562,26 +596,27 @@ const fn slot_flags(slot: SlotFlags, fire_enabled: bool) -> (bool, bool, bool) {
 fn idle_update(idle: AimIdle) {
     gun::publish(None, [None; 2]);
     (hooks().publish_armed_targets)(0, [None; 2]);
-    let mut status = STATUS.lock();
-    *status = AimStatus {
+    AIM_FRAME.publish(AimFrame {
         idle: Some(idle),
-        updates: status.updates,
-        assist_corrections: status.assist_corrections,
-        ..AimStatus::default()
-    };
+        ..AimFrame::default()
+    });
+    *RAYCAST_ERROR.lock() = None;
 }
 
-static STATUS: Mutex<AimStatus> = Mutex::new(AimStatus {
-    idle: None,
-    hands: [None; 2],
-    grapple: None,
-    weapon: None,
-    armed: [None; 2],
-    raycast_error: None,
-    assist: [None; 2],
-    assist_corrections: 0,
-    updates: 0,
-});
+jc3vr_core::counters! {
+    /// The aim updates' counts, for the readout.
+    struct AimCounters => AimCounts {
+        /// Aim-assist corrections made.
+        assist_corrections,
+        /// Updates that aimed.
+        updates,
+    }
+}
+
+static COUNTS: AimCounters = AimCounters::new();
+
+/// The last update's raycast failure, if it had one, for the readout.
+static RAYCAST_ERROR: Mutex<Option<RaycastError>> = Mutex::new(None);
 
 #[cfg(test)]
 mod tests {

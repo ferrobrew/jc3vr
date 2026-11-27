@@ -25,16 +25,17 @@
 //!   the hands tuning's `tiers.yield_blend_s` and back over `tiers.return_blend_s`.
 //!
 //! The classification runs once per input tick ([`tick`]), in the game stage on the game
-//! thread, from the mode detector's snapshot plus a few state-machine predicates, and publishes one
-//! weight per hand for the IK and the late update to read ([`weights`]).
+//! thread, from the mode detector's snapshot plus a few state-machine predicates, and publishes the
+//! tiers and one weight per hand as the body frame's tier section
+//! ([`crate::controllers::body_frame::tiers`]) for the IK and the late update to read.
 
 use jc3gi::{camera::game_camera_manager::GameCameraManager, state::StateBitFlag};
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
+    body_frame::{self, TIER_FRAME},
     hands::tuning::HANDS,
     held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
@@ -394,9 +395,10 @@ pub fn step_weight(weight: f32, target: f32, dt: f32, yield_s: f32, return_s: f3
     }
 }
 
-/// The last tick's classification, for the debug UI and the overlay's ghost hands.
+/// The tick's classification: the hand tiers' section of the body's handoff data
+/// ([`crate::controllers::body_frame`]), which the debug UI and the overlay's ghost hands read too.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TierStatus {
+pub struct TierFrame {
     /// The classified state, `None` before the first readable tick.
     pub state: Option<TierState>,
     /// Each hand's assigned tier, indexed by [`Hand::index`].
@@ -411,8 +413,12 @@ pub struct TierStatus {
     pub anchor_weights: [f32; 2],
 }
 
-impl TierStatus {
-    const INITIAL: TierStatus = TierStatus {
+/// The tiers' readout, which is the section itself.
+pub type TierStatus = TierFrame;
+
+impl TierFrame {
+    /// The section before the first readable tick.
+    pub(crate) const INITIAL: TierFrame = TierFrame {
         state: None,
         tiers: [HandTier::Free; 2],
         effective: [HandTier::Free; 2],
@@ -421,14 +427,15 @@ impl TierStatus {
     };
 }
 
-/// The last tick's classification.
+/// The last tick's classification, for the debug UI. Code acting on the tiers reads
+/// [`body_frame::tiers`].
 pub fn status() -> TierStatus {
-    *STATUS.lock()
+    body_frame::tiers()
 }
 
 /// Each hand's controller weight, indexed by [`Hand::index`].
 pub fn weights() -> [f32; 2] {
-    STATUS.lock().weights
+    body_frame::tiers().weights
 }
 
 /// Classify this input tick and advance the blends. Called from the game stage after the mode
@@ -446,16 +453,17 @@ pub fn tick(game: &GameTick<'_>, dt: f32) {
     let holding = Hand::BOTH.map(|hand| {
         gun_hands[hand.index()] || held::armed_in(hand).is_some() || held::item(hand).is_some()
     });
-    let mut status = STATUS.lock();
-    *status = advance(
-        *status,
+    // The game stage is the section's only writer, so the read and the publication cannot
+    // interleave with another tick's.
+    TIER_FRAME.publish(advance(
+        body_frame::tiers(),
         classify(&signals),
         dt,
         &config,
         dominant,
         true,
         holding,
-    );
+    ));
 }
 
 /// What [`advance`] reads of the settings: the tier table.
@@ -471,20 +479,20 @@ impl TierConfig {
     };
 }
 
-/// Fold one tick into the status: a new state (or the held one) assigns each hand its tier, and
+/// Fold one tick into the section: a new state (or the held one) assigns each hand its tier, and
 /// the weights step toward the tiers' targets. `mounted_anchor` is the mounted guns' own anchor
 /// switch; the grapple states always anchor. `holding` says which hands hold
 /// something, indexed by [`Hand::index`]: a grapple hand holding anything stays free rather than
 /// taking the line, so that what it holds stays where the controller puts it.
 pub fn advance(
-    previous: TierStatus,
+    previous: TierFrame,
     state: Option<TierState>,
     dt: f32,
     config: &TierConfig,
     dominant: Hand,
     mounted_anchor: bool,
     holding: [bool; 2],
-) -> TierStatus {
+) -> TierFrame {
     let state = state.or(previous.state);
     let tiers = Hand::BOTH.map(|hand| {
         state.map_or(HandTier::Free, |s| {
@@ -526,7 +534,7 @@ pub fn advance(
             tuning.anchor.blend_s,
         )
     });
-    TierStatus {
+    TierFrame {
         state,
         tiers,
         effective,
@@ -534,8 +542,6 @@ pub fn advance(
         anchor_weights,
     }
 }
-
-static STATUS: Mutex<TierStatus> = Mutex::new(TierStatus::INITIAL);
 
 /// Read the signals: the mode detector's detection and snapshot from this tick, plus the
 /// state-machine predicates, each only while the character is readable. In a game tick before the
@@ -688,7 +694,7 @@ mod tests {
         assert_eq!(classify(&s), Some(TierState::MountedGun));
         let config = TierConfig::PLAN;
         let status = advance(
-            TierStatus::INITIAL,
+            TierFrame::INITIAL,
             Some(TierState::MountedGun),
             1.0,
             &config,
@@ -760,7 +766,7 @@ mod tests {
     fn a_hang_anchors_the_grapple_hand_and_leaves_the_other_free() {
         let config = TierConfig::PLAN;
         let status = advance(
-            TierStatus::INITIAL,
+            TierFrame::INITIAL,
             Some(TierState::GrappleHang),
             1.0,
             &config,
@@ -789,7 +795,7 @@ mod tests {
         for state in [TierState::GrappleReel, TierState::GrappleHang] {
             // The left hand is the grapple hand; empty, it takes the line.
             let empty = advance(
-                TierStatus::INITIAL,
+                TierFrame::INITIAL,
                 Some(state),
                 1.0,
                 &config,
@@ -804,7 +810,7 @@ mod tests {
             );
             // Holding a gun, a prop, or an explosive, it stays free.
             let status = advance(
-                TierStatus::INITIAL,
+                TierFrame::INITIAL,
                 Some(state),
                 1.0,
                 &config,
@@ -817,7 +823,7 @@ mod tests {
         }
         // A mounted gun's hands anchor to its handles whatever they hold.
         let mounted = advance(
-            TierStatus::INITIAL,
+            TierFrame::INITIAL,
             Some(TierState::MountedGun),
             1.0,
             &config,
@@ -869,7 +875,7 @@ mod tests {
     fn a_yielding_state_blends_both_hands_and_a_held_state_persists() {
         let config = TierConfig::PLAN;
         let status = advance(
-            TierStatus::INITIAL,
+            TierFrame::INITIAL,
             Some(TierState::Wingsuit),
             HANDS.get().tiers.yield_blend_s,
             &config,

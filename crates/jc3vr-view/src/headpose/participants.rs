@@ -34,9 +34,10 @@ pub struct HeadParticipants {
     pub log_grapple_frame: fn(frame: &FrameTelemetry),
     /// How the body follows the head this tick.
     pub follow_settings: fn() -> FollowSettings,
-    /// The on-foot orientation evaluator's run count, which advances once per tick on foot.
+    /// A mark that advances each time the on-foot orientation evaluator runs, once per tick on
+    /// foot. It is compared between input ticks, never read as a quantity.
     pub orientation_evals: fn() -> u64,
-    /// The swim movement cores' run count.
+    /// A mark that advances each time a swim movement core runs, compared the same way.
     pub swim_evals: fn() -> u64,
     /// Whether the local player swims.
     pub swimming: fn() -> bool,

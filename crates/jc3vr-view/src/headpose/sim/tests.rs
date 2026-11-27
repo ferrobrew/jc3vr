@@ -84,11 +84,11 @@ fn test_free_look_clamping_pitch() {
 }
 
 #[test]
-fn test_mode_detection_from_counter() {
-    // Counter advanced: the orientation evaluator ran, so the player is on foot.
+fn test_mode_detection_from_mark() {
+    // The mark advanced: the orientation evaluator ran, so the player is on foot.
     assert_eq!(detect_mode(0, 1), HeadMode::OnFoot);
     assert_eq!(detect_mode(5, 8), HeadMode::OnFoot);
-    // Counter unchanged: not on foot.
+    // The mark unchanged: not on foot.
     assert_eq!(detect_mode(5, 5), HeadMode::Other);
 }
 

@@ -29,7 +29,7 @@ use jc3vr_view::headpose::sim::{HeadMode, LatchState};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::hooks::input::tuning::INPUT_HOOKS;
+use crate::{controllers::body_frame, hooks::input::tuning::INPUT_HOOKS};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -52,9 +52,9 @@ pub fn hook_library() -> HookLibrary {
 /// into face-dir tracking.
 pub static MOVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static AIM_RELATIVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
-/// How often the orientation evaluator ran for the local player. Unlike the task counters above,
-/// this advances every on-foot frame including idle (the move/aim tasks stop running while idle),
-/// which is what makes it usable as the headpose sim's on-foot signal.
+/// How often the orientation evaluator ran for the local player. The headpose sim's on-foot signal
+/// is the evaluator's liveness in the body's frame ([`body_frame::ModeLiveness`]); this count stays for
+/// the head participants that still compare it, until they read the liveness.
 pub static ORIENTATION_EVAL_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static FACE_CAMERA_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SLIDE_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -260,9 +260,10 @@ fn force_face_camera(
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return passthrough;
     };
-    // The counter and snapshot run before any config gating: the headpose sim's mode detection and
-    // the Game tab readout must see every on-foot frame.
+    // The liveness and snapshot run before any config gating: the headpose sim's mode detection
+    // and the Game tab readout must see every on-foot frame.
     ORIENTATION_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
+    body_frame::mark_on_foot_evaluated();
     capture_snapshot(character);
 
     let blackboard = character_blackboard(character);

@@ -48,14 +48,16 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{procedural::state::animation_moves_body, rig::grounded},
+        body_frame::{self, LOCOMOTION_FRAME},
         locomotion::{config::LOCOMOTION_CONFIG, speeds::SpeedLog, tuning::LOCOMOTION},
     },
     tuning::FRESHNESS,
 };
 
-/// What the stick locomotion did on its last tick.
+/// What the stick locomotion did on its last tick: the locomotion's section of the body's handoff
+/// data ([`crate::controllers::body_frame`]).
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct LocomotionStatus {
+pub struct LocomotionFrame {
     /// When the movement task last ran for the local player.
     pub at: Option<Stamp>,
     /// The move stick, `(right, forward)`.
@@ -72,7 +74,10 @@ pub struct LocomotionStatus {
     pub velocity: Option<Vec2>,
 }
 
-impl LocomotionStatus {
+/// The locomotion's readout, which is the section itself.
+pub type LocomotionStatus = LocomotionFrame;
+
+impl LocomotionFrame {
     /// Whether the movement task ran within the last few ticks before `now`: Rico is on foot on
     /// the ground.
     pub fn fresh(&self, now: Stamp) -> bool {
@@ -95,9 +100,10 @@ impl LocomotionStatus {
     }
 }
 
-/// The last tick's status.
+/// The last tick's status, for the debug UI. Code acting on the locomotion reads
+/// [`body_frame::locomotion`].
 pub fn status() -> LocomotionStatus {
-    STATE.lock().status
+    body_frame::locomotion()
 }
 
 /// Replace the movement task's horizontal velocity with the stick's, for the local player after the
@@ -123,21 +129,27 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let task_velocity = Vec2::new(task_x, task_z);
 
     let mut state = STATE.lock();
-    let resumed = !state.status.fresh(now);
+    // The movement task is the section's only writer, and it runs under the state lock.
+    let previous = body_frame::locomotion();
+    let resumed = !previous.fresh(now);
     state
         .speeds
         .observe(now, stick.length(), game_speed, root_speed);
-    state.status.at = Some(now);
-    state.status.stick = stick;
-    state.status.game_speed = game_speed;
-    state.status.root_speed = root_speed;
-    state.status.task_velocity = task_velocity;
+    let mut status = LocomotionFrame {
+        at: Some(now),
+        stick,
+        game_speed,
+        root_speed,
+        task_velocity,
+        ..previous
+    };
     // While the animation carries the body (an authored one-off, a hit reaction), its root motion
     // is the motion, and the task's velocity passes through; the integrator picks up from the
     // body's real velocity when the stick drives it again.
     if !config.enabled || unsafe { animation_moves_body(character, now) } {
-        state.status.target = Vec2::ZERO;
-        state.status.velocity = None;
+        status.target = Vec2::ZERO;
+        status.velocity = None;
+        LOCOMOTION_FRAME.publish_at(status, now);
         return;
     }
 
@@ -145,7 +157,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     // the other states gave it, so the integrator starts from the body's real velocity: a landing
     // carries its speed instead of stopping dead.
     let body = unsafe { proxy_velocity(character) };
-    let start = match state.status.velocity {
+    let start = match previous.velocity {
         Some(velocity) if !resumed => velocity,
         _ => body.unwrap_or(task_velocity),
     };
@@ -157,8 +169,8 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         data: [velocity.x, task_y, velocity.y],
     };
     unsafe { character.SetWantedWorldVelocity(&world) };
-    state.status.target = target;
-    state.status.velocity = Some(velocity);
+    status.target = target;
+    status.velocity = Some(velocity);
 
     if state
         .log_at
@@ -179,27 +191,18 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
             "locomotion: stick velocity",
         );
     }
+    LOCOMOTION_FRAME.publish_at(status, now);
 }
 
 /// How often the commanded velocity is logged while moving.
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 struct State {
-    status: LocomotionStatus,
     speeds: SpeedLog,
     log_at: Option<Stamp>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    status: LocomotionStatus {
-        at: None,
-        stick: Vec2::ZERO,
-        game_speed: None,
-        root_speed: 0.0,
-        task_velocity: Vec2::ZERO,
-        target: Vec2::ZERO,
-        velocity: None,
-    },
     speeds: SpeedLog::new(),
     log_at: None,
 });

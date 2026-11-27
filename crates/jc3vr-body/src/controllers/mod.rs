@@ -31,6 +31,8 @@
 //!   cockpit composition, the crouch capsule, the head-through-geometry fade, and seat transitions.
 //!   Roomscale needs the headset rather than the controllers, so it is gated on the VR source and
 //!   its own toggles instead of the scheme;
+//! - [`body_frame`]: the per-tick handoff data the subsystems publish for the crates above: the hand
+//!   tiers, the rigid grip, the aim, the locomotion, and the modes' liveness;
 //! - [`telemetry`]: the notes the subsystems write to the tracking recording;
 //! - [`intent`], [`held`], [`physics`], and [`facts`]: the vocabulary, the held-item facts, the
 //!   physics substrate, and the published facts that the subsystems above share with these.
@@ -42,6 +44,7 @@
 pub mod aim;
 pub mod aim_state;
 pub mod body;
+pub mod body_frame;
 pub mod clock;
 pub mod facts;
 pub mod fingers;

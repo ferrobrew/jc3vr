@@ -53,6 +53,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::{
+        body_frame,
         locomotion::strokes::{self, model::propel},
         mode::CharacterSnapshot,
     },
@@ -73,9 +74,9 @@ pub fn hook_library() -> HookLibrary {
         .with_static_binder(&PROCESS_MOTION_BINDER)
 }
 
-/// How often a swim movement core ran for the local player. The headpose sim reads this the way it
-/// reads the orientation evaluator's counter: an advance since the last input tick means the player
-/// is swimming, which keeps the VR body-yaw accumulator seeded in water.
+/// How often a swim movement core ran for the local player, for the readout. The headpose sim's
+/// in-water signal is the cores' liveness in the body's frame ([`body_frame::ModeLiveness`]); the head
+/// participants that still compare this count read it until they read the liveness.
 pub static SWIM_EVAL_CALLS: AtomicU64 = AtomicU64::new(0);
 /// How often the move direction was substituted for the body-yaw target.
 pub static SWIM_DIRECTION_OVERRIDES: AtomicU64 = AtomicU64::new(0);
@@ -396,6 +397,7 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
         return;
     }
     SWIM_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
+    body_frame::mark_swim_evaluated();
     if body_yaw_target().is_none() {
         SWIM_UNTARGETED.fetch_add(1, Ordering::Relaxed);
     }
