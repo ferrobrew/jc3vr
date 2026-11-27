@@ -70,7 +70,7 @@ pub enum CustomOwner {
 ///
 /// # Safety
 ///
-/// As for [`local`].
+/// As for [`local_hook`].
 pub unsafe fn claim_custom(owner: CustomOwner) -> bool {
     let Some(hook) = (unsafe { local_hook() }) else {
         return false;
