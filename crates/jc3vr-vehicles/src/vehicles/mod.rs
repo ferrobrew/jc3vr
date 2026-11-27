@@ -1,7 +1,7 @@
-//! Vehicles, mounted guns, the wingsuit, and the parachute under the controller scheme: the plan of
-//! record's "Vehicle, mounted, and wingsuit weapons", its vehicle and wingsuit binding tables, and
-//! its decisions on physical controls and arm steering
-//! (`docs/mod/input/controllers-and-roomscale.md`).
+//! Vehicles, mounted guns, the wingsuit, and the parachute under the controller scheme: the weapons
+//! in `docs/mod/input/vehicle-weapons.md`, the binding tables in `docs/mod/input/bindings.md`, and
+//! the physical controls and arm steering in `docs/mod/input/cockpit-controls.md` and
+//! `docs/mod/input/flight.md`.
 //!
 //! - [`config`]: the settings, all at `controllers.vehicles` ([`VEHICLES_CONFIG`]), and
 //!   [`tuning`]: the fixed placement and tuning of everything here;

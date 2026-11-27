@@ -1,5 +1,5 @@
 //! The challenges' holds of the player's weapons. The engine side is in
-//! `docs/engine/gameplay/weapon-gives-and-restores.md`, "The challenges".
+//! `docs/engine/gameplay/weapon-ownership-and-despawn.md`, "The challenges".
 //!
 //! A challenge records the player's loadout and takes it away at two seams: its start, when its
 //! spawn point overrides the loadout ([`ROMManager::StartROM`], which marks every slot for

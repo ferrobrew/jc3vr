@@ -1,5 +1,5 @@
-//! The game's rumble, forwarded to the controllers: the plan of record's "Recoil and haptics"
-//! (`docs/mod/input/controllers-and-roomscale.md`).
+//! The game's rumble, forwarded to the controllers: `docs/mod/input/haptics.md` ("The game's
+//! rumble").
 //!
 //! The game's rumble reaches the controllers through two detours, so that a vehicle's continuous
 //! engine and road rumble is covered as well as every one-off effect:

@@ -1,6 +1,6 @@
 //! Arm-stroke swimming: a hand sweeping back through the water, palm first, pushes the swimmer
 //! forward, and an uneven stroke turns them. It adds to the stick swimming
-//! (`docs/mod/body/swim-yaw.md`) and acts only while the swim gate reads swimming
+//! (`docs/mod/body/swimming.md`) and acts only while the swim gate reads swimming
 //! ([`crate::hooks::input::swim::swimming`]).
 //!
 //! Each stroking hand catches after a short travel from a forward reach. A backward pull drives

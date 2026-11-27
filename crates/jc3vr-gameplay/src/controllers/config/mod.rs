@@ -1,5 +1,5 @@
-//! The motion-controller configuration: the master switch and one group per subsystem of the plan
-//! of record (`docs/mod/input/controllers-and-roomscale.md`), each holding the settings a player
+//! The motion-controller configuration: the master switch and one group per subsystem
+//! (`docs/mod/input/controllers.md`), each holding the settings a player
 //! sets for it.
 //!
 //! `ControllersConfig::new()` ships as the full gameplay preset (the debug UI's

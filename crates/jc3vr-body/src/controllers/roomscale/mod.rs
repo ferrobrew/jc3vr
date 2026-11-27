@@ -1,5 +1,5 @@
-//! Posture and roomscale: the plan of record's "Posture", "Body scale", "Roomscale design", "Crouch,
-//! in stages", and "Seat transitions" (`docs/mod/input/controllers-and-roomscale.md`). The body
+//! Posture and roomscale: `docs/mod/input/roomscale.md` ("Posture", "Crouching",
+//! "Recenters", and "Seat transitions"). The body
 //! following the head about the room is the rig's ([`crate::controllers::body::rig::root`],
 //! `docs/mod/body/rig.md`).
 //!

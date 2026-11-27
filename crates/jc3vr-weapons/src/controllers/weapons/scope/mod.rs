@@ -1,4 +1,4 @@
-//! Scoped weapons: the plan of record's "Scopes" (`docs/mod/input/controllers-and-roomscale.md`).
+//! Scoped weapons: `docs/mod/input/hands-and-aiming.md` ("Scopes").
 //!
 //! - [`suppress`]: the game's precision aim (its camera zoom, its sniper overlay, and its hiding of
 //!   the character) refused under the controller scheme;

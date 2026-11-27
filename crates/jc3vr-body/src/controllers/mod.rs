@@ -1,7 +1,7 @@
 //! The body-bound controller subsystems, built on the input crate's controller snapshot
 //! ([`ControllerFrame`](jc3vr_input::frame::ControllerFrame)) that the view crate's
-//! [`jc3vr_view::vr::input`] publishes once per rendered frame, following the plan of record in
-//! `docs/mod/input/controllers-and-roomscale.md`:
+//! [`jc3vr_view::vr::input`] publishes once per rendered frame, following
+//! `docs/mod/input/controllers.md`:
 //!
 //! - [`scheme`]: controller versus gamepad scheme selection, the master switch, and the acting
 //!   hand;

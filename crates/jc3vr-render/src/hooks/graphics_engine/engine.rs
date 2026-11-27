@@ -104,7 +104,7 @@ pub fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
 /// registered resize callback, so a plain no-op would leave the whole pipeline at the old size.
 /// Writing the device info without touching DXGI lets `ApplyResize` run verbatim -- scene targets,
 /// pass pools, UI reset, and camera aspect all follow the render size -- while the swapchain stays
-/// where it is. See `docs/mod/stereo/swapchain-ownership.md` §5.1.
+/// where it is. See `docs/mod/stereo/swapchain-ownership.md` ("Lifecycle").
 ///
 /// `device->m_BackBuffer`'s own dimensions are written only by the real function, so under the
 /// substitute they keep reporting the true swapchain size: after this, `m_BackBuffer` means "the

@@ -1,5 +1,5 @@
-//! The world-space overlay layer: the plan of record's "The world-space overlay layer"
-//! (`docs/mod/input/controllers-and-roomscale.md`). Sprites and lines drawn into the scene per eye,
+//! The world-space overlay layer: `docs/mod/input/hands-and-aiming.md`
+//! ("The world-space overlay"). Sprites and lines drawn into the scene per eye,
 //! tested against the scene's depth, for readouts that need their own depths: the grapple's
 //! highlight, the grab-volume highlights, and the in-world diagnostics.
 //!

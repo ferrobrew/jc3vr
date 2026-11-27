@@ -4,7 +4,7 @@
 //! ([`WeaponData::UpdateAttachmentTransforms`]), and the attach bone is an animated bone whose pose
 //! relative to the wrist comes from the clips playing. With the wrist driven by a controller, any
 //! clip that keys the attach bone turns the gun in a hand the player is holding still (see
-//! `docs/engine/character/hands-locomotion-and-state.md`, "The gun's pose in the hand is
+//! `docs/engine/character/weapon-attachment-and-arm-ik.md`, "The gun's pose in the hand is
 //! animated"). So before each placement of the local player's weapons
 //! ([`Inventory::UpdateAttachmentTransforms`], whose detour lives in the weapon handling's `hold`),
 //! every gun on a hand attach bone of a hand with an effective controller plan weight above zero

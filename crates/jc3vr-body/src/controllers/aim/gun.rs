@@ -1,5 +1,5 @@
-//! Gun aim from the hands: the plan of record's "Guns" (`docs/mod/input/controllers-and-roomscale.md`),
-//! with the engine side in `docs/engine/gameplay/aim-pipeline.md`.
+//! Gun aim from the hands: `docs/mod/input/hands-and-aiming.md`
+//! ("Gun aim"), with the engine side in `docs/engine/gameplay/aim-pipeline.md`.
 //!
 //! Each gun of the player's wielded weapon aims along its own sight line
 //! ([`ray::sight_ray`]): the gun's transform carried to the controller's current pose by the hand's

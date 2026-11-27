@@ -1,6 +1,6 @@
-//! Controller-owned hands: the plan of record's "Hands", "Hand tiers", and "Body scale" sections
-//! (`docs/mod/input/controllers-and-roomscale.md`), with the engine side in
-//! `docs/engine/character/humanik.md` and `docs/engine/character/hands-locomotion-and-state.md`.
+//! Controller-owned hands: `docs/mod/input/hands-and-aiming.md` ("The wrist targets",
+//! "Hand tiers", and "Arm reach"), with the engine side in `docs/engine/character/humanik.md` and
+//! `docs/engine/character/state-signals.md`.
 //!
 //! - [`pose`]: the pure composition from a controller's grip pose to the character's wrist frame,
 //!   through the grip offset, the body-scale remap, and the head's world transform;

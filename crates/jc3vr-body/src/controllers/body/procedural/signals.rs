@@ -1,5 +1,6 @@
 //! The character-state signals the hand-over table reads that the character does not keep: the
-//! grapple's ledge climb and the hit reactions. See `docs/engine/character/hands-locomotion-and-state.md`.
+//! grapple's ledge climb and the hit reactions. See `docs/engine/character/state-signals.md`
+//! ("Ledge climbs and vaults" and "Hit reactions and scripted sequences").
 //!
 //! - The ledge climb is the one the grapple ends in: the reeled-in ledge climb's motion task
 //!   ([`NStateTask_ReeledInLedgeClimbMotionTask::Update`](jc3gi::equipment::grappling_hook::NStateTask_ReeledInLedgeClimbMotionTask::Update))

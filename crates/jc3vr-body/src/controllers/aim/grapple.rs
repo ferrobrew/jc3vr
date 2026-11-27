@@ -1,5 +1,5 @@
-//! The grapple slot follows the off-hand: the plan of record's "The grapple"
-//! (`docs/mod/input/controllers-and-roomscale.md`), with the engine side in
+//! The grapple slot follows the off-hand: `docs/mod/input/hands-and-aiming.md`
+//! ("Grapple aim"), with the engine side in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! Every grapple consumer reads the grapple slot ([`TargetType::TARGET_GRAPPLE`]) of the player's

@@ -1,8 +1,8 @@
 # The capital's old town at 13 h, from the fixed camera of `coverage_capital_census.toml` (the
 # benchmark's location), with the draw census: single-pass and multipass only, for the per-family
-# draw accounting at the headset's size
-# (docs/mod/performance/frame-budget.md). The census needs the shader identity, which pins the payload,
-# so run it last in a session.
+# draw accounting at the headset's size (docs/mod/stereo/single-pass-validation.md, "The draw
+# census"). The census needs the shader identity, which pins the payload, so run it last in a
+# session.
 name = "coverage-capital-census-headset"
 warmup_frames = 30
 samples = 3

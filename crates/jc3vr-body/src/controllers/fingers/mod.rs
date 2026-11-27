@@ -1,6 +1,6 @@
-//! Finger curls on the rendered hands: the plan of record's finger curls
-//! (`docs/mod/input/controllers-and-roomscale.md`), and the grip poses that wrap the fingers round
-//! what the hand holds (`docs/mod/input/grip-poses.md`).
+//! Finger curls on the rendered hands: `docs/mod/input/hands-and-aiming.md` ("Finger curls"),
+//! and the grip poses that wrap the fingers round what the hand holds (`docs/mod/input/grip.md`,
+//! "Grip poses").
 //!
 //! - [`curl`]: each finger's curl and splay, from the tracked hand joints
 //!   (`XR_EXT_hand_tracking`, located with the controller-conforming motion range when the runtime

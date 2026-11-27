@@ -1,6 +1,6 @@
 //! The missions' holds of the player's weapons, the stash and the give-back of the carried weapons
 //! that the missions and the challenges share, and the mission manager's checkpoint snapshot. The
-//! engine side is in `docs/engine/gameplay/weapon-gives-and-restores.md`.
+//! engine side is in `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
 //!
 //! - A mission that takes the player's weapons away caches the slots in a graph script's weapon
 //!   cache and forces the weapons out ([`NodeWeaponCache::CacheAllWeaponSlots`] with its removal

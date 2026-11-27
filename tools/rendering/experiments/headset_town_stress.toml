@@ -1,5 +1,5 @@
 # Standing check: the coastal town at midday under the stress-like headset rig (see "A headset-like rig" in
-# docs/mod/stereo/single-pass-stereo.md), with the repeat as the noise floor and the rig fixes' switches flipped.
+# docs/mod/stereo/single-pass-validation.md), with the repeat as the noise floor and the rig fixes' switches flipped.
 name = "headset-town-stress"
 warmup_frames = 30
 samples = 3

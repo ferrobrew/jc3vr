@@ -16,8 +16,8 @@ DEFAULT_PLANES = (Plane.FINAL, Plane.DEPTH, Plane.ALBEDO, Plane.NORMALS)
 # about one part in 130,000, about 0.08 mm at ten metres. Two renders of the same surface through
 # transforms that are equal in real arithmetic but rounded differently (single-pass's reprojected
 # families against an isolated eye's own matrices) land a few to a few dozen floats apart over the
-# whole surface; displaced geometry lands thousands apart. See "Comparing depth" in
-# docs/mod/stereo/single-pass-stereo.md.
+# whole surface; displaced geometry lands thousands apart. See "Snapshots" in
+# docs/mod/testing/fast-comparison.md.
 DEFAULT_DEPTH_ULPS = 64
 
 

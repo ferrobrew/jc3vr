@@ -1,5 +1,5 @@
-//! The aim-state pin and the mental-state cuts: the plan of record's "The aim-state pin" and "The
-//! mental state" (`docs/mod/input/controllers-and-roomscale.md`), with the engine side in
+//! The aim-state pin and the mental-state cuts: `docs/mod/input/hands-and-aiming.md`
+//! ("The aim-state pin and the mental-state cuts"), with the engine side in
 //! `docs/engine/gameplay/aim-state.md`.
 //!
 //! The game switches the player's body into an aim family whenever a weapon or the grapple is

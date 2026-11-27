@@ -6,7 +6,7 @@
 //! past a threshold angle the input tasks dispatch turn clips whose animated slerp replaces the
 //! rotation outright. In VR the view rides the body frame, so both rotate the world under the
 //! player. See `docs/engine/gameplay/swim-locomotion.md` for the engine side and
-//! `docs/mod/body/swim-yaw.md` for the design.
+//! `docs/mod/body/swimming.md` for the design.
 //!
 //! Four detours put the right stick in charge, all scoped to the local player:
 //!

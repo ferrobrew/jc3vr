@@ -1,5 +1,4 @@
-//! The recoil offset: the plan of record's "Recoil and haptics"
-//! (`docs/mod/input/controllers-and-roomscale.md`).
+//! The recoil offset: `docs/mod/input/weapon-handling.md` ("Recoil").
 //!
 //! Each hand that holds a gun carries an offset between its controller pose and the pose the hand,
 //! the gun, and the gun's sight line are placed at: a pitch and a yaw of the barrel about the

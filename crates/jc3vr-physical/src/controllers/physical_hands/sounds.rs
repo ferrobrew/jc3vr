@@ -1,5 +1,5 @@
 //! Impact sounds: a hand that meets something hard enough makes the sound the game's own melee hit
-//! makes there (`docs/mod/input/impact-sounds.md`).
+//! makes there (`docs/mod/input/impacts.md`, "Impact sounds").
 //!
 //! The player character's melee impact usage ([`AttachedEffectContainer::MELEE_IMPACT_USAGE`])
 //! resolves, for the struck surface's material, to the effect and sound the game plays where a

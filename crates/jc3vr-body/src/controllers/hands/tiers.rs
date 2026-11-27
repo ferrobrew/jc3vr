@@ -1,7 +1,7 @@
 //! The hand tiers: which of the plan's four tiers each scripted state assigns the hands, and the
 //! per-hand weight that blends a hand between its controller and the animation.
 //!
-//! The plan of record ("Hand tiers" in `docs/mod/input/controllers-and-roomscale.md`) assigns every
+//! The plan of record ("Hand tiers" in `docs/mod/input/hands-and-aiming.md`) assigns every
 //! scripted state one of four tiers. The assignments are data: [`HandTierTable`] holds one tier per
 //! [`TierState`], fixed at the plan's table ([`HandTierTable::PLAN`]). The tiers:
 //!

@@ -1,7 +1,7 @@
 //! `scan-view`: a take's video scanned for flashes (a frame or two unlike the frames on both sides
 //! of it, which are alike: the camera dipping into Rico's body, or any other one-frame glitch), each
 //! flash cross-checked against the recording's camera and Rico's animated head. See
-//! `docs/mod/testing/view-scan.md`.
+//! `docs/mod/testing/rerun.md` ("Scanning for flashes").
 //!
 //! The video is decoded by `ffmpeg` to small thumbnails, one frame at a time, so a whole take scans
 //! in a few minutes without holding it in memory.

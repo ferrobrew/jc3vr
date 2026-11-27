@@ -1,5 +1,4 @@
-//! The true reload: the plan of record's "Reloads" (`docs/mod/input/controllers-and-roomscale.md`),
-//! described in `docs/mod/input/reload.md`, with the engine side in
+//! The true reload: described in `docs/mod/input/reload.md`, with the engine side in
 //! `docs/engine/gameplay/weapon-ammo-and-reload.md`.
 //!
 //! Under the controller scheme the game's own reloads of the weapons the mod reloads are stopped

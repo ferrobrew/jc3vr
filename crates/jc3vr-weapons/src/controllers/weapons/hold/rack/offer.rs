@@ -1,5 +1,5 @@
-//! The game's offer of a second one-handed weapon of a kind the player already carries. The
-//! design is in `docs/mod/input/physical-weapons.md`, "Racks"; the engine side in
+//! The game's offer of a second one-handed weapon of a kind the player already carries. The design
+//! is in `docs/mod/input/physical-weapons.md`, "Taking a weapon off a rack"; the engine side in
 //! `docs/engine/gameplay/weapon-equip-and-drop.md`, "Racks".
 //!
 //! A pickup's interaction graph is offered to a character only while its entry conditions pass, and

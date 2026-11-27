@@ -1,6 +1,6 @@
 //! What the gameplay layer builds on the controller subsystems: the bindings that drive the game
-//! from the controllers, the controls summary's model, and the camera height readout, following the
-//! plan of record in `docs/mod/input/controllers-and-roomscale.md`.
+//! from the controllers, the controls summary's model, and the camera height readout, described in
+//! `docs/mod/input/bindings.md`.
 //!
 //! The OpenXR side (action sets, suggested bindings, locating the controller spaces, haptics
 //! output, hand tracking) lives in [`jc3vr_view::vr::input`], which publishes one

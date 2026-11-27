@@ -7,7 +7,7 @@
 //! chunks, and the engine's own per-call locks, a working set that misses the smaller cache and is
 //! shared with the runtime's command-stream thread. On the die with the larger cache it runs in
 //! little more than half the time it takes where the scheduler places it
-//! (`docs/mod/performance/frame-budget.md`, "Where the draw task's threads run").
+//! (`docs/mod/performance/performance.md`, "What limits the frame").
 //!
 //! While `vr.large_cache_cores` is on, this narrows the process's affinity to the cores of the
 //! largest L3, when the L3 caches differ in size, and puts the affinity it found back when the

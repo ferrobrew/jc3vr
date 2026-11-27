@@ -1,7 +1,7 @@
 //! The controls summary's model: a panel on the off-hand wrist of the controls usable now above the
 //! mode's fixed essentials ([`essentials`]), and a separate complete binding reference, with the
 //! game's own names for actions and the runtime's actual source names. See
-//! `docs/mod/input/controls-summary.md`.
+//! `docs/mod/input/bindings.md` ("The controls summary").
 //!
 //! - [`config`]: the glance and the wrist placement's parameter types;
 //! - [`labels`]: the game's localisation key for each action per mode, and the mod's own strings;

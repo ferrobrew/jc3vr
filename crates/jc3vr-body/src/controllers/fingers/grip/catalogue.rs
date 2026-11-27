@@ -1,11 +1,11 @@
 //! The grip poses, pure: each held thing's finger pose as a shape for every finger, and the part
 //! each finger plays in it.
 //!
-//! A pose's curls are on the finger curls' scale (0 straight, 1 a fist), its hooks and opposition on
-//! the [`HandShape`](crate::controllers::fingers::pose::HandShape) scale. The values are judged by
-//! eye against a hand holding the thing, not measured, so the headset checklist in
-//! `docs/mod/input/grip-poses.md` is where they are tuned; they live in the finger curls' tuning
-//! ([`FINGERS_TUNING`]'s `poses`).
+//! A pose's curls are on the finger curls' scale (0 straight, 1 a fist), its hooks and opposition
+//! on the [`HandShape`](crate::controllers::fingers::pose::HandShape) scale. The values are judged
+//! by eye against a hand holding the thing, not measured, so the headset checklist in
+//! `docs/mod/input/grip.md` ("Grip poses") is where they are tuned; they live in the finger curls'
+//! tuning ([`FINGERS_TUNING`]'s `poses`).
 
 use serde::Deserialize;
 

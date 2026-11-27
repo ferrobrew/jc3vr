@@ -8,7 +8,7 @@
 //!   vehicle predicates only while a vehicle state is indicated, the grapple traversal bits, and the
 //!   pause and UI signals, into a [`ModeSnapshot`];
 //! - [`ModeDetector::observe`], the functional core: the ordered rules of the plan of record
-//!   (`docs/mod/input/controllers-and-roomscale.md`, "Mode detection") over the snapshot, with the
+//!   (`docs/mod/input/controllers.md`, "Mode detection") over the snapshot, with the
 //!   debounce and the hold cases.
 //!
 //! The rules, first match wins:

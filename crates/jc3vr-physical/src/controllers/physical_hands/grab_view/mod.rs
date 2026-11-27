@@ -1,6 +1,6 @@
 //! The grab view: what the grip and the palms' reach saw, drawn in the world-space overlay around
 //! each hand, for seeing why a hand does or does not take something. A diagnostic, on by default;
-//! the design is in `docs/mod/input/grab-view.md`.
+//! the design is in `docs/mod/input/hand-views.md` ("The grab view").
 //!
 //! - [`model`]: what is drawn and how, pure: the rays' outcomes, the palms' state, the candidates,
 //!   how a hand stands to a grip target, and their colours;

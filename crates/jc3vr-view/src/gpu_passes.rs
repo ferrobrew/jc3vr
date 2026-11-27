@@ -13,9 +13,9 @@
 //! and resolves the engine records outside a pass's draw walk land there.
 //!
 //! A pass's interval is its GPU execution window, so idle inside it counts (see "Reading the GPU
-//! lane" in `docs/mod/performance/profiler.md`). The detail intervals can nest inside a pass or
-//! overlap one another's stretch of the frame only where the code they bracket does, which the
-//! labels say; render passes never nest.
+//! lane: work, not span" in `docs/mod/performance/performance.md`). The detail intervals can nest
+//! inside a pass or overlap one another's stretch of the frame only where the code they bracket
+//! does, which the labels say; render passes never nest.
 
 use std::{
     collections::HashMap,

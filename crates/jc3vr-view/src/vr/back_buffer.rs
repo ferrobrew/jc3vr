@@ -27,10 +27,11 @@
 //!
 //! ## State
 //!
-//! Substitution is live only while it buys something: [`crate::vr::resolution`] takes ownership only
-//! while it is driving a render size of its own -- an XR session with `vr.native_resolution` on --
-//! and only with `vr.own_back_buffer` set (`docs/mod/stereo/swapchain-ownership.md` §8). Outside
-//! that, every path here is inert and the engine's own objects stand untouched.
+//! Substitution is live only while it buys something: [`crate::vr::resolution`] takes ownership
+//! only while it is driving a render size of its own -- an XR session with `vr.native_resolution`
+//! on -- and only with `vr.own_back_buffer` set (`docs/mod/stereo/swapchain-ownership.md`,
+//! "Lifecycle"). Outside that, every path here is inert and the engine's own objects stand
+//! untouched.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -455,7 +456,7 @@ unsafe fn substitute(engine: &mut GraphicsEngine) -> anyhow::Result<()> {
 
 /// Create the mod-owned backing texture: a plain single-mip render target in the format the engine's
 /// own back buffer uses, so no alias is needed to bridge a format gap
-/// (`docs/mod/stereo/swapchain-ownership.md` §4.5).
+/// (`docs/mod/stereo/swapchain-ownership.md`, "Ownership").
 ///
 /// # Safety
 /// `device` must be the live graphics device.

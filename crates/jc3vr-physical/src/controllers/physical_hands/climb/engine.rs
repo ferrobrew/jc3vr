@@ -2,7 +2,7 @@
 //! context the native gate copies, and whether the player is in the air. The player's proxy, its
 //! support, and its velocity are the physics substrate's
 //! ([`jc3vr_body::controllers::physics::proxy`];
-//! `docs/engine/character/hands-locomotion-and-state.md`, "The proxy's support and the fall").
+//! `docs/engine/character/root-motion-and-proxy.md`, "The proxy's support and the fall").
 //!
 //! The game decides whether the player is on the ground from the proxy's support
 //! ([`jc3gi::physics::PfxCharacterInstance::m_GroundInformation`]), which the proxy's update

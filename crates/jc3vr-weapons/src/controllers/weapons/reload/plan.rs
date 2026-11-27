@@ -718,7 +718,7 @@ mod tests {
 
     /// Every weapon in the wells table, with what the game says about its reload: its class, its
     /// magazine size, and whether its reload is exempt (untimed, or of the unlimited ammunition
-    /// kind). The reload audit in `docs/mod/input/weapon-reloads.md` lists the same weapons.
+    /// kind). `tools/sights/wells.json` is the wells table.
     struct Audited {
         weapon: &'static str,
         class: WeaponClass,

@@ -1,5 +1,5 @@
 //! Grip poses: the fingers wrap what the hand holds. The design is in
-//! `docs/mod/input/grip-poses.md`.
+//! `docs/mod/input/grip.md` ("Grip poses").
 //!
 //! - [`catalogue`]: the named poses, each a shape for every finger;
 //! - [`blend`]: the blend from the measured curls to a pose, by how firmly the grip holds;

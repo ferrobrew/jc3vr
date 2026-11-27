@@ -11,8 +11,8 @@
 # docs/mod/testing/rerun.md describes the export.
 #
 # After the export, when the take has its video, the script scans the video for flashes and checks
-# the camera against Rico's head (`tracking-synth scan-view`, docs/mod/testing/view-scan.md), writing
-# `view-scan.md` beside the export, unless JC3VR_CAPTURE_SCAN is 0.
+# the camera against Rico's head (`tracking-synth scan-view`, docs/mod/testing/rerun.md, "Scanning
+# for flashes"), writing `view-scan.md` beside the export, unless JC3VR_CAPTURE_SCAN is 0.
 #
 # The capture relay (scripts/capture_host.sh) runs this when each take ends, unless
 # JC3VR_CAPTURE_RERUN is 0.

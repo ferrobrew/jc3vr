@@ -1,5 +1,5 @@
-//! The anchored hand tier for the grapple states: the plan of record's "Hand tiers"
-//! (`docs/mod/input/controllers-and-roomscale.md`), with the engine side in
+//! The anchored hand tier for the grapple states: `docs/mod/input/hands-and-aiming.md`
+//! ("Hand tiers"), with the engine side in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! While the character reels in along the grapple line or hangs from it (the tier table's grapple

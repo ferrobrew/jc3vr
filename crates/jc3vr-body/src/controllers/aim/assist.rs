@@ -1,5 +1,5 @@
-//! Per-hand aim assist: the plan of record's "Aim assist"
-//! (`docs/mod/input/controllers-and-roomscale.md`).
+//! Per-hand aim assist: the grapple's assist in `docs/mod/input/hands-and-aiming.md`
+//! ("Grapple aim").
 //!
 //! The game's own aim assist works only around the gaze. Here each gun hand's ray is scored against
 //! the game's own candidates, the [`TargetSystem`](jc3gi::aim::target::TargetSystem)'s sets that

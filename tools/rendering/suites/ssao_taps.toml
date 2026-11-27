@@ -1,6 +1,6 @@
 # The ambient occlusion's eye-local taps, against a same-schedule variant with them off, at the
-# town, the meadow, and the shore. See "The screen-space ambient occlusion's taps" in
-# docs/mod/stereo/single-pass-stereo.md.
+# town, the meadow, and the shore. See "SSAO, per eye in one run" in
+# docs/mod/stereo/single-pass-collapse-defects.md.
 
 [[scene]]
 name = "town"

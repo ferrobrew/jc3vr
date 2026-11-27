@@ -1,6 +1,6 @@
-//! The collider view: the physics world's bodies near the player drawn in the world-space
-//! overlay, for seeing what the hand bodies, the held guns, and the player's capsule meet. A
-//! diagnostic, off by default; the design is in `docs/mod/input/collider-view.md`.
+//! The collider view: the physics world's bodies near the player drawn in the world-space overlay,
+//! for seeing what the hand bodies, the held guns, and the player's capsule meet. A diagnostic, off
+//! by default; the design is in `docs/mod/input/hand-views.md` ("The collider view").
 //!
 //! - [`scan`]: the read of the world after a step, on the game thread outside the step;
 //! - [`model`]: the snapshot it fills, and the pure geometry over it;

@@ -3,7 +3,7 @@
 //! moves against the hand's motion, so that pulling a gripping hand down lifts the body; a grip on
 //! a moving body is held in the body's own frame and carries the player with it. The design is in
 //! `docs/mod/input/hand-climbing.md`, the engine side in
-//! `docs/engine/character/hands-locomotion-and-state.md`.
+//! `docs/engine/character/root-motion-and-proxy.md`.
 //!
 //! - [`tuning`]: the tuning, with the push-up's;
 //! - [`solve`]: the motion, pure: where the gripping hands would have the body, the velocity that

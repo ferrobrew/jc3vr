@@ -1,5 +1,6 @@
-//! Physical weapon handling: the plan of record's "Holsters", "Two-handed weapons", "Reloads",
-//! "Grenades", and "Grip semantics" (`docs/mod/input/controllers-and-roomscale.md`).
+//! Physical weapon handling: `docs/mod/input/weapon-handling.md` ("Pouches", "The foregrip",
+//! and "Grenades, C4, and melee"), with the reloads in `docs/mod/input/reload.md` and the grip
+//! semantics in `docs/mod/input/grip.md`.
 //!
 //! - [`volumes`]: the sockets' landmarks and the pouches (the grenade pouch, the reload pouch, and
 //!   the C4 pouch), placed on the character's skeleton;

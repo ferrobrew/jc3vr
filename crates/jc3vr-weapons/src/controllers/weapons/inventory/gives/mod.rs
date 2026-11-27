@@ -1,6 +1,6 @@
 //! The game's gives, routed into the loadout table. The design is the two-handed inventory's "The
 //! takes" (`docs/mod/input/two-handed-inventory.md`), the engine side in
-//! `docs/engine/gameplay/weapon-gives-and-restores.md`.
+//! `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
 //!
 //! Every weapon the game gives the player (a mission's, a challenge's, the graph script's, an
 //! event's, a reward, and a rack's copy) takes one chain: [`Inventory::GivePlayerWeapon`] writes

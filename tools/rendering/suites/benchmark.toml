@@ -131,7 +131,7 @@ fsr = false
 switches = { viewport_bind_cache = false }
 
 # Without the placement on the largest L3 cache's cores (`vr.large_cache_cores`), the threads where the
-# scheduler puts them. See docs/mod/performance/frame-budget.md.
+# scheduler puts them. See docs/mod/performance/performance.md, "What limits the frame".
 [[variant]]
 name = "single-pass-large-cache-off"
 large_cache_cores = false

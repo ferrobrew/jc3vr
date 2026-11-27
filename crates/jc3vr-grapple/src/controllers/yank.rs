@@ -1,6 +1,6 @@
 //! The yank gesture: a sharp pull of the grapple hand back toward the body while a grapple line is
-//! attached, which issues the same grapple tap that zips ("The grapple" in
-//! `docs/mod/input/controllers-and-roomscale.md`). Pure.
+//! attached, which issues the same grapple tap that zips ("The yank" in
+//! `docs/mod/input/physical-grapple.md`). Pure.
 //!
 //! The detector keeps a measure of the grapple hand's reach over a short window, sampled at the
 //! input tick. A yank is a drop in that measure of at least the configured length, from any sample

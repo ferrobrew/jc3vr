@@ -1,5 +1,5 @@
 //! The weapons layer's controller subsystems: the weapon handling and the loadout table it keeps,
-//! following the plan of record in `docs/mod/input/controllers-and-roomscale.md`.
+//! described in `docs/mod/input/weapon-handling.md`.
 //!
 //! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
 //!   foregrip, the weapon actions that run with the hands on the controllers, recoil, and the
