@@ -101,7 +101,7 @@ pub fn take() -> Vec<GpuPassTotal> {
 /// One label's GPU time over a recording, on one dispatch lane.
 #[derive(Debug, Serialize)]
 pub struct GpuPassTotal {
-    /// The dispatch's eye (0 or 1) or 2 for a far-field dispatch.
+    /// The dispatch's eye (0 or 1), or the frame tail's lane past them for the swapchain blit.
     lane: u8,
     /// `render_pass`, `detail`, or `gap`.
     kind: &'static str,
