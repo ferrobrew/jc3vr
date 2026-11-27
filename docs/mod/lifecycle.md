@@ -2,9 +2,9 @@
 
 The shutdown request path in `crates/jc3vr-core/src/lifecycle/mod.rs` separates reversible preparation from irreversible teardown. Repeated requests coalesce. Each attempt has a request generation, an attempt generation, and a participant-registration revision. Deferred or failed preparation leaves the shutdown flag unset, preserves ordinary cleanup registrations, and returns to normal frame work. A retry interval bounds preparation work; it does not prove native callback quiescence.
 
-Participants register before enabling work that requires shutdown preparation. Preparation runs outside the lifecycle mutex. A ready participant returns a guard that retains the required exclusion barrier and validates immediately before commit. Dropping an uncommitted guard rolls preparation back. Stale generations or a changed registry cannot authorize shutdown. After every guard validates, infallible finalizers run while the barriers remain held. Only then does the lifecycle set the shutdown flag and permit ordinary reverse-order cleanup, worker shutdown, hook removal, and module exit.
+Participants register before enabling work that requires shutdown preparation, each under a name (`ParticipantId`) that the subsystem owning it supplies, so the lifecycle names no subsystem above it. They prepare in registration order, and the first that defers or fails ends the attempt. Preparation runs outside the lifecycle mutex. A ready participant returns a guard that retains the required exclusion barrier and validates immediately before commit. Dropping an uncommitted guard rolls preparation back. Stale generations or a changed registry cannot authorize shutdown. After every guard validates, infallible finalizers run while the barriers remain held. Only then does the lifecycle set the shutdown flag and permit ordinary reverse-order cleanup, worker shutdown, hook removal, and module exit.
 
-The reserved human-collider participant does not implement shape migration. A future implementation must restore all affected state transactionally and prove clearance, identity, and reader exclusion before returning a ready guard. An unavailable or blocked restoration must keep gameplay and its required hooks active. No global collider mutation is enabled by this lifecycle change.
+The human hull's participant restores the narrowed hulls in the native physics phase before it returns a ready guard, or, after a bounded number of attempts, commits with them in place ([human-hull-restoration.md](body/human-hull-restoration.md)). An unavailable or blocked restoration keeps gameplay and its required hooks active.
 
 ## Hook installation and removal
 
@@ -24,7 +24,7 @@ Inventory restore and second-pistol requests hand the engine a payload callback,
 
 ## Magazine executor restriction
 
-`controllers::weapons::reload::shutdown` opens magazine admission once the hooks are enabled and closes it after removal. Shutdown preparation for the magazine executor runs only on the game thread. It cancels a magazine extraction in progress, then defers (`DeferReason::MagazineBusy`) while the reload executor has not drained or a native magazine callback entry is active.
+`controllers::weapons::reload::shutdown` opens magazine admission once the hooks are enabled and closes it after removal. Shutdown preparation for the magazine executor runs only on the game thread. It cancels a magazine extraction in progress, then defers while the reload executor has not drained or a native magazine callback entry is active.
 
 The hook library's disable operation does not establish callback completion. A snapshot of suspended threads also does not prove that a callback cannot resume in removed code. A future executor adapter must retain a proven barrier through removal or provide an equivalent lifetime guarantee. This restriction does not certify the pre-existing removal behavior of every other hook.
 

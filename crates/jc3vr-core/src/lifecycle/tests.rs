@@ -3,11 +3,14 @@ use std::sync::Weak;
 use super::*;
 use crate::lifecycle::test_support::{Answer, FakeParticipant, Harness};
 
+const FIRST: ParticipantId = ParticipantId::new("the first participant");
+const SECOND: ParticipantId = ParticipantId::new("the second participant");
+
 #[test]
 fn repeated_requests_defer_without_stopping_frames_or_draining_cleanups() {
     let harness = Harness::new();
-    let magazine = FakeParticipant::new(ParticipantId::MagazineExecutor, [Answer::Deferred]);
-    harness.register(&magazine);
+    let first = FakeParticipant::new(FIRST, [Answer::Deferred]);
+    harness.register(&first);
     harness.add_cleanup("cleanup");
 
     for _ in 0..u16::from(RETRY_FRAMES) * 3 {
@@ -18,32 +21,29 @@ fn repeated_requests_defer_without_stopping_frames_or_draining_cleanups() {
         assert!(harness.events.lock().is_empty());
     }
 
-    assert_eq!(magazine.calls.load(Ordering::Relaxed), 3);
+    assert_eq!(first.calls.load(Ordering::Relaxed), 3);
     assert_eq!(harness.shutdown.lock().request_generation, 1);
     assert_eq!(
         harness.normal_frames.load(Ordering::Relaxed),
         usize::from(RETRY_FRAMES) * 3
     );
-    assert_eq!(magazine.commits.load(Ordering::Relaxed), 0);
+    assert_eq!(first.commits.load(Ordering::Relaxed), 0);
 }
 
 #[test]
 fn partial_failure_aborts_prepared_guard_and_retries_before_one_shot_cleanup() {
     let harness = Harness::new();
-    let magazine = FakeParticipant::new(ParticipantId::MagazineExecutor, [Answer::Ready]);
-    let collider = FakeParticipant::new(
-        ParticipantId::HumanCollider,
-        [Answer::Failed, Answer::Ready],
-    );
-    harness.register(&magazine);
-    harness.register(&collider);
+    let first = FakeParticipant::new(FIRST, [Answer::Ready]);
+    let second = FakeParticipant::new(SECOND, [Answer::Failed, Answer::Ready]);
+    harness.register(&first);
+    harness.register(&second);
     harness.add_cleanup("first");
     harness.add_cleanup("second");
     harness.shutdown.lock().request();
 
     assert!(!harness.frame());
-    assert_eq!(magazine.aborts.load(Ordering::Relaxed), 1);
-    assert_eq!(magazine.commits.load(Ordering::Relaxed), 0);
+    assert_eq!(first.aborts.load(Ordering::Relaxed), 1);
+    assert_eq!(first.commits.load(Ordering::Relaxed), 0);
     assert_eq!(harness.cleanups.lock().len(), 2);
     assert!(!harness.shutting_down.load(Ordering::Acquire));
 
@@ -51,8 +51,8 @@ fn partial_failure_aborts_prepared_guard_and_retries_before_one_shot_cleanup() {
         assert!(!harness.frame());
     }
     assert!(harness.frame());
-    assert_eq!(magazine.commits.load(Ordering::Relaxed), 1);
-    assert_eq!(collider.commits.load(Ordering::Relaxed), 1);
+    assert_eq!(first.commits.load(Ordering::Relaxed), 1);
+    assert_eq!(second.commits.load(Ordering::Relaxed), 1);
     assert_eq!(
         harness.events.lock().as_slice(),
         &["commit", "second", "first"]
@@ -66,22 +66,22 @@ fn partial_failure_aborts_prepared_guard_and_retries_before_one_shot_cleanup() {
     }
     run_cleanup_registry(&harness.cleanups, None);
     assert_eq!(harness.cleanup_calls.load(Ordering::Relaxed), 2);
-    assert_eq!(magazine.commits.load(Ordering::Relaxed), 1);
+    assert_eq!(first.commits.load(Ordering::Relaxed), 1);
 }
 
 #[test]
 fn partial_defer_rolls_back_an_earlier_prepared_participant() {
     let harness = Harness::new();
-    let magazine = FakeParticipant::new(ParticipantId::MagazineExecutor, [Answer::Ready]);
-    let collider = FakeParticipant::new(ParticipantId::HumanCollider, [Answer::Deferred]);
-    harness.register(&magazine);
-    harness.register(&collider);
+    let first = FakeParticipant::new(FIRST, [Answer::Ready]);
+    let second = FakeParticipant::new(SECOND, [Answer::Deferred]);
+    harness.register(&first);
+    harness.register(&second);
     harness.add_cleanup("cleanup");
     harness.shutdown.lock().request();
 
     assert!(!harness.frame());
-    assert_eq!(magazine.aborts.load(Ordering::Relaxed), 1);
-    assert_eq!(magazine.commits.load(Ordering::Relaxed), 0);
+    assert_eq!(first.aborts.load(Ordering::Relaxed), 1);
+    assert_eq!(first.commits.load(Ordering::Relaxed), 0);
     assert!(!harness.shutting_down.load(Ordering::Acquire));
     assert_eq!(harness.cleanups.lock().len(), 1);
 }
@@ -89,14 +89,17 @@ fn partial_defer_rolls_back_an_earlier_prepared_participant() {
 #[test]
 fn stale_attempt_cannot_commit_during_a_later_attempt() {
     let harness = Harness::new();
-    let participant = FakeParticipant::new(ParticipantId::MagazineExecutor, [Answer::Ready]);
+    let participant = FakeParticipant::new(FIRST, [Answer::Ready]);
     harness.register(&participant);
     harness.shutdown.lock().request();
     let first = harness.shutdown.lock().begin_frame().unwrap();
     let stale = ready(first.prepare());
     assert!(harness.shutdown.lock().finish_attempt(
         first.preparation,
-        Blocked::Deferred(DeferReason::MagazineBusy),
+        Blocked::Deferred(DeferReason::Busy {
+            participant: FIRST,
+            cause: "busy",
+        }),
     ));
     for _ in 1..RETRY_FRAMES {
         assert!(harness.shutdown.lock().begin_frame().is_none());
@@ -136,7 +139,7 @@ fn a_previous_request_token_cannot_authorize_the_current_request() {
 #[test]
 fn changed_participant_generation_rejects_preparation_and_allows_fresh_retry() {
     let harness = Harness::new();
-    let participant = FakeParticipant::new(ParticipantId::HumanCollider, [Answer::Ready]);
+    let participant = FakeParticipant::new(SECOND, [Answer::Ready]);
     harness.register(&participant);
     harness.shutdown.lock().request();
     let attempt = harness.shutdown.lock().begin_frame().unwrap();
@@ -199,23 +202,18 @@ fn fatal_failure_is_not_live_deferral_and_cannot_authorize_cleanup() {
 #[test]
 fn registration_is_exclusive_and_closes_when_shutdown_is_requested() {
     let harness = Harness::new();
-    let participant = FakeParticipant::new(ParticipantId::MagazineExecutor, [Answer::Ready]);
+    let participant = FakeParticipant::new(FIRST, [Answer::Ready]);
     harness.register(&participant);
+    assert_eq!(
+        harness.shutdown.lock().register(FIRST, participant),
+        Err(RegistrationError::Duplicate(FIRST)),
+    );
+    harness.shutdown.lock().request();
     assert_eq!(
         harness
             .shutdown
             .lock()
-            .register(ParticipantId::MagazineExecutor, participant),
-        Err(RegistrationError::Duplicate(
-            ParticipantId::MagazineExecutor
-        )),
-    );
-    harness.shutdown.lock().request();
-    assert_eq!(
-        harness.shutdown.lock().register(
-            ParticipantId::HumanCollider,
-            FakeParticipant::new(ParticipantId::HumanCollider, [Answer::Ready]),
-        ),
+            .register(SECOND, FakeParticipant::new(SECOND, [Answer::Ready]),),
         Err(RegistrationError::ShutdownStarted),
     );
 }
@@ -226,7 +224,7 @@ fn preparation_and_validation_do_not_hold_the_lifecycle_mutex() {
     shutdown
         .lock()
         .register(
-            ParticipantId::HumanCollider,
+            SECOND,
             Arc::new(LockCheckingParticipant {
                 shutdown: Arc::downgrade(&shutdown),
             }),

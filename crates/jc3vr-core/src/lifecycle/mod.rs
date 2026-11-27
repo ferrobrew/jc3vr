@@ -41,20 +41,30 @@ pub fn build_stamp() -> &'static str {
     BUILD_STAMP.get().copied().unwrap_or(UNRECORDED_BUILD_STAMP)
 }
 
-/// The participants with reversible work that must precede all ordinary cleanup.
+/// The name of a participant with reversible work that must precede all ordinary cleanup. The
+/// subsystem that owns the participant supplies it; the lifecycle only compares and prints it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ParticipantId {
-    InventorySpawn,
-    MagazineExecutor,
-    #[allow(dead_code)] // Reserved until the reversible collider adapter is installed.
-    HumanCollider,
+pub struct ParticipantId(&'static str);
+
+impl ParticipantId {
+    pub const fn new(name: &'static str) -> Self {
+        Self(name)
+    }
+}
+
+impl fmt::Display for ParticipantId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DeferReason {
-    SpawnCallbackActive,
-    MagazineBusy,
-    ParticipantBusy(ParticipantId),
+    /// A participant has work in flight; `cause` says what, in the participant's words.
+    Busy {
+        participant: ParticipantId,
+        cause: &'static str,
+    },
     StalePreparation,
 }
 
@@ -62,9 +72,7 @@ impl fmt::Display for DeferReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("shutdown deferred: ")?;
         match self {
-            Self::SpawnCallbackActive => f.write_str("an inventory spawn callback is active"),
-            Self::MagazineBusy => f.write_str("the magazine executor is busy"),
-            Self::ParticipantBusy(id) => write!(f, "participant {id:?} is busy"),
+            Self::Busy { participant, cause } => write!(f, "{participant}: {cause}"),
             Self::StalePreparation => f.write_str("the preparation changed before commit"),
         }
     }
@@ -83,15 +91,25 @@ pub fn deferred_reason() -> Option<DeferReason> {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PrepareError {
-    pub(crate) participant: ParticipantId,
-    pub(crate) operation: &'static str,
+    participant: ParticipantId,
+    operation: &'static str,
+}
+
+impl PrepareError {
+    /// `participant` could not prepare because `operation` failed.
+    pub const fn new(participant: ParticipantId, operation: &'static str) -> Self {
+        Self {
+            participant,
+            operation,
+        }
+    }
 }
 
 impl fmt::Display for PrepareError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "shutdown preparation: {:?}: {}",
+            "shutdown preparation: {}: {}",
             self.participant, self.operation
         )
     }
@@ -121,7 +139,6 @@ impl Preparation {
 pub enum PrepareOutcome<T> {
     Ready(T),
     Deferred(DeferReason),
-    #[allow(dead_code)] // The collider adapter can fail after transactional rollback.
     Failed(PrepareError),
 }
 
@@ -144,12 +161,12 @@ pub trait PreparedParticipant {
     fn commit(&mut self);
 }
 
-/// Register before enabling the participant's engine policy or accepting its work.
+/// Register before enabling the participant's engine policy or accepting its work. Participants
+/// prepare in registration order, and the first that defers or fails ends the attempt.
 ///
-/// The collider participant must restore every affected body transactionally during preparation,
-/// retain the proven reader barrier, and roll back on guard drop until the whole attempt commits;
-/// after a bounded wait it may instead commit with the bodies as they are, keeping every shape
-/// reference so nothing a body names can be freed.
+/// A participant that changes engine state while it prepares restores that state transactionally,
+/// keeps the barrier that holds the state's readers out, and rolls back on guard drop until the
+/// whole attempt commits.
 pub fn register_participant(
     id: ParticipantId,
     participant: Arc<dyn ShutdownParticipant>,
@@ -166,7 +183,7 @@ pub enum RegistrationError {
 impl fmt::Display for RegistrationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Duplicate(id) => write!(f, "shutdown registration: duplicate participant {id:?}"),
+            Self::Duplicate(id) => write!(f, "shutdown registration: duplicate participant {id}"),
             Self::ShutdownStarted => write!(f, "shutdown registration: shutdown has started"),
         }
     }
@@ -272,7 +289,7 @@ struct Shutdown {
     request_generation: u64,
     attempt_generation: u64,
     revision: u64,
-    participants: [Option<Arc<dyn ShutdownParticipant>>; 3],
+    participants: Vec<(ParticipantId, Arc<dyn ShutdownParticipant>)>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -297,7 +314,7 @@ impl Shutdown {
             request_generation: 0,
             attempt_generation: 0,
             revision: 0,
-            participants: [None, None, None],
+            participants: Vec::new(),
         }
     }
 
@@ -309,15 +326,14 @@ impl Shutdown {
         if !matches!(self.phase, Phase::Live) {
             return Err(RegistrationError::ShutdownStarted);
         }
-        let index = match id {
-            ParticipantId::InventorySpawn => 0,
-            ParticipantId::MagazineExecutor => 1,
-            ParticipantId::HumanCollider => 2,
-        };
-        if self.participants[index].is_some() {
+        if self
+            .participants
+            .iter()
+            .any(|(registered, _)| *registered == id)
+        {
             return Err(RegistrationError::Duplicate(id));
         }
-        self.participants[index] = Some(participant);
+        self.participants.push((id, participant));
         self.revision = self
             .revision
             .checked_add(1)
@@ -363,7 +379,11 @@ impl Shutdown {
         self.phase = Phase::Preparing(preparation);
         Some(Attempt {
             preparation,
-            participants: self.participants.clone(),
+            participants: self
+                .participants
+                .iter()
+                .map(|(_, participant)| Arc::clone(participant))
+                .collect(),
             previous: blocked,
         })
     }
@@ -419,7 +439,7 @@ fn commit_prepared(
 
 struct Attempt {
     preparation: Preparation,
-    participants: [Option<Arc<dyn ShutdownParticipant>>; 3],
+    participants: Vec<Arc<dyn ShutdownParticipant>>,
     previous: Option<Blocked>,
 }
 
@@ -429,7 +449,7 @@ impl Attempt {
             preparation: self.preparation,
             participants: Vec::new(),
         };
-        for participant in self.participants.iter().flatten() {
+        for participant in &self.participants {
             match participant.prepare(self.preparation) {
                 PrepareOutcome::Ready(guard) => prepared.participants.push(guard),
                 PrepareOutcome::Deferred(reason) => return PrepareOutcome::Deferred(reason),

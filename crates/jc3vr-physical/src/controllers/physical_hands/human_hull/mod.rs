@@ -194,7 +194,10 @@ unsafe fn pass(state: &mut NativeState, world: *mut hknpWorld) {
     }
 }
 
-/// Register this participant before enabling the construction hooks.
+/// The name the human hull's participant registers under.
+pub const PARTICIPANT: ParticipantId = ParticipantId::new("the human hull");
+
+/// Register this participant, under [`PARTICIPANT`], before enabling the construction hooks.
 pub struct HumanHullShutdown;
 
 impl ShutdownParticipant for HumanHullShutdown {
@@ -221,7 +224,10 @@ impl ShutdownParticipant for HumanHullShutdown {
                         "human hull: restoration incomplete; the eject waits"
                     );
                 }
-                PrepareOutcome::Deferred(DeferReason::ParticipantBusy(ParticipantId::HumanCollider))
+                PrepareOutcome::Deferred(DeferReason::Busy {
+                    participant: PARTICIPANT,
+                    cause: "the hull restoration is incomplete or a settings hook is running",
+                })
             }
             Resolution::Restored { .. } | Resolution::LeaveInPlace { .. } => {
                 PrepareOutcome::Ready(Box::new(PreparedHull {

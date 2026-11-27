@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use jc3vr_body::hooks::character::magazine;
-use jc3vr_core::lifecycle::{self, ParticipantId, RegistrationError};
+use jc3vr_core::lifecycle::{self, RegistrationError};
 use jc3vr_physical::controllers::physical_hands::{human_hull, human_hull::HumanHullShutdown};
 use jc3vr_weapons::controllers::weapons::{
     grenade, inventory::spawn_safety, reload::shutdown as magazine_shutdown,
@@ -18,20 +18,20 @@ use jc3vr_weapons::controllers::weapons::{
 
 pub(super) fn register() -> Result<(), RegistrationError> {
     if let Err(error) =
-        lifecycle::register_participant(ParticipantId::InventorySpawn, spawn_safety::participant())
+        lifecycle::register_participant(spawn_safety::PARTICIPANT, spawn_safety::participant())
     {
         tracing::error!(%error, "inventory spawn installation refused without shutdown preparation");
         return Err(error);
     }
     if let Err(error) = lifecycle::register_participant(
-        ParticipantId::MagazineExecutor,
+        magazine_shutdown::PARTICIPANT,
         magazine_shutdown::participant(),
     ) {
         tracing::error!(%error, "hook installation refused without shutdown preparation");
         return Err(error);
     }
     if let Err(error) =
-        lifecycle::register_participant(ParticipantId::HumanCollider, Arc::new(HumanHullShutdown))
+        lifecycle::register_participant(human_hull::PARTICIPANT, Arc::new(HumanHullShutdown))
     {
         tracing::error!(%error, "human hull installation refused without shutdown preparation");
         return Err(error);

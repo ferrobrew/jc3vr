@@ -28,7 +28,7 @@ fn either_request_kind_latches_exposure_before_the_native_boundary_without_vetoi
                 assert_eq!(state.first_exposure, Some(kind));
                 assert_eq!(state.submissions_in_flight, 1);
                 drop(state);
-                assert_deferred(&safety, DeferReason::SpawnCallbackActive);
+                assert_deferred(&safety, CALLBACK_ACTIVE);
             })
             .unwrap();
         assert_eq!(safety.owner.state.lock().submissions_in_flight, 0);
@@ -106,7 +106,7 @@ fn submission_in_flight_defers_without_waiting_or_disabling_gameplay() {
         })
     });
     entered_rx.recv().unwrap();
-    assert_deferred(&safety, DeferReason::SpawnCallbackActive);
+    assert_deferred(&safety, CALLBACK_ACTIVE);
     let blocked = safety.post_unpatch_check().unwrap_err();
     assert_eq!(blocked.submissions_in_flight, 1);
     assert_eq!(blocked.admission, Admission::Open);
@@ -140,7 +140,7 @@ fn returned_callbacks_and_silent_submissions_warn_but_permit_unload() {
     // SpawnTagIndex returns no acknowledgement, including when no factory is queued.
     safety.submit(RequestKind::Restore, || ()).unwrap();
     let callback = safety.callback_entry();
-    assert_deferred(&safety, DeferReason::SpawnCallbackActive);
+    assert_deferred(&safety, CALLBACK_ACTIVE);
     drop(callback);
     assert_eq!(safety.owner.active_callbacks.load(Ordering::Acquire), 0);
     // Without a committed preparation, the post-unpatch check still refuses.

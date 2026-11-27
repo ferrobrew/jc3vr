@@ -18,6 +18,9 @@ use jc3vr_core::{
 
 use crate::controllers::weapons::reload::{cancel_extraction_on_standdown, serial};
 
+/// The name the magazine executor's participant registers under.
+pub const PARTICIPANT: ParticipantId = ParticipantId::new("the magazine executor");
+
 /// The participant that keeps shutdown waiting while magazine work is pending or running.
 pub fn participant() -> Arc<dyn ShutdownParticipant> {
     Arc::new(MagazineShutdown)
@@ -39,9 +42,10 @@ struct MagazineShutdown;
 impl ShutdownParticipant for MagazineShutdown {
     fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>> {
         if thread_role::current() != ThreadRole::Game {
-            return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
-                ParticipantId::MagazineExecutor,
-            ));
+            return PrepareOutcome::Deferred(DeferReason::Busy {
+                participant: PARTICIPANT,
+                cause: "preparation runs only on the game thread",
+            });
         }
         // This cancels only extraction. It must not stand down other gameplay during a retry.
         cancel_extraction_on_standdown();
@@ -55,9 +59,14 @@ impl ShutdownParticipant for MagazineShutdown {
     }
 }
 
+const MAGAZINE_BUSY: DeferReason = DeferReason::Busy {
+    participant: PARTICIPANT,
+    cause: "magazine work is pending or a native magazine callback is running",
+};
+
 fn magazine_preparation(drained: bool, entry_active: bool) -> PrepareOutcome<()> {
     if !drained || entry_active {
-        PrepareOutcome::Deferred(DeferReason::MagazineBusy)
+        PrepareOutcome::Deferred(MAGAZINE_BUSY)
     } else {
         PrepareOutcome::Ready(())
     }

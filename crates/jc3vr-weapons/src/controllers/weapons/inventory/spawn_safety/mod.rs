@@ -17,7 +17,8 @@ use std::{
 };
 
 use jc3vr_core::lifecycle::{
-    DeferReason, Preparation, PrepareOutcome, PreparedParticipant, ShutdownParticipant,
+    DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
+    ShutdownParticipant,
 };
 use parking_lot::Mutex;
 
@@ -69,6 +70,9 @@ impl fmt::Display for UnloadBlocked {
 }
 
 impl std::error::Error for UnloadBlocked {}
+
+/// The name the inventory spawn's participant registers under.
+pub const PARTICIPANT: ParticipantId = ParticipantId::new("the inventory spawn");
 
 pub fn participant() -> Arc<dyn ShutdownParticipant> {
     SAFETY.clone()
@@ -224,13 +228,18 @@ impl UnloadBlocked {
     }
 }
 
+const CALLBACK_ACTIVE: DeferReason = DeferReason::Busy {
+    participant: PARTICIPANT,
+    cause: "a spawn submission or callback is running",
+};
+
 impl ShutdownParticipant for SpawnSafety {
     fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>> {
         let mut state = self.owner.state.lock();
         if state.submissions_in_flight != 0
             || self.owner.active_callbacks.load(Ordering::Acquire) != 0
         {
-            return PrepareOutcome::Deferred(DeferReason::SpawnCallbackActive);
+            return PrepareOutcome::Deferred(CALLBACK_ACTIVE);
         }
         let callback_entered = self.owner.callback_entered.load(Ordering::Acquire);
         if state.warn_unproven_retirement(callback_entered) {
@@ -244,9 +253,10 @@ impl ShutdownParticipant for SpawnSafety {
             state.admission,
             Admission::Preparing(_) | Admission::Committed
         ) {
-            return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
-                jc3vr_core::lifecycle::ParticipantId::InventorySpawn,
-            ));
+            return PrepareOutcome::Deferred(DeferReason::Busy {
+                participant: PARTICIPANT,
+                cause: "an earlier preparation still holds the admission",
+            });
         }
         let previous = state.admission;
         state.admission = Admission::Preparing(preparation);

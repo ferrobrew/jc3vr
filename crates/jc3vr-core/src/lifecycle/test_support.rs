@@ -152,11 +152,13 @@ impl ShutdownParticipant for FakeParticipant {
                 aborts: self.aborts.clone(),
                 committed: false,
             })),
-            Answer::Deferred => PrepareOutcome::Deferred(DeferReason::ParticipantBusy(self.id)),
-            Answer::Failed => PrepareOutcome::Failed(PrepareError {
+            Answer::Deferred => PrepareOutcome::Deferred(DeferReason::Busy {
                 participant: self.id,
-                operation: "test preparation failed",
+                cause: "the scripted answer defers",
             }),
+            Answer::Failed => {
+                PrepareOutcome::Failed(PrepareError::new(self.id, "test preparation failed"))
+            }
         }
     }
 }
