@@ -23,6 +23,7 @@ use jc3vr_body::controllers::{
     physics::refs::{Weak, null_weak},
     scheme,
 };
+use jc3vr_core::published::ReentryGuard;
 use jc3vr_input::{
     frame::{Hand, Pose},
     motion,
@@ -33,8 +34,8 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::weapons::{
     engine,
     grenade::{
-        LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, native::LaunchScope,
-        primed_explosive, report_native_throw, safe, throw_release, tuning::GRENADE,
+        LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, primed_explosive,
+        report_native_throw, safe, throw_release, tuning::GRENADE,
     },
     inventory::{engine::weapon_of, slots},
 };
@@ -230,14 +231,16 @@ pub(super) unsafe fn render_frame() {
             let data = unsafe { native::gun_ptr(&*base, pending.data) }
                 .or_else(|| unsafe { native::gun_ptr(&*base, 0) });
             if let Some(data) = data {
-                let scope = LaunchScope::enter(PlannedLaunch {
-                    explosive: pending.explosive,
-                    transform: Some(world.into()),
-                    release,
-                    catchable: false,
-                });
+                let _launch = ReentryGuard::enter(
+                    &LAUNCH,
+                    Some(PlannedLaunch {
+                        explosive: pending.explosive,
+                        transform: Some(world.into()),
+                        release,
+                        catchable: false,
+                    }),
+                );
                 unsafe { (*base.cast::<BeaconWeapon>()).Fire_Projectile(data.as_ptr()) };
-                drop(scope);
             } else {
                 tracing::warn!(target: "controllers", "beacon: weapon data disappeared; releasing the actor without a weapon event");
             }
@@ -421,19 +424,10 @@ thread_local! {
     static PROPELLING: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
-struct Propelling(Option<usize>);
-
-impl Drop for Propelling {
-    fn drop(&mut self) {
-        PROPELLING.set(self.0);
-    }
-}
-
 fn original(weapon: *mut BeaconWeapon, data: *mut WeaponData) {
     let actor = unsafe { primed_explosive(&*weapon.cast::<ThrownGrenadeWeapon>()) };
-    let scope = Propelling(PROPELLING.replace(actor.map(|actor| actor as usize)));
+    let _propelling = ReentryGuard::enter(&PROPELLING, actor.map(|actor| actor as usize));
     FIRE_BEACON.get().unwrap().call(weapon, data);
-    drop(scope);
 }
 
 /// # Safety

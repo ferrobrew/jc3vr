@@ -27,7 +27,7 @@ use jc3vr_body::controllers::{
     physics::{characters::character_object, local_player::LocalPlayer},
     scheme,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::ReentryGuard};
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{engine, inventory::slots};
@@ -222,9 +222,8 @@ pub(super) unsafe fn consume_through_pickup(game: &GameTick<'_>, weapon: &mut We
     unsafe { weapon.SetMagazineAmmo(0) };
     weapon.m_StoredNonMagazineAmmo = 0;
     let activator = owner.object();
-    let previous = PERMIT.replace(true);
+    let _permit = ReentryGuard::enter(&PERMIT, true);
     unsafe { weapon.PickupStart(activator) };
-    PERMIT.set(previous);
     true
 }
 

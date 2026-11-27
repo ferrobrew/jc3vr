@@ -49,7 +49,7 @@ use jc3vr_body::controllers::{
     held::native::{object_of, weapon_at},
     physics::refs::Strong,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::ReentryGuard};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -79,9 +79,8 @@ pub(super) fn hook_library() -> HookLibrary {
 /// Run `start`, the local player's pickup start of a weapon with unlimited stock, noting that the
 /// give it makes is a rack's copy.
 pub(crate) fn within_copy_start(start: impl FnOnce()) {
-    COPY_START.with(|copy| copy.set(true));
+    let _copy = ReentryGuard::enter(&COPY_START, true);
     start();
-    COPY_START.with(|copy| copy.set(false));
 }
 
 /// Request the next native rack give for exactly one physical source member.
@@ -89,9 +88,8 @@ pub(crate) fn within_member_start(member: Member, start: impl FnOnce()) {
     if STATE.lock().members_closed.is_some() {
         return;
     }
-    let previous = MEMBER_START.with(|copy| copy.replace(Some(member)));
+    let _member = ReentryGuard::enter(&MEMBER_START, Some(member));
     within_copy_start(start);
-    MEMBER_START.with(|copy| copy.set(previous));
 }
 
 /// Initialize the finite pair's only additional actor, without invoking its source pickup.
@@ -442,14 +440,14 @@ fn give_player_weapon(
     drop_old: bool,
 ) {
     let member = MEMBER_START
-        .with(Cell::get)
+        .get()
         .map(|member| rack::paired::copy_request(member, ammo));
     if is_local(inventory) && tracked(slot) {
         let identity = STATE.lock().authority.identity(inventory as usize);
         let record = identity.filter(|_| table_places()).map(|identity| Record {
             identity,
             tag_index,
-            source: if COPY_START.with(Cell::get) {
+            source: if COPY_START.get() {
                 GiveSource::RackCopy
             } else {
                 GiveSource::Game

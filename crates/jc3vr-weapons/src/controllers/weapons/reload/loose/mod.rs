@@ -43,6 +43,7 @@ use jc3vr_body::controllers::{
         rigid::{RigidBody, Velocities},
     },
 };
+use jc3vr_core::published::ReentryGuard;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -218,12 +219,10 @@ impl EjectRounds {
             token: retention.token,
             rounds,
         };
-        let previous_rounds = EJECT_ROUNDS.replace(Some(expected));
-        let previous_prop = EJECT_PROP.replace(None);
+        let _rounds = ReentryGuard::enter(&EJECT_ROUNDS, Some(expected));
+        let prop = ReentryGuard::enter(&EJECT_PROP, None);
         let result = drop();
-        let prop = EJECT_PROP.replace(previous_prop);
-        EJECT_ROUNDS.set(previous_rounds);
-        (result, prop)
+        (result, prop.exit())
     }
 }
 

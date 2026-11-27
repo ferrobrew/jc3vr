@@ -47,6 +47,6 @@ fn reset_and_clear_invalidate_stale_pending_work_without_resurrection() {
     assert!(PLAN.lock().from_load.is_none());
     assert!(PLAN.lock().from_reset.is_none());
     assert!(PLAN.lock().take_due(true, 1).is_none());
-    assert!(SPAWNED.lock().is_empty());
-    assert!(TWINS.lock().is_empty());
+    assert!(SPAWNED.is_empty());
+    assert!(TWINS.is_empty());
 }

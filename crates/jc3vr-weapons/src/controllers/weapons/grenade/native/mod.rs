@@ -60,7 +60,7 @@
 //! ([`Grenade::UpdatePostSim`]). [`create`] therefore refuses unless the game stage allows spawning
 //! ([`stage::spawn`]), which it does only at the top of the queue, after the commit.
 //!
-//! Factory allocations inside [`AmmoNeutral`] disable reclamation under the allocator's own
+//! Factory allocations inside an ammunition exemption ([`AMMO_NEUTRAL`]) disable reclamation under the allocator's own
 //! critical section. No reference outlives a removal, and only owned inert actors are removed.
 
 mod ai;
@@ -84,6 +84,7 @@ use jc3vr_body::controllers::{
     intent::{stage, stage::Spawn},
     physics::refs::{Weak, null_weak},
 };
+use jc3vr_core::published::ReentryGuard;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -341,7 +342,7 @@ pub(super) unsafe fn create(weapon: &mut ThrownGrenadeWeapon, world: Mat4) -> Op
         return None;
     }
     let data = unsafe { weapon_data(&*base) }?;
-    let neutral = AmmoNeutral::enter(base as usize);
+    let neutral = ReentryGuard::enter(&AMMO_NEUTRAL, Some(base as usize));
     let created = unsafe { weapon.PrimeGrenade(data) };
     drop(neutral);
     if created.is_null() {
@@ -632,17 +633,19 @@ unsafe fn launch_live(
         "the weapon's launch puts back the grenade's own upgrade flag",
     );
     unsafe { weapon.m_PrimedGrenade.Assign(actor.handle()) };
-    let scope = LaunchScope::enter(PlannedLaunch {
-        explosive: explosive as usize,
-        transform: Some(launch.world.into()),
-        release: launch.release,
-        catchable: true,
-    });
+    let scope = ReentryGuard::enter(
+        &LAUNCH,
+        Some(PlannedLaunch {
+            explosive: explosive as usize,
+            transform: Some(launch.world.into()),
+            release: launch.release,
+            catchable: true,
+        }),
+    );
     // The launch reads the slot it was just given, applies the planned transform and velocity, and
     // clears the slot as it releases the grenade.
     unsafe { (*base).Fire_Projectile(data) };
-    let hooked = LAUNCH.get().is_none();
-    drop(scope);
+    let hooked = scope.exit().is_none();
     // The launch clears its slot whatever happened, so leave nothing behind if it did not go through.
     if unsafe { primed_explosive(weapon) } == Some(explosive) {
         let empty = null_weak();
@@ -784,34 +787,6 @@ fn explosive_of(weak: &Weak) -> Option<*mut Explosive> {
 
 unsafe fn weapon_data(weapon: &WeaponBase) -> Option<*mut WeaponData> {
     unsafe { gun_ptr(weapon, usize::from(weapon.m_NextWeaponToFire)) }.map(NonNull::as_ptr)
-}
-
-pub(super) struct LaunchScope(Option<PlannedLaunch>);
-
-impl LaunchScope {
-    pub(super) fn enter(launch: PlannedLaunch) -> Self {
-        Self(LAUNCH.replace(Some(launch)))
-    }
-}
-
-impl Drop for LaunchScope {
-    fn drop(&mut self) {
-        LAUNCH.set(self.0);
-    }
-}
-
-struct AmmoNeutral(Option<usize>);
-
-impl AmmoNeutral {
-    fn enter(weapon: usize) -> Self {
-        Self(AMMO_NEUTRAL.replace(Some(weapon)))
-    }
-}
-
-impl Drop for AmmoNeutral {
-    fn drop(&mut self) {
-        AMMO_NEUTRAL.set(self.0);
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -994,11 +969,11 @@ mod tests {
         assert_eq!(AMMO_NEUTRAL.get(), None);
         assert!(allocation_reclaim(true));
         assert!(!allocation_reclaim(false));
-        let outer = AmmoNeutral::enter(11);
+        let outer = ReentryGuard::enter(&AMMO_NEUTRAL, Some(11));
         assert!(!allocation_reclaim(true));
         assert_eq!(AMMO_NEUTRAL.get(), Some(11));
         {
-            let _inner = AmmoNeutral::enter(22);
+            let _inner = ReentryGuard::enter(&AMMO_NEUTRAL, Some(22));
             assert_eq!(AMMO_NEUTRAL.get(), Some(22));
         }
         assert_eq!(AMMO_NEUTRAL.get(), Some(11));

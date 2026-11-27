@@ -22,6 +22,7 @@ use jc3gi::{
     equipment::weapon::{BulletWeaponBase, WeaponBase, WeaponData},
 };
 use jc3vr_body::controllers::scheme;
+use jc3vr_core::published::ReentryGuard;
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -37,9 +38,8 @@ thread_local! {
 
 #[detour(address = jc3gi::equipment::weapon::BulletWeaponBase::Fire_Projectile_ADDRESS)]
 fn bullet_fire_projectile(weapon: *mut BulletWeaponBase, gun_data: *mut WeaponData) {
-    let outer = IN_BULLET_SHOT.replace(true);
+    let _shot = ReentryGuard::enter(&IN_BULLET_SHOT, true);
     BULLET_FIRE_PROJECTILE.get().unwrap().call(weapon, gun_data);
-    IN_BULLET_SHOT.set(outer);
 }
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::GetHolderInformation_ADDRESS)]

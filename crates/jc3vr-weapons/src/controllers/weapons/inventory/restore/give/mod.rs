@@ -40,7 +40,7 @@ use jc3gi::{
     ui::locator::Locale,
 };
 use jc3vr_body::controllers::{intent, physics::refs::Strong, spawn, spawn::SpawnDefinition};
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::DetourQueue};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -246,8 +246,8 @@ pub(crate) fn clear_pending() {
     *QUEUE.lock() = RequestQueue::default();
     PENDING.lock().clear();
     DRAWS.lock().clear();
-    GIVEN.lock().clear();
-    EMPTY.lock().clear();
+    GIVEN.clear();
+    EMPTY.clear();
 }
 
 /// The most requests queued at once.
@@ -355,9 +355,9 @@ struct Draw {
 }
 static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
 /// The weapons the spawn callback ([`spawned`]) handed over, with their request's token.
-pub(super) static GIVEN: Mutex<Vec<(SpawnToken, Strong)>> = Mutex::new(Vec::new());
+pub(super) static GIVEN: DetourQueue<(SpawnToken, Strong)> = DetourQueue::new();
 /// The gives the spawn callback answered with no weapon, with how many objects it handed over.
-pub(super) static EMPTY: Mutex<Vec<(SpawnToken, usize)>> = Mutex::new(Vec::new());
+pub(super) static EMPTY: DetourQueue<(SpawnToken, usize)> = DetourQueue::new();
 static LAST: Mutex<Option<String>> = Mutex::new(None);
 /// The giveable definitions' display names, by definition name, for the language they were looked
 /// up in ([`display_name`]).
@@ -652,7 +652,7 @@ unsafe fn clear(game: &GameTick<'_>, socket: Socket) -> String {
 /// Carry each weapon the spawn callback handed over onto its socket, and forget the gives that
 /// never came.
 unsafe fn adopt(owner: &mut Character) {
-    let given = std::mem::take(&mut *GIVEN.lock());
+    let given = GIVEN.take();
     let generation = PLAN.lock().generation;
     for (token, strong) in given {
         let pending = take_pending(&mut PENDING.lock(), token, generation);
@@ -690,7 +690,7 @@ unsafe fn adopt(owner: &mut Character) {
         tracing::info!(target: "controllers", "{line}");
         *LAST.lock() = Some(line);
     }
-    let empty = std::mem::take(&mut *EMPTY.lock());
+    let empty = EMPTY.take();
     for (token, objects) in empty {
         let pending = take_pending(&mut PENDING.lock(), token, generation);
         let Some(pending) = pending else {

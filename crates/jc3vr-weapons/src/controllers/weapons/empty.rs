@@ -46,6 +46,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponData},
 };
 use jc3vr_body::controllers::{hands::ik, haptics, scheme};
+use jc3vr_core::published::ReentryGuard;
 use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
@@ -149,14 +150,17 @@ fn check_if_reload_should_be_triggered_base(
         // The native check otherwise rejects the live chamber solely for its absent magazine.
         unsafe { (*weapon).m_WeaponIsWithoutMagazine = false };
     }
-    let outer = CHECK.replace(Some(Check {
-        tried_switch: false,
-    }));
+    let marked = ReentryGuard::enter(
+        &CHECK,
+        Some(Check {
+            tried_switch: false,
+        }),
+    );
     original();
     if masked {
         unsafe { (*weapon).m_WeaponIsWithoutMagazine = true };
     }
-    let check = CHECK.replace(outer);
+    let check = marked.exit();
 
     // SAFETY: the weapon is live for the length of its update, on this thread, and `gun_data` is
     // one of its guns.

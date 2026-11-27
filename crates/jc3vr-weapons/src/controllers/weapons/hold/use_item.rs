@@ -33,7 +33,7 @@ use jc3vr_body::controllers::{
     hands::ik,
     physics::{characters::character_object, refs::Strong},
 };
-use parking_lot::Mutex;
+use jc3vr_core::published::{DetourQueue, ReentryGuard};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
@@ -65,9 +65,8 @@ pub(crate) fn hook_library() -> HookLibrary {
 ///
 /// As [`WeaponBase::PickupItem`]: `weapon` live, on the game thread before the world update.
 pub(crate) unsafe fn own_pickup(weapon: &mut WeaponBase, activator: *mut GameObject) {
-    OWN.with(|own| own.set(true));
+    let _own = ReentryGuard::enter(&OWN, true);
     unsafe { weapon.PickupItem(activator) };
-    OWN.with(|own| own.set(false));
 }
 
 /// Take the weapons the game's pickup queued since the last input tick. Called each input tick
@@ -77,7 +76,7 @@ pub(crate) unsafe fn own_pickup(weapon: &mut WeaponBase, activator: *mut GameObj
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character) {
-    let queued = std::mem::take(&mut *QUEUED.lock());
+    let queued = QUEUED.take();
     for strong in queued {
         let weapon = unsafe { &mut *weapon_of(&strong) };
         unsafe { take(owner, weapon) };
@@ -90,7 +89,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character) {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn stand_down() {
-    let queued = std::mem::take(&mut *QUEUED.lock());
+    let queued = QUEUED.take();
     for strong in queued {
         unsafe { (*weapon_of(&strong)).OnDrop() };
     }
@@ -102,7 +101,7 @@ thread_local! {
 }
 
 /// The weapons the game's pickup handed to the table, held alive until the next input tick.
-static QUEUED: Mutex<Vec<Strong>> = Mutex::new(Vec::new());
+static QUEUED: DetourQueue<Strong> = DetourQueue::new();
 
 /// Take the queued `weapon` into a free hand through the table, or through the game's pickup where
 /// the table cannot hold it, or put it back into the world with both hands full.
@@ -189,7 +188,7 @@ fn table_takes(weapon: &WeaponBase) -> bool {
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::PickupItem_ADDRESS)]
 fn pickup_item(weapon: *mut WeaponBase, activator: *mut GameObject) {
-    let own = OWN.with(Cell::get);
+    let own = OWN.get();
     // SAFETY: the pickup is given a live weapon.
     let Some(w) = (unsafe { weapon.as_mut() }).filter(|_| is_local_player(activator)) else {
         PICKUP_ITEM.get().unwrap().call(weapon, activator);
@@ -203,7 +202,7 @@ fn pickup_item(weapon: *mut WeaponBase, activator: *mut GameObject) {
             return;
         }
         if let Some(strong) = unsafe { strong_to(w) } {
-            QUEUED.lock().push(strong);
+            QUEUED.push(strong);
             return;
         }
     }

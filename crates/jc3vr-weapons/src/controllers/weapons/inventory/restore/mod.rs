@@ -42,7 +42,7 @@ use jc3gi::{
     types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
 };
 use jc3vr_body::controllers::{hands::ik, held::native::weapon_at, physics::refs::Strong};
-use jc3vr_core::{config::engine::paths, game_tick::GameTick};
+use jc3vr_core::{config::engine::paths, game_tick::GameTick, published::DetourQueue};
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
@@ -172,8 +172,8 @@ pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stash
     }
     plan.due = false;
     std::mem::drop(plan);
-    SPAWNED.lock().clear();
-    TWINS.lock().clear();
+    SPAWNED.clear();
+    TWINS.clear();
     give::clear_pending();
 }
 
@@ -359,7 +359,8 @@ pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
 /// world as it is now.
 pub(crate) fn take_twins() -> Vec<Strong> {
     let generation = PLAN.lock().generation;
-    std::mem::take(&mut *TWINS.lock())
+    TWINS
+        .take()
         .into_iter()
         .filter(|(asked_in, _)| *asked_in == generation)
         .map(|(_, strong)| strong)
@@ -378,8 +379,8 @@ pub(crate) fn clear() {
     plan.checkpoint_next = None;
     plan.due = false;
     std::mem::drop(plan);
-    SPAWNED.lock().clear();
-    TWINS.lock().clear();
+    SPAWNED.clear();
+    TWINS.clear();
     give::clear_pending();
 }
 
@@ -442,9 +443,9 @@ static PLAN: Mutex<Plan> = Mutex::new(Plan {
     origin: None,
 });
 /// The weapons the spawn callback handed over, with the generation they were asked in.
-static SPAWNED: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
+static SPAWNED: DetourQueue<(u64, Strong)> = DetourQueue::new();
 /// The second pistols the spawn callback handed over, with the generation they were asked in.
-static TWINS: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
+static TWINS: DetourQueue<(u64, Strong)> = DetourQueue::new();
 static STATUS: Mutex<RestoreStatus> = Mutex::new(RestoreStatus {
     path: None,
     writes: 0,
@@ -714,13 +715,13 @@ pub(super) unsafe extern "system" fn spawned(
         };
         weapons += 1;
         match token {
-            SpawnToken::Respawn { generation } => SPAWNED.lock().push((generation, strong)),
-            SpawnToken::Twin { generation } => TWINS.lock().push((generation, strong)),
-            SpawnToken::Give { .. } => give::GIVEN.lock().push((token, strong)),
+            SpawnToken::Respawn { generation } => SPAWNED.push((generation, strong)),
+            SpawnToken::Twin { generation } => TWINS.push((generation, strong)),
+            SpawnToken::Give { .. } => give::GIVEN.push((token, strong)),
         }
     }
     if weapons == 0 && matches!(token, SpawnToken::Give { .. }) {
-        give::EMPTY.lock().push((token, objects.len()));
+        give::EMPTY.push((token, objects.len()));
     }
 }
 

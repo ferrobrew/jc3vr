@@ -55,7 +55,10 @@ use jc3vr_body::controllers::{
     held::native::gun_count,
     physics::{characters::character_object, refs::Strong},
 };
-use jc3vr_core::{game_tick::GameTick, published::Counter};
+use jc3vr_core::{
+    game_tick::GameTick,
+    published::{Counter, DetourQueue},
+};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -257,7 +260,7 @@ pub(crate) fn on_reset(slot_single: Option<bool>) {
     for object in set::all() {
         set::remove(object);
     }
-    std::mem::take(&mut *PARKED.lock());
+    PARKED.clear();
     let mut state = STATE.lock();
     state.grants.clear();
     state.grants.cover_respawn(slot_single);
@@ -382,7 +385,7 @@ pub(crate) fn clear() {
             set::remove(object);
         }
     }
-    std::mem::take(&mut *PARKED.lock());
+    PARKED.clear();
     STATE.lock().grants.clear();
 }
 
@@ -455,7 +458,7 @@ static RACK_COPY_ASKED: AtomicBool = AtomicBool::new(false);
 /// Pistols taken from the world as one pistol since the payload loaded.
 static PICKED: Counter = Counter::new();
 /// Twins that were not wanted, hidden and kept out of reach until the next reset ([`park`]).
-static PARKED: Mutex<Vec<Strong>> = Mutex::new(Vec::new());
+static PARKED: DetourQueue<Strong> = DetourQueue::new();
 
 /// Keep the pistols the player owns to one gun and half a magazine: the slot's and the carried
 /// ones.
@@ -670,7 +673,7 @@ unsafe fn park(owner: &mut Character, strong: Strong, why: &str) {
     }
     unsafe { weapon.SetState(WeaponState::E_WS_HOLSTERED_INVISIBLE, true) };
     unsafe { weapon.SetVisible(false, false, false) };
-    PARKED.lock().push(strong);
+    PARKED.push(strong);
     tracing::warn!(target: "controllers", why, "single pistols: a second pistol is not wanted; it is hidden and kept out of reach");
 }
 

@@ -111,7 +111,7 @@ pub(super) fn carry_onto(
 /// Adopt current-generation results only after the live table has completed its restoration.
 pub(super) unsafe fn adopt(owner: &mut Character) {
     let generation = PLAN.lock().generation;
-    let spawned = std::mem::take(&mut *SPAWNED.lock());
+    let spawned = SPAWNED.take();
     for (asked_in, strong) in spawned {
         if asked_in != generation {
             continue;

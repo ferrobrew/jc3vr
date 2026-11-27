@@ -27,8 +27,7 @@ use jc3vr_body::controllers::{
     },
     scheme,
 };
-use jc3vr_core::game_tick::GameTick;
-use parking_lot::Mutex;
+use jc3vr_core::{game_tick::GameTick, published::DetourQueue};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::{
@@ -44,7 +43,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// Replace the dropped grenades noted since the last tick with grenades of the mod's own, in the
 /// input tick's game stage.
 pub(super) fn input_tick(game: &GameTick<'_>) {
-    let pending = std::mem::take(&mut *PENDING.lock());
+    let pending = PENDING.take();
     let mut retry = Vec::new();
     for mut drop in pending {
         let Some(alive) = drop.weapon.lock() else {
@@ -61,15 +60,13 @@ pub(super) fn input_tick(game: &GameTick<'_>) {
             }
         }
     }
-    let mut pending = PENDING.lock();
-    retry.append(&mut pending);
-    retry.truncate(MAX_PENDING);
-    *pending = retry;
+    PENDING.requeue(retry);
+    PENDING.truncate(MAX_PENDING);
 }
 
 /// Forget the drops waiting to be replaced: the controllers stood down.
 pub(super) fn clear() {
-    PENDING.lock().clear();
+    PENDING.clear();
 }
 
 /// A noted drop.
@@ -79,7 +76,7 @@ struct Pending {
     ticks: u32,
 }
 
-static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
+static PENDING: DetourQueue<Pending> = DetourQueue::new();
 
 /// How many drops wait at once; the oldest beyond it are left as pickups.
 const MAX_PENDING: usize = 16;
@@ -166,11 +163,10 @@ fn on_drop(weapon: *mut WeaponBase) {
     // SAFETY: the weapon's own weak reference to itself, live with it; the count is atomic, so the
     // reference may be taken here, wherever the drop runs.
     let reference = unsafe { Weak::of(&weapon.m_WeakThis) };
-    let mut pending = PENDING.lock();
-    if pending.len() < MAX_PENDING {
-        pending.push(Pending {
-            weapon: reference,
-            ticks: 0,
-        });
-    }
+    // A drop beyond the cap is the newest, so the truncation leaves it a pickup.
+    PENDING.push(Pending {
+        weapon: reference,
+        ticks: 0,
+    });
+    PENDING.truncate(MAX_PENDING);
 }
