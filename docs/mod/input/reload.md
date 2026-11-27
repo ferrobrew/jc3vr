@@ -196,7 +196,7 @@ The game voices a reload, a draw, and a holster from its clips' track messages a
 
 - A seat plays the insert sound ([`WeaponData::RELOAD_INSERT_AMMO_USAGE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData), which only the shell-fed shotgun and the Bildt Negotiator carry), else the end of a reload (`RELOAD_END_USAGE`, played by the game when a timed reload with no animation runs out), else the dry-fire click (`OUT_OF_AMMO_FIRE_USAGE`) borrowed as the magazine's catch (`engine::play_seat_sound`).
 - A refusal plays the dry-fire click.
-- A draw off a socket plays the gun's draw sound and a dock its holster sound ([physical-weapons.md, "Drawing and docking as one object"](physical-weapons.md#drawing-and-docking-as-one-object)).
+- A draw off a socket plays the gun's draw sound and a dock its holster sound ([weapon-sockets.md, "Drawing and docking"](weapon-sockets.md#drawing-and-docking)).
 
 Every other gun's reload sound is the whole reload in one event, so the eject, the knock, the pull, and a revolver's cylinder swinging have nothing to play; a dropped magazine's landing comes from the prop itself. Each sound played or missing logs `reload: played the gun's sound` (or `hold: ...` for a draw or a dock) at debug level.
 
