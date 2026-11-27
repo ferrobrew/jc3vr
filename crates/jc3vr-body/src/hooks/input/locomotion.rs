@@ -52,10 +52,6 @@ pub fn hook_library() -> HookLibrary {
 /// into face-dir tracking.
 pub static MOVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static AIM_RELATIVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
-/// How often the orientation evaluator ran for the local player. The headpose sim's on-foot signal
-/// is the evaluator's liveness in the body's frame ([`body_frame::ModeLiveness`]); this count stays for
-/// the head participants that still compare it, until they read the liveness.
-pub static ORIENTATION_EVAL_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static FACE_CAMERA_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SLIDE_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SKIPPED_STARTS: AtomicU64 = AtomicU64::new(0);
@@ -262,7 +258,6 @@ fn force_face_camera(
     };
     // The liveness and snapshot run before any config gating: the headpose sim's mode detection
     // and the Game tab readout must see every on-foot frame.
-    ORIENTATION_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
     body_frame::mark_on_foot_evaluated();
     capture_snapshot(character);
 

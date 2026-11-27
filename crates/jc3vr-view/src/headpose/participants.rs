@@ -10,6 +10,7 @@
 use std::sync::OnceLock;
 
 use glam::{Quat, Vec3};
+use jc3vr_core::published::Stamp;
 
 use crate::headpose::{config::GrappleComfortConfig, xr::FollowSettings};
 
@@ -34,11 +35,11 @@ pub struct HeadParticipants {
     pub log_grapple_frame: fn(frame: &FrameTelemetry),
     /// How the body follows the head this tick.
     pub follow_settings: fn() -> FollowSettings,
-    /// A mark that advances each time the on-foot orientation evaluator runs, once per tick on
-    /// foot. It is compared between input ticks, never read as a quantity.
-    pub orientation_evals: fn() -> u64,
-    /// A mark that advances each time a swim movement core runs, compared the same way.
-    pub swim_evals: fn() -> u64,
+    /// When the on-foot orientation evaluator last ran, once per tick on foot; `None` before its
+    /// first run. It is compared between input ticks.
+    pub on_foot_ran: fn() -> Option<Stamp>,
+    /// When a swim movement core last ran, compared the same way.
+    pub swim_ran: fn() -> Option<Stamp>,
     /// Whether the local player swims.
     pub swimming: fn() -> bool,
     /// Whether a seat transition is entering or leaving a vehicle.

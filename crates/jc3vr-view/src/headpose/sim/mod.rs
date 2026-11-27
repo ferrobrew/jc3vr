@@ -31,6 +31,7 @@
 
 use body_rig::math::angle::{direction, heading, wrap};
 use glam::{Quat, Vec3};
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 
 use crate::{
@@ -82,7 +83,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // Mode detection, once per input tick: the locomotion orientation evaluator runs once per sim
     // tick while on foot (including idle — the move/aim task counters stop while idle), and never
     // in vehicles. This hook fires on the same sim-tick cadence, so between ticks the evaluator's
-    // mark advances exactly when the player is on foot. Comparing per rendered frame instead flickered
+    // run advances exactly when the player is on foot. Comparing per rendered frame instead flickered
     // to `Other` on every frame without a sim tick, resetting the latch and letting the idle
     // camera pin leak through (the body tracked the head immediately).
     //
@@ -90,9 +91,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // is read by `head_decoupled_idle` (the body-turn suppression gate), so freezing it under VR
     // left the game's aim-relative body turn permanently unsuppressed, which the body-relative pose
     // composition (`body × cockpit`) turns into a runaway head spin.
-    let on_foot_mark = (participants.orientation_evals)();
-    s.mode = detect_mode(s.last_on_foot_mark, on_foot_mark);
-    s.last_on_foot_mark = on_foot_mark;
+    let on_foot_ran = (participants.on_foot_ran)();
+    s.mode = detect_mode(s.last_on_foot_run, on_foot_ran);
+    s.last_on_foot_run = on_foot_ran;
 
     // The in-water counterpart, from the swim movement cores (the swim family never runs the
     // orientation evaluator). Kept out of `HeadMode` deliberately: swimming only extends the VR
@@ -103,9 +104,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // the body toward the camera-relative stick; the view rides the body, so the camera turns with
     // it, and the next tick re-seeds the accumulator from the turned body, which compounds into a
     // circle.
-    let swim_mark = (participants.swim_evals)();
-    let swimming = swim_mark > s.last_swim_mark || (participants.swimming)();
-    s.last_swim_mark = swim_mark;
+    let swim_ran = (participants.swim_ran)();
+    let swimming = swim_ran > s.last_swim_run || (participants.swimming)();
+    s.last_swim_run = swim_ran;
 
     // Advance the grapple reel-in body-frame filter on this tick, likewise before the VR
     // early-return: the blend it smooths (and the pre-reel frame it holds) is applied by both
@@ -261,10 +262,11 @@ struct SimState {
     latch: LatchState,
     /// The current head mode.
     mode: HeadMode,
-    /// The orientation evaluator's mark at the last input tick (for mode detection).
-    last_on_foot_mark: u64,
-    /// The swim movement cores' mark at the last input tick (for the in-water body-yaw seeding).
-    last_swim_mark: u64,
+    /// The orientation evaluator's last run as of the last input tick (for mode detection).
+    last_on_foot_run: Option<Stamp>,
+    /// The swim movement cores' last run as of the last input tick (for the in-water body-yaw
+    /// seeding).
+    last_swim_run: Option<Stamp>,
     /// The body yaw at the last processed input tick, for the on-foot compensation.
     last_body_yaw: Option<f32>,
     /// The last computed body-yaw target, for [`body_yaw_target`].
@@ -277,17 +279,17 @@ const SIM_DEFAULT: SimState = SimState {
     roll: 0.0,
     latch: LatchState::Decoupled,
     mode: HeadMode::Other,
-    last_on_foot_mark: 0,
-    last_swim_mark: 0,
+    last_on_foot_run: None,
+    last_swim_run: None,
     last_body_yaw: None,
     body_yaw_target: None,
 };
 
 static SIM: Mutex<SimState> = Mutex::new(SIM_DEFAULT);
 
-/// Detect the head mode from the orientation evaluator's mark: when it advanced since the last
+/// Detect the head mode from the orientation evaluator's last run: when it advanced since the last
 /// input tick, the on-foot locomotion orientation executor ran, so the player is on foot.
-fn detect_mode(old: u64, new: u64) -> HeadMode {
+fn detect_mode(old: Option<Stamp>, new: Option<Stamp>) -> HeadMode {
     if new > old {
         HeadMode::OnFoot
     } else {

@@ -84,12 +84,14 @@ fn test_free_look_clamping_pitch() {
 }
 
 #[test]
-fn test_mode_detection_from_mark() {
-    // The mark advanced: the orientation evaluator ran, so the player is on foot.
-    assert_eq!(detect_mode(0, 1), HeadMode::OnFoot);
-    assert_eq!(detect_mode(5, 8), HeadMode::OnFoot);
-    // The mark unchanged: not on foot.
-    assert_eq!(detect_mode(5, 5), HeadMode::Other);
+fn test_mode_detection_from_last_run() {
+    let at = Stamp::from_nanos;
+    // The run advanced: the orientation evaluator ran, so the player is on foot.
+    assert_eq!(detect_mode(None, Some(at(1))), HeadMode::OnFoot);
+    assert_eq!(detect_mode(Some(at(5)), Some(at(8))), HeadMode::OnFoot);
+    // The run unchanged: not on foot.
+    assert_eq!(detect_mode(Some(at(5)), Some(at(5))), HeadMode::Other);
+    assert_eq!(detect_mode(None, None), HeadMode::Other);
 }
 
 #[test]

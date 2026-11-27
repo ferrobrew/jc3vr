@@ -30,8 +30,8 @@ static PARTICIPANTS: HeadParticipants = HeadParticipants {
     log_grapple_tick: grapple::telemetry::log_tick,
     log_grapple_frame: grapple::telemetry::log_frame,
     follow_settings,
-    orientation_evals: || body_frame::liveness().on_foot.map_or(0, Stamp::as_nanos),
-    swim_evals: || body_frame::liveness().swimming.map_or(0, Stamp::as_nanos),
+    on_foot_ran: || body_frame::liveness().on_foot,
+    swim_ran: || body_frame::liveness().swimming,
     swimming: swim::swimming,
     vehicle_transition: || {
         frame_shared()
