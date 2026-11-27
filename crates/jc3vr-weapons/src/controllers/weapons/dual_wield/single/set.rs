@@ -4,10 +4,9 @@
 //! thread outside the world update, and the pickup's detour adds one inside the world update, from
 //! the pickup's track message or a swimming character's pickup; the two never run at once, so
 //! there is one writer at a time. The detours and the per-gun reads on the simulation's threads
-//! only test membership. An entry
-//! is claimed with a compare-and-swap, so two writers never take the same place; a reader that
-//! races a removal sees the pistol as single for at most that read, which shows or fires its first
-//! gun alone once more.
+//! only test membership. An entry is claimed with a compare-and-swap, so two writers never take
+//! the same place; a reader that races a removal sees the pistol as single for at most that read,
+//! which shows or fires its first gun alone once more.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -22,8 +21,8 @@ pub fn contains(object: usize) -> bool {
         && TABLE.iter().any(|e| e.load(Ordering::Relaxed) == object)
 }
 
-/// Add the weapon at `object`. Returns whether it was added: false when it is already in the set,
-/// or when the table is full.
+/// Add the weapon at `object`. Returns whether it was added, `false` when it is already in the
+/// set, or [`Full`] when the table is full.
 pub fn insert(object: usize) -> Result<bool, Full> {
     if object == 0 || contains(object) {
         return Ok(false);

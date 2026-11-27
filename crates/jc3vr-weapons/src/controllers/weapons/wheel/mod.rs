@@ -8,11 +8,11 @@
 //!
 //! - [`select`] (pure) decides when the wheel opens and closes and which arm the hand chooses, and
 //!   names the one slot-select action to hold each tick;
-//! - [`steer`] (pure) reads the steering hand's turn or offset from where the wheel opened;
+//! - [`steer`] (pure) reads the steering hand's turn from where the wheel opened;
 //! - [`placement`] moves the cross on the floating panel to where the hand was when the wheel
 //!   opened;
 //! - this module runs in the game stage, after the binding tables and the weapon handling
-//!   (`controllers::bindings::game_tick`): it reads the game's state, steps the wheel,
+//!   (gameplay's `controllers::bindings::game_tick`): it reads the game's state, steps the wheel,
 //!   puts its slot-select hold in the tick's wanted actions (dropping the tables' own trackpad
 //!   quadrant holds, which the wheel takes over), pulses the steering hand, and clears the game's
 //!   pending selection when the wheel cancels ([`Inventory::m_SlotToSelectOnRelease`]).
@@ -199,8 +199,8 @@ pub fn pause(game: &GameTick<'_>) {
     close_as_cancel(game);
 }
 
-/// Stop acting: close an open wheel as a cancel and withdraw its placement. Called whenever the
-/// bindings do not inject.
+/// Stop acting: close an open wheel as a cancel and withdraw its placement. A step of the weapon
+/// handling's stand-down ([`crate::controllers::weapons::stand_down`]).
 pub(crate) fn stand_down(game: &GameTick<'_>) {
     close_as_cancel(game);
     placement::clear();

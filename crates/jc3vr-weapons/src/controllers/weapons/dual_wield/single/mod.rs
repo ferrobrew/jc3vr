@@ -19,7 +19,7 @@
 //! The player's pistols become two such objects. A pair the game hands over keeps the slot, and
 //! a second pistol of its kind, the twin, is spawned and carried by the VR inventory's carry set on
 //! the hip the slot's pistol does not take, half the pair's magazine in each ([`grant`]). A pistol
-//! taken from the world is one pistol ([`pickup_item`]). Each is then picked up, held, docked,
+//! taken from the world is one pistol ([`designate_picked`]). Each is then picked up, held, docked,
 //! dropped, and reloaded on its own, through the paths every weapon takes: each is its own item of
 //! the loadout table's, in whichever hand or on whichever socket the table has it, and a drop is a
 //! drop of that object.
@@ -28,8 +28,8 @@
 //! sources. An untracked object leaves it unless a source's weak reference still locks. While
 //! the hands stand down, the slot's, the carry set's, and these weak-checked rack pistols stay
 //! single. A twin that is not wanted any more is put away out of reach ([`park`]), never left in
-//! the world.
-//! The settings switch only the making of new ones; pistols already single stay single.
+//! the world. New ones are made only while the VR inventory runs ([`active`]); pistols already
+//! single stay single.
 
 pub mod grant;
 pub mod magazine;
@@ -132,8 +132,8 @@ pub(crate) unsafe fn is_pair(weapon: &WeaponBase) -> bool {
         && !is(weapon as *const WeaponBase as usize)
 }
 
-/// Whether new pistols are made single: the setting is on, and the VR inventory tracks and carries
-/// weapons.
+/// Whether new pistols are made single: the VR inventory runs its input tick, tracking and carrying
+/// weapons, and the hands have not stood down.
 pub(crate) fn active() -> bool {
     ACTIVE.load(Ordering::Relaxed)
 }

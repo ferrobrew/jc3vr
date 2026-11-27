@@ -72,7 +72,7 @@ pub(crate) fn publish(hints: [Option<Hint>; 2]) {
     *SAMPLE.lock() = Some((hints, Instant::now()));
 }
 
-/// Forget the hints: the weapon handling stood down, or the HUD shows none.
+/// Forget the hints: the hands went inert and the weapon handling stood down.
 pub fn clear() {
     *SAMPLE.lock() = None;
 }

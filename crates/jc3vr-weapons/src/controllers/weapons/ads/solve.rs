@@ -201,7 +201,6 @@ impl AdsSolution {
     };
 }
 
-/// Solve the pose.
 pub fn solve(inputs: &AdsInputs) -> AdsSolution {
     let tuning = &HANDLING.get().ads;
     let mut solution = AdsSolution::NONE;

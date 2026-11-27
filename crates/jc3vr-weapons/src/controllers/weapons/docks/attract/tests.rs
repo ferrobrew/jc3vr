@@ -343,8 +343,9 @@ fn a_taken_back_socket_draws_in_a_swap_and_a_free_one_comes_first() {
 #[test]
 fn the_hand_feels_the_free_socket_a_release_would_take_before_a_swap() {
     // A pistol held by the right hip (riding high), which is free, is also within the right
-    // shoulder's wide attraction while that shoulder is taken: the release docks on the hip, so the hand is in the
-    // hip's zone, not the shoulder's swap (the grab hint showed a swap onto the back here).
+    // shoulder's wide attraction while that shoulder is taken: the release docks on the hip, so the
+    // hand is in the hip's zone, not the shoulder's swap, and the grab hint must not show a swap
+    // onto the back.
     let body = body(0.0);
     let (shoulder, _) = dock(
         Socket::Shoulder(Hand::Right),

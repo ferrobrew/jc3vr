@@ -19,7 +19,8 @@ use crate::controllers::{
     },
 };
 
-/// The acting hand and weapon occupancy used by the existing long-gun draw restriction.
+/// The dominant hand and which hands hold a weapon, for the long-gun draw restriction
+/// ([`volumes::reserve_long_guns`]).
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct DrawContext {
     pub dominant: Hand,

@@ -11,8 +11,8 @@
 //!   seen there, or else on the socket's bone, moved by the socket's offset when the game does not
 //!   dock the weapon's slot there itself;
 //! - a socket of the body that does not take the weapon a hand holds (taken, or too small for it,
-//!   or any socket for a weapon that docks nowhere yet, [`act::dockable`]) is marked for that
-//!   hand, never taken, so the hand knows before it opens.
+//!   or any socket for a weapon without a slot, which docks nowhere, [`act::dockable`]) is marked
+//!   for that hand, never taken, so the hand knows before it opens.
 //!
 //! A free socket that takes a held weapon also attracts a release of it from beyond its volume
 //! ([`attract`]), so a weapon let go of over the shoulder travels onto the back.
@@ -58,13 +58,13 @@ use crate::controllers::{
 pub(crate) mod attachments;
 pub(crate) mod attract;
 
-/// The last selected input-thread targets, carried with the current character transform.
-/// No weapon or joint is read by this consumer.
+/// The socket targets the input tick last published, carried onto `character`, the owner's
+/// current model-to-world transform, for the body mirror. Reads no weapon or joint.
 pub(crate) fn attachment_sample(owner: usize, character: Mat4, now: Instant) -> Option<Sample> {
     ATTACHMENTS.lock().as_ref()?.in_world(owner, character, now)
 }
 
-/// Publish only the sample that the socket candidate provider consumes on this input tick.
+/// Publish the sample the socket candidates consume on this input tick, or `None` to withdraw it.
 pub(crate) fn publish_targets(sample: Option<Sample>) {
     *ATTACHMENTS.lock() = sample;
 }
@@ -539,7 +539,7 @@ unsafe fn bone_world(owner: &Character, to_world: Mat4, socket: Socket) -> Optio
     bone.is_finite().then_some(bone)
 }
 
-/// Copied observations only; the mirror never keeps or dereferences an engine object.
+/// Copied observations only: the body mirror never keeps or dereferences an engine object.
 static ATTACHMENTS: Mutex<Option<Sample>> = Mutex::new(None);
 
 #[cfg(test)]

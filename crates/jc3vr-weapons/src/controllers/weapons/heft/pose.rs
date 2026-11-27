@@ -49,9 +49,9 @@ pub struct Weight {
 
 impl Weight {
     /// The weight of a gun of `class` with the unbraced `share` (one in one hand, zero braced):
-    /// the one-handed and the braced weights blended by the share. The sag and the limits blend linearly; the spring blends by its natural
-    /// frequency, a rigid side counting as a very stiff spring, so that the lag shrinks smoothly as
-    /// the foregrip engages.
+    /// the one-handed and the braced weights blended by the share. The sag and the limits blend
+    /// linearly; the spring blends by its natural frequency, a rigid side counting as a very stiff
+    /// spring, so that the lag shrinks smoothly as the foregrip engages.
     pub fn of(class: HeftClass, config: &Heft, share: f32) -> Self {
         let one = config.tuning(class);
         let braced = config

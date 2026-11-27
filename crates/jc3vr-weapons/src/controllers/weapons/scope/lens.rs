@@ -1,6 +1,6 @@
 //! The lens's geometry, all pure: where the eyepiece is, which eye sights through it, and the lens
-//! draw it hands the pass ([`jc3vr_view::controllers::lens_frame`]), which holds
-//! the draw's constants.
+//! draw it hands the pass ([`jc3vr_view::controllers::lens_frame`]), which holds the draw's
+//! constants.
 //!
 //! The sight line is kept in the holding hand's wrist frame between aim updates, so the lens follows
 //! the controller at frame rate while the sight line itself is refreshed at the sim rate. The
@@ -145,8 +145,8 @@ mod tests {
     use crate::controllers::weapons::handling_tuning::HANDLING;
 
     /// The scene point the lens shows at `q` (the lens's unit disc, +x right and +y up), relative to
-    /// the source eye: `eyepiece_from_source` is the eyepiece relative to that eye. The lens pixel shader
-    /// computes the same.
+    /// the source eye: `eyepiece_from_source` is the eyepiece relative to that eye. The lens pixel
+    /// shader computes the same.
     fn sample_point(lens: &Lens, eyepiece_from_source: Vec3, tangent: f32, q: glam::Vec2) -> Vec3 {
         let (right, up) = lens_basis(lens.direction);
         let direction = (lens.direction + (right * q.x + up * q.y) * tangent).normalize();
@@ -228,7 +228,8 @@ mod tests {
         };
         let c = config();
         let tangent = field_tangent(c.lens_radius_m, eye_distance, c.zoom);
-        // The rim, seen at radius / distance off the sight line, shows the scene at a quarter of that.
+        // The rim, seen at radius / distance off the sight line, shows the scene at that over the
+        // zoom.
         let point = sample_point(&lens, lens.eyepiece, tangent, Vec2::X);
         let shown = point.x / -point.z;
         let seen = c.lens_radius_m / eye_distance;

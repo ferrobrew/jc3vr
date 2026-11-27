@@ -11,27 +11,26 @@
 //! hand's gun has a weight, a spring, and a freeze of its own; everything else reads that.
 //!
 //! - The pose: [`apply`] turns the holding hand's poses about the controller's grip, on the active
-//!   hands every hand subsystem starts from ([`jc3vr_body::controllers::hands::active_hands`]), so the
-//!   IK, the late update, the gun's sight line, and the overlay all carry it, and a shot goes where
-//!   the drooping gun points. The barrel is the wrist frame's fingers axis, not the controller's
-//!   grip -Z, which runs up the handle. The gun pitches down about the horizontal axis across its
-//!   barrel, by the sag plus the one-handed reach sag as the hand moves away from the head, scaled
-//!   by how level the barrel is; held in one hand it sways in pitch about that axis and in yaw
-//!   about the vertical, on two incommensurate sine waves; and the result is
-//!   followed on a damped rotational spring, so the gun trails a fast turn and settles after it.
-//!   The one-handed and the braced weights blend by how far the foregrip is engaged ([`pose::Weight`]).
-//!   While the foregrip is held, the off-hand is turned with the gun, so the gun drives both hands
-//!   and they stay on it; the braced weight's angle is capped small, so the hands never stray far
-//!   from the controllers.
+//!   hands every hand subsystem starts from (through the body's gun targets,
+//!   [`jc3vr_body::contributions::BodyContributions::gun_targets`]), so the IK, the late update,
+//!   the gun's sight line, and the overlay all carry it, and a shot goes where the drooping gun
+//!   points. The barrel is the wrist frame's fingers axis, not the controller's grip -Z, which runs
+//!   up the handle. The gun pitches down about the horizontal axis across its barrel, by the sag
+//!   plus the one-handed reach sag as the hand moves away from the head, scaled by how level the
+//!   barrel is; held in one hand it sways in pitch about that axis and in yaw about the vertical,
+//!   on two incommensurate sine waves; and the result is followed on a damped rotational spring, so
+//!   the gun trails a fast turn and settles after it. The one-handed and the braced weights blend
+//!   by how far the foregrip is engaged ([`pose::Weight`]). While the foregrip is held, the
+//!   off-hand is turned with the gun, so the gun drives both hands and they stay on it; the braced
+//!   weight's angle is capped small, so the hands never stray far from the controllers.
 //! - The kick: the recoil multiplies a one-handed shot's kick by the class's kick scale
 //!   ([`one_hand_kick`]); the foregrip's own two-hand kick scale takes over as the grip engages.
 //! - The spread: a detour on [`WeaponBase::GetCurrentScatterValue`] multiplies the scatter the game
 //!   gives the local player's shot by the class's spread scale ([`spread_scale`]).
 //!
 //! The off-hand's foregrip weight ([`foregrip::two_hand_grip`]) scales the one-handed weight down
-//! to nothing, and the braced weight up from nothing.
-//! The spring runs on wall-clock time and is advanced lazily by whichever thread reads the hands, as
-//! the recoil's is.
+//! to nothing, and the braced weight up from nothing. The spring runs on wall-clock time and is
+//! advanced lazily by whichever thread reads the hands, as the recoil's is.
 //!
 //! [`WeaponBase::m_Class`]: jc3gi::equipment::weapon::WeaponBase::m_Class
 //! [`WeaponBase::GetCurrentScatterValue`]: jc3gi::equipment::weapon::WeaponBase::GetCurrentScatterValue
@@ -63,7 +62,6 @@ pub(super) fn hook_library() -> HookLibrary {
 /// A weapon the weight acts on, as the input tick saw it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HeftTarget {
-    /// The hand holding it.
     pub hand: Hand,
     pub class: HeftClass,
     /// The weapon's address.

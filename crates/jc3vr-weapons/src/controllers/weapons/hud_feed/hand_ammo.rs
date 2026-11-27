@@ -41,8 +41,8 @@ pub struct HandsAmmo {
     pub hands: [Option<HandAmmo>; 2],
 }
 
-/// Sample the gun in each hand, by [`Hand::index`](jc3vr_input::frame::Hand::index), for the HUD. Called each input tick of the
-/// weapon handling.
+/// Sample the gun in each hand, by [`Hand::index`](jc3vr_input::frame::Hand::index), for the HUD.
+/// Called each input tick of the weapon handling.
 ///
 /// # Safety
 ///
@@ -74,7 +74,7 @@ pub(crate) unsafe fn observe(guns: [Option<usize>; 2]) {
     *SAMPLE.lock() = Some(HandsAmmo { hands });
 }
 
-/// Forget the sample: the weapon handling stood down.
+/// Forget the sample: the hands went inert and the weapon handling stood down.
 pub(crate) fn clear() {
     *SAMPLE.lock() = None;
 }

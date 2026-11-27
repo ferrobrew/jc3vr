@@ -13,9 +13,10 @@
 //! probe and its own wall.
 //!
 //! The probe is cast along the gun's pose before the push ([`apply`] notes it), so the push never
-//! feeds back into where the wall is looked for. The pose is applied last on the cockpit-frame
-//! hands ([`jc3vr_body::controllers::hands::active_hands`]), after the sights and the recoil, so the
-//! drawn gun, its sight line, and the IK targets all see the gun where the wall stops it.
+//! feeds back into where the wall is looked for. The push is a stage of the hand composition on the
+//! cockpit-frame hands (`jc3vr_body::controllers::hands::active_hands`), after the sights and the
+//! recoil, so the drawn gun, its sight line, and the IK targets all see the gun where the wall
+//! stops it.
 
 pub mod solve;
 

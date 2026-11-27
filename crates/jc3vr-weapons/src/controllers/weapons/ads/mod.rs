@@ -12,11 +12,11 @@
 //! shoulder lets go of eases back to the hands, and a gun that changes the inputs in a step (the
 //! front hand coming onto the foregrip, the raised gun changing hands) glides rather than snaps.
 //!
-//! The pose is applied in [`apply`], on the cockpit-frame hands every hand subsystem starts from
-//! ([`jc3vr_body::controllers::hands::active_hands`]), after the two-handed pose and the weight, so the
-//! IK targets, the render-time late update, the sight line the gun aim casts, and the scope's lens
-//! all see the gun where the eye has it. The holding hand rides the gun, and the hand on the
-//! foregrip with it.
+//! The pose is applied in [`apply`], a stage of the hand composition on the cockpit-frame hands
+//! every hand subsystem starts from (`jc3vr_body::controllers::hands::active_hands`), after the
+//! two-handed pose and the weight, so the IK targets, the render-time late update, the sight line
+//! the gun aim casts, and the scope's lens all see the gun where the eye has it. The holding hand
+//! rides the gun, and the hand on the foregrip with it.
 //!
 //! The gun's sight line in the holding wrist's frame is measured on the input tick with the
 //! foregrip's geometry ([`observe`]), from the gun's last placement and the wrist target it was

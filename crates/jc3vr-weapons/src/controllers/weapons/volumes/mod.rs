@@ -5,9 +5,11 @@
 //! The volumes ride the character's skeleton, the body the player sees, carried into the cockpit
 //! frame: what the player sees on the body is what they reach for, and the hands reach it as they
 //! are drawn. The belt pouch rides the pelvis (the line through the hip joints) and the chest
-//! pouches ride the chest (the line through the shoulder joints), both turned up along the spine ([`BodyFrame`]), so the volumes follow the body through a crouch,
-//! a lean, a fall, or the parachute as the animation and the procedural body pose it. Lengths that
-//! scale with the body are fractions of the skeleton's own torso.
+//! pouches ride the chest (the line through the shoulder joints), both turned up along the spine
+//! ([`BodyFrame`]), so the volumes follow the body through a crouch, a lean, a fall, or the
+//! parachute as the animation and the procedural body pose it. Lengths that scale with the body
+//! are fractions of the skeleton's own torso. While Rico moves, the belt's hip joints are held
+//! steady through a stride ([`StrideFilter`]).
 //!
 //! Each volume sits at an offset from a landmark of the skeleton:
 //!
@@ -19,10 +21,10 @@
 //! The pouches' sides are laid out around the hand that holds the guns ([`gun_side`]), not the
 //! dominant hand, because the gun can ride the other hand.
 //!
-//! The landmarks of the chest's and the belt's front are on the body's surface. The magazine pouch's
-//! offset carries it out in front of the surface, and the chest pouches' brings them back to it,
-//! where a hand laid on the body closes. A look down bends the character's chest forward, which
-//! the chest pouches are kept off ([`BodyFrame::looking`]).
+//! The landmarks of the chest's and the belt's front are on the body's surface. The magazine
+//! pouch's offset carries it out in front of the surface, and the chest pouches' brings them back
+//! to it, where a hand laid on the body closes. A look down bends the character's chest forward,
+//! which the chest pouches are kept off ([`BodyFrame::looking`]).
 //!
 //! The back's free sockets are reached for docking lower and further out than their weapons sit
 //! ([`reach_back_sockets`]).
@@ -178,10 +180,9 @@ pub struct SocketTuning {
 }
 
 /// The pouches on the front of the body: the magazine pouch at the front of the belt, and the
-/// grenade and C4 pouches on either side of the chest. Each is placed only while its feature is on:
-/// the grenade pouch with the grenade throw, the C4 pouch with the C4 throw, and the magazine pouch
-/// while the true reload reloads the held weapon. Offsets are given for the right side and mirrored
-/// for the left.
+/// grenade and C4 pouches on either side of the chest. The chest pouches are placed while the
+/// pouches' mode is on and each has something to give, and the magazine pouch while the true
+/// reload reloads the held weapon. Offsets are given for the right side and mirrored for the left.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PouchTuning {
@@ -318,9 +319,9 @@ impl BodyFrame {
 /// where a hand putting one away over the shoulder closes: lower and further out from the spine, by
 /// [`VolumesTuning::back_reach_offset_m`] in the chest's frame. A long gun on the back sits with
 /// its grip up behind the head, and a hand reaching over the shoulder to put a gun there closes
-/// below and outside that. Only the reach for docking moves: a draw is reached on
-/// the weapon the player sees, a docked weapon stays where its socket puts it, and the attraction
-/// travels a weapon to the socket's own place.
+/// below and outside that. Only the reach for docking moves: a draw is reached on the weapon the
+/// player sees, a docked weapon stays where its socket puts it, and the attraction travels a weapon
+/// to the socket's own place.
 pub(crate) fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
     let back_reach = HOLD.get().volumes.back_reach_offset_m;
     let midline = body.skeleton.chest();
@@ -372,9 +373,9 @@ pub(crate) struct ChestSides {
 }
 
 /// The chest's sides for a player whose dominant hand is `dominant`: the grenade pouch on the
-/// dominant side and the C4 pouch on the other. Unlike the magazine pouch, they do not follow the gun
-/// hand: with a pistol in each hand there is no single gun hand, and pouches that changed sides with
-/// each handover would have to be found again each time.
+/// dominant side and the C4 pouch on the other. Unlike the magazine pouch, they do not follow the
+/// gun hand: with a pistol in each hand there is no single gun hand, and pouches that changed sides
+/// with each handover would have to be found again each time.
 pub(crate) fn chest_sides(dominant: Hand) -> ChestSides {
     ChestSides {
         grenade: dominant,

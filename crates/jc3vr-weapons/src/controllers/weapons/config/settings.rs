@@ -13,7 +13,7 @@ use crate::controllers::weapons::config::{WEAPONS_CONFIG, WeaponsConfig};
 /// configuration guards are held at once, and the tick then reads them all from this one copy.
 #[derive(Clone)]
 pub struct WeaponSettings {
-    /// The controllers' master switch ([`scheme::CONTROLLERS_ENABLED`]).
+    /// The controllers' master switch ([`scheme::enabled`]).
     pub enabled: bool,
     /// The hand the roles follow ([`scheme::acting_hand`]).
     pub dominant: Hand,

@@ -1,7 +1,7 @@
-//! The weapon-handling settings (the sockets, the recoil, and the hands' hold), held in
-//! [`WeaponsConfig`] beside the other weapon-handling subsystems' toggles. The reload's are in
-//! [`crate::controllers::weapons::reload::config`].
-//! Each feature keeps its switches here; its fixed tuning is a constant in the module that owns it.
+//! The weapon-handling settings: the sockets', the recoil's, and the hands' hold's groups, held in
+//! [`WeaponsConfig`] beside the reload's ([`crate::controllers::weapons::reload::config`]) and the
+//! wheel's ([`crate::controllers::weapons::wheel::config`]), and [`WeaponSettings`], the copy one
+//! tick reads. Only switches live here; each feature's tuning is in the crate's `tuning/*.toml`.
 
 mod group;
 mod settings;

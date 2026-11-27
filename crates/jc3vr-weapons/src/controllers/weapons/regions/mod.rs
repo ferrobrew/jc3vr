@@ -19,8 +19,8 @@
 //!   slides onto the grip from wherever it braced ([`grip_from_brace`]): the gun glides through the
 //!   hand ([`slid_anchor`]) and turns onto the canonical grip over the same slide.
 //!
-//! The region definitions are the module's public surface, for any system that needs to know
-//! where on a gun a hand is (the action's region among them). Only long guns (the two-handed,
+//! The region definitions are what the other weapon subsystems and the readout use to know where
+//! on a gun a hand is (the action's region among them). Only long guns (the two-handed,
 //! special, and heavy slots) are braced along their length; a pistol keeps its grip.
 //!
 //! A brace needs the other hand free, so only the long gun in a hand whose other hand is free is

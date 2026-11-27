@@ -1,5 +1,6 @@
 //! A gun's shape read from the game: its model's box, its fire point, its other hand's grip point,
-//! and the wells table's magazine well and action, all in the gun's own frame.
+//! and the wells table's magazine well and action, all in the gun's own frame; and the long guns
+//! docked on the body's sockets with their shapes.
 
 use glam::{Mat4, Vec3};
 use jc3gi::{

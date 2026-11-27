@@ -1,37 +1,42 @@
-//! The game's models of what the body's pouches hold, drawn on the pouches: a grenade on the grenade
-//! pouch, a C4 charge on the C4 pouch (or the detonator, once no charge is left to give), and the
-//! held gun's magazine on the magazine pouch, so the
-//! player sees on Rico's body what a hand reaching there takes. The magazine a hand takes from the
-//! pouch is drawn in that hand the same way ([`hand_tick`]), and so is a shell or a revolver's
-//! cylinder of rounds, which the game has no model of, with the casing the gun's ejection effect
-//! throws out as a stand-in. The belt pouch a revolver is pushed onto draws a speedloader of the
-//! same casings ([`speedloader`]).
+//! The game's models of what the body's pouches hold, drawn on the pouches: a grenade on the
+//! grenade pouch, a C4 charge on the C4 pouch (or the detonator, once no charge is left to give),
+//! and the held gun's magazine on the magazine pouch, so the player sees on Rico's body what a hand
+//! reaching there takes. The magazine a hand takes from the pouch is drawn in that hand the same
+//! way ([`hand_tick`]), and so is a shell or a revolver's cylinder of rounds, which the game has no
+//! model of, with the casing the gun's ejection effect throws out as a stand-in. The belt pouch a
+//! revolver is pushed onto draws a speedloader of the same casings ([`speedloader`]).
 //!
 //! Each model is an instance the payload owns, made from a model the game already holds for the
 //! item's lifetime ([`ModelInstanceManager::CreateInstanceFromModel`]): the grenade weapon's
 //! projectile model ([`ThrownGrenadeWeapon::m_PhysicalProjectileModel`]), the C4 weapon's in-hand
 //! model ([`PlantedExplosiveWeapon::m_InactiveModelInstance`]), the C4 weapon's trigger model
-//! ([`trigger_model`]), the gun's spare magazine prop's
-//! model ([`WeaponData::m_MagazineObject`], [`RigidObject::m_Model`]), and the casing model, which
-//! the gun's effects keep in the game's model cache while the gun is loaded
-//! ([`ModelInstanceManager::CreateInstanceFromHash`]). The instance keeps its own
-//! reference to the model, and the engine's cull draws it once it is in the world, with no physics
-//! and no game object behind it ([`owned`]). A gun's magazine on the belt and in the hand are both
-//! such instances of its spare magazine's model, and either one keeps that model for the weapon
-//! while the game respawns the spare after a magazine is dropped.
+//! ([`trigger_model`]), the gun's spare magazine prop's model ([`WeaponData::m_MagazineObject`],
+//! [`RigidObject::m_Model`]), and the casing model, which the gun's effects keep in the game's
+//! model cache while the gun is loaded ([`ModelInstanceManager::CreateInstanceFromHash`]). The
+//! instance keeps its own reference to the model, and the engine's cull draws it once it is in the
+//! world, with no physics and no game object behind it ([`owned`]). A gun's magazine on the belt
+//! and in the hand are both such instances of its spare magazine's model, and either one keeps that
+//! model for the weapon while the game respawns the spare after a magazine is dropped.
 //!
 //! The input tick ([`input_tick`]) places each model where its pouch is, in the character's model
-//! space, and keeps the last two ticks' placements. The render frame ([`render_frame`]) draws it
-//! between them, carried by the character's interpolated world transform at the frame's
-//! interpolation fraction, so it rides the body as the body is drawn rather than a tick behind
-//! it ([render-time-anchoring.md](../../../../docs/mod/rendering/render-time-anchoring.md)). The
-//! magazine in the hand is drawn where the reload draws the round in the hand at the same fraction
+//! space and relative to the bone its pouch rides, and keeps the last two ticks' placements. The
+//! render frame ([`render_frame`]) draws it on that bone as the body is posed now, carried by the
+//! character's interpolated world transform at the frame's interpolation fraction, or between the
+//! two placements when the bone cannot be read, so it rides the body as the body is drawn rather
+//! than a tick behind it (`docs/mod/rendering/render-time-anchoring.md`). The magazine in the hand
+//! is drawn where the reload draws the round in the hand at the same fraction
 //! ([`reload::held_round_matrix`]), on the hand as it is drawn.
 //!
 //! The instances are created, shown, hidden, and released on the game thread before the world
 //! update, as the engine requires. A model whose pouch is not offered is hidden, as is the hand's
 //! magazine once the hand no longer holds it; every instance is released outside gameplay, when
-//! its source model changes (another gun's magazine), and when the payload unloads.
+//! the local player changes, when its source model changes (another gun's magazine), and when the
+//! payload unloads.
+//!
+//! [`ModelInstanceManager::CreateInstanceFromModel`]: jc3gi::graphics_engine::model_instance::ModelInstanceManager::CreateInstanceFromModel
+//! [`ModelInstanceManager::CreateInstanceFromHash`]: jc3gi::graphics_engine::model_instance::ModelInstanceManager::CreateInstanceFromHash
+//! [`WeaponData::m_MagazineObject`]: jc3gi::equipment::weapon::WeaponData::m_MagazineObject
+//! [`RigidObject::m_Model`]: jc3gi::physics::RigidObject::m_Model
 
 use std::{
     collections::BTreeSet,
@@ -167,7 +172,7 @@ pub struct PouchModelsStatus {
     pub shown: [bool; Prop::COUNT],
     /// Whether a magazine or a stand-in round is drawn in a hand.
     pub hand: bool,
-    /// Whether the round in the hand is the stand-in round model, and how many are drawn.
+    /// How many stand-in rounds are drawn in the hand: zero for a spare magazine or nothing.
     pub hand_rounds: usize,
     /// How many rounds each gun hand's speedloader on its belt pouch shows, by [`Hand::index`].
     pub(crate) speedloaders: [usize; 2],
@@ -325,10 +330,10 @@ pub(crate) fn input_tick(game: &GameTick<'_>, frames: Option<Frames>, shown: &[S
 
 /// Draw the round `request` asks for in the hand holding a round from its pouch, or with `None`,
 /// in no hand: the gun's spare magazine model, or the stand-in round model, one instance per round
-/// the hand holds. Returns whether the instances draw it; when they do not (the pouches' models
-/// off, no magazine model for the gun, or the stand-in not in the game's model cache), the reload
-/// draws the round in the hand with the gun's own part, if it has one. The reload places it each
-/// frame ([`reload::held_round_matrix`]).
+/// the hand holds. Returns whether the instances draw it; when they do not (no local player the
+/// pouches' models follow, no magazine model for the gun, or the stand-in not in the game's model
+/// cache), the reload draws the round in the hand with the gun's own part, if it has one. The
+/// reload places it each frame ([`reload::held_round_matrix`]).
 ///
 /// # Safety
 ///
@@ -743,10 +748,10 @@ fn ensure_cleanup() {
 }
 
 /// The model `prop` is drawn with for `owner`: the grenade weapon's projectile model, the C4
-/// weapon's in-hand model or its trigger model, or a magazine model of the gun at `weapon` ([`magazine_source`]). While
-/// the source is missing (a gun's spare magazine is respawned a while after each one it drops),
-/// the model `own` (the prop's instance) or, for a magazine, `hand` (the hand's) already holds for
-/// the same weapon; `None` without either.
+/// weapon's in-hand model or its trigger model, or a magazine model of the gun at `weapon`
+/// ([`magazine_source`]). While the source is missing (a gun's spare magazine is respawned a while
+/// after each one it drops), the model `own` (the prop's instance) or, for a magazine, `hand` (the
+/// hand's) already holds for the same weapon; `None` without either.
 ///
 /// # Safety
 ///

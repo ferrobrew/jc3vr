@@ -56,7 +56,7 @@ fn standing(dims: &BodyDimensions) -> BodyFrame {
     frame_of(ideal_skeleton(dims, 0.0))
 }
 
-/// One unclaimed socket volume per socket with a place on the body, for the draw restriction.
+/// One unclaimed socket volume per socket with a place on the body, for [`reserve_long_guns`].
 fn sockets() -> Vec<Candidate> {
     Socket::ALL
         .into_iter()

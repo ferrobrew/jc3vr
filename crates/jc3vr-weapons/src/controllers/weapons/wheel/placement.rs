@@ -14,8 +14,8 @@
 //! leaf lock) and the HUD and UI manager it is called with.
 //!
 //! With the HUD atlas on, the capture seam moves the cross from wherever this placed it into an
-//! atlas cell for the capture, and the HUD draws that cell at the steering hand
-//! (`hud::anchored`, from [`crate::controllers::weapons::wheel::cross_anchor`]); the cross is moved back to this
+//! atlas cell for the capture, and the HUD draws that cell at the steering hand (`hud::anchored`,
+//! from [`crate::controllers::weapons::wheel::cross_anchor`]); the cross is moved back to this
 //! placement after the capture, so this stays the placement the game sees and the fallback
 //! whenever the atlas does not draw the cross.
 

@@ -4,22 +4,22 @@
 //!   the character) refused under the controller scheme;
 //! - [`lens`]: the lens's geometry: the eyepiece on the sight line, the sighting eye, and the
 //!   magnification;
-//! - the render layer's `controllers::weapons::scope::renderer`: the D3D11 pipeline that copies the
-//!   eyes' images and draws the lens;
-//! - the render layer's `controllers::weapons::scope::pass`: the capture and the draw, which read
-//!   the frame's lens this module plans through the view layer's [`lens_frame`].
+//! - the render layer's `controllers::scope::renderer`: the D3D11 pipeline that copies the eyes'
+//!   images and draws the lens;
+//! - the render layer's `controllers::scope::pass`: the capture and the draw, which read the
+//!   frame's lens this module plans through the view layer's [`lens_frame`].
 //!
 //! The lens is a magnified resample of a rendered eye image, drawn as a disc at the scope's eyepiece
 //! while an eye is within [`LensTuning::max_eye_distance_m`](lens::LensTuning::max_eye_distance_m)
-//! of it. The scene is not rendered a
-//! third time: the scope is at the eye and looks along almost the same line, so the region around
-//! the sight line's projection, magnified, is the scope's view, correct in parallax at the aim
-//! point. The sighting eye's own image has the scope's model in front of that region, so by default
-//! the lens reads the other eye's image, which the scope does not block ([`lens::source_eye`]). A
-//! narrow-field scene render of its own is not built.
+//! of it. The scene is not rendered a third time: the scope is at the eye and looks along almost
+//! the same line, so the region around the sight line's projection, magnified, is the scope's view,
+//! correct in parallax at the aim point. The sighting eye's own image has the scope's model in
+//! front of that region, so by default the lens reads the other eye's image, which the scope does
+//! not block (the render layer's `pass::source_eye`). A narrow-field scene render of its own is not
+//! built.
 //!
 //! The frame runs in three steps at the end of `RenderEngine::PostDraw`, beside the world-space
-//! overlay:
+//! overlay (gameplay's dispatch ticks run [`tick`] after the overlay's):
 //!
 //! 1. [`tick`], once per frame on the first eye, outside the engine's context lock: the scoped
 //!    weapon, its sight line anchored to the holding wrist, the lens placed from the render-time
@@ -132,7 +132,7 @@ pub struct ScopeStatus {
     pub error: Option<String>,
 }
 
-/// The latest readout: the frame's plan, with what the [`pass`] drew.
+/// The latest readout: the frame's plan, with what the render layer's scope pass drew.
 pub fn status() -> ScopeStatus {
     let drawn = lens_frame::draw_status();
     ScopeStatus {

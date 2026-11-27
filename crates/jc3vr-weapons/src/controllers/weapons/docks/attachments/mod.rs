@@ -1,7 +1,7 @@
 //! Copied weapon-socket observations shared by docking and the body mirror.
 //!
 //! Engine objects are observed only by the input-thread caller. These values neither keep an
-//! object alive nor authorize a grab; the loadout and the existing grab rules retain that role.
+//! object alive nor authorize a grab; the loadout and the grab rules keep that role.
 
 use std::time::{Duration, Instant};
 
@@ -65,7 +65,7 @@ pub(crate) struct Sample {
 }
 
 impl Sample {
-    /// The actual docking points, without changing the resolver's hand or socket decisions.
+    /// The hand-specific docking points, without changing the resolver's hand or socket decisions.
     pub(crate) fn points(&self) -> Vec<SocketPoint> {
         self.attachments
             .iter()
@@ -140,7 +140,7 @@ pub(crate) fn waist_relocation(native: Mat4, target: Mat4, grip: Vec3) -> Mat4 {
     Mat4::from_rotation_translation(rotation, target.w_axis.truncate() - rotation * grip)
 }
 
-/// The production placement rule for both the docking points and the mirror's copied values.
+/// The placement rule shared by the docking points and the body mirror's copied values.
 pub(crate) fn socket_pose(
     character: Mat4,
     bone: Option<Mat4>,

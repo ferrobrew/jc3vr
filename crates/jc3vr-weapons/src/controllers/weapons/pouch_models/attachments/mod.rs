@@ -11,7 +11,8 @@ use crate::controllers::weapons::{
     pouch_models::{ModelPlacement, Prop, ShownPouch, on_pouch},
 };
 
-/// A pouch's missing value is distinct from one whose current source model is unavailable.
+/// Why a pouch's placement is missing: the pouch is not offered, its source model is unavailable,
+/// or its transform is unusable.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Missing {
     NotOffered,
@@ -51,7 +52,7 @@ pub(crate) struct RenderSample {
     pub models: [Option<RenderedModel>; Prop::COUNT],
 }
 
-/// A value copied immediately after applying this matrix to the owned instance.
+/// The matrix pushed to a prop's owned instance and the model it drew, copied right after the push.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct RenderedModel {
     pub model: usize,

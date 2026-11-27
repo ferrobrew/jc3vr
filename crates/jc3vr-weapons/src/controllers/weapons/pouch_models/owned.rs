@@ -9,6 +9,8 @@
 //! instance of the same magazine can be made from its reference ([`magazine_source`]). A model
 //! that only the game's model cache holds by name is instanced from the cache
 //! ([`OwnedModel::show_cached`]).
+//!
+//! [`RigidObject::m_Model`]: jc3gi::physics::RigidObject::m_Model
 
 use glam::Mat4;
 use jc3gi::{
