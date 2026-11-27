@@ -2,15 +2,15 @@
 //! settings, `VR: COMFORT` ([`comfort`]) for the view, posture, turning, and movement, and
 //! `VR: DISPLAY` ([`display`]) for the rendering and the floating panel, and the glue they and the
 //! body page share. The pages hold only what a player reaches for in the headset; the feature
-//! switches, the tuning, and the status lines ([`crate::status`]) are in the debug UI. See
-//! `docs/mod/pause-menu.md` for the menu itself.
+//! switches and the status lines ([`crate::status`]) are in the debug UI, and the tuning is in the
+//! crates' tuning files. See `docs/mod/pause-menu.md` for the menu itself.
 //!
 //! The pages edit the live configuration, so every change applies at once, and each change goes
 //! through a slot's edit guard, so the settings file saves it like any other change the user makes.
 //! The macros below build an item from a slot and a place expression in its part of the
-//! configuration (`CONTROLLERS_CONFIG, |c| c.aim.assist_strength`): the item reads the place, writes it, and
-//! takes its default from the configuration's defaults, so the menu's defaults are the
-//! configuration's.
+//! configuration (`CONTROLLERS_CONFIG, |c| c.aim.assist_strength`): the item reads the place,
+//! writes it, and takes its default from the configuration's defaults, so the menu's defaults are
+//! the configuration's.
 
 pub(crate) mod comfort;
 pub(crate) mod controls;

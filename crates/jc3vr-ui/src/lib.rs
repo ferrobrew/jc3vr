@@ -20,17 +20,18 @@
 //! # The public surface
 //!
 //! Only the payload names this crate, so an item is `pub` exactly when the payload's frame driver,
-//! shutdown, or composition names it: the debug window and the banners ([`ui::egui_debug_window`],
-//! [`ui::startup_banner`], and [`ui::restart_banner`]), the layout writer's shutdown
-//! ([`ui::layout::shutdown`]), and the pause menu's detours
+//! shutdown, composition, or tuning loader names it: the debug window and the banners
+//! ([`ui::egui_debug_window`], [`ui::startup_banner`], and [`ui::restart_banner`]), the layout
+//! writer's shutdown ([`ui::layout::shutdown`]), the pause menu's detours
 //! ([`pause_menu::hook_library`]), which the payload enables in its own order with the other
-//! layers'. Everything else keeps its crate-private visibility.
+//! layers', and the tuning file ([`tuning::UI`]). Everything else keeps its crate-private
+//! visibility.
 //!
 //! The panels, on the other hand, reach deep into the layers below: they read and edit the
 //! settings of every subsystem through its slot and show its live state, so most of the public
 //! surface of the gameplay, render, HUD, and tooling crates exists for this crate. The crate owns
-//! no settings of its own, only its tuning file ([`tuning`]), and its build script embeds the newest session's checklist
-//! (`docs/sessions/<stamp>/next-session.md`) for [`ui`]'s session checklist.
+//! no settings of its own, only its tuning file, and its build script embeds the newest session's
+//! checklist (`docs/sessions/<stamp>/next-session.md`) for [`ui`]'s session checklist.
 
 pub mod controllers;
 pub mod pause_menu;

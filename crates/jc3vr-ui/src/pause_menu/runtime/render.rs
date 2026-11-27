@@ -1,7 +1,7 @@
-//! The movie side of the settings screen: putting the VR tabs on the screen's tab bar, installing
-//! a page's rows, keeping each tab's scroll position, and, each frame, moving the highlight off
-//! section headers, styling the header rows, and writing live text into the visible rows. Everything here goes through
-//! [`GfxValue`] and starts from the pause screen's clip.
+//! The movie side of the settings screen: putting the VR tabs on the screen's tab bar, installing a
+//! page's rows, keeping each tab's scroll position, and, each frame, moving the highlight off
+//! section headers, styling the header rows, and writing live text into the visible rows.
+//! Everything here goes through [`GfxValue`] and starts from the pause screen's clip.
 
 use std::ffi::{CStr, CString};
 

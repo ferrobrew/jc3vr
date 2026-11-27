@@ -82,7 +82,7 @@ fn confirm_reset() -> Page {
 
 /// Reset every setting `VR: CONTROLS` and `VR: COMFORT` show to its default, through the pages'
 /// own items, so that the reset covers what the player can see and nothing else: the debug UI's
-/// tuning, the body page, and the sight calibration keep their values. The dominant hand is kept
+/// switches, the body page, and the sight calibration keep their values. The dominant hand is kept
 /// too: it is a choice about the player rather than a preference, and changing it takes a restart.
 /// A choice the reset changes can show rows its old value hid, so the pages are reset again
 /// until the rows they show stop changing.
@@ -128,7 +128,7 @@ fn on_close() {
 }
 
 /// Rebuild the page when the wingsuit's pitch measure changed since it was built, so that the
-/// calibration rows show only for the measure that has them.
+/// calibration row shows only for the measure that has one.
 fn on_frame() -> ButtonOutcome {
     let pitch_by = read(&CONTROLLERS_CONFIG, |c| c.vehicles.arm_steering.pitch_by);
     if built_pitch() == Some(pitch_by) || CONFIRMING_RESET.load(Ordering::Relaxed) {
@@ -138,7 +138,7 @@ fn on_frame() -> ButtonOutcome {
     }
 }
 
-/// The calibration rows of the wingsuit's pitch measure: the wrists' tilt has a capture of the
+/// The calibration row of the wingsuit's pitch measure: the wrists' tilt has a capture of the
 /// relaxed tilt as the neutral; the hands' height and the arms' sweep have none.
 fn pitch_rows(page: Page) -> Page {
     let pitch_by = read(&CONTROLLERS_CONFIG, |c| c.vehicles.arm_steering.pitch_by);
@@ -233,8 +233,7 @@ mod tests {
             controllers.dominant_hand = Hand::Left;
             controllers.bindings.move_deadzone = 0.3;
             controllers.locomotion.stick.enabled = false;
-            // Not on either page: the debug UI's switches and tuning, the body page, and the
-            // display.
+            // Not on either page: the debug UI's switches, the body page, and the display.
             controllers.input.hand_tracking = false;
             controllers.body.remap_head = false;
             controllers.body.estimator.enabled = false;

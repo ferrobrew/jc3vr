@@ -1,4 +1,4 @@
-//! The registry of VR pages: one tab per page under the options menu's VR entry, in this order. A
+//! The registry of VR pages: one tab per page under the pause menu's VR entry, in this order. A
 //! page's definition lives beside the settings it edits; register it here.
 
 use crate::{

@@ -115,7 +115,7 @@ pub(super) fn haptics_section(page: Page) -> Page {
             .game_rumble))
 }
 
-/// The `VEHICLES` section, up to the wingsuit's pitch measure (whose calibration rows
+/// The `VEHICLES` section, up to the wingsuit's pitch measure (whose calibration row
 /// `crate::controllers::menu::controls::pitch_rows` adds, between this section and
 /// `parachute_and_saved_settings_section`).
 pub(super) fn vehicles_section(page: Page) -> Page {
@@ -150,7 +150,7 @@ pub(super) fn vehicles_section(page: Page) -> Page {
 
 /// The rest of the `VEHICLES` section (the wingsuit's pitch inversion and the parachute handles)
 /// and the `SAVED SETTINGS` section, after `crate::controllers::menu::controls::pitch_rows` has
-/// added the wingsuit's calibration rows.
+/// added the wingsuit's calibration row.
 pub(super) fn parachute_and_saved_settings_section(page: Page) -> Page {
     page.item(config_toggle!(
         "INVERT WINGSUIT PITCH",
@@ -189,7 +189,7 @@ pub(super) const WHEEL_TRACKING: [WheelTracking; 2] =
     [WheelTracking::Position, WheelTracking::Twist];
 pub(super) const WHEEL_TRACKING_LABELS: [&str; 2] = ["HAND TRAVEL", "WRIST TWIST"];
 
-/// By [`ArmPitch::ALL`].
+/// In the order of [`ArmPitch::ALL`].
 pub(super) const ARM_PITCH_LABELS: [&str; 3] = ["WRIST TILT", "HAND HEIGHT", "ARM SWEEP"];
 
 // Slider notch counts are multiples of ten: the movie's keyboard step is a tenth of the notches,
@@ -201,7 +201,7 @@ pub(super) const UNIT_RANGE: SliderRange = SliderRange::new(0.0, 1.0, 100);
 pub(super) const DEADZONE_RANGE: SliderRange = SliderRange::new(0.0, 0.5, 50);
 /// The recoil kick scale, in twentieths.
 pub(super) const RECOIL_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);
-/// The steering wheel's full lock either way, degrees, in degrees: at most half a turn.
+/// The steering wheel's full lock either way, in whole degrees: at most half a turn.
 pub(super) const WHEEL_LOCK_RANGE: SliderRange = SliderRange::new(60.0, 180.0, 120);
 /// The hands' strength scale, in twentieths.
 pub(super) const STRENGTH_RANGE: SliderRange = SliderRange::new(0.0, 2.0, 40);

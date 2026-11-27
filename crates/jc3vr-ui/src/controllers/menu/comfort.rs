@@ -1,8 +1,8 @@
 //! The `VR: COMFORT` page: recentering the view, the posture, the body following the head, the
 //! fade when the head is in a wall, turning, the stick movement, the view on the grapple, and the
 //! view in vehicles: getting in, and the driver's view at the wheel. The recenter is an action,
-//! not a setting. The comfort tuning (the fades' times, the crouch, the lean, the stick's rates)
-//! is in the debug UI.
+//! not a setting. The comfort tuning (the fades' times, the crouch, the lean, and the stick's
+//! rates) is in the body crate's tuning files.
 
 use jc3vr_body::controllers::roomscale::{
     config::{Posture, SeatTransition},
