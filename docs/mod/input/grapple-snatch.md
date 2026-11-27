@@ -73,7 +73,7 @@ A rack's weapon has no body, the aim never hits it, and the game offers it only 
 
 - A finite rack's weapon gets [`WeaponBase::PickupStart`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##func-PickupStart), which has no distance test and tells the rack, and then drops where it hangs. A locker's drops the same way.
 - A rack with unlimited stock ([`WeaponBase::m_InfinitePickup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponBase##field-m_InfinitePickup)) is asked for a copy (`hold::rack::copy`), which spawns a few frames later where the rack's weapon hangs and is dropped there; the snatch waits for it (the phase reads freeing, up to `hold.rack.copy_wait_ms`). A locker weapon with unlimited stock is not offered, since its copy would drop inside the bodies of the weapon still lying there.
-- A rack's pistol pair gives up the pistol aimed at ([paired-rack-weapons.md, "From range"](paired-rack-weapons.md#from-range)), claimed from the pair and dropped alone. The claim is settled at once, so a missed catch leaves a loose single pistol holding its share of the ammunition.
+- A rack's pistol pair gives up the pistol aimed at ([physical-weapons.md, "Paired rack pistols"](physical-weapons.md#paired-rack-pistols)), claimed from the pair and dropped alone. The claim is settled at once, so a missed catch leaves a loose single pistol holding its share of the ammunition.
 
 ### Loose objects
 
