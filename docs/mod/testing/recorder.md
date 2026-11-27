@@ -80,7 +80,7 @@ The `--target` is needed on Linux because the workspace builds for Windows by de
 - `rig-eval <file> <out.csv>` runs the grounded body rig's solver (`body-rig`) over a recording with a simulated pelvis, writes one CSV row per grounded frame (with the video's time when the take's sidecar sits beside the recording), and logs a summary of the steps, the turns, and the held leans. It runs while the recorded hand-over case is on foot, follows every recenter and follow bank, and takes the rig's tuning from `crates/jc3vr-body/tuning/rig.toml` with `--tuning <json>` overriding fields. `--pelvis recorded` or `--pelvis pre-ik` feeds it the payload's recorded rig inputs or the game's animated hips and diffs each row against the rig the game ran, and `--weights` with `--ik` replays the IK body's contacts ([rig.md](../body/rig.md#offline-evaluation), [ik-body.md](../body/ik-body.md#the-offline-replay)). `tools/analysis/plot_rig_eval.py` plots the CSV.
 - `export-rerun <file> -o <out.rrd>` writes a recording, or a stretch of it, as a Rerun recording with the take's video ([rerun.md](rerun.md)).
 - `estimate-body --weights <safetensors> <file> -o <out.csv>` runs the learned body estimator over a stretch from the recorded head and grip poses and writes its estimate at 60 Hz, starting `--lead` seconds early so the estimator's window is full ([body-estimator.md](../body/body-estimator.md)).
-- `scan-view <file>` scans a take's video for flashes and checks each against the camera's place relative to Rico's head ([view-scan.md](view-scan.md)).
+- `scan-view <file>` scans a take's video for flashes and checks each against the camera's place relative to Rico's head ([rerun.md](rerun.md#scanning-for-flashes)).
 
 ## Synthetic recordings
 
