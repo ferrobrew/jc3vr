@@ -17,7 +17,7 @@ The wheel acts where the weapon handling does (on the ground, falling, and under
 
 ## Choosing
 
-At the open the steering hand's aim is recorded. Each tick, the controller's turn from there, in the aim's own frame, picks one of four quarters centred on up (the pistols), right (the two-handed weapon), left (the special weapon), and down (the planted explosive), the layout the cross draws under gamepad semantics ([controllers.md](input/controllers.md#gamepad-semantics)). The hand leaves the centre past `wheel.point_leave_deg` and returns inside `wheel.point_return_deg`, and an arm stays chosen until the hand is `wheel.hysteresis_deg` past the line to the next.
+At the open the steering hand's aim is recorded. Each tick, the controller's turn from there, in the aim's own frame, picks one of four quarters centred on up (the pistols), right (the two-handed weapon), left (the special weapon), and down (the planted explosive), the layout the cross draws under gamepad semantics ([controllers.md](input/bindings.md#gamepad-semantics)). The hand leaves the centre past `wheel.point_leave_deg` and returns inside `wheel.point_return_deg`, and an arm stays chosen until the hand is `wheel.hysteresis_deg` past the line to the next.
 
 An arm whose slot the game does not offer counts as the centre, since the cross draws nothing there. The offer comes from the selection the game last pushed to its HUD ([`HUDUI::m_LastWeaponSelectionParams`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::hud_ui::HUDUI##field-m_LastWeaponSelectionParams)), because the planted explosive's offer depends on more than its slot holding a weapon.
 

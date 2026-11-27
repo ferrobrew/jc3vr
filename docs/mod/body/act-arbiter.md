@@ -15,7 +15,7 @@ Each owner answers with a claim: the owner, the act, and what to do with it, whi
 | Owner | Role | What it claims |
 | --- | --- | --- |
 | Vehicle reverse | Character entry | `ACT_REVERSE` and `ACT_REVERSE_MOTORBIKE` are dropped. They drive the reversing states in which Rico turns to look over his shoulder, which is the player's own head's job. |
-| Mental state | Character entry | The automatic holsters under the controller scheme ([controllers-and-roomscale.md](../input/controllers-and-roomscale.md)). |
+| Mental state | Character entry | The automatic holsters under the controller scheme ([hands-and-aiming.md](../input/hands-and-aiming.md#the-aim-state-pin-and-the-mental-state-cuts)). |
 | Locomotion | Character entry | The turn-in-place acts are dropped, and the turning starts, stops, flicks, and stunt turns are replaced ([locomotion.md, "The turning animations"](locomotion.md#the-turning-animations)). |
 | Wingsuit evade | Model entry | The barrel roll is dropped while the evade is switched off in the headset. |
 | Weapon reconcile | Submits | The draw, holster, or switch clip abort before the primary moves ([two-handed-inventory.md](../input/two-handed-inventory.md)). |

@@ -168,7 +168,7 @@ The forced neutral state ([`Character::ForceNeutralState`](https://ferrobrew.git
 
 The inventory's weapon update skips the wielded weapon in every seat but the motorcycle's, and while the boost wingsuit flies ([`Character::HasBoostWingsuit`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-HasBoostWingsuit)). There the reconcile wields nothing: it unequips the wielded weapon without waiting for the holster permission, since the game's own task would have, and every gun in a hand is armed and fired by the per-hand tick. A draw there does not wait for the draw permission either, which a car's seats withhold. The motorcycle's seat wields the gun and keeps the permission. Off the seat, the primary's weapon is wielded again.
 
-The held guns act in every control mode but the UI (`weapons::capabilities::Capabilities`): they fire, are let go, handed over, braced, docked, and reloaded in seats, while swimming, and in the wingsuit as on the ground. The pouches stay in reach in seats but not while swimming or in the wingsuit, and nothing in the world (characters' hands, racks, lockers) can be taken from a seat, the water, or the wingsuit. A hand holding anything of the table's takes no new vehicle control, cockpit button, mounted gun's handle, or parachute handle, and keeps one it already holds ([vehicle-weapons.md](vehicle-weapons.md), [steering-wheel.md](steering-wheel.md)). In the wingsuit the arms steer and gesture whatever the hands hold ([controllers.md](controllers.md)).
+The held guns act in every control mode but the UI (`weapons::capabilities::Capabilities`): they fire, are let go, handed over, braced, docked, and reloaded in seats, while swimming, and in the wingsuit as on the ground. The pouches stay in reach in seats but not while swimming or in the wingsuit, and nothing in the world (characters' hands, racks, lockers) can be taken from a seat, the water, or the wingsuit. A hand holding anything of the table's takes no new vehicle control, cockpit button, mounted gun's handle, or parachute handle, and keeps one it already holds ([vehicle-weapons.md](vehicle-weapons.md), [steering-wheel.md](steering-wheel.md)). In the wingsuit the arms steer and gesture whatever the hands hold ([flight.md](flight.md), [wingsuit-gestures.md](wingsuit-gestures.md)).
 
 ## Heavy weapons
 
@@ -203,7 +203,7 @@ The game takes the player's weapons away and gives them back at the mission chec
 | The shooting permissions, the aim mode, and the camera hints | Handled per gun by the mod's tick |
 | The base layer's holster, hide, stop-use, and heavy-drop tasks, and the forced neutral state | Refused, or undone by the reconcile ([Traversal](#traversal)) |
 | The weapon-wielded condition and the combat families | Read false for the player's base layer |
-| The combat mental state's draw and holster | Cut by the aim-state pin's mental-state cuts ([controllers-and-roomscale.md](controllers-and-roomscale.md)) |
+| The combat mental state's draw and holster | Cut by the aim-state pin's mental-state cuts ([hands-and-aiming.md](hands-and-aiming.md#the-aim-state-pin-and-the-mental-state-cuts)) |
 | The AI's threat rating, Rico's lines, the level of detail, the button hints, the store | Fed by the primary |
 | The save, the mission caches and restores, the challenges | Fed by the store projection and the sidecar; the table snapshots and restores itself |
 

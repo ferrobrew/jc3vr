@@ -20,7 +20,7 @@ Move is handled in the locomotion tasks rather than by clearing effectors (`crat
 
 ## The write path
 
-Controller input is injected as native input on the same device-poll tick, after the poll: the per-mode bindings write the game's action effectors directly, keeping each held action's hold time so that the game's tap and hold overloads work, and route menu actions to the UI action map. Nothing is injected outside the controller scheme, so a real gamepad is never fought. [controllers.md, "Bindings and injection"](controllers.md#bindings-and-injection) describes it, and the engine's write API and timing rules are in `docs/engine/gameplay/input.md`.
+Controller input is injected as native input on the same device-poll tick, after the poll: the per-mode bindings write the game's action effectors directly, keeping each held action's hold time so that the game's tap and hold overloads work, and route menu actions to the UI action map. Nothing is injected outside the controller scheme, so a real gamepad is never fought. [controllers.md, "Bindings and injection"](bindings.md) describes it, and the engine's write API and timing rules are in `docs/engine/gameplay/input.md`.
 
 ## The mouse and the UI (issue #9)
 

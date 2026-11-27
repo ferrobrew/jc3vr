@@ -135,9 +135,13 @@
 
 ### input/
 
-- [input.md](mod/input/input.md): how the mod taps, consumes, and injects the game's input.
-- [controllers.md](mod/input/controllers.md): the motion controllers as built.
-- [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md): the motion-controller and roomscale design.
+- [input.md](mod/input/input.md): the game's look, move, and mouse input under the mod.
+- [controllers.md](mod/input/controllers.md): the motion controllers: principles, the OpenXR input layer, the scheme, and mode detection.
+- [bindings.md](mod/input/bindings.md): the default layout, the binding tables and their injection, the menus, and the chords.
+- [hands-and-aiming.md](mod/input/hands-and-aiming.md): the controller-driven hands, the arm reach, the fingers, the gun and grapple aim, the overlay, and the scopes.
+- [roomscale.md](mod/input/roomscale.md): the body dimensions, the posture, the head height, crouching, the fades, and the seat transitions.
+- [weapon-handling.md](mod/input/weapon-handling.md): the pouches, the foregrip, a held gun's weight, recoil, and grenades and C4 in outline.
+- [flight.md](mod/input/flight.md): the wingsuit's arm steering and barrel roll, the parachute's handles, and the ripcord.
 - [grip.md](mod/input/grip.md): the grip and how each hand picks a grab target.
 - [grip-poses.md](mod/input/grip-poses.md): the fingers wrapping what the hand holds.
 - [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands.

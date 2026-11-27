@@ -139,7 +139,7 @@ The calibration is a three-step flow (`jc3vr_body::controllers::body::calibratio
 
 A standing calibration keeps the saved seated eye height, unless the new standing eye height is not above it. Seated, the player sits upright in the chair they play in:
 
-1. Seated eyes: the live eye height becomes the saved `seated_eye_height`, which the seated eye reference and the automatic posture's thresholds sit against ([controllers.md](input/controllers.md#body-dimensions)).
+1. Seated eyes: the live eye height becomes the saved `seated_eye_height`, which the seated eye reference and the automatic posture's thresholds sit against ([controllers.md](input/roomscale.md#body-dimensions)).
 2. Arm span: as standing, with the height estimated from the span.
 3. Review: `ESTIMATED` starts with a `HEIGHT` slider set to the estimate, for the player to correct; the standing eye height, the shoulders, the hand, and the arm segments follow it at once, and its Y reset returns the estimate. `SAVE` writes every value.
 

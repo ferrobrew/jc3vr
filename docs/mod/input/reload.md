@@ -84,7 +84,7 @@ Which part of the held gun the free hand is at decides what its grip takes (`rel
 
 ## Load
 
-The magazine pouch (the [hold tuning](../tuning.md)'s `volumes.pouches.magazine`) is one universal pouch at the middle of the belt's front, so the free hand takes from it and the gun is pushed onto it without crossing the body ([controllers.md](controllers.md#sockets-pouches-the-foregrip-and-the-action-runs-tier) places it). The reload picks the gun the pouch serves before placing it, and the pouch keeps its side while the free hand is busy with a round. Its centre for the take and the belt push is the displayed model's centre, including the model's placement offset (`pouch_models::display_centre`), so the player reaches for what they see. It hands out whatever the gun in the other hand takes and is a grab target for the hand without a gun:
+The magazine pouch (the [hold tuning](../tuning.md)'s `volumes.pouches.magazine`) is one universal pouch at the middle of the belt's front, so the free hand takes from it and the gun is pushed onto it without crossing the body ([controllers.md](weapon-handling.md#pouches) places it). The reload picks the gun the pouch serves before placing it, and the pouch keeps its side while the free hand is busy with a round. Its centre for the take and the belt push is the displayed model's centre, including the model's placement offset (`pouch_models::display_centre`), so the player reaches for what they see. It hands out whatever the gun in the other hand takes and is a grab target for the hand without a gun:
 
 - a magazine at any time, whether the gun's own is in or out, though it seats only once the well is empty (see "Knocking the old magazine out");
 - a shell or a rocket only while the gun has room;
