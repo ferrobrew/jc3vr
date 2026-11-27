@@ -36,13 +36,13 @@ pub struct Location {
 
 impl Location {
     /// The file under a packaged tuning directory: `<root>/<crate>/<file>`.
-    pub fn packaged(&self, root: &Path) -> PathBuf {
+    pub(crate) fn packaged(&self, root: &Path) -> PathBuf {
         root.join(self.crate_name).join(self.file_name)
     }
 
     /// The file in the source tree, as the build named it: `<manifest dir>/tuning/<file>`. Under
     /// wine this is a host path, which [`crate::tuning::Source::path`] converts.
-    pub fn source_tree(&self) -> String {
+    pub(crate) fn source_tree(&self) -> String {
         let separator = if self.manifest_dir.starts_with('/') {
             '/'
         } else {

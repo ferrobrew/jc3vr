@@ -18,7 +18,7 @@ use puffin::{FrameData, Reader, Scope, ScopeCollection, Stream};
 ///
 /// Scope names resolve through `base_scopes` (the profiler's continuously harvested collection)
 /// plus the frames' own `scope_delta` records for anything registered mid-capture.
-pub fn write_chrome_trace(
+pub(crate) fn write_chrome_trace(
     path: &Path,
     frames: &[Arc<FrameData>],
     base_scopes: ScopeCollection,

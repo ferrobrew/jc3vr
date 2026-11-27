@@ -81,7 +81,7 @@ impl std::error::Error for RootError {
 #[derive(Debug)]
 pub struct Resolution {
     pub root: Result<Root, RootError>,
-    pub env_problem: Option<RootError>,
+    pub(crate) env_problem: Option<RootError>,
 }
 
 /// Resolve the root from the environment, falling back to the local data directory when the

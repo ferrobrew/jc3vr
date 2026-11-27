@@ -22,7 +22,7 @@
 
 pub mod blocks;
 pub mod capture;
-pub mod chrome_trace;
+pub(crate) mod chrome_trace;
 
 use std::{
     collections::HashMap,
@@ -127,7 +127,7 @@ fn labelled_reporter(
 static SCOPE_DETAILS: Mutex<Option<puffin::ScopeCollection>> = Mutex::new(None);
 
 /// A snapshot of every scope's details seen so far.
-pub fn scope_details() -> puffin::ScopeCollection {
+pub(crate) fn scope_details() -> puffin::ScopeCollection {
     SCOPE_DETAILS.lock().clone().unwrap_or_default()
 }
 

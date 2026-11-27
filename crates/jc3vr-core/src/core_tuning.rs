@@ -18,7 +18,7 @@ crate::tuning_file! {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CoreTuning {
-    pub settings_save: SettingsSaveTuning,
+    pub(crate) settings_save: SettingsSaveTuning,
     pub teardown: TeardownTuning,
 }
 
@@ -53,18 +53,18 @@ impl Tuning for CoreTuning {
 /// ([`crate::config::engine::persist`]), milliseconds.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SettingsSaveTuning {
+pub(crate) struct SettingsSaveTuning {
     /// How long the changes must be quiet before a save.
-    pub quiet_ms: u64,
+    pub(crate) quiet_ms: u64,
     /// The longest a change waits for the changes after it to settle.
-    pub max_delay_ms: u64,
+    pub(crate) max_delay_ms: u64,
     /// How long the first retry of a failed save waits. Each further failure doubles it, up to
     /// [`SettingsSaveTuning::retry_max_ms`].
-    pub retry_first_ms: u64,
+    pub(crate) retry_first_ms: u64,
     /// The longest a retry of a failed save waits.
-    pub retry_max_ms: u64,
+    pub(crate) retry_max_ms: u64,
     /// How often a change that has not settled is compared with the file, for the save status.
-    pub compare_interval_ms: u64,
+    pub(crate) compare_interval_ms: u64,
 }
 
 /// The eject's settle waits ([`crate::lifecycle::settle_frames`]): after the cleanups, so the
@@ -77,7 +77,7 @@ pub struct TeardownTuning {
     /// How many engine frames each wait lets run.
     pub settle_frames: u32,
     /// The longest each wait lasts when the frame loop does not advance, milliseconds.
-    pub settle_budget_ms: u64,
+    pub(crate) settle_budget_ms: u64,
 }
 
 /// The most frames a settle wait can usefully ask for: a second of frames at the fastest refresh.

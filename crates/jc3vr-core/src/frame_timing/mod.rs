@@ -24,10 +24,8 @@
 //! the game thread's once-a-frame [`frame_tick`] touches a lock, and only once a second.
 //!
 //! Threading: [`scope`] may be used on any thread. [`frame_tick`] must be called once per frame from
-//! the game thread, and [`latest`] is read from the game thread's debug UI. [`frame_percentiles`],
-//! the spread of the recent frame intervals, may be read from any thread.
+//! the game thread, and [`latest`] is read from the game thread's debug UI.
 
-mod recent;
 mod report;
 mod slot;
 
@@ -44,12 +42,11 @@ use std::{
 use parking_lot::Mutex;
 
 pub use crate::frame_timing::{
-    recent::FramePercentiles,
     report::{Report, TickLoad, Totals, ns_to_ms},
     slot::{Kind, Slot, ThreadClass},
 };
 use crate::{
-    frame_timing::{recent::RecentFrames, report::SlotTotals},
+    frame_timing::report::SlotTotals,
     published::Stamp,
     thread_role::{self, ThreadRole},
 };
@@ -157,15 +154,6 @@ pub fn frame_tick() {
     LAST_FRAME_NS.store(interval.unwrap_or(0), Ordering::Relaxed);
     LAST_FRAME_TICKS.store(ticks, Ordering::Relaxed);
     let (ui, log) = WINDOWS.with_borrow_mut(|windows| windows.tick(now, ticks, drain));
-    let percentiles = RECENT.with_borrow_mut(|recent| {
-        if let Some(interval) = interval {
-            recent.push(interval);
-        }
-        ui.is_some().then(|| recent.percentiles()).flatten()
-    });
-    if let Some(percentiles) = percentiles {
-        *PERCENTILES.lock() = Some(percentiles);
-    }
     if let Some(ui) = ui {
         if let Some(sink) = REPORT_SINK.get() {
             sink(&ui);
@@ -250,12 +238,6 @@ impl Cumulative {
     }
 }
 
-/// The median and 95th percentile of the recent game frame intervals, refreshed every
-/// [`UI_WINDOW`], or `None` before the first window closes. A leaf lock, so any thread may read it.
-pub fn frame_percentiles() -> Option<FramePercentiles> {
-    *PERCENTILES.lock()
-}
-
 /// One slot's live counters.
 struct SlotCounters {
     self_ns: AtomicU64,
@@ -302,12 +284,7 @@ thread_local! {
     static CHILD_NS: Cell<u64> = const { Cell::new(0) };
     /// The reporting windows. Only the game thread ticks them.
     static WINDOWS: RefCell<Windows> = const { RefCell::new(Windows::new()) };
-    /// The recent frame intervals. Only the game thread records them.
-    static RECENT: RefCell<RecentFrames> = const { RefCell::new(RecentFrames::new()) };
 }
-
-/// The percentiles [`frame_percentiles`] returns.
-static PERCENTILES: Mutex<Option<FramePercentiles>> = Mutex::new(None);
 
 /// The consumer of each closed debug-UI window, set by [`set_report_sink`].
 static REPORT_SINK: OnceLock<fn(&Report)> = OnceLock::new();

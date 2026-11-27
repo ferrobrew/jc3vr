@@ -150,7 +150,7 @@ pub fn register(module: &'static str, parts: Vec<Part>) {
 
 /// Record the module that declares the test root, for the message an unbound slot panics with.
 #[doc(hidden)]
-pub fn note_root(module: &'static str) {
+pub(crate) fn note_root(module: &'static str) {
     // A second root in one test binary fails the registration that follows.
     let _ = ROOT_MODULE.set(module);
 }
