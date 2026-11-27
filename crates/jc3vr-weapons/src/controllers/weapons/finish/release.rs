@@ -37,9 +37,8 @@ pub(super) fn release_stage(game: &GameTick<'_>, f: &mut Finish<'_>) {
     // to that hand, rather than waiting for the action and dropping the gun once it lets go.
     let passes = passes_by_action(reload::action_held_by_other(), grips);
     let action_hands = waiting_on_action(reload::action_hands(), passes);
-    let release_active = f.context.settings.weapons.hold.grip_to_hold
-        && f.context.modes.release
-        && f.active.is_some();
+    let release_active =
+        f.context.settings.weapons.hold.grip_to_hold && f.context.modes.guns && f.active.is_some();
     let released = if release_active {
         hold::act::release_tick(game, grips.map(ButtonControl::held), action_hands)
     } else {

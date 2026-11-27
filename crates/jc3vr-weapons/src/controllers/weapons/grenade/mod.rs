@@ -57,8 +57,10 @@ use jc3vr_view::controllers::overlay::{
     primitive::{Anchor, DepthMode, Facing, HandPose, Primitive, Shape, Source, SpriteSize},
     store,
 };
+pub use locker::collection::active_entries as locker_active_entries;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+pub use safe::pin_in;
 
 use crate::controllers::{
     loadout::{ItemId, Place, TakeSource, contents::HeldGrenade, live, safe_items::SafeItemView},
@@ -88,11 +90,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(locker::hook_library())
         .with_hook_library(world::hook_library())
         .with_hook_library(fuse_log::hook_library())
-}
-
-/// Hook removal keeps the image mapped while a locker source callback remains active.
-pub fn locker_active_entries() -> usize {
-    locker::active_entries()
 }
 
 /// Observe a live world weapon during native placement or rendering for safe grenade sources.
@@ -187,12 +184,6 @@ pub struct GrenadeStatus {
     /// The most recent throws, and how many grenades were primed and thrown since the payload
     /// loaded.
     pub events: EventLog<GrenadeEvent, 6>,
-}
-
-/// Whether the pouch has a grenade to give: the game's stock holds one, or the game's unlimited
-/// ammunition applies. A pouch with nothing to give is neither offered nor drawn.
-pub(crate) fn in_stock() -> bool {
-    stock::in_stock()
 }
 
 /// The grenade `hand` holds that could go back into the pouch: one of the loadout's with its pin
@@ -303,12 +294,6 @@ pub fn inert_in_world(owner: NonZeroUsize, body: u32) -> bool {
 #[inline]
 pub fn inert_lying() -> Vec<(NonZeroUsize, u32, Vec3)> {
     safe::loose_bodies()
-}
-
-/// Whether `hand` holds a grenade from the pouch whose pin is still in.
-#[inline]
-pub fn pin_in_hand(hand: Hand) -> bool {
-    safe::pin_in(hand)
 }
 
 /// Whether `hand` holds a grenade of any kind. Both hands can hold independent safe grenades.

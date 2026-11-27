@@ -156,7 +156,8 @@ pub(super) unsafe fn targets(
     true
 }
 
-pub(super) fn retains_single(object: usize) -> bool {
+/// Whether an unowned finite source must keep its single-member designation.
+pub(crate) fn retains_single(object: usize) -> bool {
     STATE
         .lock()
         .iter()

@@ -219,7 +219,7 @@ pub(super) unsafe fn pull_pin(hand: Hand) -> Option<PinPull> {
 }
 
 /// Whether `hand` holds an item whose pin is still in.
-pub(crate) fn pin_in(hand: Hand) -> bool {
+pub fn pin_in(hand: Hand) -> bool {
     in_hand(hand)
         .and_then(actor)
         .is_some_and(|actor| !native::pin_out(&actor))

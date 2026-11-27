@@ -46,11 +46,6 @@ pub(super) unsafe fn publish(owner: Option<&Character>, inputs: &HintInputs) {
     grab_hint::publish(hints);
 }
 
-/// Forget the hints: the weapon handling stood down.
-pub(super) fn clear() {
-    grab_hint::clear();
-}
-
 /// `hand`'s hint. A hand holding a weapon in the attraction of a taken socket swaps; an empty hand
 /// within reach of a socket takes the weapon on it, and either hand within reach of a pouch takes
 /// what the pouch gives.

@@ -82,7 +82,6 @@ mod finish;
 pub mod fire;
 pub mod foregrip;
 pub mod grenade;
-pub(crate) mod grenade_moves;
 pub mod grip_sources;
 pub mod grip_watch;
 pub(crate) mod gun_bodies;

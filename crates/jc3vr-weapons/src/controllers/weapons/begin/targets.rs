@@ -60,7 +60,7 @@ pub(super) fn body(_game: &GameTick<'_>, b: &mut Begin) {
 /// held foregrip goes first, so that the bracing hand keeps it over anything as near.
 pub(super) fn hand_offers(_game: &GameTick<'_>, b: &mut Begin) {
     let active = &b.active;
-    if b.context.modes.transfer {
+    if b.context.modes.guns {
         for holder in Hand::BOTH {
             let taker = holder.other();
             let explosive = grenade::safe::in_hand(holder).is_some()
@@ -92,7 +92,7 @@ pub(super) fn hand_offers(_game: &GameTick<'_>, b: &mut Begin) {
 /// The sockets: the weapons on them for the hands that may draw them, and the free sockets that
 /// take a held weapon, with their attractions.
 pub(super) fn sockets(_game: &GameTick<'_>, b: &mut Begin) {
-    if !b.context.modes.dock {
+    if !b.context.modes.guns {
         return;
     }
     let active = &b.active;
@@ -155,7 +155,7 @@ pub(super) fn chest_pouches(_game: &GameTick<'_>, b: &mut Begin) {
     // A hand holding anything takes nothing from the chest.
     let grabbers = ChestGrabbers::for_guns(b.free.map(|free| !free));
     // A pouch with nothing to give is neither offered nor drawn.
-    if grenade::in_stock()
+    if grenade::stock::in_stock()
         && let Some(pouch) = volumes::grenade_pouch(body, pouches, dominant, grabbers)
     {
         b.targets
@@ -210,7 +210,7 @@ pub(super) fn pouch_return(_game: &GameTick<'_>, b: &mut Begin) {
 
 /// The long guns docked on the shoulders, for a free hand touching one away from its grip.
 pub(super) fn docked_guns(_game: &GameTick<'_>, b: &mut Begin) {
-    if !b.context.modes.dock {
+    if !b.context.modes.guns {
         return;
     }
     let empty_handed = b.free == [true; 2];
@@ -255,7 +255,7 @@ pub(super) fn world_weapons(game: &GameTick<'_>, b: &mut Begin) {
         &hold::take::TakeInputs {
             active: &b.active,
             free: b.free,
-            gameplay: b.context.modes.pickup,
+            gameplay: b.context.modes.world,
         },
     );
     b.targets.extend(taken.iter().map(|c| b.place.world(c)));
@@ -273,7 +273,7 @@ pub(super) fn reload(_game: &GameTick<'_>, b: &mut Begin) {
         config: &b.context.settings,
         body: b.body.as_ref(),
         gun_side: b.gun_side,
-        gameplay: b.context.modes.reload,
+        gameplay: b.context.modes.guns,
     });
     for c in &reload_candidates {
         match (c.volume, c.hand) {
@@ -300,7 +300,7 @@ pub(super) fn pouch_models(game: &GameTick<'_>, b: &mut Begin) {
     let shown = b
         .body
         .as_ref()
-        .filter(|_| b.context.modes.reload)
+        .filter(|_| b.context.modes.guns)
         .map_or_else(Vec::new, |body| {
             let mut shown = shown_props(body, &b.context.settings);
             if !b.context.modes.pouches {
@@ -451,7 +451,7 @@ fn shown_props(body: &BodyFrame, config: &WeaponSettings) -> Vec<ShownPouch> {
         weapon: None,
     };
     let mut out = Vec::new();
-    if grenade::in_stock()
+    if grenade::stock::in_stock()
         && let Some(pouch) = volumes::grenade_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
         out.push(on_chest(Prop::Grenade, pouch, sides.grenade));

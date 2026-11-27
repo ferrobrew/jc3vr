@@ -302,11 +302,6 @@ fn table_places() -> bool {
     live::running() && !live::resetting() && !live::mission_holds()
 }
 
-/// The slots whose gives the table places: the ones it tracks.
-fn tracked(slot: WeaponSlot) -> bool {
-    engine::tracks(slot)
-}
-
 /// A strong `boost::shared_ptr<CWeaponBase>` given up from `strong`, for a callee that releases it.
 fn shared_weapon(strong: Strong) -> SharedPtr<WeaponBase> {
     let shared = strong.into_raw();
@@ -442,7 +437,7 @@ fn give_player_weapon(
     let member = MEMBER_START
         .get()
         .map(|member| rack::paired::copy_request(member, ammo));
-    if is_local(inventory) && tracked(slot) {
+    if is_local(inventory) && engine::tracks(slot) {
         let identity = STATE.lock().authority.identity(inventory as usize);
         let record = identity.filter(|_| table_places()).map(|identity| Record {
             identity,
@@ -487,7 +482,7 @@ unsafe fn queue(inventory: *mut Inventory, weapon: *mut SharedPtr<WeaponBase>) -
     let Some(w) = (unsafe { shared.px.as_ref() }) else {
         return false;
     };
-    let Some(slot) = (unsafe { slot_of(w) }).filter(|&slot| tracked(slot)) else {
+    let Some(slot) = (unsafe { slot_of(w) }).filter(|&slot| engine::tracks(slot)) else {
         return false;
     };
     let tag_index = unsafe { (*object_of(w)).GetUniqueSpawnTagIndex() };

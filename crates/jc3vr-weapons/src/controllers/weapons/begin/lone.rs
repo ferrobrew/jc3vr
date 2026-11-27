@@ -32,7 +32,7 @@ pub(super) fn lone_gun(_game: &GameTick<'_>, b: &mut Begin) {
     b.foregrip_hand = braced.and_then(|w| w.holder).map(Hand::other);
     let foregrip_hand = b.foregrip_hand;
     let handover_allowed =
-        b.context.modes.transfer && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
+        b.context.modes.guns && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
     let on_gun = match (braced, b.braced_geometry, b.shape) {
         (Some(w), Some(g), Some(shape)) => w.holder.and_then(|holder| {
             Some(GunOnHand {

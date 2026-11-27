@@ -39,7 +39,8 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&COLLECTION_DESTRUCT_BINDER)
 }
 
-pub(super) fn active_entries() -> usize {
+/// Hook removal keeps the image mapped while a locker source callback remains active.
+pub fn active_entries() -> usize {
     ACTIVE_ENTRIES.load(Ordering::Acquire)
 }
 

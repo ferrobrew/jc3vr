@@ -72,7 +72,7 @@ pub(super) fn player(game: &GameTick<'_>, b: &mut Begin) {
             );
             let holder = hold::input_tick(game, wielded, arrival);
             hold::tick::input_tick(owner, wielded);
-            reload::native::refill_armed(owner, config, capabilities.reload);
+            reload::native::refill_armed(owner, config, capabilities.guns);
             let weapon = engine::held_weapon(owner).map(|w| with_holder(w, holder));
             let guns = engine::in_hands(weapon, Hand::BOTH.map(|h| armed::held_weapon(owner, h)));
             // The gun a hand holds beside the wielded weapon, armed there.
@@ -81,7 +81,7 @@ pub(super) fn player(game: &GameTick<'_>, b: &mut Begin) {
                 .filter_map(|h| guns[h.index()])
                 .find(|w| weapon.is_none_or(|wielded| wielded.address != w.address));
             // The guns the hands hold, for their bodies.
-            guns::publish(if capabilities.support {
+            guns::publish(if capabilities.guns {
                 gun_bodies::read_holds([
                     weapon.map(|w| (w.address, w.class)),
                     beside.map(|w| (w.address, w.class)),
@@ -94,7 +94,7 @@ pub(super) fn player(game: &GameTick<'_>, b: &mut Begin) {
             let free = contents.map(|hand| hand.free());
             let sockets = snapshot
                 .as_ref()
-                .filter(|_| capabilities.dock)
+                .filter(|_| capabilities.guns)
                 .map(|snapshot| {
                     docks::socket_points(
                         owner,
@@ -106,7 +106,7 @@ pub(super) fn player(game: &GameTick<'_>, b: &mut Begin) {
                     )
                 });
             let docked_long = match &snapshot {
-                Some(snapshot) if capabilities.dock => {
+                Some(snapshot) if capabilities.guns => {
                     region_engine::docked_long_guns(owner, snapshot, config.dominant)
                 }
                 _ => Vec::new(),
@@ -143,7 +143,7 @@ pub(super) fn guns(_game: &GameTick<'_>, b: &mut Begin) {
     }
     heft::observe(Hand::BOTH.map(|hand| {
         guns[hand.index()]
-            .filter(|_| capabilities.support)
+            .filter(|_| capabilities.guns)
             .map(|w| heft::HeftTarget {
                 hand,
                 class: w.class,
@@ -175,7 +175,7 @@ pub(super) fn geometry(_game: &GameTick<'_>, b: &mut Begin) {
     let world_scale = b.active.world_scale;
     b.geometries = Hand::BOTH.map(|hand| {
         guns[hand.index()]
-            .filter(|w| w.two_handed && capabilities.support)
+            .filter(|w| w.two_handed && capabilities.guns)
             .and_then(|w| state.geometry_for(hand, &w, config, world_scale))
     });
     drop(state);
@@ -184,8 +184,7 @@ pub(super) fn geometry(_game: &GameTick<'_>, b: &mut Begin) {
         .and_then(|hand| b.geometries[hand.index()]);
     // The gun held in one hand while the other is free, wielded or armed: everything the free hand
     // does to it (the handover, and on a long gun the foregrip and a touch along it) acts on it.
-    b.lone =
-        engine::lone_gun(guns, b.free).filter(|_| capabilities.transfer || capabilities.support);
+    b.lone = engine::lone_gun(guns, b.free).filter(|_| capabilities.guns);
     b.braced = b.lone.filter(|w| w.two_handed);
     b.braced_geometry = b
         .braced
@@ -207,7 +206,7 @@ pub(super) fn gun_observers(_game: &GameTick<'_>, b: &mut Begin) {
     let geometries = b.geometries;
     regions::observe(&Observed {
         guns: guns.map(|g| {
-            g.filter(|w| capabilities.support && w.two_handed)
+            g.filter(|w| capabilities.guns && w.two_handed)
                 .map(|w| w.address)
         }),
         lone: b.braced.map(|w| (w.address, b.shape)),

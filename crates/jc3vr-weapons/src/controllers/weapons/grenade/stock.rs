@@ -129,7 +129,7 @@ impl fmt::Display for StockError {
 impl std::error::Error for StockError {}
 
 /// Whether the pouch has a grenade to give, as the last read found the stock. `false` before the
-/// first read.
+/// first read. A pouch with nothing to give is neither offered nor drawn.
 pub(crate) fn in_stock() -> bool {
     CACHED.lock().stock.is_some_and(Stock::may_draw)
 }

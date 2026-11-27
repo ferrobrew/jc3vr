@@ -250,7 +250,7 @@ impl State {
         reload: &Reload,
     ) -> Option<Candidate> {
         let hand = free?;
-        if !engine::physical_detach_available()
+        if !serial::available()
             || self.extraction_needs_neutral[hand.index()]
             || !tracked_hands().into_iter().all(|tracked| tracked)
             || self.pending_ejects[hand.other().index()].is_some()

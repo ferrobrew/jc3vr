@@ -8,7 +8,7 @@
 //! placement rule that put it there hears of the pickup and restocks it as the game would; a static
 //! instance is hidden ([`collection::hide`]), and shows again only when its location loads again.
 
-mod collection;
+pub(super) mod collection;
 mod format;
 
 use std::{
@@ -55,10 +55,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&WORLD_STATE_BINDER)
         .with_static_binder(&GRENADE_PLACEMENT_BINDER)
         .with_hook_library(collection::hook_library())
-}
-
-pub(super) fn active_entries() -> usize {
-    collection::active_entries()
 }
 
 /// Note a live native grenade weapon without asking whether its ammunition can be picked up.

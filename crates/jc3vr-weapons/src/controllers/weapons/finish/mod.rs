@@ -196,7 +196,7 @@ fn foregrip_stage(_game: &GameTick<'_>, f: &mut Finish<'_>) {
         .find(|(g, _)| **g == Some(GrabVolume::Foregrip))
         .map(|(_, hand)| hand);
     let two_handed = lone
-        .filter(|(w, _)| w.two_handed && capabilities.support)
+        .filter(|(w, _)| w.two_handed && capabilities.guns)
         .and_then(|(w, geometry)| {
             Some(TwoHandedWeapon {
                 holder: w.holder?,
@@ -265,9 +265,7 @@ fn grenades(game: &GameTick<'_>, f: &mut Finish<'_>) {
                 GrabVolume::Socket(socket) => Some(socket),
                 _ => None,
             });
-            if crate::controllers::weapons::grenade_moves::stow_before_open(hand, socket)
-                == Some(true)
-            {
+            if grabs::stow_safe_grenade(hand, socket) == Some(true) {
                 haptics::play(hand, Event::VolumeGrab);
                 return false;
             }

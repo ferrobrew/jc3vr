@@ -166,6 +166,7 @@ pub(crate) fn set_installed(installed: bool) {
     }
 }
 
+/// Whether the native callback is installed and currently accepts magazine requests.
 pub(super) fn available() -> bool {
     MAILBOX
         .lock()
@@ -282,7 +283,7 @@ fn permitted(request: DetachRequest) -> bool {
     let pull = request.kind == DetachKind::Pull;
     if jc3vr_core::is_shutting_down()
         || !scheme::is_controllers()
-        || !Capabilities::of(mode::current().mode).reload
+        || !Capabilities::of(mode::current().mode).guns
         || !WEAPONS_CONFIG.query(|c| c.reload.enabled)
     {
         return false;

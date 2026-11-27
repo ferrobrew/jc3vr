@@ -7,7 +7,7 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 
 use crate::controllers::{
     loadout::{
-        Socket,
+        Place, Socket,
         contents::Passed,
         grab,
         grab::{SocketMove, SocketRefusal},
@@ -16,7 +16,7 @@ use crate::controllers::{
     weapons::{
         c4,
         contents::sample,
-        engine,
+        docks, engine,
         finish::{Finish, docked_at},
         foregrip,
         foregrip::Transition,
@@ -88,7 +88,7 @@ pub(super) fn grabs(game: &GameTick<'_>, f: &mut Finish<'_>) {
                 let inputs = hold::take::TakeInputs {
                     active,
                     free: [true; 2],
-                    gameplay: f.context.modes.pickup,
+                    gameplay: f.context.modes.world,
                 };
                 // SAFETY: the game stage runs on the game thread before the world update.
                 let taken = unsafe { hold::take::finish_grab(game, hand, &inputs) };
@@ -134,7 +134,7 @@ fn grab_socket(game: &GameTick<'_>, hand: Hand, socket: Socket) -> Option<GrabOu
     if hold::act::docking()[hand.index()] || hold::act::pending_release(hand).is_some() {
         return None;
     }
-    if let Some(moved) = crate::controllers::weapons::grenade_moves::grab_socket(hand, socket) {
+    if let Some(moved) = grab_safe_grenade(hand, socket) {
         let outcome = if moved {
             if grenade::safe::in_hand(hand).is_some() {
                 SocketOutcome::Drew
@@ -167,6 +167,40 @@ fn grab_socket(game: &GameTick<'_>, hand: Hand, socket: Socket) -> Option<GrabOu
         }
     };
     Some(GrabOutcome::Socket(outcome))
+}
+
+/// Handle a safe grenade's socket grab without entering the native weapon path.
+///
+/// `None` means the socket interaction is unrelated to a safe grenade. `Some(false)` means the
+/// safe move was relevant but refused, so the caller must not fall through to native weapon code.
+fn grab_safe_grenade(hand: Hand, socket: Socket) -> Option<bool> {
+    if grenade::safe::in_hand(hand).is_some() {
+        if !matches!(socket, Socket::Hip(_)) {
+            return Some(false);
+        }
+        let Some(world) = docks::socket_world_pose(socket) else {
+            return Some(false);
+        };
+        return Some(grenade::safe::stow(hand, socket, world));
+    }
+    let has_safe_item = live::safe_items()
+        .into_iter()
+        .any(|item| item.place == Place::Socket(socket));
+    has_safe_item.then(|| grenade::safe::draw_stowed(socket, hand))
+}
+
+/// Stow a held safe grenade before the caller opens its grenade input.
+///
+/// Stow at the socket selected as available and reachable by the release coordinator.
+pub(super) fn stow_safe_grenade(hand: Hand, socket: Option<Socket>) -> Option<bool> {
+    grenade::safe::in_hand(hand)?;
+    let Some(socket) = socket.filter(|socket| matches!(socket, Socket::Hip(_))) else {
+        return Some(false);
+    };
+    let Some(world) = docks::socket_world_pose(socket) else {
+        return Some(false);
+    };
+    Some(grenade::safe::stow(hand, socket, world))
 }
 
 fn holstering(hand: Hand, closed: bool) -> bool {

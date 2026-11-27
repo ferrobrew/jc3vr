@@ -214,11 +214,6 @@ pub(super) enum DetachOutcome {
     Retained(Loose),
 }
 
-/// Whether the native callback is installed and currently accepts magazine requests.
-pub(super) fn physical_detach_available() -> bool {
-    crate::controllers::weapons::reload::serial::available()
-}
-
 /// Resolve an identity to its original current native source, never to a pointer from the key.
 /// The caller's input or owner-update phase must retain that source and serialize native access.
 unsafe fn owned_handle(address: usize) -> Option<NonNull<WeaponBase>> {

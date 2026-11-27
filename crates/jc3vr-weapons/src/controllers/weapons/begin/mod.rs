@@ -27,7 +27,7 @@ use crate::controllers::weapons::{
     foregrip::GripGeometry,
     handling_tuning::HANDLING,
     heft, hold,
-    hud_feed::hand_ammo,
+    hud_feed::{grab_hint, hand_ammo},
     regions::GunShape,
     stand_down::{StandDown, stand_down},
     types::TickStart,
@@ -50,7 +50,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let Some(active) = hands::active_hands_raw() else {
         stand_down(game, StandDown::HandsInactive);
         hand_ammo::clear();
-        hint::clear();
+        grab_hint::clear();
         return TickStart::default();
     };
     let mut begin = Begin::new(context, active);

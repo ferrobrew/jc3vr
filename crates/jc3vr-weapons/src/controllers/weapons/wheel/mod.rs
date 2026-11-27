@@ -19,7 +19,7 @@
 //!
 //! It opens with the weapon-select trackpad press (the off-hand Index trackpad, pressed) or the
 //! `weapon_wheel` action (the dominant stick held up), and acts where the hands hold the hand
-//! weapons ([`Capabilities::wheel`]). While the stick holds the wheel open, the
+//! weapons ([`Capabilities::world`]). While the stick holds the wheel open, the
 //! stick's turn is withheld from the body turn.
 
 pub mod config;
@@ -84,7 +84,7 @@ pub fn input_tick(
     let enabled = WEAPONS_CONFIG.query(|c| c.wheel.enabled);
     let tuning = &INVENTORY.get().wheel;
     let mut local_player = LocalPlayer::get(game);
-    let acting = enabled && Capabilities::of(inputs.mode).wheel && local_player.is_some();
+    let acting = enabled && Capabilities::of(inputs.mode).world && local_player.is_some();
     let read = local_player.as_ref().map(read_game);
     let active = hands::active_hands_raw();
     let input = WheelInput {

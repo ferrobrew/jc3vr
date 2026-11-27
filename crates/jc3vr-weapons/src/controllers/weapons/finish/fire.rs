@@ -76,7 +76,7 @@ pub(super) fn fire(game: &GameTick<'_>, f: &mut Finish<'_>) {
         reserved: claims.map(|claim| claim.reserved),
         roles: gun_roles,
         ready,
-        may_fire: capabilities.fire,
+        may_fire: capabilities.guns,
         reload_held,
     });
     for (hand, refusal) in Hand::BOTH

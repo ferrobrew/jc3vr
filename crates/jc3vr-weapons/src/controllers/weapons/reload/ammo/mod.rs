@@ -389,7 +389,8 @@ pub(super) fn magazine_only(weapon: usize, active: bool) {
     }
 }
 
-pub(super) fn protected_rounds(weapon: usize) -> i32 {
+/// Loaded rounds excluded from a single pistol's magazine-capacity clamp.
+pub(crate) fn protected_rounds(weapon: usize) -> i32 {
     LEDGER
         .lock()
         .entries

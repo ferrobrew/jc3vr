@@ -248,7 +248,7 @@ fn capture_current(
         mechanics.push(row);
     }
     mechanics.extend(pin_rows(
-        Hand::BOTH.map(weapons::grenade::pin_in_hand),
+        Hand::BOTH.map(weapons::grenade::pin_in),
         input.ready,
     ));
     mechanics.extend(detonator_rows(

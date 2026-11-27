@@ -227,7 +227,7 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
     }
     let tuned = unsafe { weapon.GetMagazineSize() };
     let unlimited = unsafe { weapon.HasUnlimitedAmmo() };
-    let chamber = reload::chamber_rounds(weapon as *const WeaponBase as usize);
+    let chamber = reload::protected_rounds(weapon as *const WeaponBase as usize);
     let Some(clamped) = magazine::clamp(weapon.m_MagazineAmmo - chamber, tuned, unlimited) else {
         return;
     };

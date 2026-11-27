@@ -7,7 +7,7 @@ mod finite;
 
 use std::time::Instant;
 
-pub(crate) use finite::stack_offset;
+pub(crate) use finite::{retains_single, stack_offset};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
@@ -216,11 +216,6 @@ pub(crate) fn copy_request(member: Member, ammo: i32) -> CopyRequest {
             dealt.twin
         },
     }
-}
-
-/// Whether an unowned finite source must keep its single-member designation.
-pub(crate) fn retains_single(object: usize) -> bool {
-    finite::retains_single(object)
 }
 
 /// Whether an arrival still belongs to a waiting member of the same source generation.

@@ -74,6 +74,7 @@ pub mod tuning;
 pub mod wells;
 pub(crate) mod zones;
 
+pub(crate) use ammo::protected_rounds;
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
 use jc3vr_body::controllers::{
@@ -928,11 +929,6 @@ pub(crate) fn on_pre_reset() {
     guide::clear();
     STATE.lock().records.on_pre_reset();
     ammo::on_pre_reset();
-}
-
-/// Loaded rounds excluded from a single pistol's magazine-capacity clamp.
-pub(crate) fn chamber_rounds(weapon: usize) -> i32 {
-    ammo::protected_rounds(weapon)
 }
 
 /// The native ammo check may see a magazine-less weapon as loaded only for a live owned chamber.
