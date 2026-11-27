@@ -98,13 +98,13 @@ pub struct Step {
     /// Zero in the modes whose tables use the turn stick themselves.
     pub body_turn: f32,
     /// The seated crouch toggle was flicked this tick.
-    pub crouch_toggle: bool,
+    pub(crate) crouch_toggle: bool,
     /// The grab each hand's grip started this tick, indexed by [`Hand::index`]: what the hand was in
     /// reach of at the press, or what a fist came to while the grip was held ([`GripLatch`]). The
     /// grabbing subsystems act on it; the tables inject nothing for it.
     pub grabs: [Option<GrabVolume>; 2],
     /// The sight tuning capture chord was pressed this tick.
-    pub sight_capture: bool,
+    pub(crate) sight_capture: bool,
     /// Each hand's weapon wheel inputs, by [`Hand::index`]: the weapon-select trackpad press with
     /// the quadrant it latched to, and the `weapon_wheel` action's value. The wheel
     /// ([`jc3vr_weapons::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
@@ -113,9 +113,9 @@ pub struct Step {
     /// The grapple's button is held this tick, in a mode with a grapple: the hand is aiming it.
     pub grapple_held: bool,
     /// What the grapple's button asks of the lock this tick ([`jc3vr_grapple::grapple::physical::lock`]).
-    pub grapple_lock: Option<LockButton>,
+    pub(crate) grapple_lock: Option<LockButton>,
     /// The grapple's button fired the seat grapple this tick ([`jc3vr_grapple::grapple::seat`]).
-    pub grapple_seat_fire: Option<SeatRequest>,
+    pub(crate) grapple_seat_fire: Option<SeatRequest>,
 }
 
 /// The tables and their cross-tick state.
@@ -169,7 +169,7 @@ impl Bindings {
     }
 
     /// What each hand's grip press is doing, by [`Hand::index`].
-    pub fn grip_latches(&self) -> [GripLatch; 2] {
+    pub(crate) fn grip_latches(&self) -> [GripLatch; 2] {
         self.grips
     }
 
@@ -295,7 +295,7 @@ impl Bindings {
     }
 
     /// Read the current grapple gesture permissions without advancing the tables.
-    pub fn grapple_permissions(&self, context: GrappleContext) -> GrapplePermissions {
+    pub(crate) fn grapple_permissions(&self, context: GrappleContext) -> GrapplePermissions {
         self.grapple.current_permissions(context)
     }
 
@@ -660,7 +660,7 @@ impl Sink for TimedInputs {
 /// The masks the table context implies in `mode`: with a pistol in the off-hand, its trigger
 /// belongs to the pistol's fire action; in a menu, the native UI pointer's trigger belongs to the
 /// pointer.
-pub fn context_masks(mode: Mode, ctx: &TableCtx, dominant: Hand) -> Vec<Mask> {
+pub(crate) fn context_masks(mode: Mode, ctx: &TableCtx, dominant: Hand) -> Vec<Mask> {
     let mut masks = Vec::new();
     let set = SemanticSet::of(mode.action_set());
     if ctx.dual_wield
@@ -730,7 +730,7 @@ pub(crate) fn merge_buttons(a: ButtonControl, b: ButtonControl) -> ButtonControl
 
 /// The action whose value turns the body in `mode`, or `None` in the modes whose tables use the
 /// turn input themselves.
-pub const fn body_turn_action(mode: Mode) -> Option<ActionId> {
+pub(crate) const fn body_turn_action(mode: Mode) -> Option<ActionId> {
     match mode {
         Mode::OnFoot(_) | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => {
             Some(OnFootAction::Turn.id())

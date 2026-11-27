@@ -67,7 +67,7 @@ pub(crate) struct CurrentContext {
     pub usable: Vec<Row>,
     pub routing: CurrentRouting,
     pub native_reload: bool,
-    pub held_holster: bool,
+    pub(crate) held_holster: bool,
 }
 
 /// Fixed spatial cells. Hand dominance never changes a cell's column.

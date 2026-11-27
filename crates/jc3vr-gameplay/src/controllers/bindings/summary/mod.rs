@@ -90,12 +90,12 @@ impl BeforeFinish {
 
 pub(super) struct Refresh<'a> {
     pub sequence: u64,
-    pub belt_reload: Option<BeltEligibility>,
+    pub(crate) belt_reload: Option<BeltEligibility>,
     pub settings: &'a Settings,
     pub owners: [Owner; 2],
     pub ready: [bool; 2],
-    pub grapple_routes: Vec<(ActionId, Hand)>,
-    pub trigger_blocked: [bool; 2],
+    pub(crate) grapple_routes: Vec<(ActionId, Hand)>,
+    pub(crate) trigger_blocked: [bool; 2],
     pub chosen: [Option<GrabVolume>; 2],
     pub selected: [Option<GripTarget>; 2],
     pub grabs: [Option<GrabVolume>; 2],

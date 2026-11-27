@@ -49,7 +49,7 @@ pub fn step(latch: &mut MenuLatch, intents: &Intents, hand: Hand, push: f32) {
 /// Advance `latch` by one tick of `hand`'s pad press in the tick's mode set: the zone under the
 /// thumb is latched at the press edge and kept until the release, wherever the thumb slides. A
 /// press on a line between zones latches once the thumb moves off it.
-pub fn step_pad(latch: &mut PadLatch, intents: &Intents, hand: Hand) {
+pub(crate) fn step_pad(latch: &mut PadLatch, intents: &Intents, hand: Hand) {
     let Some((press, (pad, layout))) =
         pad_press_of(intents.mode_set()).and_then(|press| Some((press, pad_of(press)?)))
     else {

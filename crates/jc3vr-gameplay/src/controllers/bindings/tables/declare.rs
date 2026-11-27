@@ -64,33 +64,33 @@ pub fn declare<S: Sink>(sink: &mut S, mode: Mode, ctx: &TableCtx) {
 
 /// The virtual gamepad buttons: the gameplay actions the default gamepad keymap puts on each. B's
 /// are the grapple's release on foot ([`PAD_B`]).
-pub const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
-pub const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
-pub const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
+pub(crate) const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
+pub(crate) const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
+pub(crate) const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
 /// What the gamepad's B does held, beyond the tethers' release, which the grapple button's double
 /// tap took: stepping off a ledge the character would stop at. It rides the use button held, since
 /// using something never walks the character off a ledge.
-pub const BYPASS: &[Action] = &[BYPASS_FALL_PREVENTION];
+pub(crate) const BYPASS: &[Action] = &[BYPASS_FALL_PREVENTION];
 /// The gamepad's B held while a ragdoll, which keeps the character one. Only then: `CANCEL` cancels
 /// other things elsewhere, so it is not on the use button otherwise.
-pub const KEEP_RAGDOLLING: &[Action] = &[CANCEL];
-pub const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
+pub(crate) const KEEP_RAGDOLLING: &[Action] = &[CANCEL];
+pub(crate) const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
 /// The parachute bail from a moving vehicle: the game's driver, rider, and spinning mounted gun
 /// states open the parachute out of the seat once `OPEN_PARACHUTE` (the gamepad's A) has been held
 /// past the graph's hold time, at speed
 /// ([`PARACHUTE_BAIL_MIN_SPEED_MPS`](crate::controllers::bindings::bail::PARACHUTE_BAIL_MIN_SPEED_MPS)).
-pub const PARACHUTE_BAIL: &[Action] = &[OPEN_PARACHUTE];
+pub(crate) const PARACHUTE_BAIL: &[Action] = &[OPEN_PARACHUTE];
 /// The detonation of the placed charges alone, which the game starts once the action has been
 /// held past its hold time. The gamepad's RB also throws a grenade and plants C4; the controllers
 /// take a grenade from its pouch and a charge from its own pouch instead, so neither rides along.
-pub const DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
+pub(crate) const DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
 /// The gamepad's LB in a vehicle, without the grapple it also fires there: the grapple has a button
 /// of its own ([`GRAPPLE_VEHICLE`]).
-pub const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, MC_RELOAD, L1];
-pub const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
+pub(crate) const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, MC_RELOAD, L1];
+pub(crate) const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 /// The weapon slots on the gamepad's d-pad, by direction: the selection cross the game shows
 /// while one is held lays them out the same way, and the release commits.
-pub const WEAPON_SELECT: [(PadZone, Action); 4] = [
+pub(crate) const WEAPON_SELECT: [(PadZone, Action); 4] = [
     (PadZone::Up, SELECT_DUEL_WIELD),
     (PadZone::Right, SELECT_TWO_HANDED),
     (PadZone::Left, SELECT_TWO_HANDED_SPECIAL),
@@ -242,13 +242,13 @@ impl VehicleActions {
 
 /// The vehicle weapon actions of `class`'s set, the primary's first. A gun in a hand takes over
 /// the hand's vehicle weapon action: on that hand it fires the gun, not the vehicle's weapon.
-pub fn vehicle_weapon_actions(class: VehicleClass) -> [ActionId; 2] {
+pub(crate) fn vehicle_weapon_actions(class: VehicleClass) -> [ActionId; 2] {
     let v = VehicleActions::of(class);
     [v.fire_primary, v.fire_secondary]
 }
 
 /// The exit action of `class`'s set, whose long press exits or bails out ([`vehicle`]).
-pub fn exit_action(class: VehicleClass) -> ActionId {
+pub(crate) fn exit_action(class: VehicleClass) -> ActionId {
     VehicleActions::of(class).exit
 }
 

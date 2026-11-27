@@ -59,7 +59,7 @@ pub struct Intent {
     /// A vector action past its radial deadzone.
     pub vector: Vec2,
     /// A vector action as reported.
-    pub vector_raw: Vec2,
+    pub(crate) vector_raw: Vec2,
 }
 
 /// One action's state on both hands, with the physical inputs it is bound to on each.
@@ -192,7 +192,7 @@ pub struct Gestures {
 }
 
 /// The actions a gesture presses, in whichever of them is in the tick's sets.
-pub const YANK_ACTIONS: [ActionId; 2] = [
+pub(crate) const YANK_ACTIONS: [ActionId; 2] = [
     OnFootAction::FireGrapple.id(),
     WingsuitAction::FireGrapple.id(),
 ];
@@ -240,7 +240,7 @@ impl Intents {
     }
 
     /// The mode set of the tick.
-    pub fn mode_set(&self) -> SemanticSet {
+    pub(crate) fn mode_set(&self) -> SemanticSet {
         self.input.mode.set
     }
 

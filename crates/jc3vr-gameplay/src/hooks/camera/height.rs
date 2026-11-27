@@ -59,7 +59,7 @@ impl HeightReadout {
     }
 
     /// Whether Rico was in a vehicle seat at the sample.
-    pub fn in_seat(&self) -> bool {
+    pub(crate) fn in_seat(&self) -> bool {
         matches!(
             self.roomscale.frame.seat,
             SeatPhase::Locked | SeatPhase::Shuffle

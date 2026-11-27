@@ -65,13 +65,13 @@ pub struct Features {
     /// The true reload's pouch and well.
     pub magazine: bool,
     /// The true reload's belt reload.
-    pub belt_reload: bool,
+    pub(crate) belt_reload: bool,
     /// The sight tuning capture chord is armed.
     pub sight_chord: bool,
     /// The weapon-select trackpad press opens the weapon wheel.
-    pub wheel_trackpad: bool,
+    pub(crate) wheel_trackpad: bool,
     /// The `weapon_wheel` action opens the weapon wheel.
-    pub wheel_stick: bool,
+    pub(crate) wheel_stick: bool,
     /// The parachute's handles.
     pub parachute_handles: bool,
     /// The ripcord at the hip.
@@ -188,7 +188,7 @@ fn describe_unfolded(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
 }
 
 /// The describing [`Sink`]: records a row per input instead of resolving it.
-pub struct DescribeSink<'a> {
+pub(crate) struct DescribeSink<'a> {
     dominant: Hand,
     bindings: Bindings<'a>,
     masks: Vec<Mask>,

@@ -23,7 +23,7 @@ pub enum Text {
 
 /// How an action is labelled in a mode.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ActionLabel {
+pub(crate) enum ActionLabel {
     /// Shown, with what a press does and what a hold does, either of which may be absent.
     Shown {
         tap: Option<Text>,
@@ -59,11 +59,11 @@ impl CurrentAction {
 }
 
 /// The game's key for the "hold" prefix.
-pub const HOLD_KEY: &str = "buttonhint_hold";
+pub(crate) const HOLD_KEY: &str = "buttonhint_hold";
 
 /// How `action` is labelled in `mode`, or `None` for an action the summary has no label for. Every
 /// action the tables inject has one ([`crate::controllers::bindings::tables::coverage`]).
-pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
+pub(crate) fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
     let class = match mode {
         Mode::Vehicle(seat) => Some(seat.class),
         _ => None,
@@ -272,7 +272,7 @@ pub fn heading(mode: Mode) -> Text {
 }
 
 /// The prefix a row's gesture puts before its label, if any.
-pub fn gesture_prefix(gesture: Gesture) -> Option<Text> {
+pub(crate) fn gesture_prefix(gesture: Gesture) -> Option<Text> {
     match gesture {
         Gesture::Press => None,
         Gesture::Hold => Some(Text::Game(HOLD_KEY)),
@@ -293,7 +293,7 @@ pub fn gesture_prefix(gesture: Gesture) -> Option<Text> {
 }
 
 /// The label of a mod action.
-pub fn mod_action(action: ModAction) -> Text {
+pub(crate) fn mod_action(action: ModAction) -> Text {
     Text::Mod(match action {
         ModAction::Turn => ModText::Turn,
         ModAction::SeatedCrouch => ModText::SeatedCrouch,
@@ -415,7 +415,7 @@ pub enum ModText {
 }
 
 impl ModText {
-    pub const fn english(self) -> &'static str {
+    pub(crate) const fn english(self) -> &'static str {
         match self {
             ModText::Falling => "FALLING",
             ModText::Mech => "MECH",

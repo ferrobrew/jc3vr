@@ -14,8 +14,8 @@ use crate::controllers::summary::current::{CurrentContext, CurrentRouting};
 pub(crate) struct SnatchHint {
     pub hand: Hand,
     pub swinging: bool,
-    pub modifier_enabled: bool,
-    pub routes: Vec<(ActionId, Hand)>,
+    pub(crate) modifier_enabled: bool,
+    pub(crate) routes: Vec<(ActionId, Hand)>,
 }
 
 /// Post-finish gates supplied by the central input owner. No engine permission is inferred from
@@ -24,18 +24,18 @@ pub(crate) struct SnatchHint {
 pub(crate) struct Eligibility {
     pub routing: CurrentRouting,
     /// Accepted semantic routes before the descriptor merges their effects.
-    pub routes: Vec<(ActionId, Hand)>,
+    pub(crate) routes: Vec<(ActionId, Hand)>,
     pub chosen: [Option<GrabVolume>; 2],
     /// Current contextual actions proved usable by their owning subsystem, including cutscene skip.
     pub actions: Vec<Action>,
     /// Actual current physical gestures not represented by a chosen grip target. Examples include
     /// an eligible belt reload or flight gesture. The producer supplies their real physical control.
-    pub mechanics: Vec<Row>,
+    pub(crate) mechanics: Vec<Row>,
     pub snatch: Option<SnatchHint>,
     /// The reload owner permits the native tap, independently of held holstering.
     pub native_reload: bool,
     /// The inventory owner permits the reload input's held holster action.
-    pub held_holster: bool,
+    pub(crate) held_holster: bool,
     /// The grapple-button owner permits release, rather than merely reporting a tether count.
     pub tethers: bool,
     /// The grapple-button owner permits tightening in its current phase and aim context.

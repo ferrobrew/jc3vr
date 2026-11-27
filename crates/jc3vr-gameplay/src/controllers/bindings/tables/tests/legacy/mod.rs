@@ -144,7 +144,7 @@ pub fn body_turn(mode: Mode, controls: &Controls) -> f32 {
 }
 
 /// Whether the dominant stick's horizontal axis turns the body in `mode`.
-pub const fn body_turn_bound(mode: Mode) -> bool {
+pub(crate) const fn body_turn_bound(mode: Mode) -> bool {
     match mode {
         Mode::OnFoot(_) | Mode::Airborne(_) => true,
         Mode::Vehicle(seat) => {

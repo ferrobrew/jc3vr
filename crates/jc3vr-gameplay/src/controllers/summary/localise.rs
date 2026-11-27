@@ -26,13 +26,13 @@ pub fn resolve(
 }
 
 /// A mod string, in the only language the mod carries.
-pub const fn mod_text(text: ModText) -> &'static str {
+pub(crate) const fn mod_text(text: ModText) -> &'static str {
     text.english()
 }
 
 /// The English stand-in for a game key: its name without the family prefix, spaced, and
 /// capitalised (`buttonhint_fire_grapple` reads "Fire grapple").
-pub fn humanise(key: &str) -> String {
+pub(crate) fn humanise(key: &str) -> String {
     let name = KEY_PREFIXES
         .iter()
         .find_map(|prefix| key.strip_prefix(prefix))

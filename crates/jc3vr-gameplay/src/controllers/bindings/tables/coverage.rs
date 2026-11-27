@@ -21,7 +21,7 @@ use crate::controllers::bindings::{
 };
 
 /// Every mode the detector reports.
-pub fn all_modes() -> Vec<Mode> {
+pub(crate) fn all_modes() -> Vec<Mode> {
     let mut modes = vec![
         Mode::OnFoot(OnFootVariant::Ground),
         Mode::OnFoot(OnFootVariant::Swimming),
@@ -47,7 +47,7 @@ pub fn all_modes() -> Vec<Mode> {
 }
 
 /// Every table context, under both handednesses.
-pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
+pub(crate) fn all_contexts() -> Vec<(Hand, TableCtx)> {
     let mut contexts = Vec::new();
     for dominant in Hand::BOTH {
         for dual_wield in [false, true] {
@@ -84,7 +84,7 @@ pub fn injected(mode: Mode, dominant: Hand, ctx: TableCtx) -> BTreeSet<Action> {
 }
 
 /// [`injected`], under `layout`.
-pub fn injected_with(
+pub(crate) fn injected_with(
     mode: Mode,
     dominant: Hand,
     ctx: TableCtx,

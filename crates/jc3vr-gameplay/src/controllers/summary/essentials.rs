@@ -20,7 +20,7 @@ use crate::controllers::summary::current::{CurrentContext, CurrentRouting, Curre
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub(crate) struct Evidence {
     /// Whether a C4 charge is placed in the world to detonate.
-    pub charges_placed: bool,
+    pub(crate) charges_placed: bool,
 }
 
 /// The essential subset of `rows` in `mode`: each row with a known source, keeping only its

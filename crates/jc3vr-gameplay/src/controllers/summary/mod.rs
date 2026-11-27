@@ -90,7 +90,7 @@ pub struct Published {
     pub wrist_revision: u64,
     /// When the mode last changed to one the player settles in with another heading than the last
     /// such mode's ([`shows_mode_change`]).
-    pub mode_changed_at: Instant,
+    pub(crate) mode_changed_at: Instant,
 }
 
 /// The latest summary, or `None` before the first refresh.
@@ -309,7 +309,7 @@ pub(crate) fn refresh(
 /// summary nor counts as the mode the player left: a jump that lands shows nothing, and a fall that
 /// opens the parachute or the wingsuit shows that mode's. A change between modes that share a
 /// heading (walking and swimming, a seat and another in the same class) shows nothing either.
-pub fn shows_mode_change(settled: Option<Text>, mode: Mode) -> (bool, Option<Text>) {
+pub(crate) fn shows_mode_change(settled: Option<Text>, mode: Mode) -> (bool, Option<Text>) {
     if transient(mode) {
         return (false, settled);
     }

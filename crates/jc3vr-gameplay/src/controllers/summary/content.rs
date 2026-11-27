@@ -167,7 +167,7 @@ pub struct Metrics {
     pub group_px: f32,
     /// A row's height before its text wraps.
     pub row_px: f32,
-    pub glyph_px: f32,
+    pub(crate) glyph_px: f32,
     pub font_px: f32,
 }
 

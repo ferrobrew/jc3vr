@@ -39,21 +39,21 @@ impl Tuning for GameplayTuning {
 pub struct BindingsTuning {
     /// How far from the line between two pad zones, in the pad's `-1..=1` axes, a press must land
     /// to count for a zone.
-    pub pad_zone_margin: f32,
+    pub(crate) pad_zone_margin: f32,
     /// The share of the menu stick's latching push that the push along a latched direction must
     /// stay at or above for the direction to stay latched.
-    pub menu_stick_hold_share: f32,
+    pub(crate) menu_stick_hold_share: f32,
     /// A resting stick magnitude that always counts as neutral for a hand's recovery, even when a
     /// consumer's deadzone is smaller. Worn sticks rest this far off centre, and a stick this close
     /// to centre can only feed a continuous consumer (a slow walk or turn), never an edge.
-    pub stick_neutral_floor: f32,
+    pub(crate) stick_neutral_floor: f32,
     /// How far from the locked line's hook the grapple's aim must be for a tap to fire the hook
     /// again, metres: past the aim's own wander on the hooked surface.
-    pub grapple_retarget_m: f32,
+    pub(crate) grapple_retarget_m: f32,
     /// Leaving a native helicopter hang.
     pub rail: RailReleaseTuning,
     /// Pulling into a helicopter from a hang.
-    pub heli_hang: HeliHangTuning,
+    pub(crate) heli_hang: HeliHangTuning,
     /// The seated exit's parachute bail.
     pub bail: BailTuning,
 }
@@ -93,13 +93,13 @@ pub struct RailReleaseTuning {
     /// How far the head must move sideways from where the hang began, metres.
     pub step_m: f32,
     /// How far the move stick must be pushed sideways, `0..=1`.
-    pub stick_push: f32,
+    pub(crate) stick_push: f32,
 }
 
 /// When an analog hold of the helicopter entry counts as pressed during a hang.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeliHangTuning {
+pub(crate) struct HeliHangTuning {
     /// The value at or above which the hold counts, `0..=1`.
     pub press: f32,
 }
@@ -111,16 +111,16 @@ pub struct BailTuning {
     /// The speed above the game's bail minimum at which the vehicle starts to count as fast enough
     /// to bail, metres per second. The game checks the speed only once its own hold time has
     /// passed after the press became long, so the margin leaves room to slow a little in between.
-    pub enter_margin_mps: f32,
+    pub(crate) enter_margin_mps: f32,
     /// The speed above the game's bail minimum below which a fast vehicle stops counting as fast
     /// enough to bail, metres per second. Smaller than the enter margin, for the hysteresis, and
     /// not below the game's minimum, where the bail would be refused.
-    pub leave_margin_mps: f32,
+    pub(crate) leave_margin_mps: f32,
     /// The shortest the bail's `OPEN_PARACHUTE` is held, seconds, once a bail begins, even when the
     /// press is let go sooner.
-    pub hold_min_s: f32,
+    pub(crate) hold_min_s: f32,
     /// The longest the bail's `OPEN_PARACHUTE` is held, seconds, however long the press lasts.
-    pub hold_max_s: f32,
+    pub(crate) hold_max_s: f32,
 }
 
 impl BailTuning {
@@ -155,9 +155,9 @@ pub struct PointerTuning {
     /// the press, so a hand's tremor never turns a press into a drag. Past it the press drags from
     /// the live hit.
     pub click_slop: f32,
-    pub aim_hold: AimHoldTuning,
+    pub(crate) aim_hold: AimHoldTuning,
     pub scroll: ScrollTuning,
-    pub laser: LaserTuning,
+    pub(crate) laser: LaserTuning,
 }
 
 impl PointerTuning {
@@ -173,16 +173,16 @@ impl PointerTuning {
 /// full pull clicks.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AimHoldTuning {
+pub(crate) struct AimHoldTuning {
     /// The value at or above which the cursor pins.
-    pub pin_press: f32,
+    pub(crate) pin_press: f32,
     /// The value below which the cursor is freed.
-    pub pin_release: f32,
+    pub(crate) pin_release: f32,
     /// The value at or above which a click begins: a full pull.
-    pub click_press: f32,
+    pub(crate) click_press: f32,
     /// The value below which a click ends, far enough below the press that a held click does not
     /// chatter.
-    pub click_release: f32,
+    pub(crate) click_release: f32,
 }
 
 impl AimHoldTuning {
@@ -233,7 +233,7 @@ impl ScrollTuning {
 /// The pointing hand's laser to the panel.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LaserTuning {
+pub(crate) struct LaserTuning {
     /// The line's width, metres.
     pub width_m: f32,
     /// The line's colour, linear RGBA.
@@ -273,7 +273,7 @@ pub struct OnlineTuning {
     /// How long the Steam platform system's update may take before it is logged on its own,
     /// milliseconds. The call takes a fraction of a millisecond on an ordinary tick, and the stalls
     /// it carries are hundreds.
-    pub slow_steam_callbacks_ms: u64,
+    pub(crate) slow_steam_callbacks_ms: u64,
 }
 
 impl OnlineTuning {
@@ -292,19 +292,19 @@ impl OnlineTuning {
 #[serde(deny_unknown_fields)]
 pub struct SummaryTuning {
     /// The smallest row the panel stays readable at, pixels.
-    pub min_row_px: f32,
+    pub(crate) min_row_px: f32,
     /// The largest row worth drawing, pixels.
-    pub max_row_px: f32,
+    pub(crate) max_row_px: f32,
     /// The margin around the content, in rows.
-    pub margin_rows: f32,
+    pub(crate) margin_rows: f32,
     /// The heading's height, in rows.
-    pub heading_rows: f32,
+    pub(crate) heading_rows: f32,
     /// A group header's height (the controller glyph), in rows.
-    pub group_rows: f32,
+    pub(crate) group_rows: f32,
     /// A row's glyph size, in rows.
-    pub glyph_rows: f32,
+    pub(crate) glyph_rows: f32,
     /// The font's size, in rows.
-    pub font_rows: f32,
+    pub(crate) font_rows: f32,
 }
 
 impl SummaryTuning {

@@ -53,18 +53,19 @@ pub fn declare<S: Sink>(sink: &mut S, mode: Mode, ctx: &TableCtx) {
 /// The virtual gamepad buttons: the gameplay actions the default gamepad keymap puts on each.
 /// `PUSH_GRAPPLE` is left off B: under the hammer ability it is melee, which the controllers
 /// trigger with a strike, and on B it would melee on every tether release.
-pub const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
+pub(crate) const PAD_A: &[Action] = &[JUMP, OPEN_PARACHUTE, STUNT_JUMP, BTN_A];
 pub const PAD_B: &[Action] = &[RELEASE_GRAPPLE, CANCEL, BYPASS_FALL_PREVENTION, BTN_B];
-pub const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
-pub const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
-pub const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
+pub(crate) const PAD_X_ON_FOOT: &[Action] = &[RELOAD, BTN_X];
+pub(crate) const PAD_Y_ON_FOOT: &[Action] = &[USE_ITEM, ENTER_VEHICLE, OPEN_WINGSUIT, BTN_Y];
+pub(crate) const PAD_Y_VEHICLE: &[Action] = &[EXIT_VEHICLE, ENTER_VEHICLE, BTN_Y];
 /// The dominant stick click's actions on foot and in the air: the detonation of the placed charges
 /// alone, which the game starts once the action has been held past its hold time. The gamepad's
 /// RB also throws a grenade and plants C4; the controllers take a grenade from its pouch and a
 /// charge from its own pouch instead, so neither is on a button.
-pub const STICK_CLICK_DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
-pub const PAD_LB_VEHICLE: &[Action] = &[FIRE_VEHICLE_WEAPON_SECONDARY, FIRE_GRAPPLE, MC_RELOAD, L1];
-pub const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
+pub(crate) const STICK_CLICK_DETONATE: &[Action] = &[DETONATE_EXPLOSIVE];
+pub(crate) const PAD_LB_VEHICLE: &[Action] =
+    &[FIRE_VEHICLE_WEAPON_SECONDARY, FIRE_GRAPPLE, MC_RELOAD, L1];
+pub(crate) const PAD_L3_VEHICLE: &[Action] = &[SOUND_HORN_SIREN, TOGGLE_MAGNET_1, L3];
 
 const fn press(role: Role, input: Input) -> Press {
     Press::new(role, input)

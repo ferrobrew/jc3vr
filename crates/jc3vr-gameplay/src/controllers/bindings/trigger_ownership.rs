@@ -108,7 +108,7 @@ impl TriggerOwnership {
     }
 
     /// Mutations during weapon finish cannot transfer a press accepted for the old identity.
-    pub fn after_finish(&mut self, owners: [Owner; 2]) -> [bool; 2] {
+    pub(crate) fn after_finish(&mut self, owners: [Owner; 2]) -> [bool; 2] {
         let owners = owners.map(Owner::of_trigger);
         Hand::BOTH.map(|hand| {
             let i = hand.index();

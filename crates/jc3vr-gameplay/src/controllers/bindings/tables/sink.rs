@@ -74,7 +74,7 @@ pub enum Direction {
 
 /// How a pad press divides its pad.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum PadLayout {
+pub(crate) enum PadLayout {
     /// The halves left and right of the vertical centre line.
     Halves,
     /// The four quadrants of a d-pad, by the position's larger axis.
@@ -114,7 +114,7 @@ impl PadLayout {
 
 /// The position action that goes with a pad press action, and how the press divides the pad, for
 /// the pad press actions.
-pub fn pad_of(press: ActionId) -> Option<(ActionId, PadLayout)> {
+pub(crate) fn pad_of(press: ActionId) -> Option<(ActionId, PadLayout)> {
     if press == MenuAction::MenuTabPress.id() {
         Some((MenuAction::MenuTabPad.id(), PadLayout::Halves))
     } else if press == OnFootAction::WeaponSelectPress.id() {
@@ -125,7 +125,7 @@ pub fn pad_of(press: ActionId) -> Option<(ActionId, PadLayout)> {
 }
 
 /// The pad press action of `set`, if it has one.
-pub fn pad_press_of(set: SemanticSet) -> Option<ActionId> {
+pub(crate) fn pad_press_of(set: SemanticSet) -> Option<ActionId> {
     match set {
         SemanticSet::Menu => Some(MenuAction::MenuTabPress.id()),
         SemanticSet::OnFoot => Some(OnFootAction::WeaponSelectPress.id()),
@@ -227,11 +227,11 @@ pub trait Sink {
 /// The per-tick state the gates and the latched inputs read, decided by
 /// [`Bindings::step`](crate::controllers::bindings::tables::Bindings::step) before the tables run.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct Latches {
+pub(crate) struct Latches {
     /// The sight tuning chord's dominant grip is held.
-    pub chord_grip: bool,
+    pub(crate) chord_grip: bool,
     /// Both of the sight tuning chord's grips are held.
-    pub chord_armed: bool,
+    pub(crate) chord_armed: bool,
     /// The character is a ragdoll.
     pub ragdolling: bool,
     /// Each hand holds a gun, by [`Hand::index`].
@@ -241,17 +241,17 @@ pub struct Latches {
     /// Each hand's menu presses, by [`Hand::index`].
     pub menu: [MenuLatch; 2],
     /// Each hand's pad press, by [`Hand::index`].
-    pub pads: [PadLatch; 2],
+    pub(crate) pads: [PadLatch; 2],
 }
 
 /// The most semantic actions whose presses are told apart by length in one mode.
-pub const MAX_TIMED: usize = 4;
+pub(crate) const MAX_TIMED: usize = 4;
 
 /// One hand's presses of the timed actions as of this tick: for each, whether a short press ended
 /// this tick, whether a press reached the long-press time this tick, and whether a press past it is
 /// held.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct TimedLatch {
+pub(crate) struct TimedLatch {
     pub presses: [Option<(ActionId, TimedPress)>; MAX_TIMED],
 }
 
@@ -274,7 +274,7 @@ pub struct TimedPress {
     /// The press reached the long-press time this tick.
     pub long: bool,
     /// A press that has reached the long-press time is held this tick.
-    pub long_held: bool,
+    pub(crate) long_held: bool,
 }
 
 /// Times one hand's presses of one action, to tell a short press from a long one.
@@ -326,15 +326,15 @@ pub struct MenuLatch {
     /// The direction the stick push latched to, and whether it began with the modifier held.
     pub stick: Option<(Direction, bool)>,
     /// Whether the previous page press began with the modifier held, while it is held.
-    pub page_prev: Option<bool>,
+    pub(crate) page_prev: Option<bool>,
     /// Whether the next page press began with the modifier held, while it is held.
-    pub page_next: Option<bool>,
+    pub(crate) page_next: Option<bool>,
 }
 
 /// One hand's pad press: the press action and the zone it latched to at its press edge, held
 /// until the press is released. A press on a line between zones waits for the thumb to move off.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct PadLatch {
+pub(crate) struct PadLatch {
     pub press: Option<(ActionId, Option<PadZone>)>,
 }
 
@@ -350,7 +350,7 @@ impl PadLatch {
 
 /// The evaluating reader: resolves the tables' inputs against one tick's intents and collects the
 /// wanted actions, all on one map.
-pub struct EvalSink<'a> {
+pub(crate) struct EvalSink<'a> {
     intents: &'a Intents,
     latches: Latches,
     move_rotation: f32,

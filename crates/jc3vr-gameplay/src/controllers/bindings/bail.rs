@@ -28,7 +28,7 @@ use crate::controllers::tuning::GAMEPLAY;
 /// vehicle's ground-relative velocity at the seated character
 /// ([`jc3vr_vehicles::controllers::vehicles::seat_vehicle_speed_mps`]) against its squared bounds; the unit
 /// is unverified, and taken to be metres per second.
-pub const PARACHUTE_BAIL_MIN_SPEED_MPS: f32 = 6.0;
+pub(crate) const PARACHUTE_BAIL_MIN_SPEED_MPS: f32 = 6.0;
 
 /// Whether the game's states for `seat` bail out by parachute at speed: the car's driver, the
 /// motorcycle's rider, and a mounted gun's gunner (`mounted_gun`, the game's mounted gun state,
@@ -42,7 +42,7 @@ pub const PARACHUTE_BAIL_MIN_SPEED_MPS: f32 = 6.0;
 /// exit.
 ///
 /// [`Character::IsInMountedGunState`]: jc3gi::character::character::Character::IsInMountedGunState
-pub const fn bails_by_parachute(seat: VehicleSeat, mounted_gun: bool) -> bool {
+pub(crate) const fn bails_by_parachute(seat: VehicleSeat, mounted_gun: bool) -> bool {
     match seat.class {
         VehicleClass::Car | VehicleClass::Motorcycle | VehicleClass::Unknown => {
             seat.driver || mounted_gun
@@ -103,7 +103,7 @@ impl ExitLatch {
 
 /// The per-press choice of the bail over the plain exit.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct BailLatch {
+pub(crate) struct BailLatch {
     /// Whether the vehicle counts as fast enough to bail, through the hysteresis band.
     fast: bool,
     /// The choice handed out on the last tick.
@@ -112,13 +112,13 @@ pub struct BailLatch {
 
 /// What [`BailLatch::step`] reads each tick in a vehicle seat.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct BailTick {
+pub(crate) struct BailTick {
     /// Whether the seat's states have the bail ([`bails_by_parachute`]).
-    pub seat_bails: bool,
+    pub(crate) seat_bails: bool,
     /// The vehicle's speed, metres per second, while it can be read.
     pub speed_mps: Option<f32>,
     /// Whether the exit press had already become long by the last tick.
-    pub press_long: bool,
+    pub(crate) press_long: bool,
 }
 
 impl BailLatch {

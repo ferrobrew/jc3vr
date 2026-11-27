@@ -101,7 +101,7 @@ impl Press {
     }
 
     /// The yank gesture, on the grapple hand.
-    pub const YANK: Press = Press::new(Role::Off, Input::Yank);
+    pub(crate) const YANK: Press = Press::new(Role::Off, Input::Yank);
 }
 
 /// An analog input.
@@ -138,13 +138,13 @@ pub trait Sink {
 /// The per-tick state the gates and the latched grips read, decided by
 /// [`Bindings::step`](crate::controllers::bindings::tables::Bindings::step) before the tables run.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct Latches {
+pub(crate) struct Latches {
     /// Whether each hand's grip press is latched to its default use, by [`Hand::index`].
-    pub grip_default: [bool; 2],
+    pub(crate) grip_default: [bool; 2],
     /// The sight tuning chord's dominant grip is held.
-    pub chord_grip: bool,
+    pub(crate) chord_grip: bool,
     /// Both of the sight tuning chord's grips are held.
-    pub chord_armed: bool,
+    pub(crate) chord_armed: bool,
     /// The wingsuit A press was latched as an evade flick.
     pub evade: bool,
     /// Each hand's menu presses, by [`Hand::index`].
@@ -181,7 +181,7 @@ impl MenuLatch {
 
 /// The evaluating reader: resolves the tables' inputs against one tick's controls and collects the
 /// wanted actions, all on one map.
-pub struct EvalSink<'a> {
+pub(crate) struct EvalSink<'a> {
     controls: &'a Controls,
     latches: Latches,
     pub map: MapKind,
