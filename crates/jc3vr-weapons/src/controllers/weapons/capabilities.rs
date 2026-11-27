@@ -16,7 +16,8 @@ use crate::controllers::{
     weapons::{dual_wield::single, engine::slot_of, foregrip, hold::armed, permission, reload},
 };
 
-/// The held-gun operations available in a control mode. Tracking and input ownership gate each hand.
+/// What the weapon handling does in a control mode: the one mode table every half of the tick
+/// reads. The held-gun operations are gated per hand by tracking and input ownership besides.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct Capabilities {
     pub fire: bool,
@@ -25,31 +26,62 @@ pub struct Capabilities {
     pub support: bool,
     pub dock: bool,
     pub reload: bool,
+    /// The weapons in the world without a body (in characters' hands, on racks, in lockers) can be
+    /// taken.
+    pub pickup: bool,
+    /// The weapon wheel opens.
+    pub wheel: bool,
+    /// The explosive pouches (the grenades and the C4) give and take.
+    pub pouches: bool,
 }
 
 impl Capabilities {
+    /// Everything acts.
+    const ALL: Self = Self {
+        fire: true,
+        release: true,
+        transfer: true,
+        support: true,
+        dock: true,
+        reload: true,
+        pickup: true,
+        wheel: true,
+        pouches: true,
+    };
+
+    /// Nothing acts.
+    const NONE: Self = Self {
+        fire: false,
+        release: false,
+        transfer: false,
+        support: false,
+        dock: false,
+        reload: false,
+        pickup: false,
+        wheel: false,
+        pouches: false,
+    };
+
     pub const fn of(mode: Mode) -> Self {
         match mode {
-            Mode::OnFoot(OnFootVariant::Ground | OnFootVariant::Swimming)
-            | Mode::Airborne(
-                AirborneVariant::Falling | AirborneVariant::Parachute | AirborneVariant::Wingsuit,
-            )
-            | Mode::Vehicle(_) => Self {
-                fire: true,
-                release: true,
-                transfer: true,
-                support: true,
-                dock: true,
-                reload: true,
+            Mode::OnFoot(OnFootVariant::Ground)
+            | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute) => Self::ALL,
+            // In a seat the belt and the pouches stay in reach, but nothing in the world is.
+            Mode::Vehicle(_) => Self {
+                pickup: false,
+                wheel: false,
+                ..Self::ALL
             },
-            Mode::Ui => Self {
-                fire: false,
-                release: false,
-                transfer: false,
-                support: false,
-                dock: false,
-                reload: false,
-            },
+            // The held guns keep working while swimming and in the wingsuit.
+            Mode::OnFoot(OnFootVariant::Swimming) | Mode::Airborne(AirborneVariant::Wingsuit) => {
+                Self {
+                    pickup: false,
+                    wheel: false,
+                    pouches: false,
+                    ..Self::ALL
+                }
+            }
+            Mode::Ui => Self::NONE,
         }
     }
 }
@@ -275,11 +307,36 @@ mod tests {
 
     #[test]
     fn held_gun_operations_do_not_depend_on_locomotion_or_seat() {
-        let on_foot = Capabilities::of(Mode::OnFoot(OnFootVariant::Ground));
+        let held_guns = |c: Capabilities| Capabilities {
+            pickup: false,
+            wheel: false,
+            pouches: false,
+            ..c
+        };
+        let on_foot = held_guns(Capabilities::of(Mode::OnFoot(OnFootVariant::Ground)));
         for mode in modes() {
-            assert_eq!(Capabilities::of(mode), on_foot, "{mode:?}");
+            assert_eq!(held_guns(Capabilities::of(mode)), on_foot, "{mode:?}");
         }
         assert_eq!(Capabilities::of(Mode::Ui), Capabilities::default());
+    }
+
+    #[test]
+    fn the_pickup_and_the_wheel_act_on_foot_and_falling_and_the_pouches_in_a_seat_too() {
+        for mode in modes() {
+            let c = Capabilities::of(mode);
+            let world = matches!(
+                mode,
+                Mode::OnFoot(OnFootVariant::Ground)
+                    | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute)
+            );
+            assert_eq!(c.pickup, world, "{mode:?}");
+            assert_eq!(c.wheel, world, "{mode:?}");
+            assert_eq!(
+                c.pouches,
+                world || matches!(mode, Mode::Vehicle(_)),
+                "{mode:?}"
+            );
+        }
     }
 
     #[test]
