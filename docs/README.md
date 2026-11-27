@@ -75,9 +75,7 @@
 - [settings.md](mod/settings.md): the settings aggregate, its slots, and how the file is loaded, migrated, and saved.
 - [hud.md](mod/hud.md): the floating HUD panel, world markers, HUD depth, the debug panel, the clean view, and the UI pointer.
 - [pause-menu.md](mod/pause-menu.md): the VR pages in the game's pause menu and the body calibration.
-- [status.md](mod/status.md): the status rows' states, sections, and threading rule.
-- [debug-ui.md](mod/debug-ui.md): the debug UI's pages, input ownership, and layout.
-- [environment.md](mod/environment.md): debug UI controls for time of day and weather.
+- [debug-ui.md](mod/debug-ui.md): the debug UI's pages, the status rows, input ownership, the session checklist, the environment controls, visualizations, and layout persistence.
 - [sessions.md](mod/sessions.md): the session output folder and where each output lands.
 - [capture.md](mod/capture.md): session recording, the eye-view video capture, the capture hosts, and the sidecar.
 - [trailer-tooling.md](mod/trailer-tooling.md): the directing tools for staging footage.

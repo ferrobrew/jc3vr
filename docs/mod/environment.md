@@ -1,3 +1,0 @@
-# Environment controls
-
-The debug UI's Tools > Environment feature (`crates/jc3vr-ui/src/ui/environment.rs`) sets the time of day and the weather for testing rendering under different lighting, re-reading each value every frame so drift shows. The hour slider calls `WorldTime::SetTimeOfDay`; the weather buttons send the weather controller's named events, the way to pin a weather state, a severity slider calls `Weather::SetSeverity`, and the rain and snow sliders are pulled back by the controller unless an event holds the state. [engine/environment.md](../engine/environment.md) describes the game's side.

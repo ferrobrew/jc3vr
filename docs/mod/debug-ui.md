@@ -4,7 +4,7 @@ The debug UI is an egui window drawn on the desktop and, in the headset, on the 
 
 ## Navigation
 
-The nine pages are Status, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, Tools, and Experimental, each holding features (`ui/catalog.rs`). Each feature renders its controls, then a collapsible live readout that runs after the controls return, so it holds no configuration edit guard. `ui::dispatch` routes every feature with an exhaustive match, so a new feature does not compile without a renderer. Tools holds the session checklist, the captures ([render trace](rendering/render-trace.md)), the director ([trailer-tooling.md](trailer-tooling.md)), the [environment](environment.md), and the presets; Experimental holds the render RE window (`ui::diagnostics`).
+The nine pages are Status, Body/tracking, Hands/interaction, Weapons, Movement/vehicles, Rendering, Input/bindings, Tools, and Experimental, each holding features (`ui/catalog.rs`). Each feature renders its controls, then a collapsible live readout that runs after the controls return, so it holds no configuration edit guard. `ui::dispatch` routes every feature with an exhaustive match, so a new feature does not compile without a renderer. Tools holds the session checklist, the captures ([render trace](rendering/render-trace.md)), the director ([trailer-tooling.md](trailer-tooling.md)), the [environment controls](#environment-controls), and the presets; Experimental holds the render RE window (`ui::diagnostics`).
 
 ## Status rows
 
@@ -21,6 +21,10 @@ Opening the panel requests editing: the panel takes the controls, the game's inp
 ## Visualizations
 
 Show visualizations opens a drawer of the overlay's view switches (the body views, the grab and collider views, the docked guns), each with how many primitives it drew at the last snapshot. Hide registered views masks their output until Restore, without writing the configuration.
+
+## Environment controls
+
+Tools > Environment (`crates/jc3vr-ui/src/ui/environment.rs`) sets the time of day and the weather for testing rendering under different lighting, and re-reads each value every frame so drift shows. The hour slider calls `WorldTime::SetTimeOfDay`. The weather buttons send the weather controller's named events, which is the way to pin a weather state; the severity slider calls `Weather::SetSeverity`, and the controller pulls the rain and snow sliders back unless an event holds the state. [engine/environment.md](../engine/environment.md) describes the game's side.
 
 ## Layout persistence
 
