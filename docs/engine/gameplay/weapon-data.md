@@ -20,13 +20,13 @@ The weapon's runtime name hash, [`WeaponBase::m_WeaponNameHash`](https://ferrobr
 
 `CWeaponBase::SetProperties` reads the `SWeaponPoint` children. The `type` property selects the point's role:
 
-- Type 2 is a fire position. Its `world` matrix goes to `CWeaponData::AddInternalFirePosition` and becomes an entry of [`WeaponData::m_InternalFirePositions`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_InternalFirePositions).
-- Type 0 is a gun's offset from the weapon base, one per `CWeaponData`.
-- Type 1 appears on `w147` and `w703`. `SetProperties` does not add it as a fire position.
+- A fire position (`FIRE_POSITION` in [`tools/sights/weapon.py`](../../../tools/sights/weapon.py)). Its `world` matrix goes to `CWeaponData::AddInternalFirePosition` and becomes an entry of [`WeaponData::m_InternalFirePositions`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::WeaponData##field-m_InternalFirePositions).
+- A gun's offset from the weapon base, one per `CWeaponData`.
+- A third type appears on `w147` and `w703`. `SetProperties` does not add it as a fire position.
 
-The point's gun-index property (named `WEAPON_DATA_INDEX_KEY` in [`tools/sights/weapon.py`](../../../tools/sights/weapon.py), which records its name hash) is the index of the `CWeaponData` the point belongs to, and -1 means every gun. Dual pistols use -1, so each gun gets the same fire point in its own frame.
+The point's gun-index property (named `WEAPON_DATA_INDEX_KEY` in [`tools/sights/weapon.py`](../../../tools/sights/weapon.py), which records its name hash) is the index of the `CWeaponData` the point belongs to, or a sentinel that means every gun (the script records its value). Dual pistols use the sentinel, so each gun gets the same fire point in its own frame.
 
-Every hand weapon's fire position has an identity rotation, so the barrel is the point's -Z axis and up is +Y. The fire position sits on the bore line at the muzzle. No hand weapon has a type 0 point, so the gun frame, the weapon space, and the model space coincide. `w144` has several distinct fire positions, one per tube. `w703` has no type 2 point.
+Every hand weapon's fire position has an identity rotation, so the barrel is the point's -Z axis and up is +Y. The fire position sits on the bore line at the muzzle. No hand weapon has a gun-offset point, so the gun frame, the weapon space, and the model space coincide. `w144` has several distinct fire positions, one per tube. `w703` has no fire position.
 
 ## Models
 
