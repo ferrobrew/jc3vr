@@ -1,5 +1,6 @@
-//! Tests for the physical controls: the wheel, the handlebars, and the common grab and release here,
-//! the plane's flight stick and throttle in [`flight`], and the cockpit's buttons in [`buttons`].
+//! Tests for the physical controls: the wheel, the handlebars, and the common grab and release
+//! here, the plane's flight stick and throttle in [`flight`], and the cockpit's buttons in
+//! [`buttons`].
 
 mod buttons;
 mod flight;

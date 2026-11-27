@@ -2,12 +2,12 @@
 //! mounted gun stands, behind its handles, is lowered into the seat as if entering the vehicle.
 //!
 //! The game enters a gunner seat from the vehicle-entry action held past its hold time while the
-//! player's interaction node leads to one
-//! ([`NStateTask_InputVehicleEnterTask::Update`]). Once the player has stood behind an unmanned
-//! vehicle gun's handles for [`DWELL`], with the game offering the gunner seat
-//! ([`NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination`]), the action is held until
-//! the player mans the gun or [`HOLD_TIMEOUT`] runs out. The decision is pure ([`decide`]); the
-//! game is read in [`step`].
+//! player's interaction node leads to one ([`NStateTask_InputVehicleEnterTask::Update`]). Once the
+//! player has stood behind an unmanned vehicle gun's handles for the tuning's dwell
+//! ([`GunnerSeatTuning::dwell`](crate::vehicles::tuning::GunnerSeatTuning::dwell)), with the game
+//! offering the gunner seat ([`NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination`]),
+//! the action is held until the player mans the gun or the tuning's hold timeout runs out. The
+//! decision is pure ([`decide`]); the game is read in [`step`].
 //!
 //! [`NStateTask_InputVehicleEnterTask::Update`]: jc3gi::vehicle::vehicle::NStateTask_InputVehicleEnterTask::Update
 //! [`NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination`]: jc3gi::vehicle::vehicle::NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination

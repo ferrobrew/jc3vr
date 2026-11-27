@@ -494,8 +494,8 @@ pub struct StepInputs<'a> {
     pub dt: f32,
 }
 
-/// Advance the controls by one input tick: act on the grabs and the releases, move the held controls
-/// with their hands, and return the outputs.
+/// Advance the controls by one input tick: act on the grabs and the releases, move the held
+/// controls with their hands, and return the outputs.
 pub fn step(
     state: &mut ControlState,
     placement: &Placement,

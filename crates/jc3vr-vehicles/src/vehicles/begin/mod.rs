@@ -1,5 +1,5 @@
-//! The first half of the vehicle handling's input tick: read the mounted gun, fit the wheel and
-//! the handlebars, and provide the vehicle handling's grip targets ([`jc3vr_body::controllers::grab`]):
+//! The first half of the vehicle handling's input tick: read the mounted gun, fit the wheel and the
+//! handlebars, and provide the vehicle handling's grip targets ([`jc3vr_body::controllers::grab`]):
 //! the driver's controls, the cockpit's buttons, the parachute's handles, the ripcord, and the
 //! mounted gun's handles.
 

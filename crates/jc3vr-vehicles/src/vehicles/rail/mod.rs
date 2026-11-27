@@ -5,8 +5,8 @@
 //! attached on the skid outside the door and carried by the airframe. Helicopters have no idle
 //! there: once the arrival's clip ends, the state drops into the helicopter's stunt hang through
 //! [`ValidateStuntPositionCondition::Evaluate`] on the transition to the side-to-hang state, unless
-//! the player pressed Y in time to enter. The reviewer wants the skid as a place to stand and move
-//! on with the full body, a door to open, and a step into the air to be a fall.
+//! the player pressed Y in time to enter. In VR the skid is a place to stand and move on with the
+//! full body, beside a door to open, and a step off it into the air is a fall.
 //!
 //! So while the controllers act, that one transition is refused, and at the arrival clip's end the
 //! rail takes Rico out of the helicopter's interaction graph, as the game takes a character off a

@@ -86,8 +86,9 @@ pub fn mounted_aim_point() -> Option<Vec3> {
     fresh_mounted_target().map(|t| t.point)
 }
 
-/// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
-/// do not inject.
+/// Stop acting: let go of every control, handle, and the rail, and forget the mounted gun the hands
+/// aimed. The guns the mounted runtime retains are released by its own stand-down
+/// ([`crate::vehicles::mounted::stand_down`]), which the bindings run beside this one.
 pub fn stand_down() {
     crate::vehicles::rail::stand_down();
     physical::calibration::leave();

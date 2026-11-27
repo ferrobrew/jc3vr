@@ -1,7 +1,7 @@
 //! The vehicles' tuning, read from the shipped `tuning/vehicles.toml` ([`VEHICLES`]): the physical
 //! controls' placement and motion, with the wheel settings they take from the configuration
-//! ([`crate::vehicles::config::PhysicalControlsConfig`]), the wheel and handlebars
-//! fit, the steering, and the cues ([`physical`]); the wingsuit's arm steering, gestures, evade, and
+//! ([`crate::vehicles::config::PhysicalControlsConfig`]), the wheel and handlebars fit, the
+//! steering, and the cues ([`physical`]); the wingsuit's arm steering, gestures, evade, and
 //! take-off, the parachute's handles and rig, and the ripcord ([`airborne`]); the mounted guns, the
 //! gunner's seat, the driving view, and the cockpit calibration ([`seats`]); and the helicopter's
 //! skid.

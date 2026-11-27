@@ -13,8 +13,8 @@
 //! handle for a press that no other volume claims, so that a hand that misses the handle by a
 //! little takes it rather than firing the grapple.
 //!
-//! Each handle is marked while the handles act ([`marks`]): faintly out of reach, brighter in reach,
-//! and lit while held, so the player can find them.
+//! Each handle is marked while the handles act, by the vehicle handling's grip targets: faintly out
+//! of reach, brighter in reach, and lit while held, so the player can find them.
 //!
 //! A held handle is pulled by how far its hand has come down from where it took the handle, over a
 //! deadzone, reaching a full pull at the full-pull distance, and pushed by how far it has gone up

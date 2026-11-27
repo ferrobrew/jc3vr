@@ -2,14 +2,14 @@
 //! offset from the steering wheel's hub in every vehicle.
 //!
 //! Where the hub sits from the seated character's eyes is a property of the seat: the driver
-//! animation and the wheel part decide it, and it differs by a tenth of a metre or more from car
-//! to car. The fit measures it on the input tick from the character's eyes: the head pose's anchor
+//! animation and the wheel part decide it, and it differs by a tenth of a metre or more from car to
+//! car. The fit measures it on the input tick from the character's eyes: the head pose's anchor
 //! (the animated head, before the head pose or this correction moves it) with the camera's eye arm
 //! hung off it, so neither the player's posture nor a correction already applied enters the
-//! measurement. Once the driver has settled into the seat,
-//! [`Entry`] averages it over a short window and keeps the mean for the rest of the entry, so the
-//! driving animation's sway does not move the view. [`derive`] turns the mean into the correction:
-//! the hub's offset from the standard place, limited in length, or a [`SEAT_OVERRIDES`] entry's.
+//! measurement. Once the driver has settled into the seat, [`Entry`] averages it over a short
+//! window and keeps the mean for the rest of the entry, so the driving animation's sway does not
+//! move the view. [`derive`](fn@derive) turns the mean into the correction: the hub's offset from
+//! the standard place, limited in length, or a [`SEAT_OVERRIDES`] entry's.
 //!
 //! The input tick publishes the correction for the vehicle ([`publish`]). The frame half of the
 //! pose composition ([`jc3vr_body::controllers::roomscale::compose_cockpit`]) eases toward it, and
@@ -111,7 +111,7 @@ pub fn derive(hub_from_eyes: Vec3, seat_override: Option<&SeatOverride>) -> Corr
 }
 
 /// The correction for a gunner seat whose gun's handles' midpoint sits at `handles_from_eyes`
-/// from the character's eyes, as [`derive`] for a wheel's hub.
+/// from the character's eyes, as [`derive`](fn@derive) for a wheel's hub.
 pub(crate) fn derive_handles(handles_from_eyes: Vec3) -> Correction {
     derive_from(
         handles_from_eyes,

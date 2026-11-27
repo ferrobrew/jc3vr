@@ -13,10 +13,10 @@
 //! same reason. The bars give the wheel's stop cue at the lock and its tick through the centre.
 //!
 //! The bars only turn. Their turn past a small deadzone, shaped by a response exponent, is the
-//! steering ([`steer_for_turn`]), and the lean is the same value: the gamepad's one stick writes the
-//! motorcycle's steering and its lean together, so the bars do as the stick does. A hand's height
-//! on the bars works nothing, so the grip that drops as a wrist turns the bars neither leans nor
-//! steers.
+//! steering ([`steer_for_turn`]), and the lean is the same value: the gamepad's one stick writes
+//! the motorcycle's steering and its lean together, so the bars do as the stick does. A hand's
+//! height on the bars works nothing, so the grip that drops as a wrist turns the bars neither leans
+//! nor steers.
 
 use body_rig::math::{angle::wrap, axis::shaped};
 use glam::{Quat, Vec3};

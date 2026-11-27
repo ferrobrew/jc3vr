@@ -87,7 +87,7 @@ pub(crate) struct FitInputs<'a> {
     /// published.
     pub eyes: Option<Vec3>,
     /// The hands' grips, world space, for the cockpit calibration
-    /// ([`calibration`](crate::vehicles::physical::calibration)).
+    /// ([`crate::vehicles::physical::calibration`]).
     pub hands: [Option<Vec3>; 2],
 }
 

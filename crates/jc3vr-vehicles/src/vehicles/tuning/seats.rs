@@ -80,8 +80,8 @@ pub struct MountedRecoilTuning {
     pub(crate) max_speed_per_s: f32,
 }
 
-/// Where the gunner stands to take a manned gun on foot (see
-/// [`crate::vehicles::mounted::gunner_seat`]).
+/// Where the gunner stands to take a manned gun on foot, and how long the entry waits and holds
+/// (the mounted guns' `gunner_seat`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GunnerSeatTuning {

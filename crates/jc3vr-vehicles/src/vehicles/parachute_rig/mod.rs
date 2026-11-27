@@ -165,8 +165,8 @@ fn sync_bones(
     if let (Some(generation), Some(world)) = (request, world) {
         // The handle is published at its attach bone, the toggle's far end from its cord, which
         // follows the handle and its rotation bone once they are placed (or put back on the link
-        // above); without it, at the link, the top of the toggle, as before. The link sat at the
-        // top of the riser, well above the grip bar.
+        // above); without it, at the link, the top of the toggle, which sits at the top of the
+        // riser, well above the grip bar.
         let points = Hand::BOTH.map(|hand| {
             let i = hand.index();
             let attach = bones[i]

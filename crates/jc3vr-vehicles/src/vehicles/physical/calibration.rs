@@ -1,16 +1,17 @@
 //! The cockpit controls' calibration from the player's hands.
 //!
-//! The cockpit table ([`native::cockpit_asset`]) holds each merged aircraft cockpit's controls,
-//! measured from the meshes where they are modelled and placed where they are not, and a placed
-//! control can sit out of reach. So the player can set a cockpit's controls from the hands: a
-//! request starts a countdown ([`request`]), and when it runs out, seated at the controls, the
-//! right hand's grip becomes the stick's (the cyclic, the flight stick, or the yoke's right horn)
-//! and the left hand's the lever's (the collective or the throttle), in the cockpit part's own
-//! space, for that part and seat. The countdown starts only once the fit sees the player seated at
-//! the controls, since the debug panel the request comes from holds the controllers while it is
-//! up; each second of it ticks on both hands, and at its end both hands buzz. The override applies from the next fit, and is
-//! written at once to [`FILE_NAME`] in the configuration directory, which loads on start, so a
-//! calibration both holds across sessions and can be read back into the table.
+//! The cockpit table ([`cockpit_asset`](crate::vehicles::physical::native::cockpit_asset)) holds
+//! each merged aircraft cockpit's controls, measured from the meshes where they are modelled and
+//! placed where they are not, and a placed control can sit out of reach. So the player can set a
+//! cockpit's controls from the hands: a request starts a countdown ([`request`]), and when it runs
+//! out, seated at the controls, the right hand's grip becomes the stick's (the cyclic, the flight
+//! stick, or the yoke's right horn) and the left hand's the lever's (the collective or the
+//! throttle), in the cockpit part's own space, for that part and seat. The countdown starts only
+//! once the fit sees the player seated at the controls, since the debug panel the request comes
+//! from holds the controllers while it is up; each second of it ticks on both hands, and at its end
+//! both hands buzz. The override applies from the next fit, and is written at once to [`FILE_NAME`]
+//! in the configuration directory, which loads on start, so a calibration both holds across
+//! sessions and can be read back into the table.
 
 use std::{
     collections::BTreeMap,

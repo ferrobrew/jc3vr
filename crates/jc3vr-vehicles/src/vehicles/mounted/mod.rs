@@ -1,11 +1,11 @@
 //! Mounted guns and gunner seats: the hands hold the handles, and the handles aim the gun.
 //!
 //! A mounted gun, standalone or in a vehicle's gunner seat, is the weapon in the heavy slot in its
-//! mounted state ([`Character::IsInMountedGunState`]). The game draws the gun toward the character's
-//! weapon aim point, and the gun's per-weapon update builds its shot toward the point it is handed,
-//! so both are given the point this module derives, the first through the character-level point
-//! ([`jc3vr_body::controllers::aim::character_aim_point`]) and the second through the per-weapon seam
-//! ([`jc3vr_body::controllers::aim::gun`]).
+//! mounted state ([`Character::IsInMountedGunState`]). The game draws the gun toward the
+//! character's weapon aim point, and the gun's per-weapon update builds its shot toward the point
+//! it is handed, so both are given the point this module derives, the first through the
+//! character-level point (the body's `aim::character_aim_point`, which reads the mounted-gun fact)
+//! and the second through the per-weapon seam ([`jc3vr_body::controllers::aim::gun`]).
 //!
 //! The aim follows the hands as handles on a pivot. When the hands take the gun, the reference is
 //! taken: the hands' midpoint, the lever from the gun's handles to its pivot (the gun's origin) in
@@ -59,7 +59,8 @@ pub struct MountedGun {
     pub pivot: Vec3,
     /// The barrel's direction in the world, a unit vector.
     pub barrel: Vec3,
-    /// The handle for each hand in the world, indexed by [`Hand::index`], where the game places one.
+    /// The handle for each hand in the world, indexed by [`Hand::index`], where the game places
+    /// one.
     pub handles: [Option<Vec3>; 2],
 }
 

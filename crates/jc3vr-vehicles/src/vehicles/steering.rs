@@ -7,10 +7,10 @@
 //!   about the hub. This is the default, because it is what moves when a player turns a wheel with
 //!   their arms. Near the hub that angle is unstable, so the hand's twist about the wheel's axis
 //!   stands in for it there, blended in as the hand nears the hub;
-//! - the hand's twist about the wheel's axis alone, as a hand clamped to a rim turns with it. It does
-//!   not depend on where the hub is, so a wheel fitted a few centimetres off still turns truly, but
-//!   it reads only the wrist's roll: arms that carry the hands round the rim with the wrists held
-//!   still turn it barely at all.
+//! - the hand's twist about the wheel's axis alone, as a hand clamped to a rim turns with it. It
+//!   does not depend on where the hub is, so a wheel fitted a few centimetres off still turns
+//!   truly, but it reads only the wrist's roll: arms that carry the hands round the rim with the
+//!   wrists held still turn it barely at all.
 //!
 //! Only the change since the last tick counts, from where the hand took hold, so grabbing never
 //! jumps the wheel, and the turns accumulate ([`advance`]): each tick's change is unwrapped, so the

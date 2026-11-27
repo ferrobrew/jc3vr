@@ -10,7 +10,8 @@
 //!
 //! While the hands hold a gun's handles and their aim point is fresh, the look-input path is
 //! refused, so the update aims the hinges at the hands' point at the gun's own turn speeds and
-//! within its limits. Otherwise the game's path runs, so a gamepad turns the turret as before.
+//! within its limits. Otherwise the game's path runs, so a gamepad turns the turret as the game
+//! does.
 //!
 //! [`WeaponBase::m_MountedInputIsControlledByWeapon`]: jc3gi::equipment::weapon::WeaponBase::m_MountedInputIsControlledByWeapon
 //! [`WeaponBase::UpdateMountedInput`]: jc3gi::equipment::weapon::WeaponBase::UpdateMountedInput

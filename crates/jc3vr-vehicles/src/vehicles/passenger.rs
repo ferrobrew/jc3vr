@@ -2,16 +2,16 @@
 //!
 //! Out of the driver's seat the weapon in the hands is the player's wielded weapon, so the per-hand
 //! gun aim already aims and fires it along the holding hand's sight line
-//! ([`jc3vr_body::controllers::aim::gun`]), and the character-level aim point follows the gun hand. The
-//! seated character's upper body is another matter: the vehicle aim blend
+//! ([`jc3vr_body::controllers::aim::gun`]), and the character-level aim point follows the gun hand.
+//! The seated character's upper body is another matter: the vehicle aim blend
 //! ([`VehicleAimBlendState::UpdateSamplers`]) turns the torso and the gun arm toward the aim
 //! control's own weapon point ([`PlayerAimControl::m_AimPos`]), which the game sets from the gaze.
 //! A passenger looking ahead and pointing the gun out of the side window would twist toward the
 //! windscreen while the shot leaves for the side. So after the aim control's update, in a passenger
 //! or stunt seat and while a gun hand aims, the weapon slot of that point is set to the gun hand's
-//! aim point, and the body leans and turns toward where the hand points, as it does toward the
-//! gaze for the gamepad. The game copies the slot into the control parameters and the character's
-//! weapon point right after, so everything downstream follows the hand.
+//! aim point, and the body leans and turns toward where the hand points, as it does toward the gaze
+//! for the gamepad. The game copies the slot into the control parameters and the character's weapon
+//! point right after, so everything downstream follows the hand.
 //!
 //! [`VehicleAimBlendState::UpdateSamplers`]: jc3gi::aim::aim::VehicleAimBlendState::UpdateSamplers
 //! [`PlayerAimControl::m_AimPos`]: jc3gi::aim::aim::PlayerAimControl::m_AimPos

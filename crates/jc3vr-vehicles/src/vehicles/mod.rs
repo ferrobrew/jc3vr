@@ -1,35 +1,44 @@
 //! Vehicles, mounted guns, the wingsuit, and the parachute under the controller scheme: the plan of
 //! record's "Vehicle, mounted, and wingsuit weapons", its vehicle and wingsuit binding tables, and
-//! its decisions on physical controls and arm steering (`docs/mod/input/controllers-and-roomscale.md`).
+//! its decisions on physical controls and arm steering
+//! (`docs/mod/input/controllers-and-roomscale.md`).
 //!
 //! - [`config`]: the settings, all at `controllers.vehicles` ([`VEHICLES_CONFIG`]), and
-//!   [`tuning`]: the physical controls' fixed placement and tuning;
-//! - [`physical`]: the wheel, handlebars, cyclic, collective, flight stick, and throttle of
-//!   the driver's seat, grabbed with the grip, which write the vehicle's analog axes and hold the
-//!   hands;
+//!   [`tuning`]: the fixed placement and tuning of everything here;
+//! - [`physical`]: the wheel, handlebars, cyclic, collective, flight stick, yoke, and throttle of
+//!   the driver's seat and the cockpit's buttons, grabbed with the grip, which write the vehicle's
+//!   analog axes and hold the hands;
 //! - [`steering`]: how the held wheel turns and maps to the steering;
 //! - [`wheel`] and [`fit`]: the wheel and the handlebars placed where the driven vehicle's own are;
 //! - [`driving_view`]: the driver's view moved per vehicle to a standard place behind the wheel;
 //! - [`wheel_render`]: the vehicle's rendered steering wheel turned with the steering;
+//! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand;
 //! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
-//!   [`mounted_grip`] takes the handles with the grip, and [`mounted_recoil`] kicks them;
+//!   [`mounted_grip`] takes the handles with the grip, [`mounted_recoil`] kicks them, and
+//!   [`turret`] turns a manned vehicle gun toward the hands' aim;
+//! - [`passenger`]: a passenger's seated body turned toward the gun hand's aim;
 //! - [`arm_steering`]: the arm-pose steering of the wingsuit;
 //! - [`wingsuit_evade`]: the boost wingsuit's barrel-roll evade, thrown by banking the arms;
-//! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake;
+//! - [`wingsuit_gestures`]: the suit's deploy, air brake, and close, from the arms;
+//! - [`look_steer`]: the wingsuit's head look-steer removed;
+//! - [`take_off`]: the boost wingsuit's take-off from the ground along the head's heading;
+//! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake, at
+//!   the places the game's parachute rig puts them ([`parachute_rig`]);
 //! - [`ripcord`]: the ripcord at the hip, taken with the grip and pulled to open the parachute
 //!   from a fall or the wingsuit;
-//! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand, as an option;
-//! - [`passenger`]: a passenger's seated body turned toward the gun hand's aim;
-//! - [`look_steer`]: the wingsuit's head look-steer removed.
+//! - [`rail`]: standing on a helicopter's skid after a reel onto its door side;
+//! - [`grip_sources`]: the grip sources of the handles the hands hold besides the physical
+//!   controls.
 //!
 //! The stick bindings of every class are the tables' (`controllers::bindings::tables`).
 //! This module runs on the input tick in two halves around them, like the weapon handling:
 //!
 //! 1. [`begin_tick`] reads the mounted gun, fits the wheel and the handlebars to the vehicle, and
-//!    provides the vehicle handling's grip targets ([`jc3vr_body::controllers::grab`]): the driver's
-//!    controls, the cockpit's buttons, the parachute's handles with a reach margin around each,
-//!    and the mounted gun's handles. What a hand holds is offered to it as held, so that a press
-//!    made while it still holds (a release and a press between two ticks) takes it again.
+//!    provides the vehicle handling's grip targets ([`jc3vr_body::controllers::grab`]): the
+//!    driver's controls, the cockpit's buttons, the parachute's handles with a reach margin around
+//!    each, the ripcord, and the mounted gun's handles. What a hand holds is offered to it as held,
+//!    so that a press made while it still holds (a release and a press between two ticks) takes it
+//!    again.
 //! 2. [`finish_tick`] acts on the tick's grabs, moves the held controls, replaces the tables'
 //!    analog writes for each axis a control drives, and publishes the wheel angle for the rendered
 //!    wheel; in the wingsuit it adds the arm pose to the move stick, and under the parachute the
@@ -38,13 +47,13 @@
 //! A control or a handle is held only while its hand's grip is: releasing the grip lets go.
 //!
 //! The hands take the anchored poses in [`apply`], which every hand subsystem's hands pass through
-//! ([`jc3vr_body::controllers::hands::active_hands`]). Everything acts only while the bindings inject,
-//! which is only under the controller scheme with a controller active.
+//! (the body's `hands::active_hands`). Everything acts only while the bindings inject, which is
+//! only under the controller scheme with a controller active.
 //!
-//! Turrets are left to the game: a turret turns toward its weapon's aim point at its own limited
-//! rate, so a turret aimed by hand trails the hand exactly as it trails the gaze. The motorcycle's
-//! and jetski's personal weapon is a wielded weapon on the hand's attach bone, so the per-hand gun
-//! aim already aims it by hand ([`jc3vr_body::controllers::aim::gun`]).
+//! A driven vehicle's turrets are left to the game: a turret turns toward its weapon's aim point at
+//! its own limited rate, so a turret aimed by hand trails the hand exactly as it trails the gaze.
+//! The motorcycle's and jetski's personal weapon is a wielded weapon on the hand's attach bone, so
+//! the per-hand gun aim already aims it by hand ([`jc3vr_body::controllers::aim::gun`]).
 //!
 //! [`VEHICLES_CONFIG`]: crate::vehicles::config::VEHICLES_CONFIG
 

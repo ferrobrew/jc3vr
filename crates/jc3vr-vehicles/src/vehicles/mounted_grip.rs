@@ -2,9 +2,9 @@
 //!
 //! Each hand takes its own handle like a physical control: a grip press with the hand's grip near
 //! the handle takes it, and only releasing the grip lets go: a holding hand that drifts off its
-//! handle keeps aiming from where it is, however far it goes. Only a holding hand is drawn on its handle and aims the gun, so one hand can let go
-//! to throw a grenade or reach for something while the other keeps the gun, and with both hands off
-//! the gun stays where they left it.
+//! handle keeps aiming from where it is, however far it goes. Only a holding hand is drawn on its
+//! handle and aims the gun, so one hand can let go to throw a grenade or reach for something while
+//! the other keeps the gun, and with both hands off the gun stays where they left it.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{

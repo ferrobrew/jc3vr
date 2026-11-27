@@ -157,8 +157,7 @@ pub fn step(state: &mut RipcordState, inputs: &StepInputs, events: &mut Vec<Ripc
     true
 }
 
-/// Let go of the ripcord, as when the player leaves the fall or the wingsuit or the ripcord is
-/// switched off.
+/// Let go of the ripcord, as when the player leaves the fall or the wingsuit.
 pub fn release_all(state: &mut RipcordState, events: &mut Vec<RipcordEvent>) {
     release(state, Release::Gone, events);
 }

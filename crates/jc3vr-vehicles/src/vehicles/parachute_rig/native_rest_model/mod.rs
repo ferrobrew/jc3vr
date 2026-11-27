@@ -1,4 +1,6 @@
-//! Copied native resting-handle samples and their input-session policy.
+//! Copied native resting-handle samples and their input-session policy. Only the tests build it
+//! (`parachute_rig` declares it under `cfg(test)`); production reads the copied link positions
+//! through the rig module's own slot.
 //!
 //! Rig-model joint translations compose through the sampled parachute-object transform, then the
 //! current cockpit frame. The character root is provenance only, never a substitute for that

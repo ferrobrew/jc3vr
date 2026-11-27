@@ -1,4 +1,5 @@
-//! The wingsuit's head look-steer removed, as the parachute's is ([`jc3vr_body::hooks::input::parachute`]).
+//! The wingsuit's head look-steer removed, as the parachute's is
+//! ([`jc3vr_body::hooks::input::parachute`]).
 //!
 //! The air movement core adds a camera look-steer to the stick's steering: the camera's pitch and
 //! yaw against the character's, shaped by the look-steer tuning. In VR the camera follows the head,

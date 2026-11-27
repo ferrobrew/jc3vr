@@ -48,7 +48,7 @@ pub struct ArmReadout {
     pub written: Vec2,
 }
 
-/// The grip targets [`begin_tick`] provides.
+/// The grip targets [`begin_tick`](crate::vehicles::begin_tick) provides.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TickVolumes {
     pub targets: Vec<GripTarget>,
@@ -57,7 +57,8 @@ pub struct TickVolumes {
 /// The parachute handles as the last input tick saw them.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HandlesReadout {
-    /// Whether each hand holds its handle, indexed by [`Hand::index`].
+    /// Whether each hand holds its handle, indexed by
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub held: [bool; 2],
     /// Each hand's pull, `0..=1`.
     pub pulls: [f32; 2],
@@ -75,9 +76,10 @@ pub struct VehiclesStatus {
     pub active: bool,
     /// The seat, while in a vehicle.
     pub seat: Option<VehicleSeat>,
-    /// The physical controls the seat offers with their toggles on.
+    /// The physical controls the seat offers.
     pub offered: &'static [ControlKind],
-    /// The grab volume each hand is in, indexed by [`Hand::index`].
+    /// The grab volume each hand is in, indexed by
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub volumes: [Option<GrabVolume>; 2],
     /// The control each hand holds.
     pub holds: [Option<ControlKind>; 2],
@@ -106,6 +108,7 @@ pub struct VehiclesStatus {
     pub button_presses: u64,
     /// How many times a hand took or let go of a mounted gun's handle.
     pub mounted_grip_events: u64,
-    /// Whether each hand holds its mounted gun's handle, indexed by [`Hand::index`].
+    /// Whether each hand holds its mounted gun's handle, indexed by
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub mounted_holds: [bool; 2],
 }

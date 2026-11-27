@@ -1,5 +1,6 @@
-//! Test-only native-rest model and candidate prototype. Production uses the shoulder-based
-//! placement; these fixtures do not establish callback scheduling or authorize native restoration.
+//! Tests of the native-rest model. Production places the free handles at the link positions the
+//! sync reads ([`crate::vehicles::parachute_rig`]); these fixtures do not establish the callback's
+//! scheduling or restore native state.
 
 use glam::Quat;
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};

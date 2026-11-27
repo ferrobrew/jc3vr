@@ -28,8 +28,8 @@
 //! either way.
 //!
 //! The arms take over once they are spread past the engaging share of the arm span, and let go only
-//! once they come in past a narrower share (the tuning's `arm_steering.spread_hysteresis`), so a wing held near the
-//! threshold does not flicker in and out.
+//! once they come in past a narrower share (the tuning's `arm_steering.spread_hysteresis`), so a
+//! wing held near the threshold does not flicker in and out.
 
 use body_rig::math::{axis::past_deadzone, shoulders::EYES_FORWARD_OF_SHOULDERS};
 use glam::{Quat, Vec2, Vec3};

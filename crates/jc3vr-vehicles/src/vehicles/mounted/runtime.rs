@@ -539,8 +539,8 @@ unsafe fn seat_tear(
 }
 
 /// Finish a tear from the gunner seat once the player has left the seat: tear the gun off into the
-/// hand that pulled. The exit is asked again once if the player is still seated after
-/// [`SEAT_EXIT_RETRY`], and the tear is given up after [`SEAT_EXIT_TIMEOUT`].
+/// hand that pulled. The exit is asked again once if the player is still seated after the tuning's
+/// `mounted.seat_exit_retry_ms`, and the tear is given up after its `mounted.seat_exit_timeout_ms`.
 ///
 /// # Safety
 /// The game thread, outside the world update; `local` is the live local player.
