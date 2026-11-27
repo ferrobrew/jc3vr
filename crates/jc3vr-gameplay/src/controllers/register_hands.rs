@@ -1,12 +1,12 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
-//! order, and the observers of each world weapon at its render update in theirs. The weapon
+//! order, and the observers of each world weapon at its render update. The weapon
 //! handling fills its held-item source and its held guns' targets itself
 //! ([`jc3vr_weapons::register`]), and the grapple its pump of the hang swing
 //! ([`jc3vr_grapple::register`]).
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's
 //! registration check ([`jc3vr_body::contributions::register`]). The tables here declare the
-//! stages', the observers', and the grip sources' order ([`GRIP_ORDER`]), once.
+//! stages' and the grip sources' order ([`GRIP_ORDER`]), once.
 
 use jc3vr_body::{
     contributions::BodyContributions,
@@ -83,8 +83,8 @@ static HAND_STAGES: [HandStageFn; 7] = [
     grapple_anchor,
 ];
 
-/// The observers of each world weapon at its render update, in the order they run: the grenade
-/// handling's world weapons, the remote rack members, and the mounted guns.
+/// The observers of each world weapon at its render update: the grenade handling's world weapons,
+/// the remote rack members, and the mounted guns. Their order has no effect.
 static WEAPON_OBSERVERS: [ObserveWeapon; 3] = [
     grenade::observe_world_weapon,
     rack::remote::observe,
