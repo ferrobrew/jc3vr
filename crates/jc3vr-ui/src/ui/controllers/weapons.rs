@@ -379,9 +379,8 @@ fn regions_readout(ui: &mut Ui, r: &RegionsStatus) {
 
 fn tick_readout(ui: &mut Ui, t: &TickStatus, e: &EmptyStatus) {
     ui.label(format!(
-        "Per-hand tick: {} · fire left {} right {} · updates left {} right {} · wielded inputs \
+        "Per-hand tick: fire left {} right {} · updates left {} right {} · wielded inputs \
          handed over {} · aim modes set {} · hints put back {} · reload requests refused {}",
-        if t.per_hand { "on" } else { "off" },
         if t.fire[0] { "pulled" } else { "up" },
         if t.fire[1] { "pulled" } else { "up" },
         t.updates[0],

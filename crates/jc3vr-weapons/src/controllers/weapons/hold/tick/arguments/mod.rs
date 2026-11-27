@@ -20,7 +20,6 @@ pub(super) struct UpdateFacts {
     pub hand_target: Option<HandTarget>,
     pub(crate) native_target: Option<Vec3>,
     pub now: Stamp,
-    pub loaded: bool,
     pub fire: bool,
     pub(crate) reload_held: bool,
     pub(crate) animation_allows: bool,
@@ -50,7 +49,7 @@ pub(super) fn update_arguments(facts: UpdateFacts) -> UpdateArguments {
     let Some(target) = target else {
         return UpdateArguments::Stop;
     };
-    let fire = facts.loaded && facts.fire && !facts.reload_held && facts.animation_allows;
+    let fire = facts.fire && !facts.reload_held && facts.animation_allows;
     UpdateArguments::Tick {
         inputs: WeaponInputs {
             m_PrimaryFireInput: if fire { 1.0 } else { 0.0 },

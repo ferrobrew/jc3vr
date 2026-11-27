@@ -18,9 +18,7 @@ use crate::controllers::weapons::{
     capabilities::tracked_hands,
     foregrip,
     reload::{
-        FinishInputs, GunTick, STATE, State, Tick, WeaponTick,
-        chamber::WorkStage,
-        engine,
+        FinishInputs, GunTick, STATE, State, Tick, WeaponTick, engine,
         insert::{InsertInputs, InsertionSource},
         loose,
         plan::{LoadKind, WellFrame},
@@ -265,9 +263,7 @@ impl State {
         }
         let (weapon, gun) = tick.gun(hand.other())?;
         let record = self.records.get(weapon.key);
-        if record.travels[gun.entry()].grip.is_some()
-            || matches!(self.status.work.stage, WorkStage::Held { .. })
-        {
+        if record.travels[gun.entry()].grip.is_some() {
             return None;
         }
         let sample = sample(tick, weapon, gun, hand.other(), reload)?;

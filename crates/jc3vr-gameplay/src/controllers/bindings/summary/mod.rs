@@ -530,7 +530,6 @@ fn reload_changed(before: &ReloadStatus, after: &ReloadStatus) -> bool {
         || before.insertion != after.insertion
         || before.insert_hands != after.insert_hands
         || before.belt != after.belt
-        || before.work != after.work
         || before.fire_held != after.fire_held
 }
 

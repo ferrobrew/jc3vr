@@ -114,9 +114,6 @@ impl Detonator {
     }
 }
 
-/// The trigger model's length along its +Y, metres.
-pub const DETONATOR_LENGTH_M: f32 = 0.088;
-
 /// Show the detonator's model in `hand`, whose grip in the world is `grip`, or with `None`, release
 /// it. Released too when the local player has no C4 weapon, or the weapon no base model.
 pub(crate) fn place_model(game: &GameTick<'_>, held: Option<(Hand, Pose)>) {
@@ -235,6 +232,9 @@ mod tests {
 
     use super::*;
 
+    /// The trigger model's length along its +Y, metres.
+    const DETONATOR_LENGTH_M: f32 = 0.088;
+
     fn trigger(down: bool, pressed: bool, released: bool) -> ButtonControl {
         ButtonControl {
             down,
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn a_quick_tap_after_the_swap_detonates() {
+    fn a_quick_tap_after_the_take_detonates() {
         let mut d = Detonator::NONE;
         d.take(Hand::Right, trigger(true, true, false));
         // Released and pressed again between two ticks.

@@ -103,7 +103,7 @@ use crate::controllers::weapons::{
     pouch_models,
     reload::{
         belt::{BeltPush, PushStage},
-        chamber::{ActionWork, Chamber},
+        chamber::Chamber,
         eject::{DoubleTapDetector, TapDetector},
         engine::Reading,
         extraction::{DetachRequest, PendingDetach, Pull},
@@ -140,7 +140,6 @@ pub struct ReloadStatus {
     pub insert_hands: Option<(Hand, Hand)>,
     /// Each gun hand's belt push, by [`Hand::index`].
     pub belt: [PushStage; 2],
-    pub work: ActionWork,
     /// Why each hand's gun may not fire, by [`Hand::index`].
     pub fire_held: [Option<FireHold>; 2],
     pub counts: ReloadCounts,
@@ -1117,7 +1116,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         insertion: Insertion::new(),
         insert_hands: None,
         belt: [PushStage::Outside; 2],
-        work: ActionWork::new(),
         fire_held: [None; 2],
         counts: ReloadCounts {
             ejects: 0,

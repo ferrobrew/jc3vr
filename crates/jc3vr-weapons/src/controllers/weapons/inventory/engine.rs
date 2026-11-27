@@ -78,7 +78,7 @@ pub(crate) fn tracks(slot: WeaponSlot) -> bool {
 
 /// The slots the inventory tracks.
 pub(crate) fn tracked_slots() -> impl Iterator<Item = WeaponSlot> {
-    TRACKED_SLOTS.into_iter().filter(|&slot| tracks(slot))
+    TRACKED_SLOTS.into_iter()
 }
 
 /// The weapon `strong` refers to, which it keeps alive.

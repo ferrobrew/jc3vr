@@ -334,7 +334,6 @@ impl State {
             self.cancel_ejects();
             self.status.insertion.reset();
             self.status.insert_hands = None;
-            self.status.work.reset();
             self.release_actions();
         } else {
             self.since_draw_s += dt;
@@ -1009,7 +1008,6 @@ impl State {
         self.status.insertion.reset();
         self.ready_cue.cancel();
         self.status.insert_hands = None;
-        self.status.work.reset();
         self.release_actions();
         set_pump_slide(None);
         self.status.fire_held = [None; 2];

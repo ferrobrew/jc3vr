@@ -34,8 +34,6 @@
 //! inventory only, and take the set's lock; the game stage changes the set only before the world
 //! update, and makes no engine call while holding the lock.
 
-mod drop;
-
 use std::{
     fmt,
     ptr::NonNull,
@@ -63,11 +61,10 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    loadout::{ObjectAddress, Place, Socket, live},
+    loadout::{Place, Socket, live},
     weapons::{
         dual_wield::single,
         engine::{skip_interpolation, slot_of},
-        hold::armed,
         inventory::{
             engine as inventory_engine,
             engine::{ObjectKey, Seen, kind_of, refresh_hud, strong_to},
@@ -312,25 +309,6 @@ pub(crate) fn release_all() -> usize {
     count
 }
 
-/// Let every carried weapon fall where it is and release it: its drop ([`WeaponBase::OnDrop`])
-/// clears its holder, puts its bodies in the world, and gives it back its pickup, so it is a
-/// weapon lying in the world again. Called when the table stops.
-///
-/// # Safety
-///
-/// The owner must be the live local player on the game thread before the world update.
-pub(crate) unsafe fn drop_all(owner: &mut Character) {
-    let all = std::mem::take(&mut *CARRY.lock());
-    COUNT.store(0, Ordering::Relaxed);
-    STASHED.store(false, Ordering::Relaxed);
-    for carried in &all {
-        drop::run(&mut DropNative { owner, carried });
-    }
-    if !all.is_empty() {
-        tracing::info!(target: "controllers", weapons = all.len(), "inventory: dropped the carried weapons");
-    }
-}
-
 /// Place the carried weapons on their sockets, after `inventory`'s own placement, when it is the
 /// local player's.
 ///
@@ -460,34 +438,6 @@ pub(crate) unsafe fn end_pass(inventory: *mut Inventory) {
                     unsafe { &mut *(component as *mut _ as *mut ModelAttachementWeaponComponent) };
                 part.m_SkipRenderInterpolation = false;
             }
-        }
-    }
-}
-
-struct DropNative<'a> {
-    owner: &'a mut Character,
-    carried: &'a Carried,
-}
-
-impl drop::Adapter for DropNative<'_> {
-    fn disarm(&mut self, hand: Hand) {
-        if armed::in_hand(hand) == Some(self.carried.object) {
-            // SAFETY: the caller retains the actor throughout this serialized carry-off operation.
-            unsafe { armed::disarm(self.owner, hand, NonNull::new(self.carried.weapon()), true) };
-        }
-    }
-
-    fn table_drop(&mut self) {
-        if let Some(object) = ObjectAddress::from_address(self.carried.object) {
-            live::dropped(object);
-        }
-    }
-
-    fn native_drop(&mut self) {
-        // SAFETY: the retained actor outlives disarming, the table transition, and OnDrop.
-        let weapon = unsafe { &mut *self.carried.weapon() };
-        if weapon.m_State == WeaponState::E_WS_HOLSTERED {
-            unsafe { weapon.OnDrop() };
         }
     }
 }

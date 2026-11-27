@@ -108,7 +108,6 @@ impl State {
         config: &WeaponSettings,
     ) {
         let reload = &Reload::of(&config.weapons.reload);
-        self.status.work.reset();
         self.work_travel(tick, inputs, reload, &mut NativeAction);
         self.publish_render(game, tick, reload);
     }

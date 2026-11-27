@@ -80,8 +80,6 @@ pub(crate) fn hook_library() -> HookLibrary {
 /// The per-hand tick's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct TickStatus {
-    /// Whether the wielded weapon takes its hand's fire input in place of the game's.
-    pub per_hand: bool,
     /// Each hand's fire input as of the last input tick, by [`Hand::index`].
     pub fire: [bool; 2],
     /// The updates the mod gave each hand's armed weapon since the payload loaded.
@@ -103,17 +101,10 @@ jc3vr_core::counters! {
 
 pub fn status() -> TickStatus {
     TickStatus {
-        per_hand: PER_HAND.load(Ordering::Relaxed),
         fire: Hand::BOTH.map(|h| FIRE[h.index()].load(Ordering::Relaxed)),
         updates: Hand::BOTH.map(|h| UPDATES[h.index()].get()),
         counts: COUNTS.snapshot(),
     }
-}
-
-/// Whether the per-hand tick hands the wielded weapon its hand's input and refuses the ammunition
-/// check's reload requests: from the first input tick on.
-pub(crate) fn per_hand() -> bool {
-    PER_HAND.load(Ordering::Relaxed)
 }
 
 /// Publish each hand's fire input for the tick's updates, by [`Hand::index`]: its trigger pulled
@@ -144,7 +135,7 @@ pub fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2]) {
     });
 }
 
-/// One input tick: publish that the per-hand tick runs, hand each armed gun the wielded weapon's
+/// One input tick: hand each armed gun the wielded weapon's
 /// aim mode (the player's, which the game forwards to the selected weapon alone), and put back the
 /// use hints that a gun in a hand still needs.
 ///
@@ -152,7 +143,6 @@ pub fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2]) {
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>) {
-    PER_HAND.store(true, Ordering::Relaxed);
     let stopped = std::mem::take(&mut *STOPPED.lock());
     let mode = wielded
         .and_then(|w| unsafe { (w as *const WeaponBase).as_ref() })
@@ -186,7 +176,7 @@ pub(crate) fn stand_down() {
 ///
 /// `weapon` must be live, called from its per-tick update before the original runs.
 pub unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Option<WeaponInputs> {
-    if !(PER_HAND.load(Ordering::Relaxed) && weapon.m_IsUserLocalPlayer) {
+    if !weapon.m_IsUserLocalPlayer {
         return None;
     }
     let address = weapon as *const WeaponBase as usize;
@@ -211,7 +201,6 @@ pub unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Option<We
     })
 }
 
-static PER_HAND: AtomicBool = AtomicBool::new(false);
 static FIRE: [AtomicBool; 2] = [const { AtomicBool::new(false) }; 2];
 static TARGETS: Mutex<[Option<HandTarget>; 2]> = Mutex::new([None; 2]);
 static UPDATES: [Counter; 2] = [const { Counter::new() }; 2];
@@ -265,17 +254,12 @@ unsafe fn update_facts(
     native_target: Option<Vec3>,
 ) -> UpdateFacts {
     let address = weapon as *const WeaponBase as usize;
-    // Without the per-hand tick an empty gun fires nothing: its ammunition check would ask the
-    // character to reload, which reloads the wielded weapon.
-    let loaded = PER_HAND.load(Ordering::Relaxed)
-        || (weapon.m_MagazineAmmo > 0 && !weapon.m_WeaponIsWithoutMagazine);
     UpdateFacts {
         owner: inventory.m_Character as usize,
         weapon: address,
         hand_target: TARGETS.lock()[hand.index()],
         native_target,
         now: Stamp::now(),
-        loaded,
         fire: FIRE[hand.index()].load(Ordering::Relaxed),
         reload_held: reload::holds_fire(address, hand),
         animation_allows: unsafe { inventory.m_Character.as_ref() }

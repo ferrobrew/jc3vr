@@ -27,7 +27,7 @@ pub struct GrenadeTuning {
     /// body runs along the model's +Y up to the fuse head, and the lever lies down the body's +Z
     /// side. Upright in the fist, the model's +Y runs up the finger tube (the grip's -Z) and its
     /// +Z, the lever, into the palm (the right grip's +X). The body's centre is a body radius
-    /// ([`GRENADE_BODY_RADIUS_M`]) and a little out of the palm, level with the middle of the palm
+    /// (3.4 cm) and a little out of the palm, level with the middle of the palm
     /// along the hand, and a little toward the little finger so that the fuse head clears the top
     /// of the fist.
     pub hold: HoldPlacement,
@@ -224,9 +224,6 @@ pub struct LockerTuning {
     /// How near a locker's grenade a hand must come to take it, metres.
     pub reach_m: f32,
 }
-
-/// The radius of the grenade model's round body, metres.
-pub const GRENADE_BODY_RADIUS_M: f32 = 0.034;
 
 /// Check a hold placement read from a tuning file at `name`: its offset within a metre of the
 /// grip, and its axes the columns of a rotation (unit length, at right angles, and right-handed).

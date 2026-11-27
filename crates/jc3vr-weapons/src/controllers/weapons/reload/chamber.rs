@@ -8,21 +8,13 @@
 //! magazine. A dry gun, or a manually cycled bolt or pump after a shot, needs the action worked.
 //!
 //! The action worked by hand is a part that follows the hand through its travel
-//! ([`crate::controllers::weapons::reload::travel`]). [`ActionWork`] is the same work as a gesture:
-//! a grab of its handle followed by a pull back along the gun's axis to the pull share of its
-//! travel. A slide or a charging handle closes when it is let go or pushed back home; a bolt or a
-//! pump has to be pushed back home. The pump is worked by the hand on the foregrip, which holds it
-//! already, so its work starts from the hand's place when the chamber empties rather than from a
-//! grab. Only its tests step [`ActionWork`]; the reload's tick resets it and the readout shows it.
-//! Every plan the reload makes is cocked
+//! ([`crate::controllers::weapons::reload::travel`]). Every plan the reload makes is cocked
 //! ([`ReloadPlan::cocked`](crate::controllers::weapons::reload::plan::ReloadPlan::cocked)), so no
 //! live gun's action is worked by hand.
 
 use glam::Vec3;
 use jc3vr_body::controllers::grab::{GrabVolume, GripTarget, target::TargetReach};
 use jc3vr_input::frame::Hand;
-
-use crate::controllers::weapons::reload::tuning::ActionTuning;
 
 /// The mod's chamber.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -70,11 +62,6 @@ impl ActionKind {
     pub const fn manual(self) -> bool {
         matches!(self, ActionKind::Bolt | ActionKind::Pump)
     }
-
-    /// Whether the action has to be pushed back home to close.
-    const fn must_return(self) -> bool {
-        matches!(self, ActionKind::Bolt | ActionKind::Pump)
-    }
 }
 
 /// The chamber after a shot that left `magazine` rounds, for a gun worked by `action`: empty once
@@ -97,135 +84,6 @@ pub(crate) fn after_work(magazine: i32, magazine_in: bool) -> Chamber {
         Chamber::Chambered
     } else {
         Chamber::Empty
-    }
-}
-
-/// Where the action's work is.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub enum WorkStage {
-    #[default]
-    Idle,
-    /// The handle is held, its rest at `rest` along the gun's rearward axis; `pulled` once it has
-    /// reached the pull share of its travel.
-    Held { rest: f32, pulled: bool },
-}
-
-/// What the work reports.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum WorkEvent {
-    Grabbed,
-    /// The pull reached the action's travel.
-    Pulled,
-    /// The action closed after a full pull: the chamber is loaded.
-    Worked,
-    /// The handle was let go before a full pull.
-    LetGo,
-}
-
-/// One tick's inputs, in the cockpit frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WorkInputs {
-    pub kind: ActionKind,
-    /// The handle's place at rest.
-    pub handle: Vec3,
-    /// The gun's rearward axis (from the muzzle toward the stock), unit length.
-    pub(crate) rearward: Vec3,
-    /// The action's travel, metres.
-    pub travel_m: f32,
-    /// The working hand's grip position.
-    pub hand: Vec3,
-    /// The working hand's grip was pressed this tick.
-    pub grip_pressed: bool,
-    pub grip_held: bool,
-    /// For the pump: the hand holds the foregrip.
-    pub(crate) on_foregrip: bool,
-    /// Whether the chamber needs the action worked.
-    pub needed: bool,
-}
-
-/// One gun's action work.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ActionWork {
-    pub stage: WorkStage,
-    /// How far the handle is back, as a share of its travel, while held.
-    pub progress: f32,
-    pub worked: u64,
-}
-
-impl ActionWork {
-    pub const fn new() -> Self {
-        Self {
-            stage: WorkStage::Idle,
-            progress: 0.0,
-            worked: 0,
-        }
-    }
-
-    /// Fold in one tick (`None` without a gun whose action can be worked).
-    pub fn step(&mut self, inputs: Option<WorkInputs>, config: &ActionTuning) -> Option<WorkEvent> {
-        let Some(i) = inputs.filter(|i| {
-            i.kind != ActionKind::None
-                && i.hand.is_finite()
-                && i.handle.is_finite()
-                && i.travel_m > 0.0
-        }) else {
-            self.reset();
-            return None;
-        };
-        let along = (i.hand - i.handle).dot(i.rearward);
-        match self.stage {
-            WorkStage::Idle => {
-                let grabbed = if i.kind == ActionKind::Pump {
-                    i.needed && i.on_foregrip
-                } else {
-                    i.grip_pressed && i.hand.distance(i.handle) <= config.grab_radius_m
-                };
-                if !grabbed {
-                    return None;
-                }
-                self.stage = WorkStage::Held {
-                    rest: along,
-                    pulled: false,
-                };
-                self.progress = 0.0;
-                Some(WorkEvent::Grabbed)
-            }
-            WorkStage::Held { rest, pulled } => {
-                let back = along - rest;
-                let off_axis = ((i.hand - i.handle) - i.rearward * along).length();
-                self.progress = (back / i.travel_m).clamp(0.0, 1.0);
-                let holding = if i.kind == ActionKind::Pump {
-                    i.on_foregrip
-                } else {
-                    i.grip_held
-                };
-                let returned = self.progress <= config.return_fraction;
-                if !holding || off_axis > config.release_distance_m {
-                    self.reset();
-                    return Some(if pulled && !i.kind.must_return() {
-                        self.worked += 1;
-                        WorkEvent::Worked
-                    } else {
-                        WorkEvent::LetGo
-                    });
-                }
-                if !pulled && self.progress >= config.pull_fraction {
-                    self.stage = WorkStage::Held { rest, pulled: true };
-                    return Some(WorkEvent::Pulled);
-                }
-                if pulled && returned {
-                    self.reset();
-                    self.worked += 1;
-                    return Some(WorkEvent::Worked);
-                }
-                None
-            }
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.stage = WorkStage::Idle;
-        self.progress = 0.0;
     }
 }
 
@@ -264,12 +122,11 @@ mod tests {
     use jc3vr_body::controllers::grab::{Mark, MarkAt, resolve::resolve};
 
     use super::*;
-    use crate::controllers::weapons::reload::tuning::RELOAD;
+    use crate::controllers::weapons::reload::tuning::{ActionTuning, RELOAD};
 
     fn config() -> &'static ActionTuning {
         &RELOAD.get().action
     }
-    const HANDLE: Vec3 = Vec3::new(0.1, -0.2, -0.3);
 
     fn sphere(volume: GrabVolume, centre: Vec3, radius: f32) -> GripTarget {
         GripTarget::sphere(
@@ -333,20 +190,6 @@ mod tests {
         assert_eq!(chosen(&targets), Some(GrabVolume::Foregrip));
     }
 
-    fn inputs(kind: ActionKind, back: f32, pressed: bool, held: bool) -> Option<WorkInputs> {
-        Some(WorkInputs {
-            kind,
-            handle: HANDLE,
-            rearward: Vec3::Z,
-            travel_m: 0.05,
-            hand: HANDLE + Vec3::Z * back,
-            grip_pressed: pressed,
-            grip_held: held,
-            on_foregrip: held,
-            needed: true,
-        })
-    }
-
     #[test]
     fn a_dry_gun_empties_its_chamber_and_a_manual_action_after_every_shot() {
         assert_eq!(after_shot(0, ActionKind::Slide), Chamber::Empty);
@@ -356,77 +199,5 @@ mod tests {
         assert_eq!(after_work(5, true), Chamber::Chambered);
         assert_eq!(after_work(0, true), Chamber::Empty);
         assert_eq!(after_work(5, false), Chamber::Empty);
-    }
-
-    #[test]
-    fn a_slide_pulled_back_and_let_go_is_worked() {
-        let mut w = ActionWork::new();
-        let k = ActionKind::Slide;
-        assert_eq!(
-            w.step(inputs(k, 0.0, true, true), config()),
-            Some(WorkEvent::Grabbed)
-        );
-        assert_eq!(w.step(inputs(k, 0.02, false, true), config()), None);
-        assert_eq!(
-            w.step(inputs(k, 0.045, false, true), config()),
-            Some(WorkEvent::Pulled)
-        );
-        assert_eq!(
-            w.step(inputs(k, 0.045, false, false), config()),
-            Some(WorkEvent::Worked)
-        );
-        assert_eq!(w.worked, 1);
-    }
-
-    #[test]
-    fn a_short_pull_or_a_grab_away_from_the_handle_does_nothing() {
-        let mut w = ActionWork::new();
-        let k = ActionKind::ChargingHandle;
-        assert_eq!(w.step(inputs(k, 0.2, true, true), config()), None);
-        w.step(inputs(k, 0.0, true, true), config());
-        w.step(inputs(k, 0.02, false, true), config());
-        assert_eq!(
-            w.step(inputs(k, 0.02, false, false), config()),
-            Some(WorkEvent::LetGo)
-        );
-        assert_eq!(w.worked, 0);
-    }
-
-    #[test]
-    fn a_bolt_has_to_go_back_home() {
-        let mut w = ActionWork::new();
-        let k = ActionKind::Bolt;
-        w.step(inputs(k, 0.0, true, true), config());
-        w.step(inputs(k, 0.05, false, true), config());
-        assert_eq!(
-            w.step(inputs(k, 0.05, false, false), config()),
-            Some(WorkEvent::LetGo)
-        );
-        w.step(inputs(k, 0.0, true, true), config());
-        w.step(inputs(k, 0.05, false, true), config());
-        assert_eq!(
-            w.step(inputs(k, 0.005, false, true), config()),
-            Some(WorkEvent::Worked)
-        );
-    }
-
-    #[test]
-    fn the_pump_starts_from_the_foregrip_hand_when_needed() {
-        let mut w = ActionWork::new();
-        let k = ActionKind::Pump;
-        let not_needed = inputs(k, 0.03, false, true).map(|i| WorkInputs { needed: false, ..i });
-        assert_eq!(w.step(not_needed, config()), None);
-        assert_eq!(
-            w.step(inputs(k, 0.03, false, true), config()),
-            Some(WorkEvent::Grabbed)
-        );
-        assert_eq!(
-            w.step(inputs(k, 0.075, false, true), config()),
-            Some(WorkEvent::Pulled)
-        );
-        assert_eq!(
-            w.step(inputs(k, 0.035, false, true), config()),
-            Some(WorkEvent::Worked)
-        );
     }
 }

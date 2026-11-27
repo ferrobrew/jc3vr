@@ -22,8 +22,9 @@
 //! noted as the cache takes it, so the give-back restores it as it was
 //! ([`crate::controllers::weapons::dual_wield::single`]).
 //!
-//! The detours run on whatever thread runs the graph script and the mission manager, so they only
-//! set flags, fold the table's events, and give the slots what the table's projection puts there.
+//! The graph script and the mission manager run on the game thread before the world update, where
+//! the detours set flags, fold the table's events, and give the slots what the table's projection
+//! puts there.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 

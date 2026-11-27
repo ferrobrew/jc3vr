@@ -477,7 +477,6 @@ unsafe fn stop(owner: &mut Character, why: &str) {
             "inventory: the table stopped; the weapons beyond the slots are kept stashed"
         );
     } else {
-        unsafe { carry::drop_all(owner) };
         restore::clear();
         single::clear();
     }

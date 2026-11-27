@@ -9,7 +9,6 @@ fn facts(now: Stamp) -> UpdateFacts {
         hand_target: None,
         native_target: Some(Vec3::new(3.0, 4.0, 5.0)),
         now,
-        loaded: true,
         fire: true,
         reload_held: false,
         animation_allows: true,
@@ -77,14 +76,13 @@ fn replacement_never_reuses_a_previous_characters_or_weapons_target() {
 }
 
 #[test]
-fn traversal_reload_and_ammunition_withhold_fire_without_withholding_ticks() {
+fn traversal_and_reload_withhold_fire_without_withholding_ticks() {
     let now = Stamp::now();
-    for gate in 0..3 {
+    for gate in 0..2 {
         let mut input = facts(now);
         match gate {
             0 => input.animation_allows = false,
-            1 => input.reload_held = true,
-            _ => input.loaded = false,
+            _ => input.reload_held = true,
         }
         assert_eq!(tick(update_arguments(input)).0, 0.0);
     }

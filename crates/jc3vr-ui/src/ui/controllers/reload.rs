@@ -4,12 +4,8 @@
 use egui::Ui;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::weapons::reload::{
-    ReloadStatus, WeaponReadout,
-    belt::PushStage,
-    chamber::{Chamber, WorkStage},
-    fire_hold::FireHold,
-    insert::InsertStage,
-    loose, wells,
+    ReloadStatus, WeaponReadout, belt::PushStage, chamber::Chamber, fire_hold::FireHold,
+    insert::InsertStage, loose, wells,
 };
 
 use crate::{status::explosives::MAGAZINES, ui::status_row::headlines};
@@ -95,15 +91,6 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
                 ui.label(format!("{} action: racked", hand.label()));
             }
         }
-        ui.label(match r.work.stage {
-            WorkStage::Idle => format!("action: idle · worked {}", r.work.worked),
-            WorkStage::Held { pulled, .. } => format!(
-                "action: held, {:.0}% back{} · worked {}",
-                r.work.progress * 100.0,
-                if pulled { ", pulled" } else { "" },
-                r.work.worked
-            ),
-        });
         for event in r.events.iter() {
             ui.label(format!("  {event}"));
         }

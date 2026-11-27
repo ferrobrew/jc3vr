@@ -1016,9 +1016,10 @@ mod tests {
     use jc3vr_body::controllers::fingers::grip::catalogue::{GripPose, cylinder_curl};
 
     use super::*;
-    use crate::controllers::weapons::{
-        grenade::tuning::GRENADE_BODY_RADIUS_M, in_hand::away_from_palm,
-    };
+    use crate::controllers::weapons::in_hand::away_from_palm;
+
+    /// The radius of the grenade model's round body, metres.
+    const GRENADE_BODY_RADIUS_M: f32 = 0.034;
 
     #[test]
     fn the_fuse_warning_rises_from_the_pin() {

@@ -52,7 +52,7 @@ use jc3vr_core::published::ReentryGuard;
 use jc3vr_input::haptics::cues::Event;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::{fire, hold::tick, reload};
+use crate::controllers::weapons::{fire, reload};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -78,12 +78,10 @@ pub fn status() -> EmptyStatus {
 }
 
 /// Whether to refuse a reload start or a cancel of `character`'s reload made now: it is the local
-/// player's, inside a marked ammunition check on this thread, and the per-hand tick acts. Counts a
-/// refusal.
+/// player's, and inside a marked ammunition check on this thread. Counts a refusal.
 pub(crate) fn refuses_check_request(character: *const Character) -> bool {
     let local = ik::local_character();
-    let refuse =
-        CHECK.get().is_some() && tick::per_hand() && local != 0 && character as usize == local;
+    let refuse = CHECK.get().is_some() && local != 0 && character as usize == local;
     if refuse {
         COUNTS.requests_refused.bump();
     }

@@ -747,10 +747,11 @@ pub(super) enum SpawnToken {
 
 impl SpawnToken {
     /// The bits of the user data that hold the generation.
-    const GENERATION_MASK: u64 = (1 << Self::SOCKET_SHIFT) - 1;
-    /// Where the bits above the generation start, which every token leaves clear, so that user data
-    /// with any of them set is no request of the restore's or the give's.
-    const SOCKET_SHIFT: u32 = 56;
+    const GENERATION_MASK: u64 = (1 << Self::CLEAR_SHIFT) - 1;
+    /// Where the bits above the generation start, which every token leaves clear apart from the
+    /// kind markers, so that user data with any of them set is no request of the restore's or the
+    /// give's.
+    const CLEAR_SHIFT: u32 = 56;
     /// The bit that marks a second pistol's request.
     const TWIN: u64 = 1 << 62;
     /// The bit that marks a give's request.
@@ -771,11 +772,11 @@ impl SpawnToken {
 
     fn decode(data: u64) -> Option<SpawnToken> {
         let generation = data & Self::GENERATION_MASK;
-        let socket = ((data & !(Self::TWIN | Self::GIVE)) >> Self::SOCKET_SHIFT) as usize;
+        let stray = ((data & !(Self::TWIN | Self::GIVE)) >> Self::CLEAR_SHIFT) as usize;
         match (data & Self::TWIN != 0, data & Self::GIVE != 0) {
-            (false, false) if socket == 0 => Some(SpawnToken::Respawn { generation }),
-            (true, false) if socket == 0 => Some(SpawnToken::Twin { generation }),
-            (false, true) if socket == 0 => Some(SpawnToken::Give {
+            (false, false) if stray == 0 => Some(SpawnToken::Respawn { generation }),
+            (true, false) if stray == 0 => Some(SpawnToken::Twin { generation }),
+            (false, true) if stray == 0 => Some(SpawnToken::Give {
                 request: generation,
             }),
             _ => None,

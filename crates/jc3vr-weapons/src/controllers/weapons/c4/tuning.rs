@@ -33,8 +33,7 @@ pub struct C4Tuning {
     pub hold: HoldPlacement,
     /// Where the detonator's model sits in the hand ([`HoldPlacement`]), derived from the trigger
     /// model's bounds: an upright cylinder about 3.3 cm across and
-    /// [`DETONATOR_LENGTH_M`](crate::controllers::weapons::c4::detonator::DETONATOR_LENGTH_M) long,
-    /// standing on its origin along the model's +Y. It stands up the fist as a pistol grip does,
+    /// 8.8 cm long, standing on its origin along the model's +Y. It stands up the fist as a pistol grip does,
     /// its +Y along the grip's -Z, toward the thumb, centred on the grip's origin, the middle of
     /// the closed hand.
     pub(crate) detonator_hold: HoldPlacement,
