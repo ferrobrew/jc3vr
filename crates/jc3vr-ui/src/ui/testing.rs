@@ -20,7 +20,7 @@ pub(crate) fn tracking_feature(ui: &mut egui::Ui) {
 }
 
 pub(crate) fn tracking_status(ui: &mut egui::Ui) {
-    let status = tracking::peek_status();
+    let status = recorder::peek_status();
     ui.label(if status.recording {
         "recording"
     } else {
@@ -44,7 +44,7 @@ pub(crate) fn tracking_status(ui: &mut egui::Ui) {
 }
 
 fn recording_ui(ui: &mut egui::Ui) {
-    let status = tracking::status();
+    let status = recorder::status();
     ui.label(if status.recording {
         "Tracking recording: running with the session recording"
     } else {
@@ -71,9 +71,9 @@ fn recording_ui(ui: &mut egui::Ui) {
 }
 
 fn lookback_ui(ui: &mut egui::Ui) {
-    let status = tracking::lookback_status();
+    let status = recorder::lookback_status();
     ui.horizontal(|ui| {
-        let label = format!("Save the last {} s", tracking::lookback::window().as_secs());
+        let label = format!("Save the last {} s", recorder::lookback::window().as_secs());
         if ui
             .add_enabled(status.frames > 0, egui::Button::new(label))
             .on_hover_text(
@@ -82,7 +82,7 @@ fn lookback_ui(ui: &mut egui::Ui) {
             )
             .clicked()
         {
-            tracking::lookback::request_save();
+            recorder::lookback::request_save();
         }
         ui.label(if status.running {
             format!(
@@ -95,7 +95,7 @@ fn lookback_ui(ui: &mut egui::Ui) {
             "kept only while motion controllers are enabled".to_owned()
         });
     });
-    let dropped = tracking::events::dropped();
+    let dropped = recorder::events::dropped();
     if dropped > 0 {
         ui.label(format!("{dropped} events dropped waiting for a frame"));
     }

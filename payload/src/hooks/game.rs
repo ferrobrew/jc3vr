@@ -42,7 +42,7 @@ use jc3vr_tooling::diagnostics;
 use jc3vr_view::{
     headpose,
     hooks::window_focus,
-    recorder,
+    recorder as tracking,
     stereo::{
         dispatch::{self, DispatchPlan, RenderMode, reset_dispatch_state},
         enter_dispatch, layout, mark_stereo_frame,

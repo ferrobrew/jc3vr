@@ -9,7 +9,7 @@ use jc3vr_input::{
 };
 use jc3vr_render::controllers::overlay;
 use jc3vr_tooling::recorder;
-use jc3vr_view::recorder::{tracking, tracking::TrackingStatus};
+use jc3vr_view::{recorder as tracking, recorder::TrackingStatus};
 use smol_str::format_smolstr;
 
 use crate::{

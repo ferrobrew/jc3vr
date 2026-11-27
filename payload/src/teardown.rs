@@ -18,7 +18,7 @@ use jc3vr_hud::hud;
 use jc3vr_render::image_writer;
 use jc3vr_tooling::{recorder, testing};
 use jc3vr_ui::ui;
-use jc3vr_view::{recorder, vr};
+use jc3vr_view::{recorder as tracking, vr};
 use jc3vr_weapons::controllers::weapons;
 
 use crate::{config, tuning};
