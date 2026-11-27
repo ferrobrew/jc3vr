@@ -7,7 +7,7 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_vehicles::{
     vehicles,
-    vehicles::{VehiclesStatus, mounted_recoil, passenger, passenger::PassengerStatus},
+    vehicles::{VehiclesStatus, mounted, passenger, passenger::PassengerStatus},
 };
 use smol_str::{SmolStr, format_smolstr};
 
@@ -24,7 +24,7 @@ fn flight_controls() -> Line {
 
 fn mounted_gun() -> Line {
     let status = vehicles::status();
-    mounted_gun_line(status.mounted.is_some(), &status, mounted_recoil::shots())
+    mounted_gun_line(status.mounted.is_some(), &status, mounted::recoil::shots())
 }
 
 fn mounted_gun_line(manned: bool, summary: &VehiclesStatus, shots: u64) -> Line {
@@ -152,7 +152,7 @@ fn flight_controls_line(summary: &VehiclesStatus) -> Line {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_vehicles::vehicles::physical::Outputs;
+    use jc3vr_vehicles::vehicles::driving::physical::Outputs;
 
     use super::*;
     use crate::status::Health;

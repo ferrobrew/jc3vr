@@ -11,7 +11,7 @@ use jc3vr_input::frame::ActionSetKind;
 use jc3vr_vehicles::vehicles::{
     grip_sources as vehicle_grips,
     tuning::{VEHICLES, WingsuitGesturesTuning},
-    wingsuit_gestures::{FlightPose, SuitTransition},
+    wingsuit::gestures::{FlightPose, SuitTransition},
 };
 use jc3vr_view::vr::input::flight_pose::GestureSample;
 use jc3vr_weapons::controllers::loadout::Socket;

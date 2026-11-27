@@ -1,5 +1,5 @@
 use jc3vr_body::controllers::mode::AirborneVariant;
-use jc3vr_vehicles::vehicles::wingsuit_gestures::GestureAvailability;
+use jc3vr_vehicles::vehicles::wingsuit::gestures::GestureAvailability;
 
 use super::*;
 use crate::controllers::{bindings::tables::describe::flight_mechanics, summary::labels::ModText};

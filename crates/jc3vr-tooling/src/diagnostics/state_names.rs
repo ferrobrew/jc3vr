@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 
 use jc3vr_body::controllers::roomscale::seat::PHASE_STATES;
 use jc3vr_core::hash::StateTable;
-use jc3vr_vehicles::vehicles::take_off::TAKE_OFF_STATES;
+use jc3vr_vehicles::vehicles::wingsuit::take_off::TAKE_OFF_STATES;
 
 /// The name of the rule state whose name hash is `hash`, when the mod knows it.
 pub(super) fn name(hash: u32) -> Option<&'static str> {

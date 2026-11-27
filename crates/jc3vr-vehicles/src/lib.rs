@@ -31,7 +31,7 @@
 //!   detours ([`hooks::equipment`]), which the composition enables in their place in its order.
 //! - [`vehicles::hook_library`], which the composition enables in its place in the
 //!   order.
-//! - [`vehicles::mounted_recoil::on_shot`], the handles' kick by each shot of the
+//! - [`vehicles::mounted::recoil::on_shot`], the handles' kick by each shot of the
 //!   mounted gun the hands aim, which the composition hands to the weapon handling's
 //!   contributions.
 //! - The settings: [`vehicles::config::VEHICLES_CONFIG`] declares the slot for the

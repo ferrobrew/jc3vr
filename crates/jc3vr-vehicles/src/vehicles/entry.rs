@@ -10,7 +10,7 @@ pub(crate) struct VehicleEntryIdentity {
     owner: usize,
 }
 
-pub(super) struct VehicleEntry {
+pub(crate) struct VehicleEntry {
     pub(super) identity: VehicleEntryIdentity,
     owner: Strong,
 }

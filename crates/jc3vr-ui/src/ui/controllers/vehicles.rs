@@ -11,17 +11,16 @@ use jc3vr_vehicles::{
     vehicles,
     vehicles::{
         VehiclesStatus,
-        arm_steering::PitchInput,
         config::VehiclesConfig,
-        driver_aim, driving_view,
-        driving_view::DrivingViewStatus,
-        fit::FitReadout,
-        look_steer, parachute_rig,
-        physical::{ControlEvent, calibration},
-        rail, turret,
-        wheel::WheelFrame,
-        wheel_render, wingsuit_evade,
-        wingsuit_evade::EvadeStatus,
+        driving,
+        driving::{
+            fit::FitReadout,
+            physical::{ControlEvent, calibration},
+            view::DrivingViewStatus,
+            wheel::WheelFrame,
+        },
+        mounted, parachute, rail, wingsuit,
+        wingsuit::{arm_steering::PitchInput, evade::EvadeStatus},
     },
 };
 
@@ -46,13 +45,13 @@ impl VehiclesReadout {
     pub(super) fn read() -> Self {
         Self {
             status: vehicles::status(),
-            driving_view: driving_view::status(),
-            driver_substitutions: driver_aim::substitutions(),
-            look_steer_suppressions: look_steer::suppressions(),
-            hand_aimed_turret_ticks: turret::hand_aimed_ticks(),
-            wheel_turns: wheel_render::turned(),
-            handles_unplaced: parachute_rig::handles_unplaced(),
-            evade: wingsuit_evade::status(),
+            driving_view: driving::view::status(),
+            driver_substitutions: driving::aim::substitutions(),
+            look_steer_suppressions: wingsuit::look_steer::suppressions(),
+            hand_aimed_turret_ticks: mounted::turret::hand_aimed_ticks(),
+            wheel_turns: driving::wheel_render::turned(),
+            handles_unplaced: parachute::rig::handles_unplaced(),
+            evade: wingsuit::evade::status(),
         }
     }
 }

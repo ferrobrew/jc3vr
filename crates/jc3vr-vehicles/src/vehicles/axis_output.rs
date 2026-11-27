@@ -8,7 +8,7 @@ use jc3vr_body::controllers::{
     locomotion::axis_output::{axis_wanted, replace_axis},
 };
 
-use crate::vehicles::physical::Outputs;
+use crate::vehicles::driving::physical::Outputs;
 
 /// Write the held controls' axes over the tables' writes for the same actions.
 pub fn write_outputs(out: &Outputs, desired: &mut Vec<Desired>) {

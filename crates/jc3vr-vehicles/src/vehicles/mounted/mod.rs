@@ -29,6 +29,10 @@
 //! its gun as the vehicle's explosion does ([`vehicle_hold`]); from a vehicle's gunner seat the
 //! pull first leaves the seat through the game's own exit.
 //!
+//! Beside the runtime live the input tick's read of the gun and the seat's offered controls
+//! ([`input_tick`]), the handles' grip ([`grip`]) and recoil ([`recoil`]), and the manned vehicle
+//! gun's turn toward the hands' aim ([`turret`]).
+//!
 //! [`WeaponBase::GetGripPosition`]: jc3gi::equipment::weapon::WeaponBase::GetGripPosition
 
 use glam::{Mat4, Quat, Vec3};
@@ -41,10 +45,14 @@ use jc3vr_body::controllers::aim::gun;
 use jc3vr_input::frame::Hand;
 
 mod control;
+pub(crate) mod grip;
 mod gunner_seat;
+pub(super) mod input_tick;
 mod mount;
 mod native;
+pub mod recoil;
 mod runtime;
+pub mod turret;
 mod vehicle_hold;
 
 pub(super) use mount::{Held, Mount, matches as mount_matches};

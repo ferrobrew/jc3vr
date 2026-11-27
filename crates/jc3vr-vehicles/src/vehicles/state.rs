@@ -16,19 +16,20 @@ use jc3vr_view::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
 
 use crate::vehicles::{
-    arm_steering as arm, driving_view,
+    driving,
+    driving::{
+        fit::VehicleLatch,
+        physical::{ControlEvent, ControlState, Hold, Outputs, Placement},
+        wheel_render::RenderWheel,
+    },
     entry::VehicleEntryIdentity,
-    fit::VehicleLatch,
-    mounted::{MountedTarget, Reference},
-    mounted_grip::MountedGrip,
-    mounted_recoil, parachute,
-    parachute::{HandleEvent, HandleHold, HandleState},
-    physical,
-    physical::{ControlEvent, ControlState, Hold, Outputs, Placement},
+    mounted,
+    mounted::{MountedTarget, Reference, grip::MountedGrip},
+    parachute,
+    parachute::handles::{HandleEvent, HandleHold, HandleState},
     tuning::VEHICLES,
     types::VehiclesStatus,
-    wheel_render,
-    wheel_render::RenderWheel,
+    wingsuit::arm_steering as arm,
 };
 
 /// The wrists' mean tilt now, degrees, positive with the leading edges down: what the wingsuit's
@@ -91,12 +92,12 @@ pub fn mounted_aim_point() -> Option<Vec3> {
 /// ([`crate::vehicles::mounted::stand_down`]), which the bindings run beside this one.
 pub fn stand_down() {
     crate::vehicles::rail::stand_down();
-    physical::calibration::leave();
+    driving::physical::calibration::leave();
     let mut state = STATE.lock();
     let mut events = Vec::new();
     let mut handle_events = Vec::new();
-    physical::release_all(&mut state.controls, &mut events);
-    parachute::release_all(&mut state.handles, &mut handle_events);
+    driving::physical::release_all(&mut state.controls, &mut events);
+    parachute::handles::release_all(&mut state.handles, &mut handle_events);
     state.controls = ControlState::default();
     state.handles_on = false;
     state.last_holds = [None; 2];
@@ -108,7 +109,7 @@ pub fn stand_down() {
     state.mounted_grip = MountedGrip::new();
     state.mounted_barrel = None;
     state.mounted_handle_points = [None; 2];
-    mounted_recoil::set_holds([false; 2]);
+    mounted::recoil::set_holds([false; 2]);
     MOUNTED_WEAPON.store(0, Ordering::Relaxed);
     publish_mounted_holds([false; 2]);
     state.mounted_handles = None;
@@ -116,11 +117,11 @@ pub fn stand_down() {
     state.latch = None;
     state.entry = None;
     let retired_owner = state.entry_owner.take();
-    driving_view::publish(None);
+    driving::view::publish(None);
     state.render = None;
     state.steering_turn = None;
     state.afterburner = false;
-    wheel_render::publish(None);
+    driving::wheel_render::publish(None);
     state.status.active = false;
     state.status.seat = None;
     state.status.volumes = [None; 2];
@@ -150,10 +151,10 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
         Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
     );
     let grips = hands.map(|h| h.map(|h| h.grip.position));
-    let kick_offset = mounted_recoil::offset();
+    let kick_offset = mounted::recoil::offset();
     let state = STATE.lock();
     let kick = state.mounted_barrel.map_or(Vec3::ZERO, |barrel| {
-        mounted_recoil::handle_shift(kick_offset, barrel)
+        mounted::recoil::handle_shift(kick_offset, barrel)
     });
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -164,13 +165,19 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
             .filter(|_| state.anchor_weights[i] > 0.0)
             .zip(state.placement)
             .and_then(|(hold, placement)| {
-                let point = physical::anchor_point(&state.controls, &placement, hold, hand, grips)?;
+                let point = driving::physical::anchor_point(
+                    &state.controls,
+                    &placement,
+                    hold,
+                    hand,
+                    grips,
+                )?;
                 Some((point, state.anchor_weights[i]))
             });
         let handle = state.last_handles[i]
             .filter(|_| state.anchor_weights[i] > 0.0)
             .map(|hold| {
-                let point = parachute::anchor_point(
+                let point = parachute::handles::anchor_point(
                     &VEHICLES.get().parachute_handles,
                     hold,
                     h.grip.position,
@@ -277,7 +284,7 @@ impl State {
         if self.status.seat == seat && self.entry == identity {
             return;
         }
-        physical::release_all(&mut self.controls, events);
+        driving::physical::release_all(&mut self.controls, events);
         self.controls = ControlState::default();
         for hand in Hand::BOTH {
             let i = hand.index();

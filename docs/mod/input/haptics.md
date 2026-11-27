@@ -95,18 +95,18 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::DetonatorEmpty` | the detonator's trigger is pressed with nothing to detonate | buzz | weapons | `weapons::c4` |
 | `Event::WheelTick` | the weapon wheel opens or its choice changes | tick | weapons | `weapons::wheel` |
 | `Event::WheelCommit` | the weapon wheel's release commits a weapon | click | weapons | `weapons::wheel` |
-| `Event::SteeringStop` | the held wheel reaches its lock | bump | vehicles | `vehicles::control_haptics` |
-| `Event::SteeringCentre` | the held wheel passes centre | tick | vehicles | `vehicles::control_haptics` |
-| `Event::ControlStop` | a held stick, yoke, or lever reaches a stop | bump | vehicles | `vehicles::control_haptics` |
-| `Event::ControlNeutral` | a held lever passes neutral, or a held stick or yoke comes back to centre | tick | vehicles | `vehicles::control_haptics` |
-| `Event::ThrottleGate` | the held throttle reaches its afterburner gate | bump | vehicles | `vehicles::control_haptics` |
-| `Event::ThrottleStep` | the held throttle passes a tenth of its forward section | tick | vehicles | `vehicles::control_haptics` |
-| `Event::ThrottleZero` | the held throttle comes back to zero and stops at its reverse gate | thud | vehicles | `vehicles::control_haptics` |
-| `Event::ThrottleReverse` | the held throttle goes through its zero gate into reverse or back out | buzz | vehicles | `vehicles::control_haptics` |
-| `Event::ButtonPress` | a cockpit button presses, or a twist grip twists far enough to act | click | vehicles | `vehicles::control_haptics` |
-| `Event::ButtonRelease` | a cockpit button or a twist grip is let go | tick | vehicles | `vehicles::control_haptics` |
+| `Event::SteeringStop` | the held wheel reaches its lock | bump | vehicles | `vehicles::driving::haptics` |
+| `Event::SteeringCentre` | the held wheel passes centre | tick | vehicles | `vehicles::driving::haptics` |
+| `Event::ControlStop` | a held stick, yoke, or lever reaches a stop | bump | vehicles | `vehicles::driving::haptics` |
+| `Event::ControlNeutral` | a held lever passes neutral, or a held stick or yoke comes back to centre | tick | vehicles | `vehicles::driving::haptics` |
+| `Event::ThrottleGate` | the held throttle reaches its afterburner gate | bump | vehicles | `vehicles::driving::haptics` |
+| `Event::ThrottleStep` | the held throttle passes a tenth of its forward section | tick | vehicles | `vehicles::driving::haptics` |
+| `Event::ThrottleZero` | the held throttle comes back to zero and stops at its reverse gate | thud | vehicles | `vehicles::driving::haptics` |
+| `Event::ThrottleReverse` | the held throttle goes through its zero gate into reverse or back out | buzz | vehicles | `vehicles::driving::haptics` |
+| `Event::ButtonPress` | a cockpit button presses, or a twist grip twists far enough to act | click | vehicles | `vehicles::driving::haptics` |
+| `Event::ButtonRelease` | a cockpit button or a twist grip is let go | tick | vehicles | `vehicles::driving::haptics` |
 | `Event::HandleGrab` | a hand takes a mounted gun's handle | click | vehicles | `vehicles` |
-| `Event::MountedKick` | a shot of the mounted gun, on each holding hand | bump | vehicles | `vehicles::mounted_recoil` |
+| `Event::MountedKick` | a shot of the mounted gun, on each holding hand | bump | vehicles | `vehicles::mounted::recoil` |
 | `Event::GrappleFire` | the grapple fires, or the snatch fires its hook | bump | traversal | `hands::anchor`, `snatch` |
 | `Event::GrappleAttach` | the hook takes hold, the snatch's hook opens a car door, or a tap tosses a gun | thud | traversal | `hands::anchor`, `snatch` |
 | `Event::Yank` | a yank of the grapple hand, or a yank that boosts the reel | bump | traversal | `bindings`, `grapple::physical` |

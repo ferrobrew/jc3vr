@@ -3,8 +3,8 @@ use jc3vr_body::controllers::{grab::cockpit::ControlKind, mode::VehicleClass};
 use super::*;
 use crate::vehicles::{
     config::VehiclesConfig,
+    driving::physical::{ControlState, Hold, Outputs, Release},
     grip_sources,
-    physical::{ControlState, Hold, Outputs, Release},
 };
 
 fn driver() -> Option<VehicleSeat> {
@@ -79,7 +79,7 @@ fn begin_adapter_missing_observation_clears_old_entry_and_reentry_is_fresh() {
         body: glam::Quat::IDENTITY,
         world_scale: 1.0,
     };
-    let fitted = fit::fit(
+    let fitted = driving::fit::fit(
         &FitInputs {
             physical: &PhysicalControlsTuning::of(&config.physical),
             view_enabled: config.driving_view.enabled,

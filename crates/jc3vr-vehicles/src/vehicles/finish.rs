@@ -23,20 +23,20 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::vehicles::{
-    arm_tick::arm_tick,
     axis_output::{lever_axes_wanted, stick_axes_wanted},
     begin::body_dimensions,
     config::VehicleSettings,
-    control_haptics,
-    handle_tick::handles_tick,
-    mounted_grip,
-    mounted_grip::MountedGripEvent,
-    mounted_recoil, parachute, parachute_rig, physical,
-    physical::{ControlEvent, ControlState, buttons::ButtonEvent},
+    driving,
+    driving::physical::{ControlEvent, ControlState, buttons::ButtonEvent},
+    mounted,
+    mounted::grip::MountedGripEvent,
+    parachute,
+    parachute::handle_tick::handles_tick,
     state::{STATE, log_handle_events, publish_mounted_holds, push_events},
-    steering,
     tuning::{PhysicalControlsTuning, VEHICLES},
-    wheel_render, wingsuit_evade, write_outputs,
+    wingsuit,
+    wingsuit::arm_tick::arm_tick,
+    write_outputs,
 };
 
 /// The second half of the vehicle handling's input tick: act on the grabs, move the held controls,
@@ -70,9 +70,9 @@ pub fn finish_tick(
     let mut state = STATE.lock();
     let mut mounted_events = Vec::new();
     let mounted_handles = state.mounted_handle_points;
-    mounted_grip::step(
+    mounted::grip::step(
         &mut state.mounted_grip,
-        &mounted_grip::GripStep {
+        &mounted::grip::GripStep {
             handles: mounted_handles,
             grips,
             held,
@@ -82,7 +82,7 @@ pub fn finish_tick(
         },
         &mut mounted_events,
     );
-    mounted_recoil::set_holds(Hand::BOTH.map(|h| state.mounted_grip.shares()[h.index()] > 0.0));
+    mounted::recoil::set_holds(Hand::BOTH.map(|h| state.mounted_grip.shares()[h.index()] > 0.0));
     state.status.mounted_holds = state.mounted_grip.holds;
     publish_mounted_holds(state.mounted_grip.holds);
     if !mounted_events.is_empty() {
@@ -94,10 +94,10 @@ pub fn finish_tick(
         return;
     };
     let offered = state.status.offered;
-    let outputs = physical::step(
+    let outputs = driving::physical::step(
         &mut state.controls,
         &placement,
-        &physical::StepInputs {
+        &driving::physical::StepInputs {
             kinds: offered,
             grips,
             orientations,
@@ -110,7 +110,7 @@ pub fn finish_tick(
         },
         &mut events,
     );
-    physical::visual::submit(
+    driving::physical::visual::submit(
         &placement,
         &state.controls,
         offered,
@@ -137,13 +137,13 @@ pub fn finish_tick(
         .native_stick
         .filter(|native| placement.cockpit.is_none() && offered.contains(&native.kind))
         .map(|native| (native.target, native.motion(state.controls.stick)));
-    wheel_render::publish_controls(rendered, native);
+    driving::wheel_render::publish_controls(rendered, native);
     state.status.rendered_angle = rendered.map(|(_, angle)| angle);
     let pulls = state.handles_on.then(|| {
-        parachute::step(
+        parachute::handles::step(
             &mut state.handles,
             &VEHICLES.get().parachute_handles,
-            &parachute::StepInputs {
+            &parachute::handles::StepInputs {
                 grips,
                 held,
                 grabs: handle_grabs,
@@ -152,7 +152,7 @@ pub fn finish_tick(
         )
     });
     // The rig's handles the hands do not hold are drawn on their cords, not in the hands.
-    parachute_rig::publish(
+    parachute::rig::publish(
         state
             .handles_on
             .then(|| state.handles.holds.map(|hold| hold.is_some())),
@@ -193,7 +193,7 @@ pub fn finish_tick(
         last,
         grapple_held,
     );
-    wingsuit_evade::tick(
+    wingsuit::evade::tick(
         game,
         arms.as_ref(),
         body_dimensions(&config).arm_span,
@@ -253,7 +253,7 @@ pub fn finish_tick(
     push_events(&mut state.status, events);
     drop(state);
     log_handle_events(&handle_events);
-    control_haptics::pulse(&outputs, holds_now, &button_events);
+    driving::haptics::pulse(&outputs, holds_now, &button_events);
     for event in button_events.iter().filter(|e| e.engages()) {
         tracing::info!(
             target: "controllers",
@@ -316,7 +316,7 @@ pub(super) fn rendered_angle(
         return controls.wheel_angle;
     }
     steering_turn.map_or(0.0, |turn| {
-        steering::angle_for_steer(turn.clamp(-1.0, 1.0), &config.wheel)
+        driving::steering::angle_for_steer(turn.clamp(-1.0, 1.0), &config.wheel)
     })
 }
 

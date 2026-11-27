@@ -66,7 +66,7 @@ pub struct VehiclesConfig {
     /// The arm-pose steering of the wingsuit.
     pub arm_steering: ArmSteeringConfig,
     /// The boost wingsuit's barrel-roll evade, thrown by banking the spread arms hard and fast
-    /// ([`wingsuit_evade`](crate::vehicles::wingsuit_evade)).
+    /// ([`crate::vehicles::wingsuit::evade`]).
     pub wingsuit_evade: WingsuitEvadeConfig,
     /// The parachute's handles, grabbed and pulled to steer and brake.
     pub parachute_handles: ParachuteHandlesConfig,
@@ -109,7 +109,7 @@ impl Default for VehiclesConfig {
     }
 }
 
-/// The physical controls' settings (see [`crate::vehicles::physical`]). Every control
+/// The physical controls' settings (see [`crate::vehicles::driving::physical`]). Every control
 /// is on; where they sit and how they move is
 /// [`PhysicalControlsTuning`](crate::vehicles::tuning::PhysicalControlsTuning)'s.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -134,7 +134,7 @@ impl Default for PhysicalControlsConfig {
 }
 
 /// The settings that apply to every steering wheel, whether placed from the vehicle's own or from
-/// the fallback (see [`crate::vehicles::steering`]).
+/// the fallback (see [`crate::vehicles::driving::steering`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WheelConfig {
@@ -174,7 +174,7 @@ pub enum WheelTracking {
     Twist,
 }
 
-/// The arm-pose steering of the wingsuit (see [`crate::vehicles::arm_steering`]):
+/// The arm-pose steering of the wingsuit (see [`crate::vehicles::wingsuit::arm_steering`]):
 /// with the arms spread, the difference in the hands' heights banks, and the wrists' tilt, the
 /// hands' height, or the arms' sweep pitches ([`ArmPitch`]). On by default, alongside the stick
 /// steering it adds to. With the overlay on, the overlay rings each hand in the wingsuit, lit while
@@ -227,7 +227,7 @@ impl ArmPitch {
     pub const ALL: [ArmPitch; 3] = [ArmPitch::WristTilt, ArmPitch::Height, ArmPitch::Sweep];
 }
 
-/// The parachute's handles (see [`crate::vehicles::parachute`]): one grab volume per
+/// The parachute's handles (see [`crate::vehicles::parachute::handles`]): one grab volume per
 /// hand a little above, ahead of, and outside its shoulder, where a hand raised to a canopy's
 /// toggle comes to rest standing or seated. A grip press inside one takes the handle, and pulling
 /// it down from where it was taken banks to that side; both pulled down brake. On by default; the

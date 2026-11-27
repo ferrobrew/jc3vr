@@ -12,7 +12,7 @@
 //! right-handed layout, and the sticks' and levers' X is mirrored for a left-handed one, so the
 //! stick that sits by the dominant knee moves with the dominant hand. The wheel and the handlebars
 //! are centred on the vehicle and never mirrored; where the vehicle's own wheel or handlebars are
-//! found, they are placed from it instead ([`crate::vehicles::wheel`]), and the specs
+//! found, they are placed from it instead ([`crate::vehicles::driving::wheel`]), and the specs
 //! here are the fallback.
 
 mod airborne;

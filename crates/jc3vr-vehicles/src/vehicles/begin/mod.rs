@@ -30,29 +30,28 @@ use jc3vr_weapons::controllers::loadout::live;
 use parking_lot::Mutex;
 
 use crate::vehicles::{
-    arm_tick::arms_act,
     config::VehicleSettings,
-    driving_view,
-    entry::{VehicleEntry, VehicleEntryIdentity},
-    fit,
-    fit::{FitInputs, VehicleLatch},
-    grip_sources,
-    handle_tick::handles_act,
-    mounted_grip,
-    mounted_tick::{MountedTick, mounted_tick, offered},
-    parachute, parachute_rig, physical,
-    physical::{
-        ControlEvent, Placement,
-        buttons::{ButtonPlacement, PushPhase},
+    driving,
+    driving::{
+        fit::{FitInputs, VehicleLatch},
+        physical::{
+            ControlEvent, Placement,
+            buttons::{ButtonPlacement, PushPhase},
+        },
     },
-    ripcord_tick,
+    entry::{VehicleEntry, VehicleEntryIdentity},
+    grip_sources, mounted,
+    mounted::input_tick::{MountedTick, mounted_tick, offered},
+    parachute,
+    parachute::handle_tick::handles_act,
     state::{
         MOUNTED_TARGET, MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events,
         mounted_hand_weight, push_events,
     },
     tuning::{PhysicalControlsTuning, VEHICLES},
     types::TickVolumes,
-    wing_guide,
+    wingsuit,
+    wingsuit::arm_tick::arms_act,
 };
 
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical
@@ -61,7 +60,7 @@ use crate::vehicles::{
 pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     let Some(active) = hands::active_hands_raw() else {
         crate::vehicles::stand_down();
-        physical::visual::clear();
+        driving::physical::visual::clear();
         return TickVolumes::default();
     };
     let config = VehicleSettings::read();
@@ -88,7 +87,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     drop(retired_owner);
     let view_eyes =
         headpose::anchor().map(|anchor| anchor + jc3vr_view::hooks::camera::head_to_eye_point());
-    let fit = fit::fit(
+    let fit = driving::fit::fit(
         &FitInputs {
             physical: &physical_config,
             view_enabled: config.vehicles.driving_view.enabled,
@@ -108,7 +107,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
         .is_some_and(|fit| fit.asset.stick_kind == ControlKind::Yoke);
     let offered = offered(seat, fit.fork, yoke);
     if offered.is_empty() {
-        physical::visual::clear();
+        driving::physical::visual::clear();
     }
     let placement = Placement {
         wheel: fit.wheel,
@@ -128,28 +127,28 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     if gunner_view.is_none() {
         *GUNNER_VIEW.lock() = None;
     }
-    driving_view::publish(fit.view.or(gunner_view));
+    driving::view::publish(fit.view.or(gunner_view));
     let handles_on = handles_act(mode, &config);
-    let native_centres = parachute_rig::centres(handles_on, &xf);
+    let native_centres = parachute::rig::centres(handles_on, &xf);
 
     let mut handle_events = Vec::new();
     let mut state = STATE.lock();
     let previous_native = state.placement.and_then(|placement| placement.native_stick);
-    physical::refresh_native(
+    driving::physical::refresh_native(
         &mut state.controls,
         previous_native,
         placement.native_stick,
         &mut events,
     );
     let previous_cockpit = state.placement.and_then(|placement| placement.cockpit);
-    physical::refresh_cockpit(
+    driving::physical::refresh_cockpit(
         &mut state.controls,
         previous_cockpit,
         placement.cockpit,
         &mut events,
     );
     if !handles_on {
-        parachute::release_all(&mut state.handles, &mut handle_events);
+        parachute::handles::release_all(&mut state.handles, &mut handle_events);
     }
     // What a hand holds goes first, so that it keeps it over anything as near.
     let mut targets = Vec::new();
@@ -190,7 +189,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             || state.mounted_grip.holds[hand.index()]
             || live::held_kind(hand).is_some()
     });
-    let controls = physical::candidates(&placement, &state.controls, offered, grips);
+    let controls = driving::physical::candidates(&placement, &state.controls, offered, grips);
     targets.extend(
         controls
             .iter()
@@ -216,7 +215,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             }),
     );
     targets.extend(
-        mounted_grip::candidates(mounted.handle_points)
+        mounted::grip::candidates(mounted.handle_points)
             .iter()
             .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
             .map(|c| handle_target(c.volume, c.centre, c.radius, c.hand.unwrap_or(Hand::Right))),
@@ -274,7 +273,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
     }
     if handles_on {
         let centres = native_centres.map(|point| point.unwrap_or(Vec3::ZERO));
-        let placed = parachute::candidates(
+        let placed = parachute::handles::candidates(
             &VEHICLES.get().parachute_handles,
             &state.handles,
             centres,
@@ -300,7 +299,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
         // A hand that misses a free handle by a little still takes it when nothing else is in
         // reach.
         targets.extend(
-            parachute::reach_candidates(&state.handles, centres)
+            parachute::handles::reach_candidates(&state.handles, centres)
                 .filter(|c| {
                     c.hand.is_some_and(|hand| {
                         !holding[hand.index()] && native_centres[hand.index()].is_some()
@@ -316,7 +315,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
                 }),
         );
     }
-    targets.extend(ripcord_tick::targets(mode, &active, &config));
+    targets.extend(parachute::ripcord_tick::targets(mode, &active, &config));
     let grips = grab::tick::hand_grips(&active);
     let volumes = grab::resolve::resolve(&targets, grips).map(|r| r.chosen.map(|c| c.volume));
     state.handles_on = handles_on;
@@ -357,7 +356,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickVolumes {
             grip::declare(hand, Grip::new(grip::SURFACE));
         }
     }
-    wing_guide::submit(arms_act(mode, &config), arms_engaged);
+    wingsuit::guide::submit(arms_act(mode, &config), arms_engaged);
     TickVolumes { targets }
 }
 
@@ -373,12 +372,12 @@ fn prepare_entry(
 
 /// The gunner seat's view correction for the manned gun of `mounted`: its handles' midpoint from
 /// the character's eyes `eyes` (the anchor's, before any correction), averaged once the gunner has
-/// settled ([`driving_view::Entry`]) and kept for the seat.
+/// settled ([`driving::view::Entry`]) and kept for the seat.
 fn gunner_view_target(
     xf: &CockpitTransform,
     eyes: Option<Vec3>,
     mounted: &MountedTick,
-) -> Option<driving_view::Target> {
+) -> Option<driving::view::Target> {
     let gun = mounted.weapon?;
     let [Some(left), Some(right)] = mounted.handle_points else {
         return None;
@@ -389,9 +388,9 @@ fn gunner_view_target(
         .filter(|offset| offset.is_finite());
     let mut latch = GUNNER_VIEW.lock();
     let (latched_gun, since, entry) =
-        latch.get_or_insert_with(|| (gun, Instant::now(), driving_view::Entry::new()));
+        latch.get_or_insert_with(|| (gun, Instant::now(), driving::view::Entry::new()));
     if *latched_gun != gun {
-        *latch = Some((gun, Instant::now(), driving_view::Entry::new()));
+        *latch = Some((gun, Instant::now(), driving::view::Entry::new()));
         return None;
     }
     if entry.observe(since.elapsed(), from_eyes) {
@@ -401,14 +400,14 @@ fn gunner_view_target(
             "vehicles: the gunner seat's handles measured for the view"
         );
     }
-    entry.mean().map(|mean| driving_view::Target {
+    entry.mean().map(|mean| driving::view::Target {
         vehicle: gun,
-        correction: driving_view::derive_handles(mean),
+        correction: driving::view::derive_handles(mean),
     })
 }
 
 /// The gunner seat's measurement: the gun, when the seat began, and the handles' entry.
-static GUNNER_VIEW: Mutex<Option<(usize, Instant, driving_view::Entry)>> = Mutex::new(None);
+static GUNNER_VIEW: Mutex<Option<(usize, Instant, driving::view::Entry)>> = Mutex::new(None);
 
 #[cfg(test)]
 mod tests;

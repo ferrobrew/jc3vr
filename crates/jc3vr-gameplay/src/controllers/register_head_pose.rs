@@ -20,7 +20,7 @@ use jc3vr_body::{
     hooks::input::swim,
 };
 use jc3vr_core::{published::Stamp, registration::RegistrationCheck};
-use jc3vr_vehicles::vehicles::take_off;
+use jc3vr_vehicles::vehicles::wingsuit;
 use jc3vr_view::headpose::{
     HeadParticipants, head_participants_registered, register_head_participants,
 };
@@ -50,7 +50,7 @@ static PARTICIPANTS: HeadParticipants = HeadParticipants {
             Case::Ragdoll | Case::GettingUp | Case::Dead
         )
     },
-    take_off_heading: take_off::held_heading,
+    take_off_heading: wingsuit::take_off::held_heading,
     take_swim_turn: strokes::take_turn,
     ui_mode: || mode::current().mode == Mode::Ui,
 };

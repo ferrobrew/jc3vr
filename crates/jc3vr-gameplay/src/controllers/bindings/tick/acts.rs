@@ -29,7 +29,7 @@ use jc3vr_physical::controllers::{
 };
 use jc3vr_vehicles::{
     vehicles,
-    vehicles::wingsuit_gestures::{GestureCommands, SuitTransition},
+    vehicles::wingsuit::gestures::{GestureCommands, SuitTransition},
 };
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform,

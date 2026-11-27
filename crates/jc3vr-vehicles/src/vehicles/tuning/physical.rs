@@ -18,7 +18,7 @@ pub type PhysicalTuning = PhysicalControls<SteeringWheelTuning>;
 pub type PhysicalControlsTuning = PhysicalControls<WheelSpec>;
 
 /// Where the physical controls of the driver's seat sit and how they move (see
-/// [`crate::vehicles::physical`]), over the wheel's description `W`.
+/// [`crate::vehicles::driving::physical`]), over the wheel's description `W`.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PhysicalControls<W> {
@@ -92,7 +92,7 @@ pub struct SteeringWheelTuning {
 /// A steering wheel: a rim in a plane facing the driver, tilted back with its column. The hub,
 /// radius, and tilt place the wheel where the vehicle's own is not found; the lock, the response,
 /// the tracking, and the return apply to every wheel (see
-/// [`crate::vehicles::steering`]).
+/// [`crate::vehicles::driving::steering`]).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct WheelSpec {
     /// The wheel's hub.
@@ -129,7 +129,7 @@ impl WheelSpec {
 }
 
 /// Handlebars, turning about their centre (see
-/// [`crate::vehicles::physical`]). The middle and half width place them where the
+/// [`crate::vehicles::driving::physical`]). The middle and half width place them where the
 /// vehicle's own are not found; the lock, the response, and the reach apply to all.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,7 +173,7 @@ pub struct StickSpec {
     pub return_s: f32,
 }
 
-/// A plane's control wheel on its column (see [`crate::vehicles::physical::yoke`]):
+/// A plane's control wheel on its column (see [`crate::vehicles::driving::physical::yoke`]):
 /// turned for the roll and pushed or pulled along the column for the pitch. Its place comes from
 /// the cockpit's model.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
@@ -190,7 +190,7 @@ pub struct YokeSpec {
 }
 
 /// The horn and the nitrous worked by hand (see
-/// [`crate::vehicles::physical::buttons`]): the horn pressed with a free hand on the
+/// [`crate::vehicles::driving::physical::buttons`]): the horn pressed with a free hand on the
 /// wheel's hub, a nitrous button on the dash beside the wheel (on a vehicle with nitrous), and the
 /// collective's grip twisted either way for the nitrous. The plane's afterburner is its throttle's
 /// gate ([`FlightControlsTuning::gate_at`]). The buttons stay alongside the controller's.
@@ -224,7 +224,7 @@ pub struct CockpitButtonsTuning {
 }
 
 /// The plane's flight stick and throttle beyond a plain stick and lever (see
-/// [`crate::vehicles::physical`]).
+/// [`crate::vehicles::driving::physical`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FlightControlsTuning {
@@ -285,7 +285,7 @@ impl LeverAxis {
     }
 }
 
-/// How the wheel turns and returns (see [`crate::vehicles::steering`]).
+/// How the wheel turns and returns (see [`crate::vehicles::driving::steering`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SteeringTuning {
@@ -303,7 +303,7 @@ pub struct SteeringTuning {
 }
 
 /// How the sticks, the yoke, and the handlebars move beyond their specs (see
-/// [`crate::vehicles::physical`]).
+/// [`crate::vehicles::driving::physical`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlMotionTuning {
@@ -326,7 +326,7 @@ pub struct ControlMotionTuning {
 }
 
 /// When the sticks' and levers' haptic cues fire (see
-/// [`crate::vehicles::physical::cues`]).
+/// [`crate::vehicles::driving::physical::cues`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCuesTuning {
@@ -340,7 +340,7 @@ pub struct ControlCuesTuning {
 }
 
 /// What the box fit of a vehicle's own wheel and handlebars accepts and where it puts the grips
-/// (see [`crate::vehicles::wheel`]).
+/// (see [`crate::vehicles::driving::wheel`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WheelFitTuning {

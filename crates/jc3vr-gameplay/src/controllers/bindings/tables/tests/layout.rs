@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use jc3vr_vehicles::vehicles::{
     tuning::VEHICLES,
-    wingsuit_gestures::{
+    wingsuit::gestures::{
         FlightPose, GestureInput, HandClaims, Stage, WingsuitGestures, desired_for,
     },
 };

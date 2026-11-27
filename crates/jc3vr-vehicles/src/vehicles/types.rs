@@ -9,11 +9,13 @@ use jc3vr_body::controllers::{
 use jc3vr_core::published::EventLog;
 
 use crate::vehicles::{
-    arm_steering::{ArmPose, PitchInput},
-    fit::FitReadout,
+    driving::{
+        fit::FitReadout,
+        physical::{ControlCue, ControlEvent, ControlState, Outputs},
+        wheel::WheelFrame,
+    },
     mounted::MountedGun,
-    physical::{ControlCue, ControlEvent, ControlState, Outputs},
-    wheel::WheelFrame,
+    wingsuit::arm_steering::{ArmPose, PitchInput},
 };
 
 /// The mounted gun as the last input tick saw it.

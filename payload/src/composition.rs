@@ -47,7 +47,7 @@ use jc3vr_physical::controllers::{
 use jc3vr_render::hooks::profiler;
 use jc3vr_render::hooks::{clock, draw_count, graphics_engine};
 use jc3vr_ui::pause_menu;
-use jc3vr_vehicles::{Registered as VehiclesRegistered, vehicles, vehicles::mounted_recoil};
+use jc3vr_vehicles::{Registered as VehiclesRegistered, vehicles};
 use jc3vr_view::hooks::{camera, window_focus};
 use jc3vr_weapons::{
     contributions::{self as weapons_contributions, WeaponsContributions},
@@ -122,7 +122,7 @@ fn register(check: &mut RegistrationCheck) -> Result<VehiclesRegistered, Registr
     // shot of the mounted gun the hands aim, the grip view's flash for a refused take of a weapon,
     // and the props the hands carry, which the loadout table records.
     weapons_contributions::register(WeaponsContributions {
-        mounted_shot: mounted_recoil::on_shot,
+        mounted_shot: vehicles::mounted::recoil::on_shot,
         take_refused: grab_view::take_refused,
         held_props,
     });

@@ -5,30 +5,17 @@
 //!
 //! - [`config`]: the settings, all at `controllers.vehicles` ([`VEHICLES_CONFIG`]), and
 //!   [`tuning`]: the fixed placement and tuning of everything here;
-//! - [`physical`]: the wheel, handlebars, cyclic, collective, flight stick, yoke, and throttle of
-//!   the driver's seat and the cockpit's buttons, grabbed with the grip, which write the vehicle's
-//!   analog axes and hold the hands;
-//! - [`steering`]: how the held wheel turns and maps to the steering;
-//! - [`wheel`] and [`fit`]: the wheel and the handlebars placed where the driven vehicle's own are;
-//! - [`driving_view`]: the driver's view moved per vehicle to a standard place behind the wheel;
-//! - [`wheel_render`]: the vehicle's rendered steering wheel turned with the steering;
-//! - [`driver_aim`]: the driver's vehicle weapons aimed by the dominant hand;
-//! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun;
-//!   [`mounted_grip`] takes the handles with the grip, [`mounted_recoil`] kicks them, and
-//!   [`turret`] turns a manned vehicle gun toward the hands' aim;
+//! - [`driving`]: the driver's seat: its physical controls and the cockpit's buttons, the wheel and
+//!   the handlebars fitted to the vehicle, the driver's view, the rendered wheel, and the driver's
+//!   hand-aimed weapons;
+//! - [`mounted`]: mounted guns and gunner seats, whose handles hold the hands and aim the gun,
+//!   with the handles' grip and recoil and the manned vehicle gun's turn toward the hands' aim;
 //! - [`passenger`]: a passenger's seated body turned toward the gun hand's aim;
-//! - [`arm_steering`]: the arm-pose steering of the wingsuit;
-//! - [`wingsuit_evade`]: the boost wingsuit's barrel-roll evade, thrown by banking the arms;
-//! - [`wingsuit_gestures`]: the suit's deploy, air brake, and close, from the arms;
-//! - [`look_steer`]: the wingsuit's head look-steer removed;
-//! - [`take_off`]: the boost wingsuit's take-off from the ground along the head's heading;
-//! - [`parachute`]: the parachute's handles, taken with the grip and pulled to steer and brake, at
-//!   the places the game's parachute rig puts them ([`parachute_rig`]);
-//! - [`ripcord`]: the ripcord at the hip, taken with the grip and pulled to open the parachute
-//!   from a fall or the wingsuit;
+//! - [`wingsuit`]: the wingsuit's arm steering, the evade and the gestures the arms throw, the head
+//!   look-steer removed, and the take-off from the ground;
+//! - [`parachute`]: the parachute's handles where the game's rig puts them, and the ripcord;
 //! - [`rail`]: standing on a helicopter's skid after a reel onto its door side;
-//! - [`grip_sources`]: the grip sources of the handles the hands hold besides the physical
-//!   controls.
+//! - [`grip_sources`]: the grip sources of the handles the hands hold besides the physical controls.
 //!
 //! The stick bindings of every class are the tables' (`controllers::bindings::tables`).
 //! This module runs on the input tick in two halves around them, like the weapon handling:
@@ -57,44 +44,22 @@
 //!
 //! [`VEHICLES_CONFIG`]: crate::vehicles::config::VEHICLES_CONFIG
 
-pub mod arm_steering;
-mod arm_tick;
 pub(crate) mod axis_output;
 mod begin;
 pub mod config;
-mod control_haptics;
-pub mod driver_aim;
-pub mod driving_view;
+pub mod driving;
 mod entry;
 mod finish;
-pub mod fit;
 pub mod grip_sources;
-mod handle_tick;
-
-pub mod look_steer;
 pub mod mounted;
-pub(crate) mod mounted_grip;
-pub mod mounted_recoil;
-mod mounted_tick;
 pub mod parachute;
-pub mod parachute_rig;
 pub mod passenger;
-pub mod physical;
 pub mod rail;
-pub mod ripcord;
-mod ripcord_tick;
 mod speed;
 mod state;
-pub mod steering;
-pub mod take_off;
 pub mod tuning;
-pub mod turret;
 mod types;
-pub mod wheel;
-pub mod wheel_render;
-mod wing_guide;
-pub mod wingsuit_evade;
-pub mod wingsuit_gestures;
+pub mod wingsuit;
 
 use re_utilities::hook_library::HookLibrary;
 
@@ -102,7 +67,7 @@ pub use self::{
     axis_output::write_outputs,
     begin::begin_tick,
     finish::finish_tick,
-    ripcord_tick::{finish as ripcord_finish, holder as ripcord_holder},
+    parachute::ripcord_tick::{finish as ripcord_finish, holder as ripcord_holder},
     speed::seat_vehicle_speed_mps,
     state::{
         apply, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_holds, stand_down,
@@ -114,11 +79,11 @@ pub use self::{
 /// The vehicles' hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
-        .with_hook_library(driver_aim::hook_library())
-        .with_hook_library(look_steer::hook_library())
-        .with_hook_library(wheel_render::hook_library())
-        .with_hook_library(parachute_rig::hook_library())
-        .with_hook_library(turret::hook_library())
+        .with_hook_library(driving::aim::hook_library())
+        .with_hook_library(wingsuit::look_steer::hook_library())
+        .with_hook_library(driving::wheel_render::hook_library())
+        .with_hook_library(parachute::rig::hook_library())
+        .with_hook_library(mounted::turret::hook_library())
         .with_hook_library(rail::hook_library())
 }
 
@@ -136,9 +101,9 @@ mod tests {
 
     use super::*;
     use crate::vehicles::{
+        driving::physical::{ControlState, Hold, Outputs},
         finish::rendered_angle,
-        mounted_tick::offered,
-        physical::{ControlState, Hold, Outputs},
+        mounted::input_tick::offered,
         state::move_grip,
         tuning::PhysicalControlsTuning,
     };
@@ -220,7 +185,7 @@ mod tests {
         let lock = config.wheel.lock_deg.to_radians();
         let mut controls = ControlState::new();
         let half = rendered_angle(&controls, &config, Some(0.5));
-        assert!((steering::steer_for_angle(half, &config.wheel) - 0.5).abs() < 1e-4);
+        assert!((driving::steering::steer_for_angle(half, &config.wheel) - 0.5).abs() < 1e-4);
         assert!((rendered_angle(&controls, &config, Some(3.0)) - lock).abs() < 1e-5);
         assert_eq!(rendered_angle(&controls, &config, None), 0.0);
         // A released wheel still on its way back is drawn where it is.

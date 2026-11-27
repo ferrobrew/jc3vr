@@ -63,7 +63,7 @@ impl MountedTuning {
     }
 }
 
-/// The mounted gun's kick in the hands (see [`crate::vehicles::mounted_recoil`]).
+/// The mounted gun's kick in the hands (see [`crate::vehicles::mounted::recoil`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MountedRecoilTuning {
@@ -112,7 +112,7 @@ impl GunnerSeatTuning {
 }
 
 /// The driving view's correction of the driver's and the gunner's seat (see
-/// [`crate::vehicles::driving_view`]).
+/// [`crate::vehicles::driving::view`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrivingViewTuning {
@@ -149,7 +149,7 @@ impl DrivingViewTuning {
 }
 
 /// Setting a cockpit's controls from the hands (see
-/// [`crate::vehicles::physical::calibration`]).
+/// [`crate::vehicles::driving::physical::calibration`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CalibrationTuning {

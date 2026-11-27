@@ -1,0 +1,68 @@
+//! The driver's vehicle weapons aimed by the dominant hand under the controller scheme.
+//!
+//! The player's post-camera update hands the vehicle the aim control's weapon point through
+//! [`Vehicle::SetAimTargetPosition`] only while the player drives, and every built-in weapon of the
+//! vehicle aims from the stored point ([`Vehicle::m_AimingTargetPosition`]); turrets turn toward it
+//! at their own limited rate, so a hand-aimed turret trails the hand as it trails the gaze. The
+//! detour substitutes the dominant hand's aim point, cast by the aim update earlier in the same
+//! tick ([`jc3vr_body::controllers::aim`]), for the local player's vehicle. With no hand aim, the
+//! gaze point goes through unchanged.
+
+use detours_macro::detour;
+use glam::Vec3;
+use jc3gi::{
+    types::math::Vector3,
+    vehicle::vehicle::{Seat, Vehicle},
+};
+use jc3vr_body::controllers::{body_frame, scheme};
+use jc3vr_core::published::Counter;
+use re_utilities::hook_library::HookLibrary;
+
+pub(crate) fn hook_library() -> HookLibrary {
+    HookLibrary::new().with_static_binder(&SET_AIM_TARGET_POSITION_BINDER)
+}
+
+/// How many vehicle aim points the hand replaced, for the debug UI.
+pub fn substitutions() -> u64 {
+    SUBSTITUTIONS.get()
+}
+
+#[detour(address = jc3gi::vehicle::vehicle::Vehicle::SetAimTargetPosition_ADDRESS)]
+fn set_aim_target_position(vehicle: *mut Vehicle, position: *const Vector3) {
+    let original = |position: *const Vector3| {
+        SET_AIM_TARGET_POSITION
+            .get()
+            .unwrap()
+            .call(vehicle, position)
+    };
+    // The local player's seat is recorded on the vehicle itself, so this also rules out every
+    // vehicle an AI drives.
+    let driven =
+        unsafe { vehicle.as_ref() }.is_some_and(|v| v.m_LocalPlayerSeat == Seat::EDriverSeat);
+    match hand_point().filter(|_| driven) {
+        Some(point) => {
+            SUBSTITUTIONS.bump();
+            let point = Vector3 {
+                data: point.to_array(),
+            };
+            original(&point);
+        }
+        None => original(position),
+    }
+}
+
+/// The dominant hand's aim point from the last aim update, while the hand aims.
+fn hand_point() -> Option<Vec3> {
+    let enabled = scheme::enabled();
+    let dominant = scheme::acting_hand();
+    if !(enabled && scheme::is_controllers()) {
+        return None;
+    }
+    let aim = body_frame::aim();
+    if aim.idle.is_some() {
+        return None;
+    }
+    aim.hands[dominant.index()].map(|h| h.target)
+}
+
+static SUBSTITUTIONS: Counter = Counter::new();

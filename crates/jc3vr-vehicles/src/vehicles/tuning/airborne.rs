@@ -10,9 +10,9 @@ use jc3vr_core::{
 };
 use serde::Deserialize;
 
-use crate::vehicles::{ripcord::MIN_PULL_M, tuning::millis};
+use crate::vehicles::{parachute::ripcord::MIN_PULL_M, tuning::millis};
 
-/// The arm steering's thresholds (see [`crate::vehicles::arm_steering`]).
+/// The arm steering's thresholds (see [`crate::vehicles::wingsuit::arm_steering`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArmSteeringTuning {
@@ -41,7 +41,7 @@ pub struct ArmSteeringTuning {
 }
 
 /// The bilateral wingsuit gestures: fresh-pose deployment, bilateral withdrawal, and palms-forward
-/// braking (see [`crate::vehicles::wingsuit_gestures`]). Distances are shares of the
+/// braking (see [`crate::vehicles::wingsuit::gestures`]). Distances are shares of the
 /// calibrated arm span.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -89,7 +89,7 @@ pub struct WingsuitGesturesTuning {
 }
 
 /// The boost wingsuit's barrel-roll evade's throw (see
-/// [`crate::vehicles::wingsuit_evade`]). The bank is the angle of the line between
+/// [`crate::vehicles::wingsuit::evade`]). The bank is the angle of the line between
 /// the hands from level, positive with the left hand above the right.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -116,7 +116,7 @@ pub struct WingsuitEvadeTuning {
     pub(crate) min_separation: f32,
 }
 
-/// How the parachute's handles pull (see [`crate::vehicles::parachute`]).
+/// How the parachute's handles pull (see [`crate::vehicles::parachute::handles`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParachuteHandlesTuning {
@@ -137,7 +137,7 @@ pub struct ParachuteHandlesTuning {
     pub deadzone_m: f32,
 }
 
-/// The parachute's rig (see [`crate::vehicles::parachute_rig`]).
+/// The parachute's rig (see [`crate::vehicles::parachute::rig`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ParachuteRigTuning {
@@ -157,7 +157,7 @@ impl ParachuteRigTuning {
     }
 }
 
-/// The wingsuit's take-off from the ground (see [`crate::vehicles::take_off`]).
+/// The wingsuit's take-off from the ground (see [`crate::vehicles::wingsuit::take_off`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TakeOffTuning {
@@ -179,7 +179,7 @@ impl TakeOffTuning {
     }
 }
 
-/// The ripcord (see [`crate::vehicles::ripcord`]).
+/// The ripcord (see [`crate::vehicles::parachute::ripcord`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RipcordTuning {
