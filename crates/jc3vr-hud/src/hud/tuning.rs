@@ -33,12 +33,12 @@ pub struct HudTuning {
     pub map: MapTuning,
     pub anchored: AnchoredTuning,
     pub world_markers: WorldMarkersTuning,
-    pub mark_labels: MarkLabelsTuning,
+    pub(crate) mark_labels: MarkLabelsTuning,
     pub lost_weapons: LostWeaponsTuning,
     pub grab_hint: GrabHintTuning,
-    pub game_reticle: GameReticleTuning,
+    pub(crate) game_reticle: GameReticleTuning,
     pub summary: SummaryTuning,
-    pub restart_notice: RestartNoticeTuning,
+    pub(crate) restart_notice: RestartNoticeTuning,
 }
 
 impl Tuning for HudTuning {
@@ -71,25 +71,25 @@ pub struct PanelTuning {
     /// frame (this, or the movies' 16:9 for full-screen UI) is the single source of truth for the
     /// HUD's shape: the render-target dimensions, the floating panel, the marker projection, and the
     /// Scaleform viewport all derive from it, so they cannot drift out of sync.
-    pub hud_aspect: f32,
+    pub(crate) hud_aspect: f32,
     /// The HUD render target's scale, applied to the geometric mean of the per-eye render
     /// resolution: the texture's longer axis is `render_scale * sqrt(eye_width * eye_height)`
     /// pixels, and the shorter axis follows from the effective aspect. The geometric mean, rather
     /// than the larger axis, keeps the HUD's pixel budget stable as the render target's shape
     /// changes: a per-eye target is much taller than it is wide, and keying off the longer axis
     /// would inflate the HUD for a shape the HUD does not share.
-    pub render_scale: f32,
+    pub(crate) render_scale: f32,
     /// The panel's rotation follow halflife, seconds. Lower is a snappier follow.
-    pub follow_rotation_halflife_s: f32,
+    pub(crate) follow_rotation_halflife_s: f32,
     /// How the panel's distance follows the vehicle state ([`crate::hud::depth`]).
-    pub depth_shift: DepthShiftTuning,
+    pub(crate) depth_shift: DepthShiftTuning,
     /// How long a sampled stage safe area stays current without a newer one, milliseconds.
-    pub stage_safe_area_stale_ms: u64,
+    pub(crate) stage_safe_area_stale_ms: u64,
 }
 
 impl PanelTuning {
     /// [`PanelTuning::stage_safe_area_stale_ms`] as a duration.
-    pub fn stage_safe_area_stale(&self) -> Duration {
+    pub(crate) fn stage_safe_area_stale(&self) -> Duration {
         Duration::from_millis(self.stage_safe_area_stale_ms)
     }
 
@@ -121,11 +121,11 @@ impl PanelTuning {
 /// How the panel distance follows the vehicle state (see [`crate::hud::depth`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DepthShiftTuning {
+pub(crate) struct DepthShiftTuning {
     /// The panel distance while the near shift is engaged, metres.
-    pub near_distance_m: f32,
+    pub(crate) near_distance_m: f32,
     /// The easing halflife between distances, seconds.
-    pub halflife_s: f32,
+    pub(crate) halflife_s: f32,
 }
 
 /// The virtual mouse cursor drawn on the panel (see [`crate::hud::cursor`]).
@@ -137,7 +137,7 @@ pub struct CursorTuning {
     pub size: f32,
     /// How far the cursor floats off the panel surface toward the camera, metres. The offset gives
     /// it depth separation from the UI beneath it.
-    pub lift_m: f32,
+    pub(crate) lift_m: f32,
 }
 
 /// The aim depth (see [`crate::hud::aim`]).
@@ -145,19 +145,19 @@ pub struct CursorTuning {
 #[serde(deny_unknown_fields)]
 pub struct AimTuning {
     /// The nearest recorded aim depth, metres.
-    pub min_depth_m: f32,
+    pub(crate) min_depth_m: f32,
     /// The farthest recorded aim depth, metres: beyond it, disparity is indistinguishable from
     /// infinity.
-    pub max_depth_m: f32,
+    pub(crate) max_depth_m: f32,
     /// The distance the aim depth eases back to while nothing has been aimed at recently, metres.
-    pub rest_distance_m: f32,
+    pub(crate) rest_distance_m: f32,
     /// How long a recorded aim point stays authoritative, seconds. Beyond this, the smoothed depth
     /// eases back to the caller's base distance and the aim point reads as none (the reticle is not
     /// targeting anything).
-    pub stale_after_s: f32,
+    pub(crate) stale_after_s: f32,
     /// The smoothing halflife, seconds: long enough to swallow surface noise as the aim sweeps
     /// across geometry, short enough to track a real target change quickly.
-    pub halflife_s: f32,
+    pub(crate) halflife_s: f32,
 }
 
 impl AimTuning {
@@ -183,24 +183,24 @@ pub struct EguiPanelTuning {
     /// How far in front of the head the panel is placed when it is summoned, metres. The panel's
     /// physical size is the one that gives it the apparent size
     /// [`scale`](EguiPanelTuning::scale) at this distance.
-    pub summon_distance_m: f32,
+    pub(crate) summon_distance_m: f32,
     /// The panel's apparent-size multiplier at the summoning distance; `1.0` is the comfortable
     /// baseline (see [`crate::hud::panel_height`]).
     pub scale: f32,
     /// The nearest a summoned or grabbed panel is placed, metres.
     pub min_distance_m: f32,
     /// The farthest the thumbstick pushes a grabbed panel along the hand's aim ray, metres.
-    pub max_push_depth_m: f32,
+    pub(crate) max_push_depth_m: f32,
     /// How fast a full deflection pushes or pulls a grabbed panel, as a fraction of its depth along
     /// the ray per second, so the push is as quick to read at arm's length as across a room.
-    pub push_rate_per_s: f32,
+    pub(crate) push_rate_per_s: f32,
     /// How long a press may be held and still click, seconds (egui's
     /// [`max_click_duration`](egui::InputOptions::max_click_duration)), while the panel is shown.
     /// egui's own default is under a second, which a deliberate press in the headset outlasts.
-    pub click_duration_s: f64,
+    pub(crate) click_duration_s: f64,
     /// How far, in panel UV, the controller's ray must move from where it rested while the desktop
     /// owned the pointer before the controller takes the pointer over.
-    pub controller_move_uv: f32,
+    pub(crate) controller_move_uv: f32,
 }
 
 impl EguiPanelTuning {
@@ -243,25 +243,25 @@ pub struct MapTuning {
     /// its release would end the drag instead of selecting.
     pub click_slop_uv: f32,
     /// How far the stick must be pushed to start zooming.
-    pub zoom_engage: f32,
+    pub(crate) zoom_engage: f32,
     /// How far the stick must return before a new push counts; the gap to
     /// [`zoom_engage`](MapTuning::zoom_engage) is the hysteresis that keeps a stick resting near
     /// the threshold from chattering.
-    pub zoom_release: f32,
+    pub(crate) zoom_release: f32,
     /// How long a held push waits before it repeats, milliseconds.
-    pub zoom_repeat_delay_ms: u64,
+    pub(crate) zoom_repeat_delay_ms: u64,
     /// The interval between repeated steps while the push is held, milliseconds.
-    pub zoom_repeat_interval_ms: u64,
+    pub(crate) zoom_repeat_interval_ms: u64,
 }
 
 impl MapTuning {
     /// [`MapTuning::zoom_repeat_delay_ms`] as a duration.
-    pub fn zoom_repeat_delay(&self) -> Duration {
+    pub(crate) fn zoom_repeat_delay(&self) -> Duration {
         Duration::from_millis(self.zoom_repeat_delay_ms)
     }
 
     /// [`MapTuning::zoom_repeat_interval_ms`] as a duration.
-    pub fn zoom_repeat_interval(&self) -> Duration {
+    pub(crate) fn zoom_repeat_interval(&self) -> Duration {
         Duration::from_millis(self.zoom_repeat_interval_ms)
     }
 
@@ -289,15 +289,15 @@ pub struct AnchoredTuning {
     pub snap_m: f32,
     /// How long an ammunition counter takes to fade out as the gun is raised to the eye, and back
     /// in, seconds.
-    pub sight_fade_s: f32,
+    pub(crate) sight_fade_s: f32,
     /// How near the eye the gun hand's grip is when the gun is raised to sight along it, metres.
-    pub sight_reach_m: f32,
+    pub(crate) sight_reach_m: f32,
     /// How far off the gaze the gun may point and still be sighted along, degrees.
-    pub sight_cone_deg: f32,
+    pub(crate) sight_cone_deg: f32,
     /// The range of the vertical component of the direction to the eye over which an upright
     /// quad's up blends from the world's up to the head's (`0.95` is about 18 degrees off vertical,
     /// `0.995` about 6).
-    pub upright_blend: (f32, f32),
+    pub(crate) upright_blend: (f32, f32),
     /// The ammunition counter above each gun.
     pub ammo: AmmoTuning,
     /// The tether readout above the off-hand's forearm.
@@ -307,7 +307,7 @@ pub struct AnchoredTuning {
     /// The readouts on the inside of the off-hand's wrist.
     pub wrist: WristTuning,
     /// The health bar's trail.
-    pub health_trail: HealthTrailTuning,
+    pub(crate) health_trail: HealthTrailTuning,
 }
 
 impl AnchoredTuning {
@@ -375,7 +375,7 @@ impl AnchoredTuning {
 #[serde(deny_unknown_fields)]
 pub struct AmmoTuning {
     /// The gap above the model's local top, measured along the rendered gun's up axis, metres.
-    pub gun_clearance_m: f32,
+    pub(crate) gun_clearance_m: f32,
     /// The gap above the rendered gun's origin when its model box is unknown, metres.
     pub clearance_m: f32,
     /// The counter's width, metres; its height follows the texture's aspect.
@@ -393,7 +393,7 @@ pub struct TetherTuning {
     /// The readout's width, metres; its height follows the cell's aspect.
     pub width_m: f32,
     /// The halflife of the readout's follow of the forearm, seconds.
-    pub follow_halflife_s: f32,
+    pub(crate) follow_halflife_s: f32,
 }
 
 /// The weapon selection cross, where the hand steering the weapon wheel was when it opened.
@@ -422,25 +422,25 @@ pub struct WristTuning {
     pub gap_m: f32,
     /// The grenade readout's height, metres; its width follows the cell's aspect. The readout is a
     /// narrow column of icons, so it is sized by its height rather than the wrist's width.
-    pub grenades_height_m: f32,
+    pub(crate) grenades_height_m: f32,
     /// The wrist readout's fade in and out, seconds.
-    pub fade_s: f32,
+    pub(crate) fade_s: f32,
     /// How long the wrist readout shows on its own after damage, seconds.
-    pub after_damage_s: f32,
+    pub(crate) after_damage_s: f32,
     /// The health fraction at and below which the wrist readout shows on its own, and the bar
     /// reads as low.
-    pub low_health: f32,
+    pub(crate) low_health: f32,
 }
 
 /// The trail behind the health bar: where the bar stood before the last hit, held briefly and then
 /// drained toward the health.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HealthTrailTuning {
+pub(crate) struct HealthTrailTuning {
     /// How long the trail holds after a hit before draining, seconds.
     pub hold_s: f32,
     /// How fast the trail drains, in health fractions per second.
-    pub drain_per_s: f32,
+    pub(crate) drain_per_s: f32,
 }
 
 /// The world markers drawn at their world points (see [`crate::hud::world_markers`]).
@@ -452,40 +452,40 @@ pub struct WorldMarkersTuning {
     /// Surfaces nearer the eye than this are ignored for the placement, metres: the player's own
     /// gun and hands, and foliage brushing the head, would otherwise pull every marker behind them
     /// onto them.
-    pub surface_min_m: f32,
+    pub(crate) surface_min_m: f32,
     /// How far a surface-placed marker is pulled toward the eye from the surface, metres, so it is
     /// not coplanar with it.
-    pub surface_pull_m: f32,
+    pub(crate) surface_pull_m: f32,
     /// The share of a marker's distance a surface must be nearer than for the marker to move onto
     /// it.
-    pub surface_engage: f32,
+    pub(crate) surface_engage: f32,
     /// The share of a marker's distance a surface must reach for a marker on it to leave it.
-    pub surface_release: f32,
+    pub(crate) surface_release: f32,
     /// The halflife of the placement distance's smoothing, seconds, so a flickering occluder does
     /// not make the marker pop.
-    pub depth_halflife_s: f32,
+    pub(crate) depth_halflife_s: f32,
     /// The farthest a billboard is placed, metres. A farther marker is drawn at this distance along
     /// its direction, where its stereo disparity is already indistinguishable from infinity.
     pub max_distance_m: f32,
     /// How long a marker's placement state outlives its last sighting, seconds.
-    pub forget_s: f32,
+    pub(crate) forget_s: f32,
     /// How long a depth probe result stays usable, seconds, after which the marker falls back to
     /// the raycast.
-    pub probe_ttl_s: f32,
+    pub(crate) probe_ttl_s: f32,
     /// How long a raycast result is kept, seconds.
-    pub raycast_ttl_s: f32,
+    pub(crate) raycast_ttl_s: f32,
     /// The probe footprint's neighbour spacing, in depth-buffer pixels.
-    pub probe_spread_px: f32,
+    pub(crate) probe_spread_px: f32,
     /// How much nearer than the marker a sampled surface must be to count as blocking its line of
     /// sight, as a fraction of the marker's depth: a surface at the marker (the object it is
     /// attached to) does not move it.
-    pub block_fraction: f32,
+    pub(crate) block_fraction: f32,
     /// The half-angle of the classification field of view, degrees, used when no headset frame
     /// supplies one (the flat desktop).
-    pub fallback_half_fov_deg: f32,
+    pub(crate) fallback_half_fov_deg: f32,
     /// How far inside the headset's field of view a marker must be to count as on screen, degrees,
     /// so a marker at the very edge of the lenses keeps its arrow.
-    pub fov_inset_deg: f32,
+    pub(crate) fov_inset_deg: f32,
 }
 
 impl WorldMarkersTuning {
@@ -542,7 +542,7 @@ impl WorldMarkersTuning {
 /// The grip markers' labels (see [`crate::hud::mark_labels`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MarkLabelsTuning {
+pub(crate) struct MarkLabelsTuning {
     /// A label's height, metres.
     pub height_m: f32,
     /// The gap between the marker's edge and the label's lower edge, metres.
@@ -572,13 +572,13 @@ pub struct LostWeaponsTuning {
     /// the weapon.
     pub near_m: f32,
     /// How far past [`near_m`](LostWeaponsTuning::near_m) a marker takes to fade in, metres.
-    pub fade_m: f32,
+    pub(crate) fade_m: f32,
     /// The most markers drawn, the nearest first.
-    pub max_drawn: usize,
+    pub(crate) max_drawn: usize,
     /// A marker's height over its distance: its angular height, radians.
-    pub angular_height: f32,
+    pub(crate) angular_height: f32,
     /// How far above the weapon a marker's lower edge sits, metres.
-    pub raise_m: f32,
+    pub(crate) raise_m: f32,
     /// How long a published list stays current without a newer one, milliseconds.
     pub stale_ms: u64,
 }
@@ -623,7 +623,7 @@ pub struct GrabHintTuning {
     /// says what a grip does.
     pub stale_ms: u64,
     /// The hint's fade in and out, seconds.
-    pub fade_s: f32,
+    pub(crate) fade_s: f32,
 }
 
 impl GrabHintTuning {
@@ -645,14 +645,14 @@ impl GrabHintTuning {
 /// The game's reticles' suppression (see [`crate::hud::game_reticle`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GameReticleTuning {
+pub(crate) struct GameReticleTuning {
     /// How long the aim's results count as recent after the aim's last update, milliseconds.
-    pub aim_max_age_ms: u64,
+    pub(crate) aim_max_age_ms: u64,
 }
 
 impl GameReticleTuning {
     /// [`GameReticleTuning::aim_max_age_ms`] as a freshness window.
-    pub fn aim_window(&self) -> Window {
+    pub(crate) fn aim_window(&self) -> Window {
         Window::from_millis(self.aim_max_age_ms)
     }
 }
@@ -667,18 +667,18 @@ pub struct SummaryTuning {
     pub placement: WristPlacement,
     /// How long the panel shows after the mode changes to one the player settles in,
     /// milliseconds.
-    pub show_on_mode_change_ms: u64,
+    pub(crate) show_on_mode_change_ms: u64,
     /// The fade in and out, seconds.
-    pub fade_s: f32,
+    pub(crate) fade_s: f32,
     /// How long each page stays while the wrist is shown, seconds.
-    pub page_dwell_s: f32,
+    pub(crate) page_dwell_s: f32,
     /// How long a trackpad touch holds before it pins the panel, seconds.
-    pub trackpad_pin_delay_s: f32,
+    pub(crate) trackpad_pin_delay_s: f32,
 }
 
 impl SummaryTuning {
     /// [`SummaryTuning::show_on_mode_change_ms`] as a duration.
-    pub fn show_on_mode_change(&self) -> Duration {
+    pub(crate) fn show_on_mode_change(&self) -> Duration {
         Duration::from_millis(self.show_on_mode_change_ms)
     }
 
@@ -703,7 +703,7 @@ impl SummaryTuning {
 /// The restart notice in front of the head (see [`crate::hud::restart_notice`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RestartNoticeTuning {
+pub(crate) struct RestartNoticeTuning {
     /// The panel's width, metres.
     pub width_m: f32,
     /// Where the panel's centre sits in the head's frame, metres: ahead, and low enough to leave

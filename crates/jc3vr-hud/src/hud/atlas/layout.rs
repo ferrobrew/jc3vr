@@ -44,7 +44,7 @@ pub(crate) struct LayoutRequest {
     pub stage: Vec2,
     pub frame: StageFrame,
     /// The empty margin around every cell, stage pixels.
-    pub gutter: f32,
+    pub(crate) gutter: f32,
     pub ammo: Option<PartRequest>,
     pub heat: Option<PartRequest>,
     /// The weapon selection cross.
@@ -60,7 +60,7 @@ pub(crate) struct LayoutRequest {
     /// Every other marker's extents.
     pub marker: Option<CropExtents>,
     /// The most marker cells to place.
-    pub max_markers: usize,
+    pub(crate) max_markers: usize,
 }
 
 /// The cells of one capture. Fixed for a given request, so consecutive captures agree.
@@ -168,7 +168,7 @@ impl MarkerSlots {
     /// Assign a cell index under `capacity` to each of `ids`, in order: a marker keeps its previous
     /// cell, and a new one takes the lowest free cell. Markers past the capacity (and repeats of
     /// an id) get none. Markers no longer present release their cells.
-    pub fn assign(&mut self, ids: &[u32], capacity: usize) -> Vec<Option<usize>> {
+    pub(crate) fn assign(&mut self, ids: &[u32], capacity: usize) -> Vec<Option<usize>> {
         self.by_id
             .retain(|(id, slot)| *slot < capacity && ids.contains(id));
         let mut used = vec![false; capacity];

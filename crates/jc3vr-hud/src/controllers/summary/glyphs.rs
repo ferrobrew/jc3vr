@@ -19,7 +19,7 @@ macro_rules! glyph {
 
 /// One glyph image.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum Glyph {
+pub(crate) enum Glyph {
     TriggerLeft,
     TriggerRight,
     GripLeft,
@@ -103,7 +103,7 @@ impl Glyph {
 
 /// The glyphs drawn for `control`: one, or one per hand for a control of either hand, and none for
 /// a source the mod has no glyph for or an unbound action.
-pub fn glyphs(control: Control) -> &'static [Glyph] {
+pub(crate) fn glyphs(control: Control) -> &'static [Glyph] {
     let sided = |left: &'static [Glyph], right: &'static [Glyph], hand: Hand| match hand {
         Hand::Left => left,
         Hand::Right => right,

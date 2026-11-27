@@ -44,7 +44,7 @@ impl PanelPose {
 /// The panel's pose on `hand`'s wrist, from the controller's grip pose (OpenXR's grip axes: -Z
 /// along the closed fist, +X out of the palm of the left hand and into the palm of the right, so
 /// that -X is the back of either hand).
-pub fn wrist_pose(grip: Pose, hand: Hand, placement: &WristPlacement) -> PanelPose {
+pub(crate) fn wrist_pose(grip: Pose, hand: Hand, placement: &WristPlacement) -> PanelPose {
     PanelPose {
         center: grip.position + grip.orientation * placement.offset_m,
         rotation: (grip.orientation * face(hand)).normalize(),
@@ -124,7 +124,7 @@ impl Glance {
 /// (which pages the menu tabs) cancels the pin for the rest of that touch, and the delay keeps a
 /// touch that is about to press from flashing the panel first.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct TrackpadPin {
+pub(crate) struct TrackpadPin {
     /// How long the current touch has held, seconds, or `None` without a touch.
     touched_s: Option<f32>,
     /// Whether the current touch has pressed.

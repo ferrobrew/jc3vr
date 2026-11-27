@@ -45,7 +45,7 @@ pub(super) struct Surface<'a, T> {
     pub target: &'a mut Option<T>,
     pub redirected: &'a mut bool,
     pub render_size: &'a mut Option<(u32, u32)>,
-    pub stage_safe_area: &'a mut bool,
+    pub(crate) stage_safe_area: &'a mut bool,
     pub retry: &'a mut Retry,
 }
 

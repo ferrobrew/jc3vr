@@ -153,7 +153,7 @@ pub(crate) fn gameplay_hints_active() -> bool {
 /// Movie result -- it excludes the frontend and loading screens (not `E_GAME_RUN`), whose degenerate
 /// camera would strand the latched pose. In-game the issue-#7 fix keeps `m_DrawScene` on, so the
 /// camera pose is real and the frozen world stays visible behind the panel.
-pub fn menu_world_lock() -> bool {
+pub(crate) fn menu_world_lock() -> bool {
     // SAFETY: GetIUIManager returns the live UI singleton (or null); IsUsingStaticBackGround is a
     // const getter.
     in_gameplay()
@@ -224,7 +224,7 @@ const PANEL_WIDTH_PER_DISTANCE: f32 = 4.0 / 3.0;
 /// big it looks. The height is the width divided by the aspect, so the width (and thus the amount of
 /// content that fits horizontally) is invariant to aspect changes: a 16:9 panel is the same width as
 /// a 1:1 panel, just shorter.
-pub fn panel_height(scale: f32, distance: f32, aspect: f32) -> f32 {
+pub(crate) fn panel_height(scale: f32, distance: f32, aspect: f32) -> f32 {
     (scale * PANEL_WIDTH_PER_DISTANCE * distance) / aspect.max(f32::EPSILON)
 }
 
@@ -429,7 +429,7 @@ static POINTER_BASIS_MISSING: AtomicBool = AtomicBool::new(false);
 /// camera's FOV). This ensures markers are positioned correctly on the floating quad: a POI directly
 /// ahead of the camera but off-center from the panel's facing direction appears at the correct
 /// position on the panel surface, compensating for the follow-damping lag.
-pub fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
+pub(crate) fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
     // Reuse the pose chosen for the quad this frame (head-following or latched world-static), so
     // markers project onto exactly the panel the quad drew.
     let (pos, rot) = HUD_STATE.lock().panel_pose()?;

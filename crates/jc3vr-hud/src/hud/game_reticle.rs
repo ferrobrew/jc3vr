@@ -30,7 +30,7 @@ use crate::hud::tuning::HUD;
 
 /// Which of the game's reticles to hide.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct HiddenReticles {
+pub(crate) struct HiddenReticles {
     /// The weapon reticle group (every weapon's crosshair shape).
     pub weapon: bool,
     /// The grapple reticle group (the aim cursor, the attached-wire marker, and its ghost).
@@ -39,7 +39,7 @@ pub struct HiddenReticles {
 
 /// Where the player is, as far as who aims is concerned.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub enum AimPlace {
+pub(crate) enum AimPlace {
     /// On foot, swimming, falling, in the wingsuit, or under the parachute.
     #[default]
     OnFoot,
@@ -66,19 +66,19 @@ impl AimPlace {
 /// What the rule reads: the toggle, the scheme, the place, the vehicle weapons' hand-aim
 /// settings, and the aim's latest results.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct ReticleInputs {
+pub(crate) struct ReticleInputs {
     /// The toggle, with the controllers' master switch.
     pub enabled: bool,
     /// Whether the controller scheme is in effect.
-    pub controllers_scheme: bool,
+    pub(crate) controllers_scheme: bool,
     pub place: AimPlace,
     /// Whether a manned mounted gun is aimed by hand now.
-    pub mounted_by_hand: bool,
+    pub(crate) mounted_by_hand: bool,
     /// Whether the aim's results are recent. Stale results belong to an aim update that no longer
     /// runs, and say nothing about what aims now.
-    pub aim_fresh: bool,
+    pub(crate) aim_fresh: bool,
     /// Whether the last aim update aimed the wielded weapon by hand.
-    pub weapon_aimed: bool,
+    pub(crate) weapon_aimed: bool,
 }
 
 /// Which reticles to hide for `inputs`.

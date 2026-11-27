@@ -68,7 +68,7 @@ pub fn buttons() -> u32 {
 
 /// Drain the accumulated wheel movement into Flash line units (the engine's own conversion is
 /// `delta / WHEEL_DELTA * 3`). Zero when the wheel has not moved.
-pub fn take_wheel_lines() -> f32 {
+pub(crate) fn take_wheel_lines() -> f32 {
     let raw = WHEEL.swap(0, Ordering::Relaxed);
     raw as f32 / 120.0 * 3.0
 }
@@ -77,7 +77,7 @@ pub fn take_wheel_lines() -> f32 {
 /// [`egui::Event::MouseWheel`] expects. Zero when the wheel has not moved. Used by the VR panel
 /// pointer (issue #24); the Flash path uses [`take_wheel_lines`] instead, and the two must not both
 /// drain the same frame (in panel mode the Scaleform path is inert).
-pub fn take_wheel_notches() -> f32 {
+pub(crate) fn take_wheel_notches() -> f32 {
     let raw = WHEEL.swap(0, Ordering::Relaxed);
     raw as f32 / 120.0
 }
@@ -90,13 +90,13 @@ pub fn set_mouse_pos(pos: (i32, i32)) {
 }
 
 /// The last window client-pixel mouse position seen, or `None` before any `WM_MOUSEMOVE`.
-pub fn mouse_pos() -> Option<(i32, i32)> {
+pub(crate) fn mouse_pos() -> Option<(i32, i32)> {
     STATE.lock().mouse
 }
 
 /// The space the window-pixel mouse position normalizes against: the live client rect when one has
 /// been seen, else the back-buffer size. `None` while neither is known or a dimension is degenerate.
-pub fn normalization_size() -> Option<(u32, u32)> {
+pub(crate) fn normalization_size() -> Option<(u32, u32)> {
     let state = STATE.lock();
     let size = state.client.unwrap_or(state.window);
     (size.0 > 0 && size.1 > 0).then_some(size)
@@ -105,7 +105,7 @@ pub fn normalization_size() -> Option<(u32, u32)> {
 /// Publish the frame's coordinate-mapping geometry from the render-thread HUD tick: the game's
 /// back-buffer size (the fallback normalization space), and the redirected texture's size (`None`
 /// while the redirect is not applied, which disables the injection).
-pub fn set_geometry(window: (u32, u32), movie: Option<(u32, u32)>) {
+pub(crate) fn set_geometry(window: (u32, u32), movie: Option<(u32, u32)>) {
     let mut state = STATE.lock();
     state.window = window;
     state.movie = movie;

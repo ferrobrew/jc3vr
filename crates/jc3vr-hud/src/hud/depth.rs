@@ -33,7 +33,7 @@ pub struct DepthShiftStatus {
 
 /// The dynamic-distance policy's smoothing state.
 #[derive(Default)]
-pub struct DepthShift {
+pub(crate) struct DepthShift {
     /// Whether the near shift is currently engaged.
     near_engaged: bool,
     /// The smoothed panel distance; starts at the first target it sees.

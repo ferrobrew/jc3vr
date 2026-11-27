@@ -170,7 +170,7 @@ pub(crate) struct Attention {
     /// The health fraction, when known.
     pub health: Option<f32>,
     /// Seconds since health last dropped, when it has.
-    pub since_damage_s: Option<f32>,
+    pub(crate) since_damage_s: Option<f32>,
     /// The heat level (zero without heat).
     pub heat_level: i32,
 }

@@ -136,7 +136,7 @@ pub(crate) struct ClipHandle {
     /// The game's own visibility intent for this clip, tracked across our forced writes: refreshed
     /// from a read-back whenever the current value differs from what we last wrote (meaning the
     /// game wrote in between).
-    pub game_visible: bool,
+    pub(crate) game_visible: bool,
     /// The visibility we last forced, or `None` while unforced.
     pub forced: Option<bool>,
 }
@@ -174,7 +174,7 @@ pub(crate) struct ClipHandles {
     /// The issue #8 overlay clips.
     pub overlays: Vec<ClipHandle>,
     /// The reticle groups, in [`RETICLE_CLIPS`] order.
-    pub reticles: Vec<ClipHandle>,
+    pub(crate) reticles: Vec<ClipHandle>,
     /// The button-hint stages, in [`HINT_CLIPS`] order.
     pub hints: Vec<ClipHandle>,
     /// The atlas's clips, in [`ATLAS_CLIPS`] order.
@@ -196,7 +196,7 @@ pub(crate) static CLIP_HANDLES: parking_lot::Mutex<Option<ClipHandles>> =
 ///
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
-pub unsafe fn apply_overlay_suppression() {
+pub(crate) unsafe fn apply_overlay_suppression() {
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
         return;
@@ -217,7 +217,7 @@ pub unsafe fn apply_overlay_suppression() {
 ///
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
-pub unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
+pub(crate) unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
     GRAPPLE_RETICLE_HIDDEN.store(grapple, std::sync::atomic::Ordering::Relaxed);
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
@@ -253,7 +253,7 @@ static GRAPPLE_RETICLE_HIDDEN: std::sync::atomic::AtomicBool =
 ///
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
-pub unsafe fn apply_hint_suppression(suppress: bool) {
+pub(crate) unsafe fn apply_hint_suppression(suppress: bool) {
     let suppress = suppress || !crate::hud::gameplay_hints_active();
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
@@ -359,7 +359,7 @@ pub(crate) unsafe fn value_display_info(value: &mut Value) -> Option<DisplayInfo
 
 /// Request the clip-handle registry's release (from the shutdown path; executed on the game
 /// thread by [`process_requests`]).
-pub fn request_release_handles() {
+pub(crate) fn request_release_handles() {
     RELEASE_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 

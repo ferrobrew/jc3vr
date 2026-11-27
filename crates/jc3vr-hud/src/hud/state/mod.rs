@@ -31,7 +31,7 @@ pub static HUD_STATE: Mutex<HudState> = Mutex::new(HudState::new());
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) struct AppliedRedirect {
     pub texture: (u32, u32),
-    pub stage_safe_area: bool,
+    pub(crate) stage_safe_area: bool,
 }
 
 /// The applied redirect, or `None` while the HUD is not redirected.
@@ -254,7 +254,7 @@ impl HudState {
 
     /// The frame's dynamic panel distance, eased toward the policy's target (see
     /// [`crate::hud::depth`]). Call once per frame (eye 0).
-    pub fn depth_distance(&mut self, mode: HudMode, base: f32) -> f32 {
+    pub(crate) fn depth_distance(&mut self, mode: HudMode, base: f32) -> f32 {
         self.depth_shift
             .get_or_insert_with(DepthShift::default)
             .distance(&HUD.get().panel.depth_shift, mode, base)
@@ -273,7 +273,7 @@ impl HudState {
     /// [`menu_world_lock`](crate::hud::menu_world_lock)) the pose is world-locked -- latched on the
     /// first frozen frame and held, so head movement no longer moves it -- and the latch is cleared the
     /// moment `freeze` drops, resuming head-follow.
-    pub fn update_pose(
+    pub(crate) fn update_pose(
         &mut self,
         freeze: bool,
         head_pos: Vec3,
@@ -292,13 +292,13 @@ impl HudState {
     /// The panel pose chosen for the current frame. Used by the W2S hook to project markers onto the
     /// panel's surface rather than the screen plane. `None` until [`update_pose`](HudState::update_pose)
     /// has run.
-    pub fn panel_pose(&self) -> Option<(Vec3, Quat)> {
+    pub(crate) fn panel_pose(&self) -> Option<(Vec3, Quat)> {
         self.current_pose
     }
 
     /// Compute the panel's world-space corners from the current camera and follow state, caching
     /// the result for both eyes. Call once per frame (eye 0); eye 1 reuses the cached corners.
-    pub fn compute_world_corners(&mut self, params: &PanelParams) {
+    pub(crate) fn compute_world_corners(&mut self, params: &PanelParams) {
         self.cached_corners = None;
         if let Some(corners) = crate::hud::quad::compute_world_corners(params) {
             self.cached_corners = Some(corners);
@@ -306,12 +306,12 @@ impl HudState {
     }
 
     /// Set (or clear) the frame's cursor corners. Chosen on eye 0 alongside the panel corners.
-    pub fn set_cursor_corners(&mut self, corners: Option<[Vec4; 4]>) {
+    pub(crate) fn set_cursor_corners(&mut self, corners: Option<[Vec4; 4]>) {
         self.cursor_corners = corners;
     }
 
     /// Clear the cached panel geometry when the redirected panel is not being rendered.
-    pub fn clear_panel_corners(&mut self) {
+    pub(crate) fn clear_panel_corners(&mut self) {
         self.cached_corners = None;
     }
 
@@ -436,7 +436,7 @@ impl HudState {
 
     /// Drop the egui preview registration. Call on the UI thread (it owns the renderer), so the texture
     /// id is released rather than leaked.
-    pub fn release_preview(&mut self, renderer: &mut egui_directx11::Renderer) {
+    pub(crate) fn release_preview(&mut self, renderer: &mut egui_directx11::Renderer) {
         resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
         self.drain_preview_retirements(renderer);
     }

@@ -69,7 +69,7 @@ struct QuadConstants {
 }
 
 /// The quad pass: the textured-quad pipeline and a constant buffer for the per-eye draw data.
-pub struct HudQuad {
+pub(crate) struct HudQuad {
     vertex_shader: ID3D11VertexShader,
     pixel_shader: ID3D11PixelShader,
     /// The cursor-dot pixel shader; the cursor draw shares every other pipeline object.
@@ -229,7 +229,7 @@ impl HudQuad {
 
     /// Draw a premultiplied texture like [`draw`](Self::draw), with every channel scaled by
     /// `opacity` (0 to 1), so the quad fades while staying premultiplied.
-    pub fn draw_faded(
+    pub(crate) fn draw_faded(
         &self,
         context: &ID3D11DeviceContext,
         device: &Device,
@@ -254,7 +254,7 @@ impl HudQuad {
     /// Draw the virtual mouse cursor as a small quad over `target`, with the analytic circle-dot
     /// pixel shader (no texture). `corners` are the cursor's world-space corners (computed once
     /// per frame by [`compute_cursor_corners`]). The caller must hold the engine context mutex.
-    pub fn draw_cursor(
+    pub(crate) fn draw_cursor(
         &self,
         context: &ID3D11DeviceContext,
         device: &Device,
@@ -394,19 +394,19 @@ impl HudQuad {
 
 /// Geometry parameters for computing the panel's world-space corners. Bundled into a struct to keep
 /// the argument list under `clippy::too_many_arguments`.
-pub struct PanelParams {
+pub(crate) struct PanelParams {
     /// The panel's anchor position (the eye/head position the panel is placed in front of). In
     /// [`HudMode::Hud`](crate::hud::HudMode::Hud) this tracks the head; in
     /// [`HudMode::Movie`](crate::hud::HudMode::Movie) it is the latched world-static position.
     pub pos: Vec3,
     /// The panel's world orientation: the damped follow rotation in `Hud` mode, or the latched
     /// rotation in `Movie` mode.
-    pub rot: Quat,
+    pub(crate) rot: Quat,
     /// Panel aspect ratio (width / height) -- the effective aspect for the current mode, shared with
     /// the render target and marker projection so the panel always matches the texture.
     pub aspect: f32,
     pub distance: f32,
-    pub panel_height: f32,
+    pub(crate) panel_height: f32,
 }
 
 /// Compute the panel's world-space corners from the supplied pose. Call once per frame (eye 0) and

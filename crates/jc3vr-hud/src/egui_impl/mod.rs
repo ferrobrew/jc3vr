@@ -479,7 +479,11 @@ impl EguiState {
     /// thread does not wait for can run after the next frame's egui pass and take its output early, and
     /// the next frame's call then finds nothing to render. The caller must hold the engine context
     /// mutex.
-    pub fn render_to(&mut self, context: &ID3D11DeviceContext, rtv: &ID3D11RenderTargetView) {
+    pub(crate) fn render_to(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        rtv: &ID3D11RenderTargetView,
+    ) {
         let Some(renderer_output) = self.renderer_output.take() else {
             return;
         };
@@ -512,7 +516,7 @@ impl EguiState {
         self.request_capture(request);
     }
 
-    pub fn is_input_captured(&self) -> bool {
+    pub(crate) fn is_input_captured(&self) -> bool {
         self.capture
             .snapshot
             .is_some_and(|snapshot| snapshot.edit_capture.any())

@@ -53,7 +53,7 @@ pub(crate) struct Projection<'a> {
     pub margin: f32,
     pub out_x: &'a mut f32,
     pub out_y: &'a mut f32,
-    pub out_pos: &'a mut ScreenPos,
+    pub(crate) out_pos: &'a mut ScreenPos,
 }
 
 /// Classify a point of interest's projection for the world markers. Called from the `Get2DInfo`

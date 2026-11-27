@@ -31,7 +31,7 @@ pub enum RoutedPointer {
 
 impl RoutedPointer {
     /// Whether the controller owns this delivery.
-    pub fn is_controller(self) -> bool {
+    pub(crate) fn is_controller(self) -> bool {
         matches!(self, Self::Controller { .. })
     }
 }

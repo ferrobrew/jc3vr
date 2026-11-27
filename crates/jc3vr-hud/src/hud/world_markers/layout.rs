@@ -50,7 +50,7 @@ pub(crate) struct Crop {
     /// The texels copied out of the HUD texture (the crop clamped to the texture).
     pub source: TexelRect,
     /// Where `source` lands inside the slot: non-zero when the crop was clamped on its left or top.
-    pub slot_offset: (u32, u32),
+    pub(crate) slot_offset: (u32, u32),
     /// The marker's world point inside the slot, in texels from the slot's top-left. The crop is
     /// centred on the clip's origin, which is the projected point plus the POI's 2D offset, so the
     /// world point sits that offset away from the origin.
@@ -169,7 +169,7 @@ pub(crate) struct FovTangents {
 impl FovTangents {
     /// A field of view from its angles in radians (`left` and `down` negative), shrunk on every
     /// side by `inset` radians. A side shrunk past the centre closes at the centre.
-    pub fn from_angles(left: f32, right: f32, up: f32, down: f32, inset: f32) -> Self {
+    pub(crate) fn from_angles(left: f32, right: f32, up: f32, down: f32, inset: f32) -> Self {
         let shrink_pos = |a: f32| (a - inset).max(0.0).tan();
         let shrink_neg = |a: f32| (a + inset).min(0.0).tan();
         Self {

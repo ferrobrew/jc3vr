@@ -32,7 +32,7 @@ pub(crate) struct Grid {
     pub metrics: Metrics,
     pub size: (u32, u32),
     pub heading: Bounds,
-    pub footer: Bounds,
+    pub(crate) footer: Bounds,
     pub pages: Vec<Page>,
 }
 

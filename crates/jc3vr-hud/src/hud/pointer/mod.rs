@@ -33,7 +33,7 @@ use crate::hud::{config::HUD_CONFIG, cursor, egui_panel};
 
 /// The panel-texture UV of the desktop mouse this frame, or `None` when no mouse position or window
 /// size is known yet.
-pub fn window_uv() -> Option<(f32, f32)> {
+pub(crate) fn window_uv() -> Option<(f32, f32)> {
     let (mx, my) = cursor::mouse_pos()?;
     let (nw, nh) = cursor::normalization_size()?;
     let u = (mx as f32 / nw as f32).clamp(0.0, 1.0);

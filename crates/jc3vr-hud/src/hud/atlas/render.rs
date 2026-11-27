@@ -208,7 +208,7 @@ pub(crate) struct PartTexture<'a> {
     /// Where the clip's origin (the cell's origin) falls in the copy, in texels from its top-left.
     pub anchor: Vec2,
     /// The size of the HUD texture the copy was taken from, whose texels the copy's match.
-    pub hud_texture: (u32, u32),
+    pub(crate) hud_texture: (u32, u32),
 }
 
 /// Run `f` with a moved part's texture, or return `None` when the displayed capture did not move

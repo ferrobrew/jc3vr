@@ -50,7 +50,7 @@ pub(crate) struct FrameInputs<'a> {
     pub head: Vec3,
     pub head_rotation: Quat,
     /// The panel's height over its distance: the angular size the HUD texture is shown at.
-    pub panel_height_over_distance: f32,
+    pub(crate) panel_height_over_distance: f32,
     /// The redirected HUD texture, or `None` while the redirect is not applied.
     pub hud: Option<&'a HudTarget>,
     pub graphics_engine: Option<&'a GraphicsEngine>,

@@ -30,7 +30,7 @@ pub(crate) struct FrameInputs {
     pub head: Vec3,
     pub head_rotation: Quat,
     /// The panel's height over its distance: the angular size the HUD texture is shown at.
-    pub panel_height_over_distance: f32,
+    pub(crate) panel_height_over_distance: f32,
 }
 
 /// Place the aim part for this frame (eye 0), after the atlas chose the frame's capture. Draws
