@@ -1,6 +1,6 @@
 # The learned body estimator
 
-The `body-estimator` crate runs EgoPoser (Jiang et al., ECCV 2024), a learned full-body estimator that reads a window of head and hand poses and estimates an SMPL body: the pelvis's global orientation and the 21 other joints' rotations. It tells the body rig where the pelvis and chest face when the head and hands alone leave it ambiguous. This document covers the estimator itself, its two implementations, how they are tested, what each costs, how the payload runs it in the game, and which other parts of the body could take its estimate. How the rig's yaw uses the estimate is in [rig.md, "The yaw"](rig.md#the-yaw).
+The `body-estimator` crate runs EgoPoser (Jiang et al., ECCV 2024), a learned full-body estimator that reads a window of head and hand poses and estimates an SMPL body: the pelvis's global orientation and the 21 other joints' rotations. It tells the body rig where the pelvis and chest face when the head and hands alone leave it ambiguous, and gives the IK body its joint rotations. How the rig's yaw uses the estimate is in [rig.md, "The yaw"](rig.md#the-yaw), and how the IK body uses it in [ik-body.md](ik-body.md).
 
 The crate has no game dependencies, so the offline tools (`tools/tracking-synth`) run it on Linux and the payload runs it in the game.
 
@@ -25,7 +25,7 @@ A window is 80 frames at 60 Hz. It splits into a slow stream, every second frame
 
 `EgoPoser::infer` is the network in plain Rust, matrix products through `matrixmultiply`. It is written to be clear rather than fast, and golden tests check it against the original PyTorch model's outputs on real windows from a recorded take (`crates/body-estimator/tests/fixtures/egoposer_golden.safetensors`, inputs and outputs only), every stage to a relative error of about 1e-6. `EgoPoser::infer_traced` also returns the intermediate tensors.
 
-Only the last token reaches the decoders, so the last encoder layer computes its output alone: its keys and values come from all 40 tokens, but the query, the attention's output projection, both residuals, both layer norms, and the feed-forward are the last token's only. After the attention every token's row is computed independently of the others', so this is exact. On one core of the development machine (release build, single-threaded, `taskset` to one CPU) it took an inference from 3.0 ms to 2.56 ms. That is still too much to spend on the game's CPU every frame, which is why the GPU executor exists; the CPU pass stays as the reference the GPU pass is tested against.
+Only the last token reaches the decoders, so the last encoder layer computes its output alone: its keys and values come from all 40 tokens, but the query, the attention's output projection, both residuals, both layer norms, and the feed-forward are the last token's only. After the attention every token's row is computed independently of the others', so this is exact. A CPU inference still takes a few milliseconds of one core, too much to spend on the game's CPU every frame, which is why the GPU executor exists; the CPU pass stays as the reference the GPU pass is tested against.
 
 ## The GPU executor
 
@@ -35,7 +35,7 @@ Creating it uploads the weights once. The weight matrices are stored as 32-bit o
 
 Each inference never waits on the GPU. `submit` computes the 40 token inputs on the CPU (the slow stream's frame plus the fast stream's; the embedding is linear, so embedding the sum with the bias added twice gives the summed embeddings), uploads them, records the pass on the given device context, and copies the estimate into the next staging buffer of a ring of three. A frame or more later, `poll` maps the oldest staging buffer without waiting and returns its estimate with the number `submit` gave it once the GPU has finished. An estimate still uncollected when its staging buffer comes round again is dropped. `infer_blocking` waits instead, for tests and tools. The executor saves and restores the compute state it changes, so it can record onto a context the engine shares.
 
-The pass is four kernels in `crates/body-estimator/src/shaders/`, compiled by `shadergen` into committed `.dxbc` beside their sources:
+The pass is three shaders in `crates/body-estimator/src/shaders/`, compiled by `shadergen` into four committed `.dxbc` kernels beside their sources:
 
 - `egoposer_linear.hlsl`, a linear layer with an optional ReLU, compiled once for 32-bit and once for 16-bit weights. A thread group computes one output for eight rows; each row's sixteen threads split the inputs four values at a time, interleaved so the weight row and the input rows are read coalesced, and their partial sums meet in groupshared memory. Each thread keeps a single running sum, so nothing spills to local memory.
 - `egoposer_layer_norm.hlsl`, the residual add and the layer norm, a thread group per row with tree reductions for the mean and the variance.
@@ -47,7 +47,7 @@ The plan lays the network out as 25 dispatches: the embedding, seven per encoder
 
 The GPU tests compare against the CPU reference on the golden fixture's windows, in three ways. Each kernel is checked in isolation, the CPU op fed the GPU's own input to that kernel, so one kernel's error cannot hide behind another's. The whole pass is checked stage by stage against the CPU's trace. The final estimate is checked on every fixture window and on one with the hands hidden. With 16-bit weights, the kernel and stage checks run against the CPU on the same rounded weights, which isolates the kernels, and the final estimates are compared with the CPU on the checkpoint's own weights, which measures what the rounding costs. A last test checks that `poll` returns estimates in order without waiting and drops the one the ring overwrote.
 
-The tests need a Direct3D 11 device. `./scripts/xwin_test.sh -p body-estimator` runs them under wine on wine's own Direct3D (wined3d), with WARP as the fallback where there is no hardware device. To run them on the Direct3D 11 the game itself runs on under Proton, use `scripts/dxvk_run.sh` as the cargo runner. It copies the binary next to Proton's DXVK DLLs in a scratch directory under `target/` and runs it in the shared prefix with overrides that select them, leaving the prefix itself on wine's Direct3D:
+The tests need a Direct3D 11 device. `./scripts/xwin_test.sh -p body-estimator` runs them under wine on wine's own Direct3D (wined3d), with WARP as the fallback where there is no hardware device. To run them on the Direct3D 11 the game itself runs on under Proton, set `scripts/dxvk_run.sh` as the cargo runner. It copies the binary next to Proton's DXVK DLLs in a scratch directory under `target/` and runs it in the shared prefix with overrides that select them, leaving the prefix itself on wine's Direct3D:
 
 ```sh
 JC3VR_EGOPOSER_WEIGHTS=/path/to/egoposer.safetensors \
@@ -59,7 +59,7 @@ The tests print the adapter they run on and every comparison's maximum error. On
 
 ## Costs
 
-In the game the pass's CPU side (posting the window, recording the dispatches, collecting finished estimates) is timed in its own frame-timing slot, `body_estimator` ([frame-timing.md](../performance/frame-timing.md)), apart from the draw task's other work. The 14 November take's median frame rose from 20.5 to 24.5 ms against the take before, with the estimator the obvious suspect; the slot and an A/B with `controllers.body.estimator.enabled` off in one session settle it.
+In the game the pass's CPU side (posting the window, recording the dispatches, collecting finished estimates) is timed in its own frame-timing slot, `body_estimator` ([frame-timing.md](../performance/frame-timing.md)), apart from the draw task's other work.
 
 `crates/body-estimator/examples/egoposer_bench.rs` times the CPU reference and, on Windows, the GPU executor. For the real GPU, run it through DXVK:
 
@@ -103,14 +103,3 @@ The debug UI's Body fit feature has a `Learned body estimate` section: the switc
 The floor arrows (`controllers.overlay.body_estimate`, off by default since they crowd the view in play, and `Body estimate` in the visualisation drawer) are drawn under the player's eyes in every mode the estimator runs in: a long green arrow for the estimate's pelvis and a short light green one for its chest, dimmed while stale, and while the grounded rig runs, a long magenta arrow for the rig's legs and a short light magenta one for its chest beside them. They hang from the head in the player's own metres, like the rig's own diagnostics.
 
 The recordings' settings event carries the whole configuration, so a take records whether the estimator was on and its tuning. The estimate itself is not recorded: `tracking-synth estimate-body`, and `rig-eval --weights`, recompute it from the recorded head and grip poses.
-
-## Other consumers
-
-The grounded rig and the IK body read the estimate. These are the other parts of the body that could, and what each would take. Each should be checked offline on recordings of the state first (`tracking-synth estimate-body` over the stretch, against the video and Rico as drawn), since EgoPoser was trained on AMASS: people standing, walking, and moving about on the ground, with the hands free.
-
-- The in-air torso heading. Off the ground, every estimate of the player's shoulders (the hands' shoulders, the arm remap, the wingsuit's arms, and the ripcord) takes the torso's heading from one follower (`rig::torso_heading`, reading `procedural::wings::WingHeading`; [procedural-states.md](procedural-states.md#the-wingsuit)): the line between the wrists while they are spread, and otherwise a slow follower of the head. The estimate's chest heading could stand in for the slow follower. The wingsuit's spread arms, held out level for long stretches, are far from anything in AMASS, and the parachute's raised hands on the handles are not much closer, so the estimate there is most likely to be wrong; the wrist line already reads the spread arms directly.
-- Vehicle seats. Seated in a vehicle, the head's heading stands in for the torso's. The estimate's chest could replace it for the hands' shoulders and the arm remap. A seated player in a real chair is closer to AMASS than the air states, but the hands on a wheel or a stick and the window seeing no walking are less so; the seated remap would apply as on foot.
-- Swimming. The swim's yaw ([swim-yaw.md](swim-yaw.md)) decides where Rico swims from the head and the hands. The player stands or sits while Rico swims, so the estimate would read the player's real body, which is what the swim yaw approximates, but the arm strokes are far from AMASS's motions and would need checking.
-- Grapple hangs. Hanging from the grapple, the game owns the root and the mod poses the torso; the estimate's chest could turn it. The player usually holds one arm up toward the grapple, which AMASS has little of.
-
-Each consumer would read `estimator::latest`, judge the estimate's age for itself (the rig's confidence ramp is one way), and blend it in and out, as the rig does, so that the estimate appearing and disappearing never snaps the body.
