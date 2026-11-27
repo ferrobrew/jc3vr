@@ -33,7 +33,7 @@ pub fn is_recording() -> bool {
 }
 
 struct CaptureState {
-    /// The puffin sink feeding [`frames`], removed when the capture ends.
+    /// The puffin sink feeding [`Self::frames`], removed when the capture ends.
     sink_id: FrameSinkId,
     frames: Arc<Mutex<Vec<Arc<FrameData>>>>,
     started: Instant,
@@ -159,16 +159,15 @@ pub fn is_writing() -> bool {
     WRITING.load(Ordering::Acquire)
 }
 
-/// Waits for an in-flight capture writer to finish, up to a bounded budget. Called on eject
-/// alongside [`crate::vr::tail::shutdown`], which this mirrors: the writer is an unjoined thread
+/// Waits for an in-flight capture writer to finish, up to a bounded budget; the eject runs it as
+/// one of its worker stops ([`crate::lifecycle::stop_workers`]). The writer is an unjoined thread
 /// (spawned from [`finish`] because inline serialization would freeze the frame it runs on for
 /// seconds), and a thread still executing when [`crate::module::exit`] unmaps the image parks
 /// forever holding whatever it took, wedging the process with nothing left to log. Waiting longer
 /// is strictly better than unloading underneath a live thread.
 ///
 /// Returns whether the writer is confirmed stopped (or was never running). A `false` return means
-/// the caller must not unload -- see [`crate::vr::tail::shutdown`]'s doc comment for the full
-/// argument.
+/// the caller must not unload.
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     for poll in 0..SHUTDOWN_POLLS {

@@ -1,3 +1,7 @@
+//! The payload's own module handle, recorded at `DllMain`: the DLL's path ([`get_path`]), the
+//! unload at the end of the eject ([`exit`]), and the pin that keeps the image mapped when the
+//! teardown cannot prove it clear ([`pin`]).
+
 use std::{ffi::OsString, os::windows::ffi::OsStringExt as _, path::PathBuf, sync::OnceLock};
 
 use windows::Win32::{
@@ -46,9 +50,9 @@ pub fn pin() {
     };
     PINNED.store(true, std::sync::atomic::Ordering::Release);
     let mut pinned = HMODULE::default();
-    // SAFETY: `module.0` is this DLL's own handle, recorded at `DllMain`. `FROM_ADDRESS` is not used;
-    // the handle form takes the module name, so pass our own path-backed handle as the name pointer
-    // is not required for the PIN flag with a live handle.
+    // SAFETY: `module.0` is this DLL's own handle, recorded at `DllMain`. With `FROM_ADDRESS` the
+    // name argument is read as an address inside the module rather than as a string, and the
+    // module's handle is its base address, which is one.
     let _ = unsafe {
         GetModuleHandleExW(
             GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,

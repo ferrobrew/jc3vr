@@ -736,8 +736,8 @@ fn snapshot(schema: &Schema) -> Box<Root> {
 }
 
 /// Hand a saved change to the schema
-/// ([`ConfigRoot::note_saved`](crate::config::ConfigRoot::note_saved)), with every setting rather than
-/// the file's changes alone, so that a tracking recording says what it ran with whatever the
+/// ([`ConfigRoot::note_saved`](crate::config::ConfigRoot::note_saved)), with every setting rather
+/// than the file's changes alone, so that a tracking recording says what it ran with whatever the
 /// defaults of its build.
 fn note_settings() {
     let schema = store::schema();

@@ -75,7 +75,7 @@ pub(crate) fn write_chrome_trace(
 struct EventWriter {
     out: BufWriter<File>,
     first: bool,
-    /// Chrome wants integer thread ids; puffin identifies streams by a whole [`ThreadInfo`]
+    /// Chrome wants integer thread ids; puffin identifies streams by a whole [`puffin::ThreadInfo`]
     /// (name plus start time). Key the lanes by that full identity — two distinct threads can
     /// share a name (foreign threads all report an empty one when unlabelled), and merging them
     /// would interleave concurrent scopes onto one garbled track. An "M" metadata row labels each

@@ -1,7 +1,7 @@
 //! Thread roles: which part of the frame the calling thread is running, for the locks whose safety
 //! depends on it.
 //!
-//! The VR runtime state ([`crate::vr`]) is locked by the game thread for the whole of a frame and
+//! The VR runtime state (`jc3vr_view::vr`) is locked by the game thread for the whole of a frame and
 //! then by the frame tail until the frame is submitted, while both wait on engine threads (the draw
 //! task, CPU fragment workers, the UI capture and render workers). A blocking lock of it from any of
 //! those threads, or from the game thread while it already holds it, is a deadlock. Which threads
@@ -33,16 +33,16 @@ pub enum ThreadRole {
     /// The game thread while it runs the debug UI, holding the egui state lock the draw task also
     /// takes.
     GameDebugUi,
-    /// The frame-tail worker ([`crate::vr::tail`]): it owns the frame's VR submit side until it
+    /// The frame-tail worker (`jc3vr_view::vr::tail`): it owns the frame's VR submit side until it
     /// submits.
     FrameTail,
     /// Whatever thread runs the engine's input job (`RunInputThread_Proxy`, scoped in
-    /// [`crate::hooks::sim`]): a CPU fragment worker, or the game thread when it steals the
+    /// `jc3vr_gameplay::hooks::sim`): a CPU fragment worker, or the game thread when it steals the
     /// fragment while it waits on another signal. Either way the job overlaps the game thread's
     /// pre-simulation work that mutates the world, so it may touch only input and UI state; the
     /// world-mutating half of the input tick runs later, in the game stage
-    /// ([`crate::controllers::bindings::stage`]). The role narrows [`Self::Game`] on a stolen run,
-    /// so a guard that admits only `Game` does not admit the overlap.
+    /// (`jc3vr_gameplay::controllers::bindings::stage`). The role narrows [`Self::Game`] on a
+    /// stolen run, so a guard that admits only `Game` does not admit the overlap.
     InputJob,
 }
 

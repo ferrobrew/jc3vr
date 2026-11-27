@@ -4,8 +4,8 @@
 //! composed hook library, but the work that has to bracket them belongs to the modules whose
 //! detours need it: opening admission once a native callback's detour is live, tearing down
 //! detours managed outside the hook library, and proving that no native callback is still running
-//! in payload code once everything is unpatched. Each module registers its steps here from its own
-//! `install` before the hooks are installed, and the steps run in registration order.
+//! in payload code once everything is unpatched. Each crate registers its steps here from its
+//! registration, before the hooks are installed, and the steps run in registration order.
 
 use parking_lot::Mutex;
 

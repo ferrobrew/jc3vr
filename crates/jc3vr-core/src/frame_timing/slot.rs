@@ -4,7 +4,8 @@
 /// array indexed by the slot, with no registration and no lookup on the hot path.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Slot {
-    /// `crate::update`: the directing tools, the eye-capture upkeep, and the egui debug UI pass.
+    /// The payload's per-frame `update`: the directing tools, the eye-capture upkeep, and the egui
+    /// debug UI pass.
     DebugUi,
     /// The engine's `Game::Update`, excluding the mod scopes nested in it and the sim ticks: the
     /// tick scheduler, the update contexts, and the parts of the frame the mod does not hook.
@@ -89,17 +90,17 @@ pub enum Slot {
     /// the bindings' writes and the headpose look handling. In play it runs in the engine's input
     /// job; an inline game stage nests its [`Self::Bindings`] time inside it.
     InputTick,
-    /// The input tick's game stage (`controllers::bindings::stage::game_stage`): the bindings,
+    /// The input tick's game stage (`jc3vr_gameplay::controllers::bindings::stage`): the bindings,
     /// the controller subsystems they drive, and the gamepad-setting hold. In play it runs at the
     /// top of the world's pre-simulation queue, inside [`Self::SimWorldPreSim`].
     Bindings,
-    /// The physical hands' input tick and post-aim update (`controllers::physical_hands`): the palm
-    /// probes, pushes, and pickups.
+    /// The physical hands' input tick and post-aim update (`jc3vr_physical`): the palm probes,
+    /// pushes, and pickups.
     PhysicalHands,
     /// The local player's aim-control post-simulation update with the controllers active
-    /// (`controllers::aim`), excluding the physical hands: the hand composition, the engine's own aim
-    /// update it wraps (with the grapple visibility checks the mod makes immediate), and the hand
-    /// rays.
+    /// (`jc3vr_body::controllers::aim`), excluding the physical hands: the hand composition, the
+    /// engine's own aim update it wraps (with the grapple visibility checks the mod makes
+    /// immediate), and the hand rays.
     Aim,
     /// The mod's work in the character pose-pass hooks, around the HumanIK solve: the head, hand,
     /// stance, and crouch targets queued at the pose finalization's entry, the secondary hand pass's
@@ -114,8 +115,8 @@ pub enum Slot {
     HandBodies,
     HumanHull,
     HandImpacts,
-    /// The render-rate presentation layer (`controllers::presentation`): the frame's snapshot, and
-    /// the upper body's re-solve for the draws of the player's body.
+    /// The render-rate presentation layer (`jc3vr_body::controllers::presentation`): the frame's
+    /// snapshot, and the upper body's re-solve for the draws of the player's body.
     Presentation,
     /// The tracking recorder's samples outside the capture itself: the bodies near Rico after a
     /// step, and the pose samples of the pose-finalization pass.
@@ -129,7 +130,7 @@ pub enum Slot {
     WorldMarkers,
     /// The render-update hook's own glue, excluding everything timed separately inside it.
     UpdateRenderHook,
-    /// `vr::update`: the OpenXR event pump.
+    /// `jc3vr_view::vr::update`: the OpenXR event pump.
     VrUpdate,
     /// `xrBeginFrame`, the view location, and the head location in the frame begin.
     VrBeginFrame,

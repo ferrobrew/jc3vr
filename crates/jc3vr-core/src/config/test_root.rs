@@ -5,9 +5,10 @@
 //! instead, made of the slots its code reads: each listed slot holds its part, defaulted as the
 //! aggregate defaults it (the slot's declared default, or its type's, which is the group's
 //! `const fn new()`), and binds the slots nested in it as the aggregate does
-//! ([`SlotOptions::with_children`](crate::config::SlotOptions::with_children)). A test reads and changes the configuration through the slots
-//! exactly as the payload does, its loads run the checks the slots carry, and it takes the
-//! configuration exclusively with [`test_fixture`](crate::config::test_fixture).
+//! ([`SlotOptions::with_children`](crate::config::SlotOptions::with_children)). A test reads and
+//! changes the configuration through the slots exactly as the payload does, its loads run the
+//! checks the slots carry, and it takes the configuration exclusively with
+//! [`test_fixture`](crate::config::test_fixture).
 //!
 //! A slot the root does not list or bind panics on its first read with a message naming the root
 //! to add it to. The registration runs from the C runtime's initializer table (`.CRT$XCU`), before

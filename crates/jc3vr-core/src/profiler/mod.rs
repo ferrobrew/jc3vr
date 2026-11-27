@@ -8,17 +8,16 @@
 //! thread-local touches per dispatch: puffin's `are_scopes_on()` gates scope recording, and the
 //! GPU layer issues no queries while it is off.
 //!
-//! Threading: the game calls `Game::Update` once per real frame on the main thread
-//! ([`new_frame`] runs there), and the draw thread executes `HandleDrawThreadTask` once per
-//! dispatch (two per frame in stereo, three on far-field share frames). puffin keeps one scope
-//! stream per thread, so main-thread and draw-thread scopes land in separate lanes; the GPU layer
-//! reports a third, synthetic "GPU" lane.
+//! Threading: the game calls `Game::Update` once per real frame on the main thread ([`new_frame`]
+//! runs there), and the draw thread executes `HandleDrawThreadTask` once per dispatch (two per
+//! frame in multipass stereo). puffin keeps one scope stream per thread, so main-thread and
+//! draw-thread scopes land in separate lanes; the GPU layer reports a third, synthetic "GPU" lane.
 //!
 //! The module splits along its consumers. The core (this module, [`blocks`], [`capture`], and
 //! [`chrome_trace`]) holds the scopes, the frame advance, and the trace capture, and calls into
-//! neither half above it, so it lives in the core crate. The payload's `profiler::gpu` is the render
-//! half: the timestamp lane over the draw thread's dispatches and the render-pass scopes. Its
-//! `profiler::ui` is the debug UI's half, the Performance tab's panel.
+//! neither half above it, so it lives in the core crate. `jc3vr_render::profiler` is the render
+//! half: the timestamp lane over the draw thread's dispatches and the render-pass scopes.
+//! `jc3vr_ui::profiler` is the debug UI's half, the Performance tab's panel.
 
 pub mod blocks;
 pub mod capture;
@@ -76,7 +75,7 @@ pub(crate) fn apply_scopes_on() {
     puffin::set_scopes_on(UI_ENABLED.load(Ordering::Relaxed) || capture::is_recording());
 }
 
-/// Called once at the start of every real frame, on the main thread (from `crate::update`).
+/// Called once at the start of every real frame, on the main thread (from the payload's `update`).
 /// Finishes the previous puffin frame (collecting every thread's stream and feeding the sinks)
 /// and advances the capture state machine.
 pub fn new_frame() {

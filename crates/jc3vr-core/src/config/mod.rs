@@ -10,8 +10,8 @@
 //!
 //! The settings file is loaded once at startup ([`init`], [`load`]), saved from the game thread's
 //! frame once edits settle ([`tick`], [`persist`]), and flushed at [`shutdown`]. A save writes the
-//! settings that differ from their defaults ([`format`]), with the user's choice for each switch
-//! the payload turned off on its own ([`automatic`]).
+//! settings that differ from their defaults ([`format`](mod@format)), with the user's choice for
+//! each switch the payload turned off on its own ([`automatic`]).
 
 pub(crate) mod automatic;
 pub mod format;

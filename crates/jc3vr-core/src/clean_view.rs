@@ -3,14 +3,14 @@
 //! there.
 //!
 //! At [`CleanViewScope::Desktop`] it hides the flat egui debug overlay from the desktop window: the
-//! direct back-buffer pass in `graphics_flip` and the desktop-mirror composite
-//! (`crate::hud::mirror_overlay`). The headset image, the VR floating panel, and the in-world
-//! overlays stay. At [`CleanViewScope::Everything`] it also hides every overlay the mod draws over
-//! the scene: the floating HUD quad (`crate::hud`), the interactive egui panel
-//! (`crate::hud::egui_panel`) and its desktop-mirror composite (`crate::vr::mirror`), and the
-//! in-world overlays. The game's own HUD is redirected into the floating quad's texture whenever the
-//! quad is drawn, so hiding the quad hides the HUD; with the redirect off (flatscreen) the game's HUD
-//! stays, and the debug tab says so.
+//! direct back-buffer pass in the render crate's `graphics_flip` detour and the desktop-mirror
+//! composite (`jc3vr_hud::hud::mirror_overlay`). The headset image, the VR floating panel, and the
+//! in-world overlays stay. At [`CleanViewScope::Everything`] it also hides every overlay the mod
+//! draws over the scene: the floating HUD quad (`jc3vr_hud::hud`), the interactive egui panel
+//! (`jc3vr_hud::hud::egui_panel`) and its desktop-mirror composite (`jc3vr_view::vr::mirror`), and
+//! the in-world overlays. The game's own HUD is redirected into the floating quad's texture
+//! whenever the quad is drawn, so hiding the quad hides the HUD; with the redirect off (flatscreen)
+//! the game's HUD stays, and the debug tab says so.
 //!
 //! The desktop gates read [`hides_desktop`] and the rest read [`hides_everything`]. F4 toggles the
 //! switch ([`toggle`]); the scope is picked in the director tab.
@@ -89,9 +89,9 @@ pub fn hide() {
     publish(*clean_view);
 }
 
-/// Publish the config's clean view, once per frame from the tooling's directing pass (`jc3vr_tooling::director::update`), so a change
-/// made in the debug UI reaches the gates. Logs the edges so a recording's log shows when the
-/// overlays went away.
+/// Publish the config's clean view, once per frame from the tooling's directing pass
+/// (`jc3vr_tooling::director::update`), so a change made in the debug UI reaches the gates. Logs
+/// the edges so a recording's log shows when the overlays went away.
 pub fn update(cfg: &CleanViewConfig) {
     publish(*cfg);
 }

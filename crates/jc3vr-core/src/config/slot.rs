@@ -3,9 +3,8 @@
 //!
 //! A slot is declared where its type is known and bound once, before anything reads it, by the
 //! code that knows the root's type: binding gives the slot its [`Projection`], the functions that
-//! find its part in the root ([`projection!`](crate::config::projection)). Every slot
-//! shares the store's one lock, so the [nesting rule](crate::config::store#lock-nesting)
-//! covers them all.
+//! find its part in the root ([`projection!`](crate::config::projection)). Every slot shares the
+//! store's one lock, so the [nesting rule](crate::config::store#lock-nesting) covers them all.
 
 use std::{
     ops::{Deref, DerefMut},

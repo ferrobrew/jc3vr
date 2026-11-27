@@ -2,8 +2,8 @@
 //! with them: the shapes the layers above otherwise write by hand at each site.
 //!
 //! - [`Published`]: the latest value a writer stage published, with the time it was published,
-//!   read whole by any thread, and current only within a [`Window`]. It replaces the
-//!   `Mutex<Option<(T, Instant)>>` slots and the `fn fresh` that each reader wrote beside one.
+//!   read whole by any thread, and current only within a [`Window`], so no site writes its own
+//!   timestamped slot and freshness check.
 //! - [`Stamp`] and [`Step`], the two clocks a publication is stamped on: [`Stamp`] is wall time
 //!   from the process epoch the frame timing counts from, and [`Step`] counts the physics steps,
 //!   for a publication whose staleness is measured in steps so that a hitch of the whole
@@ -18,7 +18,7 @@
 //!   them.
 //!
 //! None of these allocate on a read, and a [`Published`] read costs one uncontended leaf-lock
-//! acquisition and a copy, as the hand-written slots it replaces did.
+//! acquisition and a copy.
 
 mod clock;
 mod counters;

@@ -3,9 +3,9 @@
 //! The configuration types change as settings are added, renamed, and removed, and the file can be
 //! edited by hand, so the load bridges drift in both directions rather than rejecting the file:
 //!
-//! 1. The file is parsed into a TOML value tree, its format's version is taken out, and a file of
-//!    the schema's migration runs on it ([`crate::config::format::upgrade`]). The tree
-//!    is merged over the defaults serialized the same way. A setting the file lacks takes its
+//! 1. The file is parsed into a TOML value tree, its format's version is taken out, and the
+//!    schema's migration runs on it ([`crate::config::format::upgrade`]). The tree is merged over
+//!    the defaults serialized the same way. A setting the file lacks takes its
 //!    default; a setting the file has that the defaults do not stays in the tree, since it is
 //!    either an optional setting (a `None` default is left out of the defaults' tree as it is left
 //!    out of the file) or one this build does not know.
@@ -15,10 +15,10 @@
 //!    removed, when it has none) and the deserialization is tried again, a bounded number of
 //!    times. One bad value costs one setting, not the file.
 //! 3. The settings whose types admit unusable values are validated by the schema
-//!    ([`ConfigRoot::validate`](crate::config::ConfigRoot::validate)). A check names the
-//!    setting that fails ([`Invalid`]), so [`reset_named`] resets that setting to its default (or
-//!    the group around it, when the default fails too) and runs the check again; a subtree is
-//!    reset whole only when that does not make it pass.
+//!    ([`ConfigRoot::validate`](crate::config::ConfigRoot::validate)). A check names the setting
+//!    that fails ([`Invalid`]), so [`reset_named`] resets that setting to its default (or the group
+//!    around it, when the default fails too) and runs the check again; a subtree is reset whole
+//!    only when that does not make it pass.
 //!
 //! Lists merge element by element when the file's list is as long as the default one (a vector
 //! or a fixed-size array); a list of another length replaces the default whole, so a list that can
@@ -325,9 +325,9 @@ fn reset(merged: &mut Value, defaults: &Value, steps: &[Step]) -> Option<String>
 }
 
 /// Reset the settings of `value` that `check` names, one at a time, until it passes. `prefix` is
-/// `value`'s path in the configuration, and each reset is pushed to `resets` under it. A setting is replaced
-/// by its value in `defaults`, or, when it already has that value, the group enclosing it is
-/// ([`reset`]). Returns the check's error when a failure names no setting that can be reset, or
+/// `value`'s path in the configuration, and each reset is pushed to `resets` under it. A setting is
+/// replaced by its value in `defaults`, or, when it already has that value, the group enclosing it
+/// is ([`reset`]). Returns the check's error when a failure names no setting that can be reset, or
 /// the resets run out, so that the caller resets `value` whole.
 pub fn reset_named<T: Serialize + DeserializeOwned>(
     value: &mut T,

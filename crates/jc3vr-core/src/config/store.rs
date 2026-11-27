@@ -3,9 +3,8 @@
 //! [`Schema`].
 //!
 //! The root is the whole configuration, so a guard over it (or over one of its parts, through a
-//! [`ConfigSlot`](crate::config::ConfigSlot)) is a consistent snapshot: every read through
-//! one guard sees the same configuration, and a change made through one is seen whole by the next
-//! lock.
+//! [`ConfigSlot`](crate::config::ConfigSlot)) is a consistent snapshot: every read through one
+//! guard sees the same configuration, and a change made through one is seen whole by the next lock.
 //!
 //! # Lock nesting
 //!

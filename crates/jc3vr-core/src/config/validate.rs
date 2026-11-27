@@ -1,6 +1,6 @@
 //! The error a settings check returns, which the tolerant load reads to reset the setting it names
-//! ([`crate::config::load::reset_named`]), and the range checks a subsystem's own checks
-//! are built from.
+//! ([`crate::config::load::reset_named`]), and the range checks a subsystem's own checks are built
+//! from.
 
 use std::fmt;
 

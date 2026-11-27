@@ -12,12 +12,12 @@
 //!   tracing log), `crash.log` (the crash handler's log), and `markers.jsonl` (take markers made with
 //!   no video recording running).
 //! - [`CaptureFile`]: one file per capture, `<folder>/<stamp>.<ext>`: `profiles/<stamp>.json`
-//!   (profiler captures), `screenshots/<stamp>.png` with a `<stamp>.json` sidecar (F12),
-//!   and `grapple-logs/<stamp>.csv` (grapple telemetry).
+//!   (profiler captures), `screenshots/<stamp>.png` with a `<stamp>.json` sidecar (F12), and
+//!   `grapple-logs/<stamp>.csv` (grapple telemetry).
 //! - [`CaptureFolder`]: several files per capture, `<folder>/<stamp>/` holding files named by role:
-//!   `traces/<stamp>/` (a render trace's `trace.ndjson`) and
-//!   `recordings/<stamp>/` (a recording's halves, named by [`RecordingFile`]: the tracking
-//!   recording or lookback save and the video's `frames.jsonl` sidecar, beside the capture host's
+//!   `traces/<stamp>/` (a render trace's `trace.ndjson`) and `recordings/<stamp>/` (a recording's
+//!   halves, named by [`RecordingFile`]: the tracking recording or lookback save, the video's
+//!   `frames.jsonl` sidecar, and a streamed take's `frame_map.jsonl`, beside the capture host's
 //!   `video.mkv` and `stream.json`, which the host writes there itself).
 //!
 //! Folders are plural, and no file name repeats the kind its folder already names. Each folder is

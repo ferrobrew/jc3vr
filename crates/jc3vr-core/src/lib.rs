@@ -25,8 +25,8 @@
 //! - [`session`] and [`logging`]: the session folder and the log.
 //! - [`game_tick`]: the token that proves code runs on the game thread at one of the frame's
 //!   serial points, which the handles to game objects borrow.
-//! - [`thread_role`], [`cpu_placement`], [`module`], [`hash`], and
-//!   [`clean_view`]: small process-wide services.
+//! - [`thread_role`], [`cpu_placement`], [`module`], [`hash`], and [`clean_view`]: small
+//!   process-wide services.
 //!
 //! The `test-support` feature exposes the fixtures other crates' tests use: the configuration
 //! fixture, the test configuration root (`test_root!`), and the lifecycle harness.

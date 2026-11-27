@@ -1,7 +1,6 @@
-//! Logging: stdout + the session's `session.log` (see [`crate::session`]),
-//! filtered by `RUST_LOG` from the game
-//! process's environment (fixed at game launch), with a live reload path so the filter can be
-//! changed from the debug UI without relaunching the game.
+//! Logging: stdout and the session's `session.log` (see [`crate::session`]), filtered by
+//! `RUST_LOG` from the game process's environment (fixed at game launch), with a live reload path
+//! so the filter can be changed from the debug UI without relaunching the game.
 
 use std::sync::OnceLock;
 

@@ -191,8 +191,9 @@ pub fn latest() -> Option<Report> {
 
 /// Every slot's self time and call count, and every thread class's time by kind, summed since the
 /// payload loaded and never reset. A caller that samples it twice takes the difference: the
-/// benchmark (the capture crate's `testing::benchmark`) does so once per frame. Lock-free, so any thread may
-/// read it; a scope closing on another thread while it is read lands in this sample or the next.
+/// benchmark (the capture crate's `testing::benchmark`) does so once per frame. Lock-free, so any
+/// thread may read it; a scope closing on another thread while it is read lands in this sample or
+/// the next.
 pub fn cumulative() -> Cumulative {
     let mut result = Cumulative {
         slot_self_ns: [0; Slot::COUNT],
