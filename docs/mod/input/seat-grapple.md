@@ -1,57 +1,38 @@
 # Seat grapple
 
-In a vehicle seat, the grapple button fires the hook along the off-hand's aim, and when the hook holds, what it hit is tethered to the vehicle. The base game takes no grapple fire in a seat; it ships a vehicle grapple that does exactly this but never calls it ([grapple-pipeline.md, "The grapple in a vehicle seat"](../../engine/gameplay/grapple-pipeline.md#the-grapple-in-a-vehicle-seat)). The mod runs the same steps from the input tick.
+In a vehicle seat, the grapple button fires the hook along the grapple hand's aim, and when the hook holds, what it hit is tethered to the vehicle. The base game takes no grapple fire in a seat; it ships a vehicle grapple that does this but never calls it ([grapple-pipeline.md, "The grapple in a vehicle seat"](../../engine/gameplay/grapple-pipeline.md#the-grapple-in-a-vehicle-seat)). The mod runs its steps from the input tick.
 
-The code is `crates/jc3vr-grapple/src/grapple/seat/`, with the button's part in `crates/jc3vr-grapple/src/controllers/grapple_button.rs` and the aim's in `crates/jc3vr-body/src/controllers/aim/mod.rs`.
+The code is `crates/jc3vr-grapple/src/grapple/seat/` (`mod.rs` for the pure step and the tick, `engine.rs` for the game calls), with the button's part in `crates/jc3vr-grapple/src/controllers/grapple_button.rs` and the aim's in `crates/jc3vr-body/src/controllers/aim/mod.rs`. The seat grapple has no switch: it acts whenever the controller scheme is in effect. Its tuning is the `seat` section of `crates/jc3vr-grapple/tuning/grapple.toml`.
+
+## The test
+
+The seat grapple stands in for the game's where the character rides in a seat and the game refuses the fire (`jc3vr_body::controllers::facts::seat::stands_in`; riding means the character has a vehicle and [`Character::IsInRidingInVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInRidingInVehicleState) holds). The one test decides the button, the aim, and whether a flying hook is still seated, so the button never fires the seat grapple where the aim casts nothing; in a vehicle where the game takes the fire, the button is the game's grapple.
 
 ## The aim
 
-Every seat's animation state clears the hook's fire input, and the game's targeting does not refresh the grapple slot there, so the slot would keep the boarding point for the whole ride. In a seat (the character has a vehicle and is in one of the riding states, as [`Character::IsInRidingInVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInRidingInVehicleState) says) with the game refusing the fire (`facts::seat::stands_in`), the aim update casts the off-hand's grapple ray itself, ignoring Rico and the vehicle and seeing through what the game's aim ray sees through, out to the grapple's range ([`GrappleTuning::m_GrappleDistance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning##field-m_GrappleDistance)). The hit is the grapple's readout: valid while there is one, tetherable when it is an object. The overlay's highlight and beam draw it as they draw the game's target on foot.
+Every seat's animation state clears the hook's fire input, and the game's targeting does not refresh the grapple slot there, so the slot would keep the boarding point for the whole ride. So in a seat the aim update casts the grapple hand's ray itself, ignoring Rico and the vehicle and seeing through what the game's aim ray sees through, out to the grapple's range ([`GrappleTuning::m_GrappleDistance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning##field-m_GrappleDistance)). The hit is the grapple's readout, and the overlay's highlight and beam draw it as they draw the game's target on foot. Whenever the game refuses the fire outside a seat, the readout reports nothing and marks its point as not current, so the target never freezes at a stale point.
 
-With the seat grapple off, or whenever the game refuses the fire outside a seat, the readout reports nothing hit or valid and marks its point as not current, and the beam is not drawn: the target never freezes at a stale point ([controllers.md](controllers.md)).
+## The button and the hook
 
-## The button
-
-In a seat, by the same test as the aim's, the button's fire is the seat grapple's, and the game sees no grapple fire input. The one test decides the button, the aim, and whether a flying hook is still seated, so the button never fires the seat grapple where the aim casts nothing; in a vehicle where the game takes the fire, the button is the game's grapple:
+In a seat the button's fire is the seat grapple's, and the game sees no grapple fire input:
 
 | Press | Effect |
-|---|---|
-| A press with nothing attached | Fires the seat grapple at once |
-| A tap with tethers attached | Fires the seat grapple once no second tap follows |
-| A double tap with tethers attached | Releases every tether, as on foot |
+| --- | --- |
+| A press with nothing attached | Fires at once |
+| A tap with tethers attached | Fires once no second tap follows |
+| A double tap with tethers attached | Releases every tether ([`GrapplingHook::ReleaseAllDualTethers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-ReleaseAllDualTethers)), as on foot |
 | A hold with tethers attached | Tightens the tethers, as on foot |
 
-A press while the hook flies does nothing. A press with nothing valid under the aim is refused.
+A press with nothing valid under the aim is refused, and a press while the hook flies calls it back and fires again once the line is free.
 
-## The hook
+The fire is the game's custom fire, [`GrapplingHook::FireHookCustom`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-FireHookCustom), at the aim's point with the vehicle ignored. The wire's near end is then detached from Rico's gauntlet and attached to the vehicle at the grapple hand's grip (the vehicle's centre when the hand is not tracked), and the hook end is sent out to the target. While the button stays held, the near end follows the grapple hand on the vehicle, so the player chooses where on the car the line pulls from.
 
-The fire is the game's vehicle grapple's: [`GrapplingHook::FireHookCustom`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-FireHookCustom) at the aim's point, ignoring the vehicle, with no game object and no bone, not a ghost wire, so the hook flies to the point and holds whatever it meets there. When its far end holds, [`GrapplingHook::TetherActiveWireToVehicleCOM`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-TetherActiveWireToVehicleCOM) moves the wire's near end from Rico's gauntlet to the vehicle's centre of mass and makes it a tether. From there it is the game's own tether: the car drags the object or is held by the wall, the double tap releases it, and tightening squeezes it.
+Once the hook holds and the button is up, the wire is handed off as one of the hook's tethers ([`GrapplingHookWire::PushGrapplingHookWire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHookWire##func-PushGrapplingHookWire)), and from there it is the game's own tether: the car drags the object or is held by the wall, and the double tap releases it. A hold longer than the button's tap time ties two things instead: releasing with the aim on a second target sends the near end there, so the tether joins the first target to the second rather than to the vehicle. A long hold released with nothing under the aim calls the hook back.
 
-A hook still flying after two seconds, or one still out when Rico leaves the seat, is called back ([`GrapplingHook::CancelActiveWire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-CancelActiveWire)). A pause of the controllers (the mod's panel, a lost controller frame) keeps the flying hook: the next tick tethers it if it holds and Rico is still seated, or calls it back otherwise, and the two seconds count only ticks that run. Leaving the controllers (the bindings switched off, or the gamepad scheme) calls it back at once, since no later tick would. The fire is refused while a line is out or a fire is under way, and when the hook does not take it.
+A hook still flying after `seat.flight_s`, or still out when Rico leaves the seat, is called back ([`GrapplingHook::CancelActiveWire`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-CancelActiveWire)). A pause of the controllers (the mod's panel, a lost controller frame) keeps the flying hook: the next tick tethers it if it holds and Rico is still seated, or calls it back, and the flight time counts only ticks that run. Leaving the controllers (the bindings switched off, or the gamepad scheme) calls it back at once, since no later tick would. The fire is refused while a line is out or another custom fire owns the hook, and when the hook does not take it. The tether plays `Event::LineLock` on the grapple hand.
 
-The tether plays `Event::LineLock` on the grapple hand.
+## Readouts and logs
 
-## Settings and readouts
+The Status page's `Grapple` section has a `Seat grapple` row: whether the hook is flying, the counts of fires, tethers, and misses, and why the last press was refused (`nothing in range`, `no player`, `hook busy`, or `fire refused`). The debug UI's aim readout names where the grapple's point comes from: `game`, `seat`, or `stale`.
 
-The seat grapple has no switch: it acts whenever the controller scheme is in effect. The Status page's `Grapple` section has a `Seat grapple` row: whether the hook is flying, the counts of fires, tethers, and misses, and why the last press was refused. The debug UI's aim readout names where the grapple's point comes from: `game`, `seat`, or `stale`.
-
-The log has, at info level under the `grapple` target, `seat grapple: fired` with the point, `seat grapple: tethered to the vehicle`, `seat grapple: missed`, `seat grapple: the hook was called back` (and `... on leaving the controllers`), `seat grapple: the tether was refused`, and `seat grapple: refused` with why.
-
-## Headset checklist
-
-1. Sit in a car's driver's seat and point the off-hand at a wall or a parked car: the grapple highlight and beam follow the hand, not the point where Rico got in.
-2. Press the grapple button: the hook flies to the point, `seat grapple: fired` then `tethered to the vehicle` are logged, and the lock pulse is felt. Drive off: the car is held by the wall, or drags the parked car.
-3. Double tap the grapple button: the tether is released. With tethers out, hold the button: they tighten.
-4. Fire at nothing in range: the press is refused (`nothing in range`), nothing flies.
-5. Fire, and leave the seat while the hook flies: the hook is called back.
-6. Do the same from a passenger seat, a motorcycle, a boat, and a helicopter's seat.
-7. Fire, and open the mod's panel while the hook flies, then close it: the hook tethers if it held, or is called back, and the next press fires again rather than being refused as `hook busy`. Fire and switch to the gamepad scheme while it flies: the hook is called back.
-8. Switch the seat grapple off: in a seat the highlight and beam disappear, and the button fires nothing.
-9. On foot, fire the grapple: the highlight and beam vanish during the fire and come back with the game's target after it.
-
-## Unverified in the headset
-
-- That the hook's wire updates and attaches from a seat as it does on foot, and that nothing in the seat's states cuts it.
-- What the tether does to the vehicle's handling, and whether the game's tether strength and break suit a car pulling on it.
-- Whether the grapple comfort hold or the hand anchor react to a wire fired from a seat.
-- That `IsInRidingInVehicleState` holds in every seat class the mode detector calls a seat.
+The log has, at info level under the `grapple` target, `seat grapple: fired`, `seat grapple: tether handed off` (with `dual` for a two-target tether), `seat grapple: missed`, `seat grapple: the hook was called back` (and `... on leaving the controllers`), `seat grapple: the tether was refused`, and `seat grapple: refused` with why.

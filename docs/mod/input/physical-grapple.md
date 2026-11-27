@@ -80,7 +80,7 @@ The debug UI's Status page has a `Grapple` section:
 - `Reel from hand`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
 - `Tethers`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.
 - `Line lock`: the lock on the reel's line ([grapple-lock.md](grapple-lock.md#settings-and-readouts)).
-- `Seat grapple`: the seat grapple's fires, tethers, and misses, whether its hook is flying, and why the last press was refused ([seat-grapple.md](seat-grapple.md#settings-and-readouts)).
+- `Seat grapple`: the seat grapple's fires, tethers, and misses, whether its hook is flying, and why the last press was refused ([seat-grapple.md](seat-grapple.md#readouts-and-logs)).
 - `Hang swing`: the hang ticks that swung, and how many the pump added to.
 - `Line haptics`: the grapple hand's line level, the stronger of the tension's and the reel's.
 
