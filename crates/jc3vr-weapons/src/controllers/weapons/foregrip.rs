@@ -179,15 +179,17 @@ pub(crate) struct TwoHandGrip {
 
 /// The engaged two-hand grip, or `None` while the weapon is held in one hand.
 pub(crate) fn two_hand_grip() -> Option<TwoHandGrip> {
-    STATE
-        .lock()
-        .hold
-        .filter(|h| h.engaged)
-        .map(|h| TwoHandGrip {
-            holder: h.holder,
-            weight: h.weight,
-            region: h.region,
-        })
+    engaged_hold().map(|h| TwoHandGrip {
+        holder: h.holder,
+        weight: h.weight,
+        region: h.region,
+    })
+}
+
+/// The engaged hold, or `None` while the weapon is held in one hand or a released hold blends
+/// out. A fading hold is not a brace.
+pub(crate) fn engaged_hold() -> Option<Hold> {
+    STATE.lock().hold.filter(|h| h.engaged)
 }
 
 pub fn status() -> ForegripStatus {

@@ -5,9 +5,9 @@ use std::time::Instant;
 
 use jc3vr_body::controllers::{
     body::rig::{frames::SkeletonLandmarks, skeleton},
+    body_frame,
     grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
     hands::ActiveHands,
-    locomotion,
 };
 use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use jc3vr_input::frame::{Hand, Pose};
@@ -44,7 +44,7 @@ use crate::controllers::{
 pub(super) fn body(_game: &GameTick<'_>, b: &mut Begin) {
     let active = &b.active;
     let moving = {
-        let locomotion = locomotion::status();
+        let locomotion = body_frame::locomotion();
         locomotion.fresh(Stamp::now()) && !locomotion.standing_still()
     };
     let placed = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
@@ -81,7 +81,7 @@ pub(super) fn hand_offers(_game: &GameTick<'_>, b: &mut Begin) {
             }
         }
     }
-    b.hold = foregrip::status().hold.filter(|h| h.engaged);
+    b.hold = foregrip::engaged_hold();
     if let Some(h) = b.hold
         && let Some(target) = held_foregrip(&h, active)
     {

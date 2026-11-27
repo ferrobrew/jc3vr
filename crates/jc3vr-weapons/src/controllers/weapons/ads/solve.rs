@@ -71,6 +71,9 @@ pub struct AdsTuning {
     pub(crate) max_ease_step_s: f32,
     /// How far each eye sits from the eyes' midpoint, metres.
     pub(crate) half_ipd_m: f32,
+    /// The share of a step (the eye, the shoulder, or the cheek weld) past which it counts as
+    /// taken, `0..=1`.
+    pub(crate) taken_share: f32,
     /// The shoulder pocket's offset from the shoulder joint in the torso's frame (+X right, +Y up,
     /// -Z forward), metres, given for the right shoulder and mirrored for the left.
     pub(crate) pocket_offset_m: Vec3,

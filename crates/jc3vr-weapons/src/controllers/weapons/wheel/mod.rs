@@ -145,7 +145,7 @@ pub fn input_tick(
         Some(Close::Cancel) => {
             tracing::debug!(target: "controllers", "weapon wheel: cancelled");
             shell.steering = None;
-            shell.cancel_ticks = CANCEL_TICKS;
+            shell.cancel_ticks = INVENTORY.get().wheel.cancel_ticks;
         }
         None => {}
     }
@@ -178,14 +178,16 @@ pub struct CrossAnchor {
 
 /// How long the cross's anchor outlives the wheel's close: the length of the cross's hide
 /// animation.
-pub const CROSS_LINGER: Duration = Duration::from_millis(500);
+pub fn cross_linger() -> Duration {
+    INVENTORY.get().wheel.linger_ms.duration()
+}
 
 /// The selection cross's anchor: the steering hand while the wheel is open, and for
-/// [`CROSS_LINGER`] after it closes, so the cross's hide animation plays where it was.
+/// [`cross_linger`] after it closes, so the cross's hide animation plays where it was.
 pub fn cross_anchor() -> Option<CrossAnchor> {
     let (hand, closed_at) = (*ANCHOR.lock())?;
     let closed_s = closed_at.map_or(0.0, |at| at.elapsed().as_secs_f32());
-    (closed_s <= CROSS_LINGER.as_secs_f32()).then_some(CrossAnchor {
+    (closed_s <= cross_linger().as_secs_f32()).then_some(CrossAnchor {
         hand,
         open: closed_at.is_none(),
         closed_s,
@@ -206,11 +208,6 @@ pub(crate) fn stand_down(game: &GameTick<'_>) {
     placement::clear();
     *ANCHOR.lock() = None;
 }
-
-/// How many input ticks a cancel keeps clearing the game's pending selection: the release's own
-/// and the next few, in case the game read a slot-select input that was still held on its next
-/// update and recorded it again.
-const CANCEL_TICKS: u32 = 3;
 
 struct Shell {
     wheel: Wheel,
@@ -298,7 +295,7 @@ fn close_as_cancel(game: &GameTick<'_>) {
     if shell.wheel.cancel() {
         tracing::debug!(target: "controllers", "weapon wheel: cancelled by a mode change");
         shell.steering = None;
-        shell.cancel_ticks = CANCEL_TICKS;
+        shell.cancel_ticks = INVENTORY.get().wheel.cancel_ticks;
         placement::publish(None, false);
         publish_anchor(None, true);
     }

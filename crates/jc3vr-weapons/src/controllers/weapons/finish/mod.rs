@@ -424,9 +424,8 @@ fn declare_grips(hands: &[HandContents; 2]) {
 /// bracing hand at its part.
 fn record_hands() {
     let holders = Hand::BOTH.map(|hand| live::in_hand(hand).is_some());
-    let brace = foregrip::status()
-        .hold
-        .filter(|h| h.engaged && live::in_hand(h.holder) == Some(h.weapon))
+    let brace = foregrip::engaged_hold()
+        .filter(|h| live::in_hand(h.holder) == Some(h.weapon))
         .map(|h| (h.holder.other(), h.region));
     regions::record(regions::hands_on_guns(holders, brace));
 }

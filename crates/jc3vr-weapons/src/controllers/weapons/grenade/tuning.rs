@@ -42,6 +42,10 @@ pub struct GrenadeTuning {
     /// The render-time placement of the explosives a hand holds, the grenades' and the C4
     /// charge's ([`crate::controllers::weapons::in_hand`]).
     pub held: HeldTuning,
+    /// The native throw's beacon: how long its gesture waits before it is dropped.
+    pub(crate) beacon: BeaconTuning,
+    /// Replacing the native grenades dropped in the world.
+    pub(crate) world: WorldTuning,
 }
 
 impl Tuning for GrenadeTuning {
@@ -53,8 +57,42 @@ impl Tuning for GrenadeTuning {
         positive("locker.reach_m", self.locker.reach_m, 1.0)?;
         self.held
             .registration_ms
-            .validate("held.registration_ms", 10_000)
+            .validate("held.registration_ms", 10_000)?;
+        self.beacon
+            .grip_wait_ms
+            .validate("beacon.grip_wait_ms", 60_000)?;
+        self.beacon
+            .body_wait_ms
+            .validate("beacon.body_wait_ms", 60_000)?;
+        if !(1..=1000).contains(&self.world.max_retry_ticks) {
+            return Err(Invalid(format!(
+                "world.max_retry_ticks must be in [1, 1000], got {}",
+                self.world.max_retry_ticks
+            )));
+        }
+        Ok(())
     }
+}
+
+/// The native throw's beacon (see [`crate::controllers::weapons::grenade`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeaconTuning {
+    /// How long a gesture waits for the hand to close on the grenade before it is dropped,
+    /// milliseconds.
+    pub(crate) grip_wait_ms: Millis,
+    /// How long a gesture waits for the thrown actor's physics body before it is dropped,
+    /// milliseconds.
+    pub(crate) body_wait_ms: Millis,
+}
+
+/// Replacing the native grenades dropped in the world.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorldTuning {
+    /// How many input ticks a refused replacement is tried again on before the drop is left a
+    /// pickup.
+    pub(crate) max_retry_ticks: u32,
 }
 
 /// The render-time placement of the explosives a hand holds

@@ -212,7 +212,7 @@ pub(crate) fn tick() {
         Stage::Waiting => false,
         Stage::Delivered { at } => at.elapsed() >= tuning.restock_after_ms.duration(),
         // A copy the snatch never collected lies in the world where it hangs.
-        Stage::Freed(_) | Stage::Failed => p.asked_at.elapsed() >= 2 * copy_wait,
+        Stage::Freed(_) | Stage::Failed => p.asked_at.elapsed() >= tuning.uncollected_ms.duration(),
     };
     if done && let Some(p) = pending.take() {
         drop(pending);

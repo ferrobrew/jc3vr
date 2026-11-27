@@ -259,9 +259,7 @@ impl State {
         }
         if self.status.insertion.holding()
             || loose::held().is_some()
-            || foregrip::status()
-                .hold
-                .is_some_and(|h| h.holder.other() == hand)
+            || foregrip::engaged_hold().is_some_and(|h| h.holder.other() == hand)
         {
             return None;
         }

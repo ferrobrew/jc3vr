@@ -91,6 +91,7 @@ weld_lock_m = 0.015
 ease_s = 0.06
 max_ease_step_s = 0.1
 half_ipd_m = 0.032
+taken_share = 0.99
 # Given for the right shoulder in the torso's frame (+X right, +Y up, -Z forward).
 pocket_offset_m = [-0.06, -0.04, -0.04]
 

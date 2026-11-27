@@ -207,9 +207,6 @@ pub(crate) fn aiming_eye(head: Pose, holder: Hand) -> Vec3 {
     head.position + head.orientation * Vec3::new(sign * half_ipd, 0.0, 0.0)
 }
 
-/// A step counts as taken once its share passes this.
-const TAKEN: f32 = 0.99;
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct State {
     /// Each hand's long gun, by [`Hand::index`].
@@ -274,7 +271,8 @@ fn record(raised: Option<Hand>, solution: &AdsSolution) {
     let mut state = STATE.lock();
     let s = &mut state.status;
     s.raised = raised;
-    let rose = |was: f32, now: f32| was < TAKEN && now >= TAKEN;
+    let taken = HANDLING.get().ads.taken_share;
+    let rose = |was: f32, now: f32| was < taken && now >= taken;
     if rose(s.eye, solution.eye) {
         s.sighted += 1;
         tracing::info!(target: "controllers", hand = ?raised, "ads: the sights are on the eye");

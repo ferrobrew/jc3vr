@@ -53,9 +53,8 @@ struct NativeAction;
 
 impl ActionEngine for NativeAction {
     fn pump_hand(&self, weapon: usize) -> Option<Hand> {
-        foregrip::status()
-            .hold
-            .filter(|h| h.engaged && h.weapon == weapon)
+        foregrip::engaged_hold()
+            .filter(|h| h.weapon == weapon)
             .map(|h| h.holder.other())
     }
 

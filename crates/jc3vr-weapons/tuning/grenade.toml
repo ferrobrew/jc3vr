@@ -38,3 +38,10 @@ reach_m = 0.18
 
 [held]
 registration_ms = 150
+
+[beacon]
+grip_wait_ms = 5000
+body_wait_ms = 2000
+
+[world]
+max_retry_ticks = 30

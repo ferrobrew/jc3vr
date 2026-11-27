@@ -44,6 +44,8 @@ pub struct C4Tuning {
     pub placed: PlacedTuning,
     /// A trigger's request to detonate the placed charges.
     pub(crate) detonation: DetonationTuning,
+    /// A charge chosen on the weapon wheel.
+    pub(crate) wheel: WheelTuning,
 }
 
 impl Tuning for C4Tuning {
@@ -52,7 +54,8 @@ impl Tuning for C4Tuning {
         hold_placement("detonator_hold", &self.detonator_hold)?;
         self.stick.validate()?;
         self.placed.validate()?;
-        self.detonation.validate()
+        self.detonation.validate()?;
+        self.wheel.validate()
     }
 }
 
@@ -131,6 +134,21 @@ impl DetonationTuning {
     fn validate(&self) -> Result<(), Invalid> {
         positive("detonation.timeout_s", self.timeout_s, 10.0)?;
         positive("detonation.in_flight_s", self.in_flight_s, 30.0)
+    }
+}
+
+/// A charge chosen on the weapon wheel (see [`crate::controllers::weapons::c4::wheel`]).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WheelTuning {
+    /// How long the game's planting mode has to end once it is left, seconds, before the pending
+    /// charge is forgotten.
+    pub(crate) leave_timeout_s: f32,
+}
+
+impl WheelTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        positive("wheel.leave_timeout_s", self.leave_timeout_s, 30.0)
     }
 }
 

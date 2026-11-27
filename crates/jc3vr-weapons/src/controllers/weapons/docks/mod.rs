@@ -50,7 +50,7 @@ use crate::controllers::{
         docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
         engine::{grip_points, slot_of},
         grenade,
-        hold::{act, armed},
+        hold::{act, armed, tuning::HOLD},
         inventory::{carry, engine::ObjectKey, slots, sockets, sockets::Offsets},
     },
 };
@@ -483,14 +483,11 @@ pub(crate) unsafe fn socket_weapons(
 }
 
 /// Where a grip at `grip` in the world is on a bone at `bone` (bone-to-world), in the bone's frame;
-/// `None` for an offset longer than [`MAX_GRIP_OFFSET_M`], which no socket gives, or a bad read.
+/// `None` for an offset longer than `docks.max_grip_offset_m`, which no socket gives, or a bad read.
 pub(crate) fn grip_on_bone(bone: Mat4, grip: Vec3) -> Option<Vec3> {
     let local = bone.inverse().transform_point3(grip);
-    (local.is_finite() && local.length() <= MAX_GRIP_OFFSET_M).then_some(local)
+    (local.is_finite() && local.length() <= HOLD.get().docks.max_grip_offset_m).then_some(local)
 }
-
-/// The longest grip offset from a socket's bone, metres.
-pub(crate) const MAX_GRIP_OFFSET_M: f32 = 0.6;
 
 /// The transforms between the world and the cockpit frame on this input tick, with `character`
 /// the character's model-to-world transform.

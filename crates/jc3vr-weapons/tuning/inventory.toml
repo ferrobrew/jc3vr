@@ -50,3 +50,6 @@ stick_release = 0.4
 point_leave_deg = 12.0
 point_return_deg = 7.0
 hysteresis_deg = 10.0
+cancel_ticks = 3
+open_ttl_ms = 250
+linger_ms = 500

@@ -162,6 +162,9 @@ pub struct RackTuning {
     pub(crate) restock_after_ms: Millis,
     /// How long a rack's copy is waited for.
     pub copy_wait_ms: Millis,
+    /// How long a copy that was never collected, or that never came, keeps the rack's weapon
+    /// hidden before it is shown again.
+    pub(crate) uncollected_ms: Millis,
     pub paired: PairedRackTuning,
 }
 
@@ -171,6 +174,8 @@ impl RackTuning {
             .validate("hold.rack.restock_after_ms", 10_000)?;
         self.copy_wait_ms
             .validate("hold.rack.copy_wait_ms", 30_000)?;
+        self.uncollected_ms
+            .validate("hold.rack.uncollected_ms", 60_000)?;
         self.paired.validate()
     }
 }
@@ -249,6 +254,8 @@ pub struct DocksTuning {
     /// How long the sockets' attachment offers stay current after the input observations stop,
     /// for the mirror and the pouch models.
     pub(crate) attachments_max_age_ms: Millis,
+    /// The longest grip offset from a socket's bone, metres.
+    pub(crate) max_grip_offset_m: f32,
     pub attraction: AttractionTuning,
 }
 
@@ -256,6 +263,7 @@ impl DocksTuning {
     fn validate(&self) -> Result<(), Invalid> {
         self.attachments_max_age_ms
             .validate("docks.attachments_max_age_ms", 5_000)?;
+        positive("docks.max_grip_offset_m", self.max_grip_offset_m, 5.0)?;
         let a = &self.attraction;
         positive("docks.attraction.shoulder_m", a.shoulder_m, 2.0)?;
         positive("docks.attraction.hip_m", a.hip_m, 2.0)?;

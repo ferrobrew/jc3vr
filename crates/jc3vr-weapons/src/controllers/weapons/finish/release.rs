@@ -109,9 +109,8 @@ fn release(
     });
     // Outside every socket's reach, a free socket's attraction may still take the weapon, unless
     // the other hand braces it, which then keeps it.
-    let braced_by_other = foregrip::status()
-        .hold
-        .is_some_and(|h| h.engaged && h.weapon == object && h.holder == hand);
+    let braced_by_other =
+        foregrip::engaged_hold().is_some_and(|h| h.weapon == object && h.holder == hand);
     let over = retry_socket(pending, over);
     let attracted = over
         .is_none()
@@ -216,9 +215,7 @@ fn leave_in_brace(
     active: &ActiveHands,
     world_scale: f32,
 ) -> bool {
-    let Some(hold) = foregrip::status()
-        .hold
-        .filter(|h| h.engaged && h.weapon == weapon && h.holder == holder)
+    let Some(hold) = foregrip::engaged_hold().filter(|h| h.weapon == weapon && h.holder == holder)
     else {
         return false;
     };

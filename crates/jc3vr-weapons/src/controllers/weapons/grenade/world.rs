@@ -32,7 +32,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::{
     engine::gun_pose,
-    grenade::{Release, consume_world_pickup, finite_world_pickup, safe},
+    grenade::{Release, consume_world_pickup, finite_world_pickup, safe, tuning::GRENADE},
     inventory::engine::weapon_of,
 };
 
@@ -51,7 +51,7 @@ pub(super) fn input_tick(game: &GameTick<'_>) {
         };
         match replace(game, &alive) {
             Replacement::Replaced | Replacement::NotAPickup => {}
-            Replacement::Refused if drop.ticks < MAX_TICKS => {
+            Replacement::Refused if drop.ticks < GRENADE.get().world.max_retry_ticks => {
                 drop.ticks += 1;
                 retry.push(drop);
             }
@@ -80,8 +80,6 @@ static PENDING: DetourQueue<Pending> = DetourQueue::new();
 
 /// How many drops wait at once; the newest beyond it are left as pickups.
 const MAX_PENDING: usize = 16;
-/// How many input ticks a refused replacement is tried again on before the drop is left a pickup.
-const MAX_TICKS: u32 = 30;
 
 enum Replacement {
     Replaced,

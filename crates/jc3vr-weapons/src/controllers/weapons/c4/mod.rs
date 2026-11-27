@@ -739,7 +739,13 @@ impl State {
             }
             None => None,
         };
-        let step = wheel::step(self.status.planting_mode, self.stage, pending, hands);
+        let step = wheel::step(
+            self.status.planting_mode,
+            self.stage,
+            pending,
+            hands,
+            C4.get().wheel.leave_timeout_s,
+        );
         match step {
             WheelStep::Leave(hand) => self.wheel = Some(WheelRequest::Pending { hand, since: now }),
             WheelStep::Take(hand) => {

@@ -232,7 +232,7 @@ pub(super) unsafe fn render_frame() {
         pending.gesture.cancel();
     }
     if let Some(release) = pending.gesture.release
-        && (physics_ready || pending.gesture.started.elapsed() >= BODY_WAIT)
+        && (physics_ready || pending.gesture.started.elapsed() >= body_wait())
     {
         in_hand::hold(Slot::Grenade, None);
         let world = pending.gesture.world;
@@ -414,11 +414,16 @@ impl Grip {
 }
 
 fn should_drop(grip: Grip, physics_ready: bool, elapsed: Duration) -> bool {
-    (grip == Grip::Waiting && elapsed >= GRIP_WAIT) || (!physics_ready && elapsed >= BODY_WAIT)
+    (grip == Grip::Waiting && elapsed >= grip_wait()) || (!physics_ready && elapsed >= body_wait())
 }
 
-const GRIP_WAIT: Duration = Duration::from_secs(5);
-const BODY_WAIT: Duration = Duration::from_secs(2);
+fn grip_wait() -> Duration {
+    GRENADE.get().beacon.grip_wait_ms.duration()
+}
+
+fn body_wait() -> Duration {
+    GRENADE.get().beacon.body_wait_ms.duration()
+}
 
 struct State {
     pending: Option<Pending>,
@@ -499,15 +504,15 @@ mod tests {
         assert!(!should_drop(
             Grip::Waiting,
             true,
-            GRIP_WAIT - Duration::from_nanos(1)
+            grip_wait() - Duration::from_nanos(1)
         ));
-        assert!(should_drop(Grip::Waiting, true, GRIP_WAIT));
+        assert!(should_drop(Grip::Waiting, true, grip_wait()));
         assert!(!should_drop(
             Grip::Held,
             false,
-            BODY_WAIT - Duration::from_nanos(1)
+            body_wait() - Duration::from_nanos(1)
         ));
-        assert!(should_drop(Grip::Held, false, BODY_WAIT));
+        assert!(should_drop(Grip::Held, false, body_wait()));
     }
 
     #[test]
@@ -548,7 +553,7 @@ mod tests {
             grip: Grip::Held,
         };
         let recorded = gesture.release;
-        assert!(should_drop(gesture.grip, false, BODY_WAIT));
+        assert!(should_drop(gesture.grip, false, body_wait()));
         gesture.cancel();
         gesture.cancel();
         assert_eq!(gesture.release, recorded);

@@ -27,6 +27,7 @@ eject_lift = 0.4
 [hold.rack]
 restock_after_ms = 800
 copy_wait_ms = 3000
+uncollected_ms = 6000
 
 [hold.rack.paired]
 source_grace_ms = 3000
@@ -45,6 +46,7 @@ foregrip_m = 0.03
 
 [docks]
 attachments_max_age_ms = 250
+max_grip_offset_m = 0.6
 
 [docks.attraction]
 shoulder_m = 0.675

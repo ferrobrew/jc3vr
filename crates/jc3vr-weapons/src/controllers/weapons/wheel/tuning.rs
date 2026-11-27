@@ -3,6 +3,7 @@
 //! the wheel acts at all is a setting
 //! ([`WheelConfig`](crate::controllers::weapons::wheel::config::WheelConfig)).
 
+use jc3vr_body::tuning::Millis;
 use jc3vr_core::config::{Invalid, positive, range};
 use serde::Deserialize;
 
@@ -25,6 +26,16 @@ pub struct WheelTuning {
     /// How far past the line between two arms the hand must go before the other arm is chosen,
     /// degrees around the wheel.
     pub hysteresis_deg: f32,
+    /// How many input ticks a cancel keeps clearing the game's pending selection: the release's own
+    /// and the next few, in case the game read a slot-select input that was still held on its next
+    /// update and recorded it again.
+    pub(crate) cancel_ticks: u32,
+    /// How long a cross point published while the wheel is open lasts without a refresh: past a few
+    /// input ticks, a stalled tick stops moving the cross, milliseconds.
+    pub(crate) open_ttl_ms: Millis,
+    /// How long the cross's anchor and point outlive the wheel's close: the length of the cross's
+    /// hide animation, milliseconds.
+    pub(crate) linger_ms: Millis,
 }
 
 impl WheelTuning {
@@ -43,6 +54,14 @@ impl WheelTuning {
             0.0,
             self.point_leave_deg,
         )?;
-        range("wheel.hysteresis_deg", self.hysteresis_deg, 0.0, 44.0)
+        range("wheel.hysteresis_deg", self.hysteresis_deg, 0.0, 44.0)?;
+        if !(1..=100).contains(&self.cancel_ticks) {
+            return Err(Invalid(format!(
+                "wheel.cancel_ticks must be in [1, 100], got {}",
+                self.cancel_ticks
+            )));
+        }
+        self.open_ttl_ms.validate("wheel.open_ttl_ms", 5_000)?;
+        self.linger_ms.validate("wheel.linger_ms", 5_000)
     }
 }

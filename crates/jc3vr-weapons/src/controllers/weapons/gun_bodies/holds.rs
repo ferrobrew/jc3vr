@@ -8,8 +8,8 @@ use glam::Vec3;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponData};
 use jc3vr_body::controllers::{
     aim::gun,
-    hands,
-    hands::{CockpitHand, grip, pose::palm_centre_m},
+    body_frame, hands,
+    hands::{CockpitHand, pose::palm_centre_m},
     held::guns::{BraceContact, GunHolds, HeftClass, HeldGun},
 };
 use jc3vr_input::frame::Hand;
@@ -30,7 +30,7 @@ use crate::controllers::weapons::{
 /// The weapon handling's input tick, on the game thread before the world update, with `weapons`
 /// the weapons read live on it.
 pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> GunHolds {
-    let grips = grip::status().hands;
+    let grips = body_frame::grip().hands;
     let mut holds = GunHolds::default();
     for hand in Hand::BOTH {
         let Some(placed) = grips[hand.index()] else {

@@ -481,7 +481,7 @@ fn canopy(desired: &[Desired]) -> bool {
 }
 
 fn claims(tick: &Tick<'_>, now: Stamp) -> [HandClaims; 2] {
-    let reload = weapons::reload::status();
+    let mechanical = weapons::reload::mechanical_hands();
     // Only the finish half and a stand-down change the brace, so the record is current here.
     let held = contents::hands();
     Hand::BOTH.map(|hand| {
@@ -492,10 +492,7 @@ fn claims(tick: &Tick<'_>, now: Stamp) -> [HandClaims; 2] {
             grip: grip || tick.grabs[i].is_some() || held[i].braces.is_some(),
             slot: tick.frame.hand(hand).buttons.contains(Button::SqueezePress)
                 && tick.reaches[i].iter().copied().any(GrabVolume::on_body),
-            mechanical: reload.fire_held[i].is_some()
-                || reload
-                    .insert_hands
-                    .is_some_and(|(a, b)| a == hand || b == hand),
+            mechanical: mechanical[i],
             grapple: grapple_claim(tick.detection, tick.airborne, tick.grapple),
         }
     })

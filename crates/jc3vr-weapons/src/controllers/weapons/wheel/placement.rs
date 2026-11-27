@@ -19,8 +19,6 @@
 //! placement after the capture, so this stays the placement the game sees and the fallback
 //! whenever the atlas does not draw the cross.
 
-use std::time::Duration;
-
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3gi::{
@@ -39,6 +37,8 @@ use jc3vr_view::hud::{
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::weapons::inventory::tuning::INVENTORY;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_WEAPON_SELECTION_PLACEMENT_BINDER)
@@ -75,12 +75,14 @@ pub(crate) fn panel_point(head: Vec3, hand: Vec3) -> Option<PanelPoint> {
 /// short linger; `None` withdraws it at once.
 pub fn publish(point: Option<PanelPoint>, open: bool) {
     let now = Stamp::now();
+    let tuning = &INVENTORY.get().wheel;
+    let (open_ttl, linger) = (tuning.open_ttl_ms.duration(), tuning.linger_ms.duration());
     let mut slot = PLACED.lock();
     *slot = match (point, open) {
-        (Some(point), true) => Some((point, now + OPEN_TTL)),
+        (Some(point), true) => Some((point, now + open_ttl)),
         // The close keeps the last point a little longer, for the hide animation.
-        (None, false) => slot.map(|(point, _)| (point, now + LINGER)),
-        (Some(point), false) => Some((point, now + LINGER)),
+        (None, false) => slot.map(|(point, _)| (point, now + linger)),
+        (Some(point), false) => Some((point, now + linger)),
         (None, true) => None,
     };
 }
@@ -114,13 +116,6 @@ pub(crate) fn stage_position(
     );
     placed.is_finite().then_some(placed)
 }
-
-/// How long a point published while open lasts without a refresh: past a few input ticks, a
-/// stalled tick stops moving the cross.
-const OPEN_TTL: Duration = Duration::from_millis(250);
-
-/// How long the point lasts after the wheel closes: the length of the cross's hide animation.
-const LINGER: Duration = Duration::from_millis(500);
 
 static PLACED: Mutex<Option<(PanelPoint, Stamp)>> = Mutex::new(None);
 

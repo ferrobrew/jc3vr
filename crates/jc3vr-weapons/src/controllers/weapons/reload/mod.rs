@@ -188,6 +188,19 @@ pub struct ReloadCounts {
     pub refused: u64,
 }
 
+/// The hands the reload works mechanically, by [`Hand::index`]: a hand whose gun it holds from
+/// firing, or that holds a round for a gun.
+pub fn mechanical_hands() -> [bool; 2] {
+    let state = STATE.lock();
+    Hand::BOTH.map(|hand| {
+        state.status.fire_held[hand.index()].is_some()
+            || state
+                .status
+                .insert_hands
+                .is_some_and(|(a, b)| a == hand || b == hand)
+    })
+}
+
 pub fn status() -> ReloadStatus {
     let mut status = STATE.lock().status.clone();
     status.counts.refused = gate::refused();

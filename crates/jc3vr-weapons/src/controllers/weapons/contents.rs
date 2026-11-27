@@ -33,7 +33,7 @@ pub fn now() -> [HandContents; 2] {
 pub(crate) fn sample(wielded: Option<&HeldWeapon>) -> [HandContents; 2] {
     let detonator = c4::detonator_hand();
     let round = reload::holding_hand();
-    let brace = foregrip::status().hold.filter(|hold| hold.engaged);
+    let brace = foregrip::engaged_hold();
     let fire = tick::fire();
     let parts = Hand::BOTH.map(|hand| HandContents {
         item: live::held_kind(hand),

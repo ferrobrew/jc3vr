@@ -112,7 +112,7 @@ pub struct GunOwner {
 /// by [`Hand::index`]. The support hand is the engaged foregrip hold's only, not one whose hold is
 /// fading out after a release.
 pub fn gun_owners_now() -> [Option<GunOwner>; 2] {
-    let support = foregrip::status().hold.filter(|hold| hold.engaged);
+    let support = foregrip::engaged_hold();
     let held = Hand::BOTH.map(|hand| {
         let weapon = live::in_hand(hand).or_else(|| armed::in_hand(hand))?;
         // SAFETY: the live table or the armed set keeps the weapon alive on the input thread.

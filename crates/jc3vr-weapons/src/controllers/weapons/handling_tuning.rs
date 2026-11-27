@@ -205,6 +205,7 @@ fn validate_ads(ads: &AdsTuning) -> Result<(), Invalid> {
     nonnegative("ads.ease_s", ads.ease_s, 5.0)?;
     positive("ads.max_ease_step_s", ads.max_ease_step_s, 5.0)?;
     nonnegative("ads.half_ipd_m", ads.half_ipd_m, 0.1)?;
+    range("ads.taken_share", ads.taken_share, 0.5, 1.0)?;
     vec3("ads.pocket_offset_m", ads.pocket_offset_m, 0.5)
 }
 

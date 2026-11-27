@@ -38,7 +38,7 @@ use jc3vr_body::controllers::{hands::late, scheme};
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_weapons::controllers::weapons::{
-    hud_feed::hand_ammo as ammo_sample, wheel, wheel::CROSS_LINGER,
+    hud_feed::hand_ammo as ammo_sample, wheel, wheel::cross_linger,
 };
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
@@ -368,7 +368,7 @@ impl State {
                 self.cross_alpha = if anchor.open {
                     1.0
                 } else {
-                    fade_out(anchor.closed_s, CROSS_LINGER.as_secs_f32())
+                    fade_out(anchor.closed_s, cross_linger().as_secs_f32())
                 };
                 if let Some(offset) = self.cross_offset {
                     let width = tuning.cross.width_m;
