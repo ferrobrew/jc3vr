@@ -157,8 +157,7 @@
 - [grenades.md](mod/input/grenades.md): grenades as independent loadout items.
 - [attachments.md](mod/input/attachments.md): the belt magazine and other body attachments.
 - [paired-rack-weapons.md](mod/input/paired-rack-weapons.md): rack weapons and their ammunition.
-- [reload.md](mod/input/reload.md): the hand-worked reload.
-- [weapon-reloads.md](mod/input/weapon-reloads.md): each weapon against the hand-worked reload.
+- [reload.md](mod/input/reload.md): the hand-worked reload, and what each weapon loads.
 - [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand.
 - [grapple-lock.md](mod/input/grapple-lock.md): the grapple lock.
 - [seat-grapple.md](mod/input/seat-grapple.md): the grapple from a vehicle seat.
