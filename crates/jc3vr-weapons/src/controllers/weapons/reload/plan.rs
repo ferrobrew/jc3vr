@@ -148,6 +148,12 @@ impl ReloadPlan {
             ..self
         }
     }
+
+    /// The plan as the hand-worked action switch has it: unchanged when the hand works the
+    /// action, [cocked](Self::cocked) otherwise.
+    pub(crate) fn with_action_switch(self, hand_worked: bool) -> Self {
+        if hand_worked { self } else { self.cocked() }
+    }
 }
 
 /// The stand-in model of a loose round, from the wells table ([`RoundEntry`]): a casing, or a
@@ -1142,6 +1148,21 @@ mod tests {
             assert_eq!(cocked.load, p.load);
             assert_eq!(cocked.well, p.well);
         }
+    }
+
+    #[test]
+    fn the_action_switch_picks_between_the_plan_and_its_cocked_form() {
+        let e = entry(WellKind::Magazine, TableAction::Slide, WellGrade::Mesh);
+        let p = plan(
+            facts(WeaponClass::E_WEAPON_CLASS_PISTOL),
+            Some(&e),
+            WRIST,
+            0.06,
+        )
+        .unwrap();
+        assert_eq!(p.with_action_switch(true), p);
+        assert_eq!(p.with_action_switch(false), p.cocked());
+        assert_eq!(p.with_action_switch(false).action, ActionKind::None);
     }
 
     #[test]

@@ -13,11 +13,18 @@ pub struct ReloadConfig {
     /// chambers its first round.
     /// Off, the game's timed reload plays from the reload button as it does on a gamepad.
     pub enabled: bool,
+    /// Work a gun's slide, bolt, or pump by hand during a reload, so the first round chambers
+    /// when the hand racks the action. Off, every reload plan is cocked and the gun chambers its
+    /// first round as the magazine seats.
+    pub hand_worked_action: bool,
 }
 
 impl ReloadConfig {
     pub const fn new() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            hand_worked_action: false,
+        }
     }
 }
 

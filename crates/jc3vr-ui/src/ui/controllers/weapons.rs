@@ -267,6 +267,15 @@ pub(super) fn selection_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
         );
 }
 
+/// Reload: the hand-worked gun action.
+pub(super) fn reload_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
+    ui.checkbox(&mut w.reload.hand_worked_action, "Hand-worked gun action")
+        .on_hover_text(
+            "Work a slide, bolt, or pump by hand during a reload. Off, the gun chambers its first \
+             round as the magazine seats.",
+        );
+}
+
 pub(super) fn feature_readout(
     ui: &mut Ui,
     readout: &WeaponsReadout,

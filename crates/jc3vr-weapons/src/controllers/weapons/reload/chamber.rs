@@ -10,7 +10,9 @@
 //! The action worked by hand is a part that follows the hand through its travel
 //! ([`crate::controllers::weapons::reload::travel`]). Every plan the reload makes is cocked
 //! ([`ReloadPlan::cocked`](crate::controllers::weapons::reload::plan::ReloadPlan::cocked)), so no
-//! live gun's action is worked by hand.
+//! live gun's action is worked by hand, unless the hand-worked action switch
+//! ([`ReloadConfig::hand_worked_action`](crate::controllers::weapons::reload::config::ReloadConfig::hand_worked_action))
+//! is on.
 
 use glam::Vec3;
 use jc3vr_body::controllers::grab::{GrabVolume, GripTarget, target::TargetReach};

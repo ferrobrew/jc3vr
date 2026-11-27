@@ -34,6 +34,7 @@ pub(crate) fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.haptics.enabled = on;
     c.haptics.game_rumble = on;
     c.weapons.reload.enabled = on;
+    c.weapons.reload.hand_worked_action = false;
     c.body.remap_head = on;
     c.body.remap_hands = on;
     c.roomscale.posture = if on { Posture::Auto } else { Posture::Seated };

@@ -1146,7 +1146,7 @@ unsafe fn weapon_tick(
         reload.well_offset_m,
         reload.action.default_travel_m,
     )?
-    .cocked();
+    .with_action_switch(config.weapons.reload.hand_worked_action);
     Some(WeaponTick {
         address: weapon.address,
         ammo_owned: false,
