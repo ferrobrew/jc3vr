@@ -61,10 +61,7 @@
 - [melee-and-damage.md](engine/gameplay/melee-and-damage.md): damage messages, the player's melee, and hit reactions.
 - [item-pickup.md](engine/gameplay/item-pickup.md): world pickups, loose bodies in the Havok world, and constraints.
 - [planted-explosives.md](engine/gameplay/planted-explosives.md): C4 and its charges.
-- [wingsuit-stall.md](engine/gameplay/wingsuit-stall.md): the wingsuit's stall and recovery flip.
-- [wingsuit-evade.md](engine/gameplay/wingsuit-evade.md): the wingsuit's barrel-roll evade.
-- [wingsuit-opening.md](engine/gameplay/wingsuit-opening.md): opening the wingsuit and the parachute from the air.
-- [wingsuit-landing.md](engine/gameplay/wingsuit-landing.md): the wingsuit's landing, the air brake, and the crash.
+- [wingsuit.md](engine/gameplay/wingsuit.md): opening the wingsuit and the parachute from the air, and the wingsuit's stall, evade, landing, air brake, and crash.
 - [vehicle-doors.md](engine/gameplay/vehicle-doors.md): door controllers, hinges and latches, and entering through a door.
 - [stunt-positions.md](engine/gameplay/stunt-positions.md): stunt areas, the helicopter hang, and how a character is held there.
 - [vehicle-parts.md](engine/gameplay/vehicle-parts.md): vehicle parts, deform points, and how parts are drawn and turned.
