@@ -3,7 +3,9 @@
 //!
 //! The pose-finalization pass is hooked at three seams that the engine runs in order on the thread
 //! finalizing the character: the pass's entry, before the HumanIK `MAIN` solve, where the hands are
-//! planned, the weapon-agnostic body decides, and the body IK and wrist targets are queued; the
+//! planned, the weapon-agnostic body decides, the body IK captures its anchors (and completes the
+//! rig's root movement for the tick from the character's two world matrices), and the body IK and
+//! wrist targets are queued; the
 //! `SECONDARY` hand pass's entry, inside the pass, where the game's secondary hand targets are
 //! switched off ([`hands::ik::before_secondary`]); and the end of `UpdatePropEffects`, the pass's
 //! last step, where the head override and the post-solve readers run. The state the seams hand to
