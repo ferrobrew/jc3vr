@@ -427,8 +427,21 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeTuning, g
             let Some((owner, body)) = body else {
                 return true;
             };
-            let chassis = unsafe { bodies::read(door.vehicle_body, door.vehicle) }.ok();
-            let state = unsafe { bodies::read(body, owner) }.ok();
+            let read = |body, owner| {
+                unsafe { bodies::read(body, owner) }
+                    .inspect_err(|error| {
+                        tracing::debug!(
+                            target: "controllers",
+                            slot = ?door.slot,
+                            body,
+                            %error,
+                            "physical hands: doors: a swinging door's body could not be read"
+                        );
+                    })
+                    .ok()
+            };
+            let chassis = read(door.vehicle_body, door.vehicle);
+            let state = read(body, owner);
             let velocities = if door.canopy && swing == Swing::Strut {
                 door.support
                     .velocities(state.as_ref(), chassis.as_ref(), dt, g, &config.canopy)
@@ -438,8 +451,16 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeTuning, g
                     .zip(chassis.as_ref())
                     .and_then(|(state, chassis)| hinge_velocities(state, chassis, swing, dt, g))
             };
-            if let Some(velocities) = velocities {
-                let _ = unsafe { bodies::drive(body, owner, velocities) };
+            if let Some(velocities) = velocities
+                && let Err(error) = unsafe { bodies::drive(body, owner, velocities) }
+            {
+                tracing::debug!(
+                    target: "controllers",
+                    slot = ?door.slot,
+                    body,
+                    %error,
+                    "physical hands: doors: a swinging door could not be driven"
+                );
             }
             true
         }

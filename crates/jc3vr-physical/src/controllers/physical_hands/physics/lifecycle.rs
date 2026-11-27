@@ -178,17 +178,17 @@ impl Hands {
                 // SAFETY: forwarded from the caller.
                 let body =
                     unsafe { HandBody::create(hand, spec, goal.position, goal.orientation) }?;
-                let filter = unsafe { body.filter_info() }.ok();
-                let contact_events = unsafe { body.raises_contact_events() }.ok();
+                let filter = unsafe { body.filter_info() };
+                let contact_events = unsafe { body.raises_contact_events() };
                 tracing::info!(
                     hand = hand.label(),
                     body_id = body.body_id(),
-                    filter_info = ?filter.map(|f| format!("{f:#010x}")),
+                    filter_info = ?filter.map(|f| format!("{f:#010x}")).map_err(|e| e.to_string()),
                     system_group = spec.system_group,
                     mass_kg = spec.mass_kg,
                     shape = ?spec.shape,
                     listens = spec.contact_events,
-                    contact_events = ?contact_events,
+                    contact_events = ?contact_events.map_err(|e| e.to_string()),
                     "hand bodies: created a hand body"
                 );
                 self.added[i] = false;

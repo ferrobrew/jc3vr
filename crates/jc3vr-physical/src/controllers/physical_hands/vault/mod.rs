@@ -33,7 +33,7 @@
 
 use glam::Vec3;
 use jc3gi::physics::PhysicsSystem;
-use jc3vr_body::controllers::physics::proxy;
+use jc3vr_body::controllers::physics::{error::PhysicsError, proxy};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -205,12 +205,18 @@ pub(crate) unsafe fn step(press: Press) -> bool {
         return false;
     }
     // SAFETY: forwarded from the caller.
-    let feet = unsafe { proxy::place() }.ok().map(|p| p.feet.y);
+    let feet = unsafe { proxy::place() }.map(|p| p.feet.y);
     // SAFETY: forwarded from the caller.
-    let current = unsafe { proxy::proxy_velocity() }.ok();
-    let (Some(feet), Some(current)) = (feet, current) else {
-        state.release();
-        return false;
+    let current = unsafe { proxy::proxy_velocity() };
+    let (feet, current) = match (feet, current) {
+        (Ok(feet), Ok(current)) => (feet, current),
+        (Err(error), _) | (_, Err(error)) => {
+            if !matches!(error, PhysicsError::NoPlayer | PhysicsError::NoPhysicsWorld) {
+                tracing::debug!(%error, "physical hands: the push up could not read the player");
+            }
+            state.release();
+            return false;
+        }
     };
     let clear = pressing.map(|p| p.filter(|(_, s)| clear_of_the_feet(s, feet, vault.min_height_m)));
     let lift = clear

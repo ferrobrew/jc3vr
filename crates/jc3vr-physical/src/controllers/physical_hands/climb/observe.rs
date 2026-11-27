@@ -6,7 +6,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     haptics, mode,
     mode::{Mode, OnFootVariant},
-    physics::{proxy, rig::RigSample},
+    physics::{error::PhysicsError, proxy, rig::RigSample},
 };
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::{
@@ -79,7 +79,15 @@ pub fn observe(observed: Observed) {
         body_rotation,
     } = observed;
     // SAFETY: the game thread outside the physics step (the palms' tick).
-    let player = unsafe { proxy::place() }.ok();
+    let player = match unsafe { proxy::place() } {
+        Ok(place) => Some(place),
+        // No player, or no world, is the climb's ordinary rest: nothing to publish.
+        Err(PhysicsError::NoPlayer | PhysicsError::NoPhysicsWorld) => None,
+        Err(error) => {
+            tracing::debug!(%error, "hand climbing: the player's place could not be read");
+            None
+        }
+    };
     // SAFETY: as above.
     let in_air = unsafe { engine::in_air() };
     let mode = mode::current().mode;
