@@ -38,12 +38,11 @@ use glam::{Mat4, Vec4};
 use jc3gi::{graphics_engine::graphics_engine::RenderContext, types::math::Vector4};
 use jc3vr_view::stereo::layout::collapse_active;
 use parking_lot::Mutex;
-use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
-};
 
-use crate::stereo::single_pass::*;
+use crate::stereo::single_pass::{
+    per_eye_cb::{PerEyeCb, PixelRowsBound, finite},
+    *,
+};
 
 /// An ambient-occlusion volume pixel shader rewritten for the collapse, or `None` for any other
 /// shader or when `enabled` is off.
@@ -86,21 +85,12 @@ pub(crate) unsafe fn bind_rows(rc: *const RenderContext) -> Option<RowsBound> {
     let split = active() && collapse_active() && in_gbuffer_range();
     let reprojection = split.then(|| *CURRENT_M_EYE.lock()).flatten();
     let rows = rows(target, reprojection);
-    if rows
-        .iter()
-        .any(|row| row.data.iter().any(|v| !v.is_finite()))
-    {
+    if !finite(&rows) {
         return None;
     }
     let d3d = EngineContext::get()?;
-    let result = d3d.with_lock(|ctx| {
-        let mut buffer = BUFFER.lock();
-        // SAFETY: on the render thread under the engine's context mutex, as every other write to the
-        // immediate context.
-        unsafe { upload_and_bind(&mut buffer, ctx, &rows) }
-    });
-    match result {
-        Ok(()) => Some(RowsBound(d3d)),
+    match Rows::bind_pixel_scoped(&BUFFER, d3d, &rows) {
+        Ok(bound) => Some(bound),
         Err(error) => {
             if !BIND_WARNED.swap(true, Ordering::Relaxed) {
                 tracing::warn!(
@@ -115,20 +105,11 @@ pub(crate) unsafe fn bind_rows(rc: *const RenderContext) -> Option<RowsBound> {
 }
 
 /// The scope opened by [`bind_rows`]; unbinds the rows when dropped.
-pub(crate) struct RowsBound(EngineContext);
-
-impl Drop for RowsBound {
-    fn drop(&mut self) {
-        // SAFETY: as in `bind_rows`.
-        self.0.with_lock(|ctx| unsafe {
-            ctx.PSSetConstantBuffers(AMBIENT_OCCLUSION_VOLUME_CB_REGISTER, Some(&[None]));
-        });
-    }
-}
+pub(crate) type RowsBound = PixelRowsBound<AMBIENT_OCCLUSION_VOLUME_CB_REGISTER>;
 
 /// Release the mod-owned buffer, so it does not outlive an eject.
 pub(super) fn release() {
-    *BUFFER.lock() = None;
+    BUFFER.lock().release();
     REWRITTEN.store(false, Ordering::Relaxed);
 }
 
@@ -142,7 +123,8 @@ static REWRITTEN: AtomicBool = AtomicBool::new(false);
 static LOGGED: AtomicBool = AtomicBool::new(false);
 static BIND_WARNED: AtomicBool = AtomicBool::new(false);
 
-static BUFFER: Mutex<Option<ID3D11Buffer>> = Mutex::new(None);
+type Rows = PerEyeCb<ROWS, AMBIENT_OCCLUSION_VOLUME_CB_REGISTER>;
+static BUFFER: Mutex<Rows> = Mutex::new(Rows::new());
 
 /// The target the volumes draw into: the viewport's origin and size in pixels, and the render
 /// context's UV scale.
@@ -222,49 +204,6 @@ fn ndc_from_uv() -> Mat4 {
 /// keeps `w` so the shader's divide by it lands on the UV.
 fn uv_from_ndc() -> Mat4 {
     ndc_from_uv().inverse()
-}
-
-/// Create the buffer on first use, write `rows` into it, and bind it on the pixel stage.
-unsafe fn upload_and_bind(
-    buffer: &mut Option<ID3D11Buffer>,
-    ctx: &ID3D11DeviceContext,
-    rows: &[Vector4; ROWS],
-) -> windows::core::Result<()> {
-    let buffer = match buffer {
-        Some(buffer) => buffer,
-        None => {
-            // SAFETY: the context belongs to the live device, which creates the buffer.
-            let device = unsafe { ctx.GetDevice()? };
-            let mut created = None;
-            // SAFETY: a valid dynamic constant-buffer description with no initial data.
-            unsafe {
-                device.CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        ByteWidth: std::mem::size_of_val(rows) as u32,
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                        ..Default::default()
-                    },
-                    None,
-                    Some(&mut created),
-                )?
-            };
-            buffer.insert(created.ok_or_else(windows::core::Error::empty)?)
-        }
-    };
-    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    // SAFETY: the buffer is dynamic and CPU-writable, and the mapping is `size_of_val(rows)` bytes.
-    unsafe {
-        ctx.Map(&*buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
-        std::ptr::copy_nonoverlapping(rows.as_ptr(), mapped.pData.cast(), ROWS);
-        ctx.Unmap(&*buffer, 0);
-        ctx.PSSetConstantBuffers(
-            AMBIENT_OCCLUSION_VOLUME_CB_REGISTER,
-            Some(&[Some(buffer.clone())]),
-        );
-    }
-    Ok(())
 }
 
 #[cfg(test)]

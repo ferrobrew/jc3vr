@@ -63,15 +63,11 @@ use jc3vr_view::{
     vr::render_params,
 };
 use parking_lot::Mutex;
-use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11Buffer,
-    ID3D11DeviceContext,
-};
+use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 
 use crate::stereo::single_pass::{
     CURRENT_M_EYE, collapse_full_viewport, config_flags, eye_globals, in_gbuffer_range,
-    viewport::eye_half_viewport,
+    per_eye_cb::PerEyeCb, viewport::eye_half_viewport,
 };
 
 /// A pixel shader's bytecode rewritten to read each eye's camera rows, and with
@@ -337,7 +333,7 @@ pub(super) fn viewport_changed() {
         return;
     }
     with_state(|ctx, state| {
-        if !state.split || state.buffer.is_none() {
+        if !state.split || state.buffer.buffer().is_none() {
             return;
         }
         let rows = state.rows(full);
@@ -353,7 +349,7 @@ pub(super) fn range_ended() {
     }
     with_state(|ctx, state| {
         state.per_eye = None;
-        if !std::mem::take(&mut state.split) || state.buffer.is_none() {
+        if !std::mem::take(&mut state.split) || state.buffer.buffer().is_none() {
             return;
         }
         let rows = state.rows(None);
@@ -365,12 +361,10 @@ pub(super) fn range_ended() {
 pub(super) fn release() {
     if let Some(d3d) = EngineContext::get() {
         // SAFETY: on the eject path with the engine live, under the engine's context mutex.
-        d3d.with_lock(|ctx| unsafe {
-            ctx.PSSetConstantBuffers(EYE_CAMERA_CB_REGISTER, Some(&[None]));
-        });
+        d3d.with_lock(|ctx| unsafe { Rows::unbind_pixel(ctx) });
     }
     let mut state = STATE.lock();
-    state.buffer = None;
+    state.buffer.release();
     state.split = false;
     state.per_eye = None;
     SPLIT.store(false, Ordering::Relaxed);
@@ -434,8 +428,11 @@ static UPLOAD_WARNED: AtomicBool = AtomicBool::new(false);
 static SPLIT: AtomicBool = AtomicBool::new(false);
 static UPLOADED_LAYOUT: AtomicU64 = AtomicU64::new(0);
 
+/// The mod-owned buffer the rewritten pixel shaders read.
+type Rows = PerEyeCb<ROWS, EYE_CAMERA_CB_REGISTER>;
+
 static STATE: Mutex<State> = Mutex::new(State {
-    buffer: None,
+    buffer: Rows::new(),
     mirrored: [Vector4 { data: [0.0; 4] }; EYE_ROWS],
     split: false,
     per_eye: None,
@@ -444,7 +441,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 struct State {
-    buffer: Option<ID3D11Buffer>,
+    buffer: Rows,
     /// The rows the engine staged at its last upload, with a zero light offset.
     mirrored: [Vector4; EYE_ROWS],
     /// Whether the current pass is an eye-split one, which publishes the eye boundary.
@@ -558,7 +555,14 @@ fn with_state(f: impl FnOnce(&ID3D11DeviceContext, &mut State)) {
 fn upload(ctx: &ID3D11DeviceContext, state: &mut State, rows: &[Vector4; ROWS], bind: bool) {
     // SAFETY: on the render thread under the engine's context mutex, as every other write to the
     // immediate context.
-    match unsafe { write(&mut state.buffer, ctx, rows, bind) } {
+    let written = unsafe {
+        state.buffer.upload(ctx, rows).map(|buffer| {
+            if bind {
+                Rows::bind_pixel(ctx, buffer);
+            }
+        })
+    };
+    match written {
         Ok(()) => {
             state.uploaded = *rows;
             SPLIT.store(state.split, Ordering::Relaxed);
@@ -579,48 +583,6 @@ fn upload(ctx: &ID3D11DeviceContext, state: &mut State, rows: &[Vector4; ROWS], 
     }
 }
 
-unsafe fn write(
-    buffer: &mut Option<ID3D11Buffer>,
-    ctx: &ID3D11DeviceContext,
-    rows: &[Vector4; ROWS],
-    bind: bool,
-) -> windows::core::Result<()> {
-    let buffer = match buffer {
-        Some(buffer) => buffer,
-        None => {
-            // SAFETY: the context belongs to the live device, which creates the buffer.
-            let device = unsafe { ctx.GetDevice()? };
-            let mut created = None;
-            // SAFETY: a valid dynamic constant-buffer description with no initial data.
-            unsafe {
-                device.CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        ByteWidth: std::mem::size_of_val(rows) as u32,
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                        ..Default::default()
-                    },
-                    None,
-                    Some(&mut created),
-                )?
-            };
-            buffer.insert(created.ok_or_else(windows::core::Error::empty)?)
-        }
-    };
-    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    // SAFETY: the buffer is dynamic and CPU-writable, and the mapping is `size_of_val(rows)` bytes.
-    unsafe {
-        ctx.Map(&*buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
-        std::ptr::copy_nonoverlapping(rows.as_ptr(), mapped.pData.cast(), ROWS);
-        ctx.Unmap(&*buffer, 0);
-        if bind {
-            ctx.PSSetConstantBuffers(EYE_CAMERA_CB_REGISTER, Some(&[Some(buffer.clone())]));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -633,7 +595,7 @@ mod tests {
 
     fn state(per_eye: bool) -> State {
         State {
-            buffer: None,
+            buffer: Rows::new(),
             mirrored: [row(10.0), row(10.0), row(40.0), ZERO],
             split: per_eye,
             per_eye: per_eye.then(|| {

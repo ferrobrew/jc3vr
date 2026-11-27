@@ -11,7 +11,7 @@ use jc3vr_view::{
     vr::render_params,
 };
 
-use crate::stereo::single_pass::*;
+use crate::stereo::single_pass::{per_eye_cb::PerEyeCb, *};
 
 #[cfg(test)]
 mod tests;
@@ -100,9 +100,7 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
             return false;
         };
         EnterCriticalSection(context.m_Mutex);
-        let result = CB13
-            .lock()
-            .upload_and_bind(&device.m_Device, &context.m_Context, &rows);
+        let result = CB13.lock().upload_and_bind(&context.m_Context, &rows);
         LeaveCriticalSection(context.m_Mutex);
         if let Err(e) = result {
             tracing::warn!("single-pass cb13: {e}");
@@ -357,7 +355,7 @@ static CB13_DIVERGE_LOG: AtomicUsize = AtomicUsize::new(0);
 
 /// The mod-owned `cb13` constant buffer, lazily created and updated per view.
 pub(super) struct Cb13Buffer {
-    buffer: Option<ID3D11Buffer>,
+    buffer: PerEyeCb<STEREO_CB_TOTAL_ROWS, STEREO_CB_REGISTER>,
     /// The rows last uploaded through [`upload_and_bind`](Self::upload_and_bind) -- the dual-eye state
     /// every patched shader in the pass reads. Kept so the already-instanced per-eye re-issue can pin
     /// `cb13` to one eye for a single submission and put this back afterwards; the re-issue runs from a
@@ -369,7 +367,7 @@ impl Cb13Buffer {
     /// The dual-eye rows currently in the live buffer, or `None` before the first upload -- the state a
     /// per-eye pin must be able to restore before it is allowed to pin at all.
     pub(super) fn live_rows(&self) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
-        self.buffer.as_ref()?;
+        self.buffer.buffer()?;
         self.rows
     }
 
@@ -377,7 +375,7 @@ impl Cb13Buffer {
     /// `b13`. `None` before the buffer exists.
     pub(super) fn buffer_ptr(&self) -> Option<usize> {
         self.buffer
-            .as_ref()
+            .buffer()
             .map(|buffer| <ID3D11Buffer as windows::core::Interface>::as_raw(buffer) as usize)
     }
 
@@ -393,56 +391,17 @@ impl Cb13Buffer {
         context: &ID3D11DeviceContext,
         rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
     ) -> Result<(), windows::core::Error> {
-        let Some(buffer) = &self.buffer else {
-            return Ok(());
-        };
-        unsafe {
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context.Map(buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
-            std::ptr::copy_nonoverlapping(rows.as_ptr(), mapped.pData.cast(), STEREO_CB_TOTAL_ROWS);
-            context.Unmap(buffer, 0);
-        }
-        Ok(())
+        unsafe { self.buffer.write(context, rows) }
     }
 
     /// Ensure the dynamic `cb13` buffer exists, write `rows` into it, and bind it at `b13`.
     unsafe fn upload_and_bind(
         &mut self,
-        device: &ID3D11Device,
         context: &ID3D11DeviceContext,
         rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
     ) -> Result<(), windows::core::Error> {
-        let byte_width = std::mem::size_of_val(rows) as u32;
-        let buffer = match &self.buffer {
-            Some(buffer) => buffer,
-            None => {
-                let mut created = None;
-                unsafe {
-                    device.CreateBuffer(
-                        &D3D11_BUFFER_DESC {
-                            ByteWidth: byte_width,
-                            Usage: D3D11_USAGE_DYNAMIC,
-                            BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                            CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                            ..Default::default()
-                        },
-                        Some(&D3D11_SUBRESOURCE_DATA {
-                            pSysMem: rows.as_ptr().cast(),
-                            ..Default::default()
-                        }),
-                        Some(&mut created),
-                    )?;
-                }
-                self.buffer
-                    .insert(created.expect("CreateBuffer returned Ok with no buffer"))
-            }
-        };
-
         unsafe {
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context.Map(buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
-            std::ptr::copy_nonoverlapping(rows.as_ptr(), mapped.pData.cast(), STEREO_CB_TOTAL_ROWS);
-            context.Unmap(buffer, 0);
+            let buffer = self.buffer.upload(context, rows)?;
             context.VSSetConstantBuffers(STEREO_CB_REGISTER, Some(&[Some(buffer.clone())]));
             // The terrain domain shader also reads `cb13` (its per-eye `M_eye` reprojection block), so
             // bind the same buffer at `b13` on the domain stage. The hull shader only forwards the eye
@@ -546,11 +505,11 @@ pub(super) fn release_cb13() {
         }
     }
     let mut cb13 = CB13.lock();
-    cb13.buffer = None;
+    cb13.buffer.release();
     cb13.rows = None;
 }
 
 pub(super) static CB13: Mutex<Cb13Buffer> = Mutex::new(Cb13Buffer {
-    buffer: None,
+    buffer: PerEyeCb::new(),
     rows: None,
 });

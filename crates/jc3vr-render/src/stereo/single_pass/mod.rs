@@ -38,11 +38,7 @@ use jc3vr_core::hooks::suspend;
 use parking_lot::Mutex;
 use windows::{
     Win32::{
-        Graphics::Direct3D11::{
-            D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE,
-            D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_SUBRESOURCE_DATA,
-            D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11Buffer, ID3D11Device, ID3D11DeviceContext,
-        },
+        Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11Buffer, ID3D11DeviceContext},
         System::Threading::{EnterCriticalSection, LeaveCriticalSection},
     },
     core::{IUnknown, Interface},
@@ -64,6 +60,8 @@ mod frame_diagnostics;
 pub mod hw_instanced;
 mod impostor_pixel_size;
 mod instanced_exposure;
+// The mod-owned constant buffers the rewritten shaders read their per-eye rows from.
+mod per_eye_cb;
 mod per_eye_reissue;
 mod pinned_eye;
 pub mod post_filters;

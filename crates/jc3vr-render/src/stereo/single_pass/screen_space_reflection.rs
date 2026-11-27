@@ -47,12 +47,12 @@ use jc3vr_view::{
     vr::render_params,
 };
 use parking_lot::Mutex;
-use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
-};
 
-use crate::stereo::single_pass::{applied, report_malformed};
+use crate::stereo::single_pass::{
+    applied,
+    per_eye_cb::{PerEyeCb, PixelRowsBound, per_eye_rows},
+    report_malformed,
+};
 
 /// A reflection pass's bytecode rewritten for the collapse, or `None` for any other shader.
 ///
@@ -99,10 +99,9 @@ pub(crate) fn bind_eye_rows(rc: &RenderContext) -> Option<EyeRowsBound> {
         inverse_far: rc.CameraFar.recip(),
         uv_scale: rc.m_UVScale,
     };
-    let mut rows = [Vector4::default(); ROWS];
-    for eye in 0..2 {
+    let rows = per_eye_rows(|eye| {
         let params = render_params(eye)?;
-        let block = eye_rows(
+        Some(eye_rows(
             &EyeCamera {
                 projection: params.projection_reverse_z,
                 world: params.resolve(center),
@@ -110,24 +109,11 @@ pub(crate) fn bind_eye_rows(rc: &RenderContext) -> Option<EyeRowsBound> {
             &previous,
             screen,
             eye,
-        );
-        if block
-            .iter()
-            .any(|row| row.data.iter().any(|v| !v.is_finite()))
-        {
-            return None;
-        }
-        rows[eye * EYE_ROWS..(eye + 1) * EYE_ROWS].copy_from_slice(&block);
-    }
+        ))
+    })?;
     let d3d = EngineContext::get()?;
-    let result = d3d.with_lock(|ctx| {
-        let mut buffer = BUFFER.lock();
-        // SAFETY: on the render thread under the engine's context mutex, as every other write to the
-        // immediate context.
-        unsafe { upload_and_bind(&mut buffer, ctx, &rows) }
-    });
-    match result {
-        Ok(()) => Some(EyeRowsBound(d3d)),
+    match Rows::bind_pixel_scoped(&BUFFER, d3d, &rows) {
+        Ok(bound) => Some(bound),
         Err(error) => {
             if !BIND_WARNED.swap(true, Ordering::Relaxed) {
                 tracing::warn!(
@@ -141,20 +127,11 @@ pub(crate) fn bind_eye_rows(rc: &RenderContext) -> Option<EyeRowsBound> {
 }
 
 /// The scope opened by [`bind_eye_rows`]; unbinds the rows when dropped.
-pub(crate) struct EyeRowsBound(EngineContext);
-
-impl Drop for EyeRowsBound {
-    fn drop(&mut self) {
-        // SAFETY: as in `bind_eye_rows`.
-        self.0.with_lock(|ctx| unsafe {
-            ctx.PSSetConstantBuffers(SCREEN_SPACE_REFLECTION_CB_REGISTER, Some(&[None]));
-        });
-    }
-}
+pub(crate) type EyeRowsBound = PixelRowsBound<SCREEN_SPACE_REFLECTION_CB_REGISTER>;
 
 /// Release the mod-owned buffer, so it does not outlive an eject.
 pub(super) fn release() {
-    *BUFFER.lock() = None;
+    BUFFER.lock().release();
     REWRITTEN.store(false, Ordering::Relaxed);
 }
 
@@ -172,7 +149,8 @@ static REWRITTEN: AtomicBool = AtomicBool::new(false);
 static LOGGED: AtomicBool = AtomicBool::new(false);
 static BIND_WARNED: AtomicBool = AtomicBool::new(false);
 
-static BUFFER: Mutex<Option<ID3D11Buffer>> = Mutex::new(None);
+type Rows = PerEyeCb<ROWS, SCREEN_SPACE_REFLECTION_CB_REGISTER>;
+static BUFFER: Mutex<Rows> = Mutex::new(Rows::new());
 
 /// One eye's camera: its reverse-Z projection, in the engine's layout, and its world transform.
 struct EyeCamera {
@@ -256,49 +234,6 @@ fn view_ray(camera: &EyeCamera, screen: Screen, eye: usize) -> [glam::Vec3; 3] {
         per_y * (-2.0 / scale_v),
         origin - per_x * (2.0 * eye as f32 + 1.0) + per_y,
     ]
-}
-
-/// Create the buffer on first use, write `rows` into it, and bind it on the pixel stage.
-unsafe fn upload_and_bind(
-    buffer: &mut Option<ID3D11Buffer>,
-    ctx: &ID3D11DeviceContext,
-    rows: &[Vector4; ROWS],
-) -> windows::core::Result<()> {
-    let buffer = match buffer {
-        Some(buffer) => buffer,
-        None => {
-            // SAFETY: the context belongs to the live device, which creates the buffer.
-            let device = unsafe { ctx.GetDevice()? };
-            let mut created = None;
-            // SAFETY: a valid dynamic constant-buffer description with no initial data.
-            unsafe {
-                device.CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        ByteWidth: std::mem::size_of_val(rows) as u32,
-                        Usage: D3D11_USAGE_DYNAMIC,
-                        BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
-                        ..Default::default()
-                    },
-                    None,
-                    Some(&mut created),
-                )?
-            };
-            buffer.insert(created.ok_or_else(windows::core::Error::empty)?)
-        }
-    };
-    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    // SAFETY: the buffer is dynamic and CPU-writable, and the mapping is `size_of_val(rows)` bytes.
-    unsafe {
-        ctx.Map(&*buffer, 0, D3D11_MAP_WRITE_DISCARD, 0, Some(&mut mapped))?;
-        std::ptr::copy_nonoverlapping(rows.as_ptr(), mapped.pData.cast(), ROWS);
-        ctx.Unmap(&*buffer, 0);
-        ctx.PSSetConstantBuffers(
-            SCREEN_SPACE_REFLECTION_CB_REGISTER,
-            Some(&[Some(buffer.clone())]),
-        );
-    }
-    Ok(())
 }
 
 #[cfg(test)]
