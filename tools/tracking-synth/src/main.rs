@@ -1,4 +1,5 @@
-//! `tracking-synth`: writes the built-in synthetic tracking recordings.
+//! `tracking-synth`: writes the built-in synthetic tracking recordings, and prints, evaluates,
+//! exports, and scans recorded ones.
 //!
 //! ```text
 //! tracking-synth [--out <dir>] [--rate <hz>] [<script>...]
@@ -11,32 +12,41 @@
 //!     [--recording-id <id>] [--weights <safetensors>] <recording> -o <out.rrd>
 //! tracking-synth estimate-body --weights <safetensors> [--from <time>] [--to <time>] [--lead <s>]
 //!     <recording> -o <out.csv>
+//! tracking-synth scan-view [--video <video>] [--out <report.md>] <recording>
 //! ```
 //!
-//! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
-//! by default `target/tracking-synth/` in the repository, for the offline commands to read. `--list` prints each built-in script's name and summary, tab-separated, one per line.
+//! With no script named, every built-in script is written. The recordings go to
+//! `<dir>/<script>.jc3trk`, by default `target/tracking-synth/` in the repository, for the offline
+//! commands to read. `--list` prints each built-in script's name and summary, tab-separated, one
+//! per line.
+//!
 //! `dump` prints any recording's frames and events to stdout, as text or, with `--json`, as JSON
 //! lines. `--from` and `--to` limit it to an inclusive stretch; a `<time>` is seconds on the
 //! recording's clock (`12.5`) or an OpenXR predicted display time in nanoseconds (`xr:<ns>`), the
-//! clock a video recording's sidecar shares. `rig-eval` runs the grounded body rig over a recording
-//! and writes a CSV of each grounded frame (`rig_eval`). `--pelvis` picks the rig's inputs: the
-//! frames with a simulated pelvis, the rig inputs the payload recorded, or the frames with the
-//! pelvis under the game's pre-IK hips; a recording with rig frames defaults to its recorded inputs
-//! and compares every row with them. `--tuning` takes the rig's tuning as JSON, any field left out
-//! keeping its default, and it and `--height` and `--eye-height` override the calibration and
-//! tuning a recording notes. The rest of the rig's tuning, which a recording does not carry, is read
-//! from the repository's `crates/jc3vr-body/tuning/rig.toml` each time `rig-eval` or `export-rerun`
-//! runs. `--weights`, for `rig-eval` and `export-rerun`, runs EgoPoser over
-//! the whole recording first and hands the rig its estimate at the game's cadence, as the payload's
-//! rig takes it. `--ik` also replays the IK body's FK pelvis and foot contacts over that estimate
-//! (`rig_eval::ik`) and logs its summary, once for each `--contact` tuning given (the contact
-//! model's tuning as JSON, any field left out at its default) or once with the defaults. A video sidecar (`frames.jsonl` and `stream.json`) beside the
-//! recording adds the video's time to each row. `export-rerun` writes a stretch of a
-//! recording as a Rerun recording (`rerun_export`), with the take's video cut to the stretch beside
-//! it; it needs the `rerun` feature, on by default. `estimate-body` runs EgoPoser
-//! (`body-estimator`) over a stretch from the recording's raw head and grip poses and writes a CSV
-//! of its estimate at 60 Hz (`estimate`), resampling from `--lead` seconds (10 by default) before
-//! the stretch; the weights are a safetensors file named by `--weights`.
+//! clock a video recording's sidecar shares.
+//!
+//! `rig-eval` runs the grounded body rig over a recording and writes a CSV of each grounded frame
+//! (`rig_eval`). `--pelvis` picks the rig's inputs: the frames with a simulated pelvis, the rig
+//! inputs the payload recorded, or the frames with the pelvis under the game's pre-IK hips; a
+//! recording with rig frames defaults to its recorded inputs and compares every row with them.
+//! `--tuning` takes the rig's tuning as JSON, any field left out keeping its default, and it and
+//! `--height` and `--eye-height` override the calibration and tuning a recording notes. The rest of
+//! the rig's tuning, which a recording does not carry, is read from the repository's
+//! `crates/jc3vr-body/tuning/rig.toml` each time `rig-eval` or `export-rerun` runs. `--weights`,
+//! for `rig-eval` and `export-rerun`, runs EgoPoser over the whole recording first and hands the
+//! rig its estimate at the game's cadence, as the payload's rig takes it. `--ik` also replays the
+//! IK body's FK pelvis and foot contacts over that estimate (`rig_eval::ik`) and logs its summary,
+//! once for each `--contact` tuning given (the contact model's tuning as JSON, any field left out
+//! at its default) or once with the defaults. A video sidecar (`frames.jsonl` and `stream.json`)
+//! beside the recording adds the video's time to each row.
+//!
+//! `export-rerun` writes a stretch of a recording as a Rerun recording (`rerun_export`), with the
+//! take's video cut to the stretch beside it; it needs the `rerun` feature, on by default.
+//! `estimate-body` runs EgoPoser (`body-estimator`) over a stretch from the recording's raw head
+//! and grip poses and writes a CSV of its estimate at 60 Hz (`estimate`), resampling from `--lead`
+//! seconds (10 by default) before the stretch; the weights are a safetensors file named by
+//! `--weights`. `scan-view` scans a take's video for flashes and checks each against the
+//! recording's camera (`view_scan`), writing a Markdown report.
 
 use std::{
     fmt,

@@ -2,8 +2,8 @@
 //! world, the grounded rig in the room frame, and the frames' scalars.
 //!
 //! The tracked poses are children of `world/cockpit`, whose transform is the recorded view's
-//! placement or, without one, the registration's, so a 3D view rooted at `world` shows them in the world and one rooted at
-//! `world/cockpit` shows them as the runtime gave them. The rig is under `world/cockpit/room`, the
+//! placement or, without one, the registration's, so a 3D view rooted at `world` shows them in the
+//! world and one rooted at `world/cockpit` shows them as the runtime gave them. The rig is under `world/cockpit/room`, the
 //! cockpit lowered to its floor.
 
 use body_rig::{StepPhase, math::angle};

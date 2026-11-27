@@ -6,8 +6,8 @@
 //! rates, measured across a millisecond each side of the frame. The semantic actions are `global`
 //! and `on_foot`, every action at rest but the two a stick drives with the default bindings of a
 //! right-handed player: `move` from the left stick and `turn` from the right stick's horizontal
-//! axis. The first frame carries a full recenter, so a reader starts the posture, the rig's
-//! chase, and the torso estimate afresh from the scripted head.
+//! axis. The first frame carries a full recenter, so a reader starts the rig afresh from the
+//! scripted head.
 
 use std::fmt;
 

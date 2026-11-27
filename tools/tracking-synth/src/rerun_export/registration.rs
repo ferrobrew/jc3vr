@@ -1,8 +1,8 @@
 //! Where the cockpit frame sits in the world: the recorded view's transform where the controller
 //! state holds one (from version 8), and an estimate otherwise.
 //!
-//! Without the view, the camera is the anchor the root carries, plus the cockpit position less the cockpit shift,
-//! turned by the view's rotation and scaled by the world scale (`docs/mod/body/rig.md`, "Who moves
+//! Without the view, the camera is the anchor the root carries, plus the cockpit position less the
+//! cockpit shift, turned by the view's rotation and scaled by the world scale (`docs/mod/body/rig.md`, "Who moves
 //! the root"). The anchor stands the eyes over the root, so the floor under the cockpit is at the
 //! root's height. A recording holds the root's world position (the root tick), the cockpit shift,
 //! the world scale, and the eyes' height over the floor (the STAGE space), but not the view's
