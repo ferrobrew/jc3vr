@@ -11,7 +11,7 @@ Everything a hand can take is one `GripTarget` (`grab/target.rs`): the `GrabVolu
 - The weapon handling (`controllers::weapons::begin` in the weapons crate): the sockets and pouches (each only while it has something to give), the held gun's parts, held grenades and charges, guns in characters' hands, on racks, and in lockers, grenades and charges in the world, and magazines.
 - The vehicle handling (`vehicles::begin`): the driver's controls, the cockpit buttons, the parachute's handles and ripcord, and the mounted gun's handles.
 - The physical hands (`physical_hands::targets`): what each empty hand's reach found (an object, a weapon, a door, a character), vehicle door handles, a surface to climb, and the helicopter to hang from.
-- The snatch ([grapple-snatch.md](grapple-snatch.md)) and the line grab ([grapple-lock.md](grapple-lock.md#the-free-hand-on-the-line)).
+- The snatch ([snatch.md](../grapple/snatch.md)) and the line grab ([grapple.md](../grapple/grapple.md#the-free-hand-on-the-line)).
 
 A hand reaches every target as it is drawn: the sockets and pouches ride Rico's skeleton, so what the player sees on the body is where they reach ([rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)). Each subsystem only provides and consumes. The gameplay crate's binding tick gathers the targets, resolves the hands (`bindings::tick::hands::offers`), steps the grips, and hands each grab to its consumer (`grab::grabs_for`).
 
@@ -38,7 +38,7 @@ Each hand's grip is a state machine (`grab/latch.rs`, `GripLatch`), stepped ever
 - Fist: takes the first target it comes to within `reach.fist_window_s` of closing, and after that only while the hand moves slower than `reach.slow_hand_mps`, so a punch strikes rather than takes and a fist swung past the hip draws nothing. The grapple hand's fist on a line never takes a socket, since the body swinging under it moves the hand against the room.
 - Holding: holds until the hand opens; no game action reads the grip meanwhile.
 
-A hand is closed from a press until it opens (`intent::controls::ClosedHand`). On a Touch it opens when the press ends. The Index presses on force, and a hand wrapped round a handle relaxes that force toward nothing, so there the hand stays closed while the capacitive squeeze stays above `press.squeeze.release` and opens when the fingers come off. Only a press closes the hand. Every hold reads this rule. A press and release between two ticks still counts as a fresh press. While a snatch's line is out, the other free hand's grip is held for the catch ([grapple-snatch.md](grapple-snatch.md#the-interaction)).
+A hand is closed from a press until it opens (`intent::controls::ClosedHand`). On a Touch it opens when the press ends. The Index presses on force, and a hand wrapped round a handle relaxes that force toward nothing, so there the hand stays closed while the capacitive squeeze stays above `press.squeeze.release` and opens when the fingers come off. Only a press closes the hand. Every hold reads this rule. A press and release between two ticks still counts as a fresh press. While a snatch's line is out, the other free hand's grip is held for the catch ([snatch.md](../grapple/snatch.md#the-interaction)).
 
 ## Letting go
 

@@ -65,7 +65,7 @@ The anchor is captured earlier, in the pre-IK hook, from the freshly animated jo
 
 ### The aim direction
 
-`GetCameraMatrix` reads a sim-phase context frozen at injection time ([aim-pipeline.md, "The camera getters"](../../engine/gameplay/aim-pipeline.md)), so a post-call hook overwrites it with the head pose and every sim-side aim consumer follows the gaze. That would let the game turn the body toward the head through `NStateTask_LocoUtil::GetAimMoveAngle` and the `track_face_dir` blackboard, so for the local player on foot, idle, decoupled, and not aiming, the `GetAimMoveAngle` detour returns zero and the `force_face_camera` shim forces `track_face_dir` off (`crates/jc3vr-body/src/hooks/input/locomotion.rs`). The grapple's rotations are filtered separately ([grapple-comfort.md](grapple-comfort.md)).
+`GetCameraMatrix` reads a sim-phase context frozen at injection time ([aim-pipeline.md, "The camera getters"](../../engine/gameplay/aim-pipeline.md)), so a post-call hook overwrites it with the head pose and every sim-side aim consumer follows the gaze. That would let the game turn the body toward the head through `NStateTask_LocoUtil::GetAimMoveAngle` and the `track_face_dir` blackboard, so for the local player on foot, idle, decoupled, and not aiming, the `GetAimMoveAngle` detour returns zero and the `force_face_camera` shim forces `track_face_dir` off (`crates/jc3vr-body/src/hooks/input/locomotion.rs`). The grapple's rotations are filtered separately ([grapple.md, "Comfort"](../grapple/grapple.md#comfort)).
 
 ## Body IK via HumanIK
 

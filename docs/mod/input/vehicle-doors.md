@@ -1,6 +1,6 @@
 # Vehicle doors by hand
 
-An empty hand opens a vehicle's doors: a grip on a closed door takes hold, a pull outward undoes the latch, and the door swings on its hinge with the hand. A released side door swings on, damped, a lid stays where it is left, and a door shoved shut latches. Hoods, trunks, and hatches work the same way, and a hard pull tears an open door off. It is always on under the controller scheme and builds on the pickup and the hand bodies ([physical-hands.md](physical-hands.md#picking-things-up)); the grapple snatch opens doors from range through the same unlatch ([grapple-snatch.md](grapple-snatch.md#car-doors)).
+An empty hand opens a vehicle's doors: a grip on a closed door takes hold, a pull outward undoes the latch, and the door swings on its hinge with the hand. A released side door swings on, damped, a lid stays where it is left, and a door shoved shut latches. Hoods, trunks, and hatches work the same way, and a hard pull tears an open door off. It is always on under the controller scheme and builds on the pickup and the hand bodies ([physical-hands.md](physical-hands.md#picking-things-up)); the grapple snatch opens doors from range through the same unlatch ([snatch.md](../grapple/snatch.md#targets)).
 
 The code is `crates/jc3vr-physical/src/controllers/physical_hands/doors/`, with the grip and tear handling in `physical_hands/pickup/` and the seated path in `physical_hands/seated.rs`; tuning is `crates/jc3vr-physical/tuning/doors.toml`. The engine side is [vehicle-doors.md](../../engine/gameplay/vehicle-doors.md).
 
