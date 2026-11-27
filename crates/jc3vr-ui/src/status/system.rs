@@ -1,5 +1,5 @@
-//! The status rows for the systems outside the controllers: the settings file, the
-//! rendering, the controller input's set-up, and the HUD.
+//! The status rows for the systems outside the controllers: the VR session and the rendering, the
+//! controller input's set-up, and the HUD.
 
 use std::sync::OnceLock;
 

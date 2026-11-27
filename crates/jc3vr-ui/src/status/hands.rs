@@ -1,6 +1,6 @@
-//! The status rows for what the empty hands do in the world: whether the palms act, vehicle
-//! doors, the characters they take hold of, the moving bodies they climb, the stunt positions they hold, pushing the body
-//! up, and articulated objects.
+//! The status rows for what the empty hands do in the world: whether the palms act, vehicle doors,
+//! the characters they take hold of, the moving bodies they climb, the stunt positions they hold,
+//! pushing the body up, and articulated objects.
 
 use jc3vr_body::controllers::grab::world_reach::TargetKind;
 use jc3vr_physical::controllers::{

@@ -1,6 +1,6 @@
 //! The status rows for the explosives and magazines the hands handle as objects (the
 //! grenade's pin, the live grenades within reach of a catch, the C4 pressed on, and the magazines
-//! in the world), and for aiming a long gun down its sights.
+//! in the world), and for aiming a long gun down its sights and holding it against walls.
 
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_weapons::controllers::weapons::{ads, c4, collide, grenade, reload::loose};

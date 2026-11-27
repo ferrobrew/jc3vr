@@ -38,8 +38,7 @@ fn tracked() -> Line {
     ))
 }
 
-/// The live loadout table: where its items are, and how many weapons it disagrees with the old
-/// handling about.
+/// The live loadout table: where its items are, and how many events it refused.
 fn loadout() -> Line {
     let s = live::status();
     let Some(snapshot) = &s.snapshot else {
