@@ -90,7 +90,7 @@ pub struct TickStatus {
 
 jc3vr_core::counters! {
     /// The per-hand tick's counts, since the payload loaded.
-    pub struct TickCounters => TickCounts {
+    pub(crate) struct TickCounters => pub struct TickCounts {
         /// The wielded weapon's updates handed its hand's fire input.
         substituted,
         /// The armed guns' aim modes set.

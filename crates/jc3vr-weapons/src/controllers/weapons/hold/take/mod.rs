@@ -62,7 +62,7 @@ pub struct TakeStatus {
 
 jc3vr_core::counters! {
     /// The takes of weapons that have no body in the world, since the payload loaded.
-    pub struct TakeCounters => TakeCounts {
+    pub(crate) struct TakeCounters => pub struct TakeCounts {
         /// Guns taken from characters' hands or holsters.
         steals,
         /// Weapons a rack handed over.

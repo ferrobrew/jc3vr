@@ -157,7 +157,7 @@ pub struct HoldStatus {
 
 jc3vr_core::counters! {
     /// The attach table's counts.
-    pub struct HoldCounters => HoldCounts {
+    pub(crate) struct HoldCounters => pub struct HoldCounts {
         /// Writes of the attach table.
         writes,
         /// Placements snapped past the render interpolation.

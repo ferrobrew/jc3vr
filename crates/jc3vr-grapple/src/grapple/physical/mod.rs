@@ -175,7 +175,7 @@ pub struct GrappleStatus {
 
 jc3vr_core::counters! {
     /// The physical grapple's counts since the payload loaded.
-    pub struct GrappleCounters => GrappleCounts {
+    pub(crate) struct GrappleCounters => pub struct GrappleCounts {
         /// Reels the hand drove.
         reels,
         /// Boosts a yank gave the reel.

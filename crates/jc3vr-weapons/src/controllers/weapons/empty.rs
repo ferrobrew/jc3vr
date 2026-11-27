@@ -61,7 +61,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 jc3vr_core::counters! {
     /// The empty-weapon readout.
-    pub struct EmptyCounters => EmptyStatus {
+    pub(crate) struct EmptyCounters => pub struct EmptyStatus {
         /// Automatic switches the game tried and the mod suppressed.
         suppressed,
         /// Pulls of an empty gun at their press edge.

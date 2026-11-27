@@ -37,7 +37,8 @@ impl Counter {
 
 /// Declare a group of [`Counter`]s as a live struct with a `const fn new`, and a snapshot struct
 /// of the same fields as `u64`s, which `snapshot` fills for a readout. The fields' doc comments
-/// carry over to both.
+/// carry over to both. The snapshot takes the live struct's visibility, or its own when written
+/// `=> pub struct Snapshot`, for a readout read beyond the crate that counts.
 ///
 /// ```
 /// jc3vr_core::counters! {
@@ -57,7 +58,7 @@ impl Counter {
 macro_rules! counters {
     (
         $(#[$meta:meta])*
-        $vis:vis struct $live:ident => $snapshot:ident {
+        $vis:vis struct $live:ident => $snapshot_vis:vis struct $snapshot:ident {
             $($(#[$field_meta:meta])* $field:ident),* $(,)?
         }
     ) => {
@@ -91,8 +92,21 @@ macro_rules! counters {
 
         $(#[$meta])*
         #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-        $vis struct $snapshot {
+        $snapshot_vis struct $snapshot {
             $($(#[$field_meta])* pub $field: u64,)*
+        }
+    };
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $live:ident => $snapshot:ident {
+            $($(#[$field_meta:meta])* $field:ident),* $(,)?
+        }
+    ) => {
+        $crate::counters! {
+            $(#[$meta])*
+            $vis struct $live => $vis struct $snapshot {
+                $($(#[$field_meta])* $field),*
+            }
         }
     };
 }

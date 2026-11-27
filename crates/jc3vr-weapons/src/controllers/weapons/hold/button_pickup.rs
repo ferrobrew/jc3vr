@@ -35,7 +35,7 @@ use crate::controllers::weapons::hold::tuning::HOLD;
 
 jc3vr_core::counters! {
     /// The button pickup suppression's readout.
-    pub struct ButtonPickupCounters => ButtonPickupStatus {
+    pub(crate) struct ButtonPickupCounters => pub struct ButtonPickupStatus {
         /// Weapon-handling calls whose use-item input was held back, since the payload loaded.
         held_back,
         /// Weapon-handling calls whose use-item input passed as the mod's own fallback click.

@@ -26,7 +26,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 jc3vr_core::counters! {
     /// The suppression's counts since the payload loaded, for the debug UI.
-    pub struct SuppressCounters => SuppressCounts {
+    pub(crate) struct SuppressCounters => pub struct SuppressCounts {
         /// Requests to enter precision aim that were refused.
         refused,
         /// Exits from precision aim the mod made.
