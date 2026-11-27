@@ -84,7 +84,7 @@ pub fn compose(
 /// frame and the animated head anchor, which advance at the tick rate) between ticks, while the HMD
 /// cockpit delta — identical on both sides — passes through with zero added latency (see the module
 /// docs).
-pub fn publish_pair(prev: HeadPose, cur: HeadPose) {
+pub(crate) fn publish_pair(prev: HeadPose, cur: HeadPose) {
     crate::headpose::set_source(crate::headpose::Source::Vr);
     crate::headpose::set_pose_pair(prev, cur);
 }
@@ -109,7 +109,7 @@ static COCKPIT_POSE: Mutex<Option<CockpitPose>> = Mutex::new(None);
 
 /// Publish the cockpit-frame HMD pose for the frame in flight (see [`CockpitPose`]). Called by the VR
 /// frame loop alongside [`publish_pair`].
-pub fn set_cockpit_pose(position: Vec3, orientation: Quat) {
+pub(crate) fn set_cockpit_pose(position: Vec3, orientation: Quat) {
     *COCKPIT_POSE.lock() = Some(CockpitPose {
         position,
         orientation,
@@ -142,7 +142,7 @@ pub fn cockpit_pose() -> Option<CockpitPose> {
 /// `follow` lets the body turn under the view toward the player's torso ([`BodyFollow`]); its
 /// offset also seeds the accumulator, so that the view does not jump when the body was turned
 /// under it before.
-pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowSettings) {
+pub(crate) fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowSettings) {
     let YawTick {
         look_x,
         delta_based,
@@ -281,7 +281,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
 
 /// One input tick's facts for [`advance_body_yaw`].
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct YawTick {
+pub(crate) struct YawTick {
     /// The tick's look input.
     pub look_x: f32,
     /// Whether `look_x` is a finished per-tick displacement (the mouse) rather than an axis.
@@ -302,7 +302,7 @@ pub struct YawTick {
     /// The arm strokes' turn of the swimming body since the last input tick, radians to the
     /// right, from its owner, added to the heading the turn input owns. Out of the water it is
     /// dropped.
-    pub swim_turn: f32,
+    pub(crate) swim_turn: f32,
     /// The tick's length, seconds.
     pub dt: f32,
 }
@@ -356,7 +356,7 @@ pub fn follow_status() -> (bool, f32) {
 /// the turn is still to be folded into the cockpit baseline ([`bank`]). Held back while the body
 /// frame filter is engaged or the swim levelling drops the body's tilt: both compose with the
 /// turned body frame, so folding the turn out of it then would turn the view.
-pub fn pending_bank() -> Option<f32> {
+pub(crate) fn pending_bank() -> Option<f32> {
     if (body_frame_filter().engaged)() || head_participants().is_some_and(|p| (p.swimming)()) {
         return None;
     }
@@ -459,7 +459,7 @@ pub fn body_rotation() -> Quat {
 /// The synthetic head frame before the body frame filter and swim levelling: the captured root
 /// composed once with the filtered, bind-relative head rotation and the turn under the view.
 /// The body frame filter advances against this same frame.
-pub fn body_rotation_followed() -> Quat {
+pub(crate) fn body_rotation_followed() -> Quat {
     let frame = anchor_pair().map_or_else(body_rotation_raw, |pair| pair[1].view_frame());
     frame * follow_turn(true)
 }

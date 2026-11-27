@@ -381,7 +381,7 @@ impl EguiDebugRenderState {
             .map(|(texture, _)| texture)
     }
 
-    pub fn main_color_texture(&self, index: usize) -> Option<&ID3D11Texture2D> {
+    pub(crate) fn main_color_texture(&self, index: usize) -> Option<&ID3D11Texture2D> {
         self.main_color_textures
             .get(index)?
             .as_ref()

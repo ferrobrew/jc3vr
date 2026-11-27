@@ -48,7 +48,7 @@ use crate::tuning::VIEW;
 
 /// The follow state, owned by the VR body-yaw accumulator.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct BodyFollow {
+pub(crate) struct BodyFollow {
     /// The view's heading at the previous and the current tick, while following.
     view: Option<(f32, f32)>,
     /// The body's target heading relative to the view while following: the torso's heading,
@@ -82,7 +82,7 @@ enum Steps {
 
 /// One input tick's inputs to [`BodyFollow::tick`].
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FollowTick {
+pub(crate) struct FollowTick {
     /// Whether the body follows this tick.
     pub follow: bool,
     /// The turn accumulator's heading after this tick's input.
@@ -232,7 +232,7 @@ impl BodyFollow {
     }
 
     /// Whether the view is stepping toward the body through a vehicle's entry or exit.
-    pub fn is_stepping(&self) -> bool {
+    pub(crate) fn is_stepping(&self) -> bool {
         self.stepping.is_some()
     }
 

@@ -18,7 +18,7 @@ pub(super) const STAMP_BITS: u32 = 16;
 /// The rectangles of one stamp, in back-buffer pixels: the white blocks and the black blocks.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct Stamp {
-    pub white: Vec<RECT>,
+    pub(crate) white: Vec<RECT>,
     pub black: Vec<RECT>,
 }
 

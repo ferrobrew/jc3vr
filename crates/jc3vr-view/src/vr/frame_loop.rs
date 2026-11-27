@@ -207,7 +207,7 @@ pub struct EyeView {
     /// space, so its pose must describe the eye's true position, or the compositor reprojects the image
     /// to a plane offset by the recenter baseline. Equal to [`pose`](Self::pose) until the first
     /// recenter.
-    pub raw_pose: xr::Posef,
+    pub(crate) raw_pose: xr::Posef,
     /// The eye's field of view, as reported by `locate_views`.
     pub fov: xr::Fovf,
     /// The off-axis projection for [`fov`](Self::fov). Write [`standard_depth`]
@@ -226,7 +226,7 @@ pub struct EyeImage {
     /// `ID3D11Texture2D::from_raw` borrowed for the blit; the runtime owns it.
     pub texture: *mut std::ffi::c_void,
     /// The array slice for this eye (`0` = left, `1` = right).
-    pub array_index: u32,
+    pub(crate) array_index: u32,
     /// The swapchain's DXGI format, so the per-eye blit can build a matching view / conversion.
     pub format: u32,
 }
@@ -278,7 +278,7 @@ impl FrameContext {
     ///
     /// [`acquire`]: Self::acquire
     /// [`release`]: Self::release
-    pub fn eye_image(&self, eye: usize) -> Option<EyeImage> {
+    pub(crate) fn eye_image(&self, eye: usize) -> Option<EyeImage> {
         if !self.image_acquired {
             return None;
         }
@@ -304,7 +304,7 @@ impl FrameContext {
     /// End the frame: submit the world projection layer (or an empty frame when
     /// [`should_render`](Self::should_render) is false or the swapchain was never acquired) and
     /// consume the context, releasing the submit side.
-    pub fn frame_end(mut self) -> anyhow::Result<()> {
+    pub(crate) fn frame_end(mut self) -> anyhow::Result<()> {
         // Release any still-held image before submitting, so a caller that forgot to release does
         // not deadlock the swapchain.
         if self.image_acquired {
@@ -342,7 +342,7 @@ impl LocatedFrame {
     }
 
     /// The predicted display time for this frame.
-    pub fn predicted_display_time(&self) -> xr::Time {
+    pub(crate) fn predicted_display_time(&self) -> xr::Time {
         self.predicted_display_time
     }
 

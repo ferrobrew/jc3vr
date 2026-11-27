@@ -450,7 +450,7 @@ const DRAIN_MAX_POLLS: u32 = 2000;
 /// context mutex, which freezes every other thread behind it. Draining here lets that work retire so
 /// the game resumes cleanly. Best-effort: any failure (or the poll budget expiring) logs and returns;
 /// teardown must never hang or panic.
-pub fn drain_gpu() {
+pub(crate) fn drain_gpu() {
     let Some(ge) = (unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() })
     else {
         return;

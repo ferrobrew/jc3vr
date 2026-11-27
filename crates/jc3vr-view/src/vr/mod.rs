@@ -61,7 +61,7 @@ mod frame;
 mod frame_loop;
 pub mod harness;
 pub mod input;
-pub mod live_tracking;
+pub(crate) mod live_tracking;
 mod loader;
 mod mirror;
 mod participants;
@@ -87,7 +87,7 @@ pub use blit::{
     present_and_submit, set_fade_level, texture_size,
 };
 pub use blit_region::BlitSource;
-pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
+pub(crate) use eye_resolution::engine_render_resolution;
 pub use frame_loop::{
     EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait, head_tracked,
     pose_age_totals,

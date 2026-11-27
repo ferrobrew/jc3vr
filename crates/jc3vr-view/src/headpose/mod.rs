@@ -134,13 +134,13 @@ pub fn body_relative_rotation() -> Quat {
 
 /// Rotate the pose pair: the current pose becomes the previous pose. Called by the source at the
 /// start of each input tick, so the previous/current pair spans exactly one tick.
-pub fn snapshot_prev() {
+pub(crate) fn snapshot_prev() {
     let mut s = state().lock();
     s.prev_pose = s.pose;
 }
 
 /// Called by the sim (or VR) to publish the headpose.
-pub fn set_pose(pose: HeadPose) {
+pub(crate) fn set_pose(pose: HeadPose) {
     state().lock().pose = pose;
 }
 
@@ -151,7 +151,7 @@ pub fn set_pose(pose: HeadPose) {
 /// still passes through with zero added latency — publishing the same pose to both sides instead
 /// would freeze the tick-rate anchor/body motion too, which stepped the camera in vehicles and while
 /// parachuting.
-pub fn set_pose_pair(prev: HeadPose, cur: HeadPose) {
+pub(crate) fn set_pose_pair(prev: HeadPose, cur: HeadPose) {
     let mut s = state().lock();
     s.pose = cur;
     s.prev_pose = prev;

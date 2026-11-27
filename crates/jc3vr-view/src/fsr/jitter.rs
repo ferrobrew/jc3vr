@@ -26,7 +26,7 @@ use crate::fsr::FSR_CONFIG;
 /// The frame's jitter, or `None` when the jitter is off: neither FSR nor the mod's own temporal
 /// resolve running (the game's SMAA 1x has no temporal resolve to use it), the jitter switch off, or no FSR resolve yet to size the eyes. Advances the
 /// phase; call once per VR frame.
-pub fn frame_offset() -> Option<FrameJitter> {
+pub(crate) fn frame_offset() -> Option<FrameJitter> {
     let enabled = FSR_CONFIG.query(|c| c.antialiasing.temporal() && c.jitter);
     if !enabled {
         return None;
@@ -75,13 +75,13 @@ pub fn phase_count(width: u32) -> u32 {
 }
 
 /// The sequence's offset for frame `index`, in pixels (x right, y down), each within half a pixel.
-pub fn pixel_offset(index: u32, phase_count: u32) -> Vec2 {
+pub(crate) fn pixel_offset(index: u32, phase_count: u32) -> Vec2 {
     let phase = index % phase_count.max(1) + 1;
     Vec2::new(halton(phase, 2) - 0.5, halton(phase, 3) - 0.5)
 }
 
 /// The clip-space offset that moves the content by `pixels` in a `width` by `height` eye.
-pub fn ndc_from_pixels(pixels: Vec2, width: u32, height: u32) -> Vec2 {
+pub(crate) fn ndc_from_pixels(pixels: Vec2, width: u32, height: u32) -> Vec2 {
     Vec2::new(
         2.0 * pixels.x / width.max(1) as f32,
         -2.0 * pixels.y / height.max(1) as f32,

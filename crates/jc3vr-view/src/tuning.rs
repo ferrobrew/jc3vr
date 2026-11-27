@@ -40,8 +40,8 @@ jc3vr_core::tuning_file! {
 pub struct ViewTuning {
     pub turn: TurnTuning,
     pub follow: FollowTuning,
-    pub flatscreen_look: FlatscreenLookTuning,
-    pub head_animation: HeadAnimationTuning,
+    pub(crate) flatscreen_look: FlatscreenLookTuning,
+    pub(crate) head_animation: HeadAnimationTuning,
     pub anchors: AnchorsTuning,
     pub camera: CameraTuning,
     pub recorder: RecorderTuning,
@@ -64,16 +64,16 @@ pub struct TurnTuning {
     /// than run through the stick's smooth scale and [`FlatscreenLookTuning::mouse_sensitivity`]
     /// rate (which oversteers on a mouse and is gated by the stick deadzone: the stop-start,
     /// overshoot, and runaway spin).
-    pub mouse_turn_scale: f32,
+    pub(crate) mouse_turn_scale: f32,
     /// The most the yaw accumulator may lead the body's current facing, degrees. The body chases
     /// the accumulated target at a rate limit, so a big input jump (a mouse flick) otherwise pushes
     /// the target far ahead and the body keeps turning for many ticks after the input stops, and
     /// once the lead exceeds 180 degrees the shortest-arc catch-up reverses direction. Clamping the
     /// lead caps both.
-    pub max_body_lead_deg: f32,
+    pub(crate) max_body_lead_deg: f32,
     /// Scales the turn rate while swimming, where the body tracks the accumulator one-for-one
     /// rather than through the game's own executor rate, so the same look input turns faster.
-    pub swim_turn_scale: f32,
+    pub(crate) swim_turn_scale: f32,
 }
 
 /// The view's steps toward a vehicle's turn of the body ([`crate::headpose::follow`]).
@@ -81,39 +81,39 @@ pub struct TurnTuning {
 #[serde(deny_unknown_fields)]
 pub struct FollowTuning {
     /// How long the view holds its heading between steps, seconds.
-    pub step_interval_s: f32,
+    pub(crate) step_interval_s: f32,
     /// The largest step toward the body, radians.
-    pub step_rad: f32,
+    pub(crate) step_rad: f32,
     /// How close the view must face the body for the steps to end, radians.
-    pub step_settled_rad: f32,
+    pub(crate) step_settled_rad: f32,
 }
 
 /// The flatscreen head simulation's look ([`crate::headpose::sim`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct FlatscreenLookTuning {
+pub(crate) struct FlatscreenLookTuning {
     /// Mouse-look sensitivity, degrees per unit of look-effector delta.
-    pub mouse_sensitivity: f32,
+    pub(crate) mouse_sensitivity: f32,
     /// On foot: the half-angle, degrees, of the decoupled cone. Beyond it, body yaw begins
     /// following the head.
-    pub latch_threshold_deg: f32,
+    pub(crate) latch_threshold_deg: f32,
     /// On foot: the half-angle, degrees, below which the latch disengages. Lower than
     /// [`FlatscreenLookTuning::latch_threshold_deg`] to provide hysteresis and prevent jitter at
     /// the boundary.
-    pub latch_disengage_threshold_deg: f32,
+    pub(crate) latch_disengage_threshold_deg: f32,
     /// Off foot: the most body-relative yaw, degrees, in either direction. Ranges beyond a real
     /// head's ~80 degrees are made anatomically plausible by the neck twist.
-    pub free_look_yaw_limit_deg: f32,
+    pub(crate) free_look_yaw_limit_deg: f32,
     /// The most pitch, degrees, in either direction, applied in every mode: a real head cannot
     /// pitch past vertical, and letting the euler pitch cross 90 degrees flips the yaw and roll
     /// decomposition.
-    pub free_look_pitch_limit_deg: f32,
+    pub(crate) free_look_pitch_limit_deg: f32,
 }
 
 /// The synthetic head rotation's low-pass ([`crate::headpose::animation`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HeadAnimationTuning {
+pub(crate) struct HeadAnimationTuning {
     /// The filter's time constant, seconds.
     pub time_constant_s: f32,
     /// The longest step the filter smooths across, seconds: a longer gap snaps to the target.
@@ -125,7 +125,7 @@ pub struct HeadAnimationTuning {
 #[serde(deny_unknown_fields)]
 pub struct AnchorsTuning {
     /// The oldest the live tracking packet may be for the current anchors to use it, milliseconds.
-    pub max_tracking_age_ms: u64,
+    pub(crate) max_tracking_age_ms: u64,
     /// The largest move of the character's root between two ticks across which the anchors are
     /// interpolated, metres; a larger one collapses the pair onto the current tick, as a teleport.
     pub max_root_step_m: f32,
@@ -137,10 +137,10 @@ pub struct AnchorsTuning {
 pub struct CameraTuning {
     /// The interpupillary distance of the flatscreen stereo per-eye camera offset, metres. A VR
     /// session takes each eye's offset from the runtime's eye poses instead.
-    pub flatscreen_ipd_m: f32,
+    pub(crate) flatscreen_ipd_m: f32,
     /// The field of view written into the camera context the game reads after the update,
     /// degrees.
-    pub context_fov_deg: f32,
+    pub(crate) context_fov_deg: f32,
 }
 
 /// The tracking recorder ([`crate::recorder::tracking`]).
@@ -148,10 +148,10 @@ pub struct CameraTuning {
 #[serde(deny_unknown_fields)]
 pub struct RecorderTuning {
     /// How far back the lookback reaches, seconds.
-    pub lookback_window_s: u64,
+    pub(crate) lookback_window_s: u64,
     /// How close to a named place the player must stand for a recording's start marker to name
     /// it, metres.
-    pub bookmark_radius_m: f32,
+    pub(crate) bookmark_radius_m: f32,
 }
 
 /// The fixed foveation's rings ([`crate::vr::foveation`]).
@@ -180,7 +180,7 @@ pub struct FrameTuning {
     /// the outer edges before the cull catches up. Each side's tangent is padded outward (`0.4` is
     /// 40% wider per side), the vertical axis included, at the cost of some over-draw of
     /// just-off-screen geometry.
-    pub cull_fov_padding: f32,
+    pub(crate) cull_fov_padding: f32,
 }
 
 /// The recenters ([`crate::vr::recenter`]).
@@ -190,19 +190,19 @@ pub struct RecenterTuning {
     /// How recent the follow bank must be for the seat lock's yaw re-base to use it,
     /// milliseconds: a vehicle entry, a hijack, or a stunt position into a seat takes a few
     /// seconds from the moment the body stops following.
-    pub seat_yaw_bank_window_ms: u64,
+    pub(crate) seat_yaw_bank_window_ms: u64,
     /// A yaw re-base smaller than this is not worth turning the view for, radians.
-    pub seat_yaw_min_rad: f32,
+    pub(crate) seat_yaw_min_rad: f32,
     /// How long the seat lock's yaw re-base takes to turn the view, seconds.
-    pub seat_yaw_blend_s: f32,
+    pub(crate) seat_yaw_blend_s: f32,
     /// How long the head anchor must hold still for the automatic recenter, milliseconds.
-    pub anchor_settle_ms: u64,
+    pub(crate) anchor_settle_ms: u64,
     /// The per-frame head-anchor movement below which the pose counts as settled, metres: above
     /// idle sway, below any scripted or locomotion motion.
-    pub anchor_settle_m: f32,
+    pub(crate) anchor_settle_m: f32,
     /// The longest gap between two head-anchor samples that still counts as one continuous run,
     /// milliseconds.
-    pub anchor_sample_gap_ms: i64,
+    pub(crate) anchor_sample_gap_ms: i64,
 }
 
 /// The floor watch after a reference space change ([`crate::vr::stage`]).
@@ -211,10 +211,10 @@ pub struct RecenterTuning {
 pub struct StageTuning {
     /// How long after a reference space change a step in the head's height may be the floor's,
     /// milliseconds.
-    pub floor_watch_ms: u64,
+    pub(crate) floor_watch_ms: u64,
     /// The largest step in the head's height between two frames that is the head's own, metres: a
     /// head dropping as fast as a player can duck covers a few centimetres in a frame.
-    pub max_head_step_m: f32,
+    pub(crate) max_head_step_m: f32,
 }
 
 /// The OpenXR runtime's bring-up ([`crate::vr::state`]).
@@ -223,7 +223,7 @@ pub struct StageTuning {
 pub struct RuntimeTuning {
     /// How often OpenXR bring-up is retried after a failure while VR is on, whole seconds. The mod
     /// runs in flatscreen stereo between attempts.
-    pub retry_interval_s: u64,
+    pub(crate) retry_interval_s: u64,
 }
 
 /// The analog thresholds of the derived presses ([`crate::vr::input::config`]).
@@ -269,7 +269,7 @@ pub struct MirrorTuning {
 pub struct PointerTuning {
     /// How long a drawn panel, and the camera that placed it, stay a target for the pointer after
     /// the frame that drew them, milliseconds: a panel no longer drawn stops taking hits.
-    pub panel_max_age_ms: u64,
+    pub(crate) panel_max_age_ms: u64,
 }
 
 impl Tuning for ViewTuning {

@@ -11,7 +11,7 @@ use crate::vr::{VR_CONFIG, state::lock_state};
 /// or the recommended size is unknown. Read by [`crate::vr::resolution`] once per frame, at the top of
 /// the frame: it locks the runtime state, which only the game thread may do there (see
 /// `docs/mod/threading.md`).
-pub fn native_eye_resolution() -> Option<(u32, u32)> {
+pub(crate) fn native_eye_resolution() -> Option<(u32, u32)> {
     let cfg = VR_CONFIG.lock().clone();
     let state = lock_state();
     if !state.is_running() {
@@ -26,7 +26,7 @@ pub fn native_eye_resolution() -> Option<(u32, u32)> {
 /// capture textures stay per-eye width, so the collapse's capture split copies each full-width half
 /// straight into its eye texture. `None` when no session is up. Read by [`crate::vr::resolution`] once
 /// per frame.
-pub fn engine_render_resolution() -> Option<(u32, u32)> {
+pub(crate) fn engine_render_resolution() -> Option<(u32, u32)> {
     let (width, height) = native_eye_resolution()?;
     if crate::stereo::layout::double_wide_active() {
         Some((width.saturating_mul(2), height))

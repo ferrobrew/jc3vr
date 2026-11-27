@@ -92,10 +92,10 @@ pub struct VpHistory {
     pub cur_eye: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
     /// projection paths such as the light-glow sprite, which cannot be fixed by shader constant remaps.
-    pub cur_eye_view: [Option<glam::Mat4>; 2],
+    pub(crate) cur_eye_view: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye reverse-Z projections (eye offset applied). Paired with
     /// [`cur_eye_view`](Self::cur_eye_view) for rebuilding the per-eye offset view-projection.
-    pub cur_eye_projection_f: [Option<glam::Mat4>; 2],
+    pub(crate) cur_eye_projection_f: [Option<glam::Mat4>; 2],
     /// The FSR jitter's clip-space offset each eye rasterizes with this frame, on top of
     /// [`cur_eye`](Self::cur_eye) (zero without one; see [`crate::fsr::jitter`]).
     pub cur_jitter: [glam::Vec2; 2],

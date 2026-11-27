@@ -21,7 +21,7 @@ use parking_lot::Mutex;
 use crate::controllers::overlay::primitive::{Primitive, Source};
 
 /// The most primitives the renderer draws in a frame; the rest are dropped.
-pub const MAX_PRIMITIVES: usize = 4096;
+pub(crate) const MAX_PRIMITIVES: usize = 4096;
 
 /// Sources whose retained primitives are omitted from renderer snapshots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

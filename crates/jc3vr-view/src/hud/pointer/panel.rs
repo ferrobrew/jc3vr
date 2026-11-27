@@ -39,7 +39,7 @@ pub struct RenderedCamera {
 
 /// Record the un-offset center camera's world transform with the cockpit head pose and world scale
 /// that placed it, for the panel and the pointer to share one basis.
-pub fn publish_camera(world: Mat4, cockpit: Option<CockpitPose>, scale: f32) {
+pub(crate) fn publish_camera(world: Mat4, cockpit: Option<CockpitPose>, scale: f32) {
     let (_, orientation, position) = world.to_scale_rotation_translation();
     match cockpit {
         Some(cockpit) => RENDERED_CAMERA.publish(RenderedCamera {

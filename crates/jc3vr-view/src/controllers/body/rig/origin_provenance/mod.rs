@@ -217,13 +217,5 @@ impl Source {
 
 static SOURCE: Source = Source::new();
 
-#[cfg(any(test, feature = "test-support"))]
-pub fn test_origins() -> [OriginEvidence; 2] {
-    let source = Source::new();
-    let before = source.capture();
-    drop(source.changing());
-    [before, source.capture()]
-}
-
 #[cfg(test)]
 mod tests;

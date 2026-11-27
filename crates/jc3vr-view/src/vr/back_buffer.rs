@@ -261,7 +261,7 @@ pub fn disable() -> bool {
 /// The engine must no longer reference the texture: [`disable`] must have been called *and* the
 /// subsequent `ApplyResize` must have completed, so the engine's own objects are back in place.
 /// Calling this while the engine still holds the texture leaves it rendering into freed memory.
-pub unsafe fn release_backing_texture(engine: &mut GraphicsEngine) {
+pub(crate) unsafe fn release_backing_texture(engine: &mut GraphicsEngine) {
     if INSTALLED.load(Ordering::Acquire) {
         // The engine's fields still point at a surface and render setups built over this texture,
         // because the `ApplyResize` that would have rebuilt its own never ran. Leaking the texture is

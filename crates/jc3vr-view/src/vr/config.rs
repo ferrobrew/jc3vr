@@ -116,7 +116,7 @@ pub struct VrConfig {
     /// recommended size is not the headset's being studied (the visual harness's simulated headset);
     /// `None`, the default, takes the runtime's.
     #[serde(default)]
-    pub recommended_size_override: Option<[u32; 2]>,
+    pub(crate) recommended_size_override: Option<[u32; 2]>,
     /// World scale: metres of head/IPD motion per engine unit (`1.0` = 1:1). Kept here so the render wiring and the camera path share one knob.
     pub world_scale: f32,
     /// Override path to the OpenXR loader DLL. `None` loads `openxr_loader.dll` next to the payload

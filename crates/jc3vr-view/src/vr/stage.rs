@@ -160,7 +160,7 @@ pub(super) fn locate_head(
 /// Watches the head's height above the floor across a reference space change, and takes a floor
 /// jump back out of it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FloorWatch {
+pub(crate) struct FloorWatch {
     /// The uncorrected head height last frame.
     last_raw: Option<f32>,
     /// Until when a step in the height is taken for the floor's.

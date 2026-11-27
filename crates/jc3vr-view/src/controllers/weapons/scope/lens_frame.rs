@@ -54,8 +54,8 @@ pub struct LensConstants {
     /// The sighting eye's view-projection of a position relative to it.
     pub view_projection: [f32; 16],
     /// The source eye's view-projection of a position relative to it.
-    pub source_view_projection: [f32; 16],
-    pub eyepiece_from_eye: [f32; 3],
+    pub(crate) source_view_projection: [f32; 16],
+    pub(crate) eyepiece_from_eye: [f32; 3],
     pub radius: f32,
     pub right: [f32; 3],
     pub tangent: f32,

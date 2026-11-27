@@ -124,7 +124,7 @@ pub fn body_of_head(head_world: Quat, head_cockpit: Quat) -> Quat {
 }
 
 /// The smallest world scale the transform divides by.
-pub const MIN_WORLD_SCALE: f32 = 1e-3;
+pub(crate) const MIN_WORLD_SCALE: f32 = 1e-3;
 
 #[cfg(test)]
 mod tests {

@@ -22,7 +22,7 @@ pub fn publish_player_rbi_infos(infos: &[usize; PLAYER_MODEL_SLOTS]) {
 }
 
 /// The number of model-instance slots on `CAnimatedModel`, as a `usize` for array sizing.
-pub const PLAYER_MODEL_SLOTS: usize = AnimatedModel::MODEL_INSTANCE_SLOTS as usize;
+pub(crate) const PLAYER_MODEL_SLOTS: usize = AnimatedModel::MODEL_INSTANCE_SLOTS as usize;
 
 /// The largest skeleton bone index `publish_collapse_bones` accepts. Skeleton indices beyond an
 /// `i16`'s range are implausible (the engine's bone index space is i16-sized), so they are dropped

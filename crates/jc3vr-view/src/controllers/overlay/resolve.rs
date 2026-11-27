@@ -44,8 +44,8 @@ pub struct Frame {
 }
 
 /// The kind tag of a packed primitive.
-pub const KIND_SPRITE: u32 = 0;
-pub const KIND_LINE: u32 = 1;
+pub(crate) const KIND_SPRITE: u32 = 0;
+pub(crate) const KIND_LINE: u32 = 1;
 
 /// One primitive as the vertex shader reads it from its structured buffer (`Primitive` in
 /// `overlay_vs.hlsl`). Every row is a 16-byte vector.
@@ -111,7 +111,7 @@ fn place(anchor: Anchor, frame: &Frame) -> Option<Vec3> {
 }
 
 /// A sprite's world radius at `distance` metres from the head.
-pub fn sprite_radius(size: SpriteSize, distance: f32) -> f32 {
+pub(crate) fn sprite_radius(size: SpriteSize, distance: f32) -> f32 {
     match size {
         SpriteSize::World(diameter) => diameter * 0.5,
         SpriteSize::Angular(angle) => distance * (angle * 0.5).tan(),

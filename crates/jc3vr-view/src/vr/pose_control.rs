@@ -92,7 +92,7 @@ impl PoseValues {
 /// The frozen per-frame inputs the VR frame loop uses in place of the live ones: the two eye views
 /// (re-composed around the edited centre pose), the body frame, and the head anchor.
 #[derive(Copy, Clone)]
-pub struct FrozenFrame {
+pub(crate) struct FrozenFrame {
     pub eyes: [EyeView; 2],
     pub body_rotation: Quat,
     pub anchor: Vec3,
@@ -103,7 +103,7 @@ pub struct FrozenFrame {
 /// live eye views, body rotation, and anchor) if nothing of this kind is captured yet -- so engaging
 /// the freeze pins the pose you were looking from. The returned eye views carry the edited centre
 /// pose with each eye's captured offset and canting re-applied.
-pub fn frozen_frame(capture: impl FnOnce() -> ([EyeView; 2], Quat, Vec3)) -> FrozenFrame {
+pub(crate) fn frozen_frame(capture: impl FnOnce() -> ([EyeView; 2], Quat, Vec3)) -> FrozenFrame {
     let mut state = STATE.lock();
     let held = match state.as_ref().and_then(|s| s.cockpit) {
         Some(cockpit) => cockpit,
@@ -127,7 +127,7 @@ pub fn frozen_frame(capture: impl FnOnce() -> ([EyeView; 2], Quat, Vec3)) -> Fro
 /// re-composed from those authoritative numbers every frame, so there is no per-frame
 /// matrix→euler→matrix round trip to drift through. Re-composition is rigid (rotation + translation
 /// only), which is all a camera world transform carries.
-pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4 {
+pub(crate) fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4 {
     let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
     let mut state = STATE.lock();
     if !state.as_ref().is_some_and(|s| s.cockpit.is_none()) {
@@ -165,7 +165,7 @@ pub fn pin_full_camera(base: PoseValues) {
 /// otherwise untouched (the same layer, space, and FOVs), so this cannot desynchronize the submit
 /// path -- and the poses are re-latched, not accumulated, so leaving the freeze restores the live
 /// pair immediately.
-pub fn submission_poses(
+pub(crate) fn submission_poses(
     frozen: bool,
     capture: impl FnOnce() -> [openxr::Posef; 2],
 ) -> [openxr::Posef; 2] {

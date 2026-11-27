@@ -139,29 +139,18 @@ pub struct VrStatus {
     /// The runtime name reported at bring-up, or `None` while torn down or while the runtime state
     /// is busy.
     pub runtime_name: Option<String>,
-    /// The effective per-eye render resolution (recommended × `resolution_scale`) while a session is
-    /// running, or `None` otherwise.
-    pub eye_resolution: Option<(u32, u32)>,
 }
 
 /// Snapshot the VR runtime state for the debug UI. Locks the config and the runtime state briefly.
 pub fn status() -> VrStatus {
-    let cfg = VR_CONFIG.lock().clone();
     // `try_lock`, never `lock`. The debug UI runs on the game thread holding the egui state lock,
     // and a blocking lock of the runtime state is for the top of the render update only (see
     // `lock_state`). A stale readout for one frame is not worth a deadlock.
     let Some(state) = VR_STATE.try_lock() else {
-        return VrStatus {
-            runtime_name: None,
-            eye_resolution: None,
-        };
+        return VrStatus { runtime_name: None };
     };
     VrStatus {
         runtime_name: state.runtime_name.clone(),
-        eye_resolution: state
-            .is_running()
-            .then(|| state.eye_resolution(&cfg))
-            .flatten(),
     }
 }
 

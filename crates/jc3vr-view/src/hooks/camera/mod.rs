@@ -597,7 +597,7 @@ fn write_camera_transform(target: &mut Matrix4, orientation: glam::Quat, positio
 /// shared by the render-camera head-track ([`head_track_render_camera`], gated on this in
 /// `setup_render_camera`) and the floating panel's world-lock in `crate::hud`, so the render camera and
 /// the panel always agree on when it is active and hand off together.
-pub fn vr_loading_view_active() -> bool {
+pub(crate) fn vr_loading_view_active() -> bool {
     !in_gameplay() && source() == Source::Vr && LOADING_BASE.get().is_some()
 }
 
@@ -720,7 +720,7 @@ static LAST_CAMERA_WORLD: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::ne
 static MAIN_CAMERA_PLANES: RenderFrameSlot<(f32, f32)> = RenderFrameSlot::new();
 
 /// The active camera's near/far as of the last `Camera::UpdateRender`, or `None` before the first.
-pub fn main_camera_planes() -> Option<(f32, f32)> {
+pub(crate) fn main_camera_planes() -> Option<(f32, f32)> {
     MAIN_CAMERA_PLANES.get()
 }
 
