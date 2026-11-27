@@ -59,15 +59,15 @@ pub(crate) fn head_view_status(ui: &mut egui::Ui) {
     ui.label(format!("Camera dtf: {:.3}", hooks::camera::last_dtf()));
 }
 
-/// The grapple comfort filter's blend (issue #36), and the switch for its reel telemetry log.
+/// The grapple comfort filter's blend (issue #36), and the switch for its reel telemetry capture.
 pub(crate) fn grapple_comfort_readout(ui: &mut egui::Ui) {
     ui.label(format!("Comfort blend: {:.2}", grapple::blend_factor()));
     let mut log = grapple::telemetry::log_enabled();
     if ui
-        .checkbox(&mut log, "Log reel telemetry")
+        .checkbox(&mut log, "Capture reel telemetry")
         .on_hover_text(
-            "Write per-tick filter state and per-frame pose composition to the log \
-             (`grapple_telemetry` target) for offline analysis.",
+            "Write per-tick filter state and per-frame pose composition to a CSV file in the \
+             session's grapple logs for offline analysis.",
         )
         .changed()
     {

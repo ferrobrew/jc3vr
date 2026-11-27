@@ -1,7 +1,7 @@
 //! The grapple telemetry capture: a CSV stream of the filter's inputs and outputs, for offline
 //! analysis of comfort issues that are hard to judge from inside the headset.
 //!
-//! While enabled (from the debug UI's Camera tab; off by default), one row is written per input
+//! While enabled (from the debug UI's Grapple feature page; off by default), one row is written per input
 //! tick (`tick`) and per rendered VR frame (`frame`) to a new file in the session's grapple logs
 //! (see [`jc3vr_core::session`]). The file is created lazily on the first row, and toggling off and
 //! on starts a fresh file, so captures with different settings stay separate. The capture has a
