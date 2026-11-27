@@ -3,7 +3,7 @@
 //! Runs FSR2 (via [`fsr_sys`]) in place of the engine's SMAA: per eye, it resolves the post-tonemap
 //! scene color (plus the engine's depth and velocity) into our own output texture, which is then
 //! copied back into the post-effect chain's working slot. The engine AA is suppressed while FSR is
-//! active. See `docs/mod/rendering/fsr.md` for the dispatch-point rationale and the AA-first/upscaler-later plan.
+//! active. See `docs/mod/rendering/fsr.md` for the dispatch-point rationale and the upscaling design.
 //!
 //! State is one [`fsr_sys::Context`] and one output texture per eye, lazily (re)created whenever the
 //! render resolution changes -- the same compare-and-recreate pattern the debug captures use, which
@@ -81,8 +81,9 @@ struct EyeState {
     /// The velocity-decode pass + its R16G16F MV buffer (None if it failed to build -- FSR then runs
     /// with no motion vectors).
     decode: Option<VelocityDecode>,
-    /// Set on creation; the first dispatch consumes it as FSR's `reset` so a fresh context (after a
-    /// resize / toggle-on) discards any garbage history instead of reprojecting against it.
+    /// Whether the next dispatch discards the history, which it consumes as FSR's `reset`: set on
+    /// creation (after a resize or a layout change), on a requested reset, and on a camera cut, so
+    /// the resolve never reprojects against a history that does not belong to this frame.
     fresh: bool,
 }
 
@@ -605,9 +606,9 @@ unsafe fn resolve_eye(
 
         // Decode JC3's bias-encoded velocity into FSR's MV buffer (re-anchoring the vectors at this
         // eye's own previous pose when the stereo correction is active); on success FSR reads the
-        // decoded buffer, otherwise it falls back to the raw velocity (still biased -- only used if
-        // the decode is unavailable or disabled, as a degraded path). A side-by-side resolve needs
-        // the decode's depth copy, so it cannot run without it.
+        // decoded buffer, otherwise it falls back to the raw, still-biased velocity, a degraded path
+        // for when the decode failed to build or to dispatch. A side-by-side resolve needs the
+        // decode's depth copy, so it cannot run without it.
         let decoded_mv = eye_state.decode.as_ref().filter(|d| {
             d.dispatch(
                 context,
@@ -669,7 +670,6 @@ unsafe fn resolve_eye(
             sharpening: sharpness,
             frame_time_delta_ms: camera.frame_time_delta_ms,
             pre_exposure: 1.0,
-            // Discard history on the first dispatch of a freshly created context.
             reset: std::mem::take(&mut eye_state.fresh),
             camera_near: camera.near,
             camera_far: camera.far,
@@ -749,7 +749,7 @@ fn create_eye(device: &Device, slot_color: &Texture, build: Build) -> Option<Eye
     };
 
     // Native AA: render size == display size. The HDR / depth / exposure flags match how we feed FSR
-    // (post-tonemap LDR for now, so no HDR flag; reverse-Z infinite-far depth; FSR auto-exposure).
+    // (post-tonemap LDR, so no HDR flag; reverse-Z infinite-far depth; FSR auto-exposure).
     let flags = init_flags::DEPTH_INVERTED | init_flags::DEPTH_INFINITE | init_flags::AUTO_EXPOSURE;
     let extent = Extent { width, height };
     let context = Context::new(d3d, flags, extent, extent)?;

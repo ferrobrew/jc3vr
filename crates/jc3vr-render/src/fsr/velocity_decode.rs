@@ -104,7 +104,7 @@ pub(crate) struct DepthCopy {
 
 /// Matches the HLSL `Params` cbuffer: one register of size/sign, then the two column-major
 /// reprojection matrices, then one register of the correction flag, the window offset, and the
-/// depth-copy flag.
+/// depth-copy flag, then one register of the hybrid flag.
 #[repr(C)]
 struct Params {
     width: u32,
@@ -121,8 +121,6 @@ struct Params {
     padding: [u32; 3],
 }
 
-// The HLSL `Params` cbuffer spans eleven registers: size and sign, two matrices of four, the
-// correction flag with the window, and the hybrid flag.
 const _: () = assert!(size_of::<Params>() == 11 * 16);
 
 impl VelocityDecode {
@@ -267,7 +265,6 @@ impl VelocityDecode {
             }
             let correction = reprojection.filter(|_| depth_srv.is_some());
 
-            // Upload the per-dispatch params.
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             if context
                 .Map(
@@ -367,7 +364,7 @@ unsafe fn create_depth_copy(d3d: &ID3D11Device, width: u32, height: u32) -> Opti
 
 /// Build an SRV over the engine's depth texture. Depth resources are typeless (they carry both a DSV
 /// and SRV view), so the SRV format is derived from the underlying resource description rather than
-/// the engine's format field. `None` on failure (the correction is then skipped for this dispatch).
+/// the engine's format field. `None` on failure.
 pub(super) fn depth_srv(device: &Device, depth: &Texture) -> Option<ID3D11ShaderResourceView> {
     // SAFETY: `depth.m_Texture` is the live engine depth texture; the cast and desc query only read
     // it, and the created view holds its own reference.

@@ -26,7 +26,7 @@ pub const GPU_SEAM_NAMES: [&str; 7] = [
 /// One resolved GPU dispatch, from the profiler's timestamp read-back.
 #[derive(Clone, Copy, Debug)]
 pub struct GpuDispatchSample {
-    /// The dispatch's eye (0 or 1) or 2 for a far-field dispatch.
+    /// The dispatch's eye, 0 or 1.
     pub lane: u8,
     /// The GPU's execution window for the dispatch, idle inside it included.
     pub span_ns: i64,

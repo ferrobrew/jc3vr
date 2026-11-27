@@ -27,8 +27,8 @@ pub(super) struct SendPtr<T>(pub(super) *mut T);
 unsafe impl<T> Send for SendPtr<T> {}
 
 /// Dispatches of read-back backlog to keep polling before giving up and recycling the oldest
-/// (about six frames' worth at two to three dispatches per frame, enough for a GPU-bound frame
-/// queue at a large render size).
+/// (eight frames' worth at multipass stereo's two dispatches per frame, enough for a GPU-bound
+/// frame queue at a large render size).
 pub(super) const MAX_PENDING: usize = 16;
 
 /// The largest inter-dispatch gap reported as a "GPU idle" scope. Anything longer is a pause
@@ -249,9 +249,8 @@ impl GpuProfiler {
         let tick_to_ns =
             |ticks: u64| -> i64 { (ticks as i128 * 1_000_000_000 / frequency as i128) as i64 };
 
-        // Resolve each interval to CPU-timeline nanoseconds relative to the first timestamp. The
-        // seams are issued and executed in order, so the first interval's begin is the dispatch's
-        // earliest tick; track the latest end tick for the idle measurement.
+        // Resolve each interval to CPU-timeline nanoseconds relative to the dispatch's earliest
+        // tick, and track the latest end tick for the idle measurement.
         let mut base_ticks: Option<u64> = None;
         let mut last_ticks: u64 = 0;
         let mut resolved: Vec<Resolved> = Vec::with_capacity(dispatch.intervals.len());
@@ -316,7 +315,6 @@ impl GpuProfiler {
             let outer_stop = resolved.iter().map(|r| r.stop_ns).max().unwrap();
             self.lane_cursor_ns = outer_stop;
 
-            // Subdivide the span into work and holes, then accumulate the rolling summary.
             let gaps = starvation_gaps(&resolved, outer_start, outer_stop);
             let starved_ns: i64 = gaps.iter().map(|&(a, b)| b - a).sum();
             let span_ns = outer_stop - outer_start;

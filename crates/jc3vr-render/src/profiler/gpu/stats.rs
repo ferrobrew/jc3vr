@@ -111,7 +111,7 @@ impl Stats {
     }
 }
 
-/// How often the GPU layer logs its rolling busy/starved/idle summary while collection is on.
+/// How often the GPU layer logs its rolling busy/starved/idle summary while it issues queries.
 const SUMMARY_WINDOW: Duration = Duration::from_secs(5);
 
 pub(super) fn ms(ns: i64) -> f64 {
