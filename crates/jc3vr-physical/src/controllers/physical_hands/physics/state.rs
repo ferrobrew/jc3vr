@@ -139,7 +139,7 @@ impl Target {
     /// The carrier moves only with the simulation's steps, so its lead counts the steps since the
     /// palm was published; led by the time since instead, a frame that runs no step would put the
     /// palm a frame's travel of a moving car ahead of where the car is, and the hand would snap
-    /// back and forth (510 to 519 s of the 14 November take).
+    /// back and forth.
     pub(super) fn led(&self, lead_s: f32, carrier_lead_s: f32) -> Goal {
         let carrier = if self.carrier.is_finite() {
             self.carrier
@@ -381,10 +381,10 @@ pub(super) fn holding_tuning(
     };
     let torque_nm = full.torque_nm.max(0.0) * (pull / full.force_n).max(0.0) * twist_share;
     // A ragdoll or an articulated object hangs most of its mass on its own constraints, which the
-    // dead-beat drive does not see: closing the bone's lag in one step, the hand overshoots and
-    // the body orbits the palm at 2 to 4 Hz, even held still (2659, 2672, and 3270 s of the 14
-    // November take). It is pulled softly instead, and with both hands on it, each pulls half as
-    // hard, since each drive assumes it alone moves the assembly.
+    // dead-beat drive does not see: closing the bone's lag in one step, the hand overshoots
+    // and the body orbits the palm at 2 to 4 Hz, even held still. It is pulled softly
+    // instead, and with both hands on it, each pulls half as hard, since each drive assumes
+    // it alone moves the assembly.
     let gain_share = match (hold.constrained, hold.shared) {
         (false, _) => 1.0,
         (true, false) => constrained_gain_share,

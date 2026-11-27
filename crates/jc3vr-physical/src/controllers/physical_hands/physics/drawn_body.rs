@@ -3,7 +3,7 @@
 //! Rico has no physics bodies for his limbs while animated: his ragdoll exists only while a preset
 //! is wanted, and its keyframed bodies would follow the animated pose before the mod's IK and sit
 //! on a layer that props do not collide with. Without a body of the mod's own, a held prop passes
-//! through the torso (a barrel swung through Rico at 1438.8 s on the 14 November take), and a held
+//! through the torso, and a held
 //! ragdoll fills the camera.
 //!
 //! Two capsules follow the procedural torso's keep-out, the chest and the abdomen, slimmer than the
