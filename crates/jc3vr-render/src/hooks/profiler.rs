@@ -1,15 +1,16 @@
 //! Profiler-only detours (issue #34), compiled under the `profiler` feature.
 //!
 //! These hooks exist purely to instrument the game; they add no behaviour of their own beyond
-//! opening puffin CPU scopes and GPU timestamp brackets. The frame phases and render seams that
-//! the mod *already* hooks for other reasons are instrumented inline in those hooks (also under
-//! the feature), as are the sim tick and its phases (`crate::hooks::sim`, which the frame breakdown
-//! times in every build); this module covers the seams that are otherwise untouched:
+//! opening puffin CPU scopes and GPU timestamp brackets, plus the capture probes' block-type
+//! notifications. The frame phases and render seams that the mod hooks for other reasons are
+//! instrumented inline in those hooks (also under the feature), as are the sim tick and its phases
+//! (`jc3vr_gameplay::hooks::sim`, which the frame breakdown times in every build); this module covers
+//! the seams that are otherwise untouched:
 //!
 //! - `RenderEngine::DrawGBuffer` and `RenderEngine::Draw` — the two scene seams between `PreDraw`
 //!   and `DrawPosteffects`, bracketed on the GPU timeline and timed on the CPU.
-//! - `CRenderPass::ChangeRenderBlockType` — counts the outgoing type run's blocks (always), and,
-//!   when the per-draw scopes are enabled, opens a per-render-block-type CPU scope named by the
+//! - `CRenderPass::ChangeRenderBlockType` — counts the outgoing type run's blocks while scope
+//!   collection is on, and, when the per-draw scopes are also enabled, opens a per-render-block-type CPU scope named by the
 //!   type, closed by the next switch or by the pass draw's tail (see `render_pass::do_draw`).
 //!
 //! The engine's own scope-marker calls (`Graphics::BeginScopeMarker` / `EndScopeMarker`, §1.5 of

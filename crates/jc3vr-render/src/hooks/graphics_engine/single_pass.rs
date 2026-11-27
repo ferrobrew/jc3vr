@@ -179,9 +179,8 @@ const OCCLUDER: BakedCbBlock = BakedCbBlock {
     once: false,
 };
 
-/// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3, so
-/// reproject those four rows per eye. Covers all three of its draw kinds (plain, CPU-instanced,
-/// GPU-indirect) via the whole-`Draw` re-issue.
+/// Reprojects the tree-trunk/branch block's baked `cb1` view-projection ([`BARK`]) per eye. Covers
+/// all three of its draw kinds (plain, CPU-instanced, GPU-indirect) via the whole-`Draw` re-issue.
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockBark::Draw_ADDRESS)]
 fn render_block_bark_draw(
     this: *const RenderBlockBark,
@@ -201,8 +200,8 @@ fn render_block_bark_draw(
 /// current one to produce a velocity vector, and that copy is left centred -- so bark's motion
 /// vectors carry the centre view's parallax rather than the eye's, and SMAA and FSR reproject bark
 /// slightly wrongly. Correcting it needs the previous frame's `M_eye` retained and a second armed
-/// range; it is a temporal-sharpening artefact rather than a geometric one, so it is left until the
-/// per-eye motion-vector path is worked on as a whole.
+/// range; the error is a temporal-sharpening artefact rather than a geometric one, and it belongs to
+/// the per-eye motion-vector path as a whole rather than to this block.
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockBark::DrawZ_ADDRESS)]
 fn render_block_bark_draw_z(
     this: *const RenderBlockBark,
@@ -214,8 +213,7 @@ fn render_block_bark_draw_z(
     unsafe { intercept_render_block(&BARK, rc, || detour.call(this, rc, info)) };
 }
 
-/// The grass/foliage block bakes its view-projection into vertex `cb2` registers 4..7 (register 0 is
-/// the per-draw world matrix); reproject the `cb2` view-projection rows per eye.
+/// Reprojects the grass/foliage block's baked `cb2` view-projection ([`FOLIAGE`]) per eye.
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockFoliage::Draw_ADDRESS)]
 fn render_block_foliage_draw(
     this: *const RenderBlockFoliage,
@@ -235,7 +233,7 @@ fn render_block_foliage_draw(
 /// draws there, and the colour fragments that follow are rejected against it.
 ///
 /// The velocity permutation additionally stages the previous frame's offset view-projection at
-/// `cb2[11..14]`, which is **not** reprojected -- the same deferral bark's `DrawZ` takes, and for the
+/// `cb2[11..14]`, which is **not** reprojected -- the same limitation as bark's `DrawZ`, for the
 /// same reason (it would need the previous frame's `M_eye` retained and a second armed range). The
 /// shadow and reflective-shadow permutations render from a light view outside the G-buffer range,
 /// where the intercept stands down and the draw is issued once, as it must be.
@@ -258,7 +256,7 @@ fn render_block_foliage_draw_z(
 /// bakes no `cb1` matrix, so there is nothing to reproject and both eyes would be primed from the
 /// centred view. Nothing in the mod writes that cvar, so the precondition is unenforced; the
 /// re-issue logs when it finds nothing to reproject (see `REPROJECT_FIRED`), which is what surfaces
-/// the condition until the cvar is driven.
+/// the condition.
 #[detour(address = jc3gi::graphics_engine::render_block::RenderBlockOccluder::DrawZ_ADDRESS)]
 fn render_block_occluder_draw_z(
     this: *const RenderBlockOccluder,

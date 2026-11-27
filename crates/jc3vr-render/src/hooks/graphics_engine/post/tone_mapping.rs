@@ -85,8 +85,7 @@ fn calc_histogram_mid_bright(
 }
 
 // ToneMappingEffect::Update -- the per-frame exposure step (CPostEffectsManager::UpdateRender -> here).
-// With the real 3-arg signature this is the canonical place to (a) pin the applied exposure for the A/B,
-// and (b) read the exposure internals. The target divisor is m_Histogram2's mid-point -- what the
+// It is the place to (a) pin the applied exposure for the A/B, and (b) read the exposure internals. The target divisor is m_Histogram2's mid-point -- what the
 // converged exposure tracks, NOT m_Histogram. Update also advances internal histogram ring indices
 // (notably the occlusion-query slot selector, [`ToneMappingEffect::m_OcclusionQuerySlotSelector`]);
 // running it on both eyes steps those indices twice per real frame and can read back a stale

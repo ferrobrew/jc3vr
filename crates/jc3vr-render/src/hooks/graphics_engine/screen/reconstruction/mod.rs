@@ -24,7 +24,7 @@
 //! [`crate::hooks::graphics_engine::clustered_lighting`] drives it for the deferred resolve, which is where the sun shadow is
 //! sampled.
 //!
-//! A per-eye half raises its mask under one of two [`MaskArming`] rules. The original one,
+//! A per-eye half raises its mask under one of two [`MaskArming`] rules. One,
 //! [`MaskArming::OnReconstruction`], waits for the pass's own `PerspectiveFovInverse` call, so a pass
 //! that turns out not to reconstruct leaves the frame exactly as it found it; the price is that
 //! whatever the block draws *before* that call runs unmasked, twice. The other,
@@ -86,8 +86,9 @@ pub(super) fn hook_library() -> HookLibrary {
 /// NDC-to-pixel mapping alone and only clips. The per-eye basis is then obtained by folding the
 /// full-target-NDC → eye-NDC remap into the inverse itself (see [`half_target_remap`]).
 ///
-/// Returns a guard that puts the scissor state back on every path. Only the pass's own
-/// [`Matrix4::PerspectiveFovInverse`] call arms the mask, so a pass that turns out not to reconstruct
+/// Returns a guard that puts the scissor state back on every path. Under
+/// [`MaskArming::OnReconstruction`] only the pass's own [`Matrix4::PerspectiveFovInverse`] call arms
+/// the mask, so a pass that turns out not to reconstruct
 /// (an auxiliary camera, whose near/far are not the main view's) leaves the frame exactly as it found
 /// it -- see [`PerEyeHalf::masked`].
 ///
@@ -437,12 +438,12 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     let half = PER_EYE.get();
     let eye = half.map_or_else(jc3vr_view::stereo::draw_index, |state| state.eye);
     let params = render_params(eye);
-    // Recognize the main-view depth passes by the engine's ACTUAL active-camera planes, the single
-    // source of truth ([`jc3vr_view::hooks::camera::main_camera_planes_or`]), not a hardcoded config value:
-    // the engine writes a runtime far (~40 km) that differs from the constructor default the config
-    // mirrors (38.4 km), so comparing against the config rejected every main pass and the off-axis
-    // inverse never engaged. A pass whose near/far differ from the live main camera belongs to another
-    // camera (e.g. a reflection) whose symmetric rebuild is already correct, so leave it untouched.
+    // Recognize the main-view depth passes by the engine's live active-camera planes
+    // ([`jc3vr_view::hooks::camera::main_camera_planes_or`]), not the camera's constructor defaults:
+    // the engine writes a runtime far plane that differs from the constructor default, so a comparison
+    // against the default would reject every main pass. A pass whose near/far differ from the live main
+    // camera belongs to another camera (e.g. a reflection) whose symmetric rebuild is already correct,
+    // so leave it untouched.
     let (near_ref, far_ref) = jc3vr_view::hooks::camera::main_camera_planes_or(far_fallback);
     let near_ok = (near - near_ref).abs() <= near_ref.abs().max(0.01) * 0.1;
     let far_ok = (far - far_ref).abs() <= far_ref.abs() * 0.01;
@@ -451,7 +452,7 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // The `Matrix4` <-> glam bridge transposes each way, so `Matrix4::from(Mat4::from(engine).inverse())`
     // yields the inverse back in engine row-major format -- the same pattern the camera hook uses to
     // write `m_View`. The engine's `PerspectiveFovInverse`
-    // ([`Matrix4::PerspectiveFovInverse_ADDRESS`]) produces a REVERSE-Z clip->view
+    // ([`Matrix4::PerspectiveFovInverse`]) produces a REVERSE-Z clip->view
     // inverse (its depth entries `m23 = (far-near)/(far*near)`, `m33 = 1/far`, `m32 = -1` reconstruct
     // near->NDC z 1, far->0), matching the reverse-Z depth buffer the game renders. So invert the
     // reverse-Z off-axis projection, not the standard-depth one: `inverse(projection_reverse_z)`
@@ -693,7 +694,7 @@ fn set_eye_half_scissor(viewport: D3D11_VIEWPORT, eye: usize) -> Option<()> {
 /// capture were really bound, independent of `reported` -- the count the runtime handed back.
 ///
 /// Whether a runtime writes back the requested slot count or the number actually bound is
-/// implementation-defined; [`capture_viewport_slots`](crate::stereo::single_pass) resolves the identical
+/// implementation-defined; [`capture_viewport_slots`](crate::stereo::single_pass::viewport::capture_viewport_slots) resolves the identical
 /// ambiguity for viewport slots by trusting the extent instead of the count, since a slot nothing bound
 /// reads back zero-width. A scissor rectangle has the same tell: a rect that is actually in effect always
 /// has positive area, so a rect with none -- typically what an unset trailing slot reads back as -- is
@@ -912,7 +913,7 @@ mod tests {
                 let x_full = (x_eye - 1.0 + 2.0 * eye as f32) / 2.0;
                 let through_half = remapped * glam::Vec4::new(x_full, 0.3, 0.0, 1.0);
                 let direct = inverse * glam::Vec4::new(x_eye, 0.3, 0.0, 1.0);
-                // The far plane sits 38.4 km out, so compare the reconstructed rays relatively: an
+                // The far plane sits tens of kilometres out, so compare the reconstructed rays relatively: an
                 // absolute tolerance there would be measuring float spacing, not agreement.
                 let (through_half, direct) = (through_half / through_half.w, direct / direct.w);
                 assert!(

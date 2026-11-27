@@ -3,13 +3,13 @@
 //!
 //! The pass reconstructs world position from depth for the *whole* screen -- sky included -- and then
 //! ray-marches the sun shadow cascade and aerial perspective over the reconstructed positions. That
-//! makes it the second consumer of the [`crate::hooks::graphics_engine::reconstruction`] basis after the deferred resolve,
+//! makes it the second consumer of the [`reconstruction`] basis after the deferred resolve,
 //! and it fails under the collapse the same way: one draw spans both eye halves of the double-wide
 //! target while the substituted inverse describes one eye's frustum, so neither half reconstructs
 //! correctly and the error turns with the camera.
 //!
 //! The visible consequence is that the sun shadow keeps sliding across the world even with the
-//! deferred resolve already split per eye ([`crate::hooks::graphics_engine::clustered_lighting`]) -- the cascade is sampled in
+//! deferred resolve split per eye ([`crate::hooks::graphics_engine::clustered_lighting`]) -- the cascade is sampled in
 //! both passes, and fixing only one leaves the other painting the mistake back over it.
 //!
 //! The fix is the shared one: re-issue the block's `Draw` once per eye inside a

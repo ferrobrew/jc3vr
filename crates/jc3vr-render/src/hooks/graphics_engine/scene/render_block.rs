@@ -5,7 +5,7 @@
 //! every pass — shadow, depth prepass, GBuffer — branching internally on
 //! [`RenderContext::m_RenderStatus`]. The hiding operates at the *bone* level, the true
 //! granularity of skinning: Rico's skin material packs the face, arms, and hands into a single
-//! block (and even a single 70-bone skin batch), so neither block-level nor batch-level skipping
+//! block (and even a single skin batch), so neither block-level nor batch-level skipping
 //! can remove the head without taking the hands along. Instead, while one of the player's blocks
 //! draws in a non-shadow pass, the palette upload (`SetMatrixPalette`) is fed a *copy* of the
 //! bone matrices with the HEAD and facial bones collapsed — a zero rotation with the translation
@@ -18,10 +18,10 @@
 //!
 //! The same palette spoof carries the render-rate presentation of the player's body: while the
 //! player's body draws in any pass, shadows included, the upper body's entries (the spine, the head,
-//! the arms, and the hands) are re-posed from the latest tracking (see
-//! [`crate::controllers::presentation`], which falls back to the hands' and forearms' late update in
-//! [`crate::controllers::hands::late`]), in the same copy and the same detected layout as the
-//! collapse.
+//! the arms, and the hands) are re-posed from the latest tracking through the registered palette
+//! edit ([`jc3vr_view::hooks::graphics_engine::palette_edit`], provided by the body crate's
+//! `controllers::presentation`, which falls back to the hands' and forearms' late update in
+//! `controllers::hands::late`), in the same copy and the same detected layout as the collapse.
 //!
 //! Ownership is settled by pointer identity: every draw receives its owning model instance's
 //! embedded `CRBIInfo` as the `info` argument, and the character hook publishes the player's
@@ -166,8 +166,8 @@ thread_local! {
     /// Set around the original `Draw`/`DrawZ` call for the local player's blocks in non-shadow
     /// passes; the palette hooks spoof only while it is up. Thread-local, not global: character
     /// draws run on multiple render worker threads (`CRBIInfo`'s constant-buffer bookkeeping is
-    /// declared volatile for exactly that reason), and a global flag leaked from the player's
-    /// draw into whatever unowned block drew concurrently — collapsing another skeleton's bones
+    /// declared volatile for exactly that reason), and a global flag would leak from the player's
+    /// draw into whatever unowned block draws concurrently — collapsing another skeleton's bones
     /// by index collision (observed in-game as a stretched holstered weapon).
     static HIDE_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
@@ -371,8 +371,7 @@ unsafe fn spoof(
         };
         // The palette layout differs per block (empirically: the body/facial blocks store four
         // 3-float columns with the translation last, the face-gear and one skin block store
-        // three 4-float rows with the translation in the fourth element — the root bone's
-        // identity matrix read column-wise as (0,1,0) at [9..11] was the tell). Detect the
+        // three 4-float rows with the translation in the fourth element). Detect the
         // layout per batch by orthonormality of the 3x3 under each reading, voting across the
         // referenced bones, then zero that layout's rotation and write the target into its
         // translation slots. Writing through the wrong layout puts the target into the rotation
@@ -440,7 +439,7 @@ unsafe fn spoof(
 }
 
 /// The light-glow sprite is a screen-space billboard whose vertices are placed on the CPU by
-/// [`CRenderBlockLightGlow::Draw`], using the render context's translation-bearing view-projection.
+/// `CRenderBlockLightGlow::Draw`, using the render context's translation-bearing view-projection.
 /// The halo pass (`RP_MODEL_HALO_POST`) draws from a per-pass snapshot of the camera manager's render
 /// camera taken in `CRenderPass::SaveRenderFrameData`, before the per-eye `SetupRenderCamera` hook
 /// applies the IPD offset. Without intervention the flare projects from the center camera for both

@@ -8,8 +8,7 @@
 
 use re_utilities::hook_library::HookLibrary;
 
-// Exposure and post-effect config structs, accessed by `tone_mapping` and `post_effects` via
-// `Config::lock_query`.
+// Exposure and post-effect config structs, read by `tone_mapping` and `post_effects`.
 pub mod config;
 // The replay of `GeneralMkIII`'s declaration creation that builds the hardware-instanced layout twins.
 mod declaration_replay;
@@ -17,9 +16,11 @@ mod declaration_replay;
 // payload's flip block and hook-thread log.
 pub mod engine;
 mod render_pass;
-// `shader` is public so the debug UI can read its patched-shader count.
+// `shader` is public for the payload's reconcile, reload, and eject calls and the debug UI's
+// patched-shader count.
 pub mod shader;
-// Single-pass stereo render-thread detours (the cb13 mirror; on by default while a VR session runs).
+// Single-pass stereo render-thread detours (the per-pass cb13 mirror and the baked-constant
+// render-block re-issues).
 mod single_pass;
 
 pub mod post;

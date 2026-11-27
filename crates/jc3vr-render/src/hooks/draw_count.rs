@@ -2,8 +2,7 @@
 //!
 //! The draw entry points (`Draw`/`DrawIndexed` and the instanced/indirect variants) and compute
 //! `Dispatch`/`DispatchIndirect` fire too often to trace individually, so we *count* them: a global
-//! per-eye total ([`DRAW_COUNTS`], a `DrawCounts` reported in `draw_end`) plus
-//! a thread-local per-pass tally that rides along on each `SetRenderSetup` event. The instanced /
+//! per-eye total ([`DRAW_COUNTS`], reported in the `DrawEnd` trace event) plus a thread-local per-pass tally that rides along on each `SetRenderSetup` event. The instanced /
 //! indirect / dispatch wrappers have unreliable demangled prototypes, so their detours forward a
 //! generous set of opaque pointer-sized args transparently (preserving the full 64-bit of every
 //! register/stack slot) rather than decode them -- they're only counted, never inspected. The
@@ -37,7 +36,7 @@ thread_local! {
 }
 
 /// The live per-eye draw-call counters: worker threads bump these per draw; the Draw driver clears
-/// them at `draw_begin` and snapshots them into the `draw_end` event.
+/// them at the `DrawBegin` trace event and snapshots them into the `DrawEnd` event.
 pub static DRAW_COUNTS: DrawCounts = DrawCounts::new();
 
 /// The engine's draw calls and compute dispatches through its `Graphics::` wrappers, summed since the
@@ -120,7 +119,8 @@ fn draw(ctx: *mut c_void, prim: i32, arg2: i32, arg3: i32) {
     }
 }
 
-// The six below forward opaque args transparently -- see the module doc and draw.pyxis.
+// The instanced, indirect, and indirect-dispatch detours forward opaque args transparently -- see
+// the module doc and draw.pyxis.
 
 #[detour(address = jc3gi::graphics_engine::draw::DrawIndexedInstancedIndirectNoMutex_ADDRESS)]
 fn draw_indexed_instanced_indirect_no_mutex(
@@ -260,9 +260,9 @@ fn clear(ctx: *mut c_void, flags: u32, color: *mut c_void, depth: f32, stencil: 
     CLEAR.get().unwrap().call(ctx, flags, color, depth, stencil);
 }
 
-/// Records the VFX depth copy, which happens once per dispatch, mid-frame, and skips it under
-/// single-pass is active and it targets one of the effect depth-history
-/// slots, which nothing reads ([`GraphicsEngine::m_EffectInfo`]).
+/// Records the VFX depth copy, which happens once per dispatch, mid-frame, and skips it while
+/// single-pass is active and it targets one of the effect depth-history slots, which nothing reads
+/// ([`GraphicsEngine::m_EffectInfo`]).
 #[detour(address = jc3gi::graphics_engine::draw::CopySurfaceToTexture_ADDRESS)]
 fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void) {
     TraceState::record_eye(TraceEvent::CopySurfaceToTexture {

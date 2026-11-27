@@ -1,4 +1,5 @@
-//! The terrain detail-tessellation budget fix (issue #40).
+//! The terrain detail block's detours: its per-eye re-issue under single-pass stereo, and the
+//! detail-tessellation budget fix (issue #40).
 //!
 //! The detail rock skin (`CTerrainRenderBlockDetail` — cliff walls, cave ceilings, near-field rock)
 //! is built each frame by a GPU pipeline: compute stages admit quads by frustum and distance, then
@@ -61,7 +62,7 @@ fn terrain_detail_draw(
 /// Whether the once-per-session apply has run.
 static APPLIED: AtomicBool = AtomicBool::new(false);
 
-/// The five buffer-size immediates (via their [`TerrainDetailBudgetPatchSites`] addresses) and their
+/// The five buffer-size immediates (via their [`BudgetSites`] addresses) and their
 /// shipped values (via [`TerrainDetailBudgetValues`]): the detail vertex/index/texel budgets the GPU
 /// pipeline allocates from.
 const BUDGET_SITES: [(u64, u32); 5] = [
@@ -88,8 +89,8 @@ const BUDGET_SITES: [(u64, u32); 5] = [
 ];
 
 /// Once per session, patch the detail-budget buffer sizes to the tuning's
-/// [`crate::tuning::TerrainTuning::detail_budget_scale`] times their shipped values and re-create the two terrain setup types so the new sizes take effect. Their `Recreate`
-/// is a no-op, so this goes through the same `Destroy` + `Create` pair `RegisterType` runs at
+/// [`crate::tuning::TerrainTuning::detail_budget_scale`] times their shipped values and re-create the
+/// two terrain setup types so the new sizes take effect. Their `Recreate` is a no-op, so this goes through the same `Destroy` + `Create` pair `RegisterType` runs at
 /// startup, with the render engine's own resource context. Call once per frame on the game thread
 /// with no draw in flight; the immediates auto-revert on uninject.
 pub fn apply_detail_budget_once() {

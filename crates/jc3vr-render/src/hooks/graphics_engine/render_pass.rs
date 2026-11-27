@@ -1,11 +1,6 @@
-//! Detours that gate per-frame render-list state so it advances only once per *real* frame, even
-//! though we render the scene twice (once per eye). See `docs/mod/stereo/single-pass-stereo.md`.
-//!
-//! `SetupRenderFrameData` (the per-batch list *build*, not the swap) and `HandBackBuffers`
-//! (constant-buffer recycle) run on both eyes. The add/draw list parity is handled separately by
-//! saving and restoring `current_add_buffer` in `game::game_update_render` between eyes, so the
-//! per-frame `CKeep1000Frames` call (which toggles the parity and calls `SaveRenderFrameData` on
-//! every pass) runs on both eyes and produces the same list pointers on both.
+//! Detours on the render-pass chain: the pass draw and walk scopes, the single-pass camera-scene
+//! range, the foveation bracketing, the second eye's elision of the view-independent prepasses, and
+//! the sun-shadow fit and lookup corrections. See `docs/mod/stereo/single-pass-stereo.md`.
 
 use std::{
     ffi::c_void,
@@ -152,10 +147,11 @@ fn draw_render_pass_range(
     // viewport split, and instance doubling apply to it. `first >= RP_Z_OCCLUDERS` selects the main
     // camera scene, excluding the shadow/reflection prepasses (<= RP_LAST_PREPASS) that reuse the same
     // patched shaders under a different (sun/reflection) view. Without collapse the range is just the
-    // G-buffer (`..RP_FIRST_SCENE`), a diagnostic that renders each eye into a half; with collapse it
+    // G-buffer (`..RP_FIRST_SCENE`), each eye rendered into a half; with collapse it
     // extends to the whole camera scene so the later geometry passes (water, sky, transparents) route
     // to the eyes too -- there the viewport split moves to draw time (patched geometry only), so the
-    // interleaved fullscreen lighting/post passes keep the full width. A no-op unless dual-eye is on.
+    // interleaved fullscreen lighting/post passes keep the full width. A no-op unless single-pass is
+    // active.
     let scene_geometry = crate::stereo::single_pass::active()
         && first >= RP_Z_OCCLUDERS
         && (jc3vr_view::stereo::layout::collapse_active() || last <= RP_FIRST_SCENE);
@@ -459,7 +455,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
 // frame instead of twice -- which also removes the per-eye shadow flicker (issue #31). PreDraw runs after
 // CommitRenderPassSettings (which re-enables the frame's scheduled shadow cascades), so the clear here is
 // the last word before the loop; the passes are re-enabled after so the next frame's first eye runs them.
-// This relies on the between-eye frame-counter restore in `game::game_update_render`, so both eyes
+// This relies on the between-eye frame-counter restore in the payload's `game_update_render`, so both eyes
 // share the shadow-atlas parity slot (without it, eye 1 advances parity and would sample the other,
 // unrendered slot).
 //
@@ -473,7 +469,7 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     // The first seam of a dispatch: label this thread's puffin lane (a no-op on single-core,
     // where the dispatch runs inline on the already-labelled main thread), open the GPU dispatch
     // (disjoint query + CPU reference), and bracket PreDraw on both the CPU and GPU timelines.
-    // The GPU dispatch is closed in `graphics_engine::render_engine_post_draw` (the last seam).
+    // The GPU dispatch is closed in `engine::render_engine_post_draw` (the last seam).
     #[cfg(feature = "profiler")]
     jc3vr_core::profiler::label_thread("draw");
     #[cfg(feature = "profiler")]
@@ -495,7 +491,7 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     if jc3vr_view::stereo::dispatch_ordinal() > 0 && jc3vr_view::stereo::active() {
         // SAFETY: `this` is the live render engine; its per-category `m_RenderPasses` vectors hold
         // engine-owned, null-checked pass pointers; the `m_Enabled` flag write mirrors the shadow
-        // scheduler's own store in `commit_render_pass_settings`.
+        // scheduler's own store in `ShadowManager::CommitRenderPassSettings`.
         let disabled = unsafe { disable_shared_prepasses(this) };
         let r = original.call(this, ctx);
         unsafe { reenable_passes(&disabled) };
@@ -507,9 +503,11 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
 
 /// The pre-pass categories ([`RenderPassId`] indices) that render identically for both eyes and whose
 /// outputs persist for the whole frame, so eye 1 can reuse eye 0's output instead of re-running
-/// them: the reflection chain (which also fixes the per-eye shadow flicker #31), the sun-shadow
-/// cascade atlas, and the water-simulation compute. Terrain-patch prep, the sky-lighting LUT,
-/// vegetation, and the rain occluder are held per-eye for this conservative first cut.
+/// them: the reflection chain through the environment reflection and the cloud shadows, the
+/// sun-shadow cascade atlas (sharing it also fixes the per-eye shadow flicker #31), and the
+/// water-simulation compute. Terrain-patch prep, the sky-lighting LUT, vegetation, and the rain
+/// occluder run on both eyes: the elision is limited to the categories whose view independence is
+/// established.
 const SHARED_PREPASS_CATEGORIES: &[(usize, usize)] = &[
     (
         RenderPassId::PRE_RP_REFLECTION_PRE as usize,

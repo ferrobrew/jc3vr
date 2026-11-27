@@ -6,8 +6,7 @@
 //! [`SetupConstantBuffers`](jc3gi::graphics_engine::render_block::RenderBlockTypeTerrainPatch::SetupConstantBuffers):
 //!
 //! - **Back-patch cull.** The hull discards a patch when all three control-point normals are more
-//!   than `m_BackPatchCullThreshold` (shipped `-0.3`, ~17.5 deg of slack) away from facing *one*
-//!   direction -- the render camera's forward axis -- rather than the actual view vector to the
+//!   than `m_BackPatchCullThreshold` away from facing *one* direction -- the render camera's forward axis -- rather than the actual view vector to the
 //!   patch. That approximation only holds for a narrow FOV: at 45-55 deg off-axis, which is most of a
 //!   headset's field of view, a patch that squarely faces the eye can still be beyond the threshold
 //!   from the camera axis, so it is discarded while visible.
@@ -35,8 +34,8 @@
 //!
 //! Cost: the patches in the margin are tessellated and rasterized instead of dropped, bounded by
 //! whatever the CPU-side patch cull already admitted (itself widened to the binocular union in
-//! [`crate::hooks::graphics_engine::culling`]). Back-facing triangles still die at the rasterizer, and out-of-frustum ones at
-//! the clipper.
+//! [`crate::hooks::graphics_engine::scene::culling`]). Back-facing triangles still die at the
+//! rasterizer, and out-of-frustum ones at the clipper.
 //!
 //! Under the single-pass collapse the frustum the hull programs cull against is the centred
 //! camera's, which carries eye 0's projection and no cant, and a canted eye sees past its outer edge

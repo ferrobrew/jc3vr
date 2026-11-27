@@ -31,9 +31,9 @@
 //! target -- which is also why both viewport slots are pinned, so a permutation that routed to either
 //! slot still lands in this eye.
 //!
-//! Behind [`StereoConfig::single_pass_ssdecal_per_eye`](jc3vr_view::stereo::config::StereoConfig). The two halves
-//! are decided at different points in the frame -- the rewrite when a shader is created, the staging
-//! when a decal is drawn -- so the flag cannot switch them together: flipping it off leaves
+//! Behind [`SinglePassSwitch::SsdecalPerEye`]. The two halves are decided at different points in the
+//! frame -- the rewrite when a shader is created, the staging when a decal is drawn -- so the flag
+//! cannot switch them together: flipping it off leaves
 //! already-rewritten permutations bound, fetching depth through an offset the draw path has stopped
 //! staging. The debug UI therefore requests a shader reload when it changes, which is what actually
 //! retracts (or applies) the rewrite, and [`shader_rewrite_enabled`] narrows the rewrite to the
@@ -50,8 +50,7 @@
 //! The decal therefore lands on the right surface in both eyes and at the same screen position in
 //! both -- correct-looking in a screenshot, flat in a headset.
 //!
-//! Behind [`StereoConfig::single_pass_ssdecal_geometry_per_eye`](jc3vr_view::stereo::config::StereoConfig), the
-//! per-eye re-issue becomes
+//! Behind [`SinglePassSwitch::SsdecalGeometryPerEye`], the per-eye re-issue becomes
 //! [`reproject_baked_cb_per_eye_staged`](crate::stereo::single_pass::reproject_baked_cb_per_eye_staged),
 //! which post-multiplies that vertex upload by the eye's `M_eye` on its way through as the block
 //! stages it. Only the vertex upload: the fragment restaging above is a separate constant buffer on a

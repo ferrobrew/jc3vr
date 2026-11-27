@@ -7,7 +7,7 @@ use re_utilities::hook_library::HookLibrary;
 pub(crate) mod culling;
 // The character render blocks' head hide and palette edit.
 pub mod render_block;
-// Diagnostic override of the base VolumetricTerrain color-pass hull-clip type (black cliff-wall
+// The terrain detail block's per-eye re-issue and the detail-tessellation budget fix (black cliff-wall
 // tiles).
 pub mod terrain;
 // The stereo relaxation of the volumetric-patch terrain's view-dependent hull culls (black terrain

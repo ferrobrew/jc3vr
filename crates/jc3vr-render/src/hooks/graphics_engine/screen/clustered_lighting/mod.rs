@@ -17,9 +17,8 @@
 //! re-upload after the original returns. Instead, a thread-local flag is set around the original
 //! `DrawClustered` call, and a detour on `Graphics::SetFragmentProgramConstants` intercepts the cb1
 //! upload (identified by `cb_index=1, start_offset=0, count=2`) and replaces the data with
-//! off-axis-derived values computed from the per-eye projection matrix. The second
-//! `SetFragmentProgramConstants` call in `DrawClustered` (tile grid dimensions, `count=1`) is not
-//! intercepted.
+//! off-axis-derived values computed from the per-eye projection matrix. The block's other `cb1`
+//! upload (the fill phase's light-chunk counts, `count=1`) is not intercepted.
 //!
 //! Both `DrawClustered` and its `SetFragmentProgramConstants` calls run on the render thread, so the
 //! thread-local flag correctly scopes the interception.
@@ -33,8 +32,8 @@
 //! basis describes one eye's frustum, so neither half reconstructs correctly and the error rotates
 //! with the camera -- the sun shadows slide across the screen instead of staying on the world.
 //!
-//! Under [`StereoConfig::single_pass_reconstruct_per_eye`](jc3vr_view::stereo::config::StereoConfig), the block's
-//! whole `Draw` is re-issued once per eye through
+//! Under [`SinglePassSwitch::ReconstructPerEye`](jc3vr_view::stereo::config::SinglePassSwitch::ReconstructPerEye),
+//! the block's whole `Draw` is re-issued once per eye through
 //! [`split_fullscreen_pass`](crate::hooks::graphics_engine::reconstruction::split_fullscreen_pass), which masks
 //! each run to that eye's half and hands it that eye's basis. The re-issue is of the whole block, not of
 //! the resolve alone, because the resolve is not separately reachable: the mask has to be armed after
@@ -53,8 +52,8 @@
 //! bind the grid through `CLightManager::SetupForwardLightingResources`, and foliage reads it a whole
 //! frame early, in `RP_VEGETATION_OPAQUE`.
 //!
-//! [`StereoConfig::single_pass_clustered_per_eye`](jc3vr_view::stereo::config::StereoConfig) makes the assignment
-//! per-eye too. Per run (see `docs/engine/rendering/lighting-shadow-pipeline.md` section 4.1 for how the engine
+//! [`SinglePassSwitch::ClusteredPerEye`](jc3vr_view::stereo::config::SinglePassSwitch::ClusteredPerEye)
+//! makes the assignment per-eye too. Per run (see `docs/engine/rendering/lighting-shadow-pipeline.md` section 4.1 for how the engine
 //! builds the grid, and `docs/mod/stereo/single-pass-stereo.md` for the split):
 //!
 //! 1. the light-assignment target's viewport is narrowed to this eye's half of the *tile* grid, which

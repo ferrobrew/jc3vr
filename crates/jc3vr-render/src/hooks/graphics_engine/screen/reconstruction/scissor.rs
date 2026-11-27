@@ -1,3 +1,8 @@
+//! The D3D rasterizer override behind a masked per-eye run's scissor rectangles. [`apply`] binds a
+//! scissor-enabled twin of the bound rasterizer state, cached per base state and device; [`reapply`]
+//! re-binds it after the engine flushes its own staged rasterizer state, and when no twin can be made
+//! it empties the viewports instead so the run draws nothing; [`restore`] puts back what it replaced.
+
 use std::cell::RefCell;
 
 use windows::{

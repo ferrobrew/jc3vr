@@ -52,12 +52,12 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// Logs the OS thread id of a hook's first call, and again if a later call lands on a different
 /// thread than the last one logged. Not debug scaffolding: this is permanent instrumentation for
-/// `render_engine_post_draw`, `CreateRenderSetups` (both here), and
-/// `crate::hooks::game::game_update_render` (which calls this too, `pub(crate)` for exactly that),
-/// whose thread identity settles two questions static reasoning could not.
+/// `render_engine_post_draw`, `CreateRenderSetups` (both here), and the payload's
+/// `hooks::game::game_update_render` (which calls this too, so it is `pub` for exactly that), whose
+/// thread identity settles two questions static reasoning could not.
 ///
-/// The first is whether `render_engine_post_draw` runs apart from `crate::update`, which is what this
-/// hook's shared state has to assume. `crate::update` takes the `EguiState` lock and then
+/// The first is whether `render_engine_post_draw` runs apart from the payload's `update`, which is
+/// what this hook's shared state has to assume. `update` takes the `EguiState` lock and then
 /// `jc3vr_view::hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
 /// `EGUI_DEBUG_RENDER_STATE` across the registered post-draw layers and passes, of which the debug
 /// panel and the mirror overlay take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
@@ -156,7 +156,8 @@ fn create_render_setups(this: *mut GraphicsEngine, device_info: *const DeviceInf
     // signature says `bool`, but the compiled code has no final `return 1` -- the function's last
     // instruction before the epilogue is the `CreateRenderSetup` call, so
     // `al` is the low byte of an aligned pointer. Read as a `bool` that is reliably even, and a
-    // bit-0 test on it is therefore always false. Gating on it silently disabled the substitution.
+    // bit-0 test on it is therefore always false. Gating on it would silently disable the
+    // substitution.
     //
     // SAFETY: the engine has just rebuilt its own render setups, on the drained idle context that
     // `CreateRenderSetups` runs under (the `Draw` prologue).
@@ -436,9 +437,9 @@ fn mod_post_draw(context: *mut Context) {
 
         // Clone (AddRef) the per-eye capture textures under a brief EGUI lock, released before the
         // context work below, mirroring the lock discipline of the other consumers of these captures
-        // (`vr::blit::submit` and `vr::mirror::present_mirror_inner`). Held
-        // across the body instead, this deadlocks: the debug panel and the mirror overlay drawn below
-        // take the `EguiState` lock, while `crate::update` takes `EguiState` and then this one inside it. One
+        // (`vr::blit::submit` and `vr::mirror::present_mirror_inner`). Held across the body instead,
+        // this deadlocks: the debug panel and the mirror overlay drawn below take the `EguiState`
+        // lock, while the payload's `update` takes `EguiState` and then this one inside it. One
         // acquisition, not one per eye, so the collapse's two half-copies cannot straddle a resize
         // that rebuilds the pair.
         let eye_textures: [Option<ID3D11Texture2D>; 2] = {
@@ -511,10 +512,8 @@ fn mod_post_draw(context: *mut Context) {
                 // buffer -- left half eye 0, right half eye 1. On the direct route each half is
                 // blitted straight into its swapchain slice, and copied into its eye texture only
                 // for a reader of the capture; otherwise each half is copied into its eye texture
-                // for the submit to blit. `half_w` is a per-eye-width region: with
-                // `single_pass_double_wide` the back buffer is 2x per-eye wide, so each half fills
-                // its full-res eye texture; without it each half is squished and fills only the left
-                // portion of the eye texture (a bring-up limitation, not the finished look).
+                // for the submit to blit. The collapsed back buffer is double-wide, so each
+                // `half_w`-wide half fills its full-resolution eye texture.
                 let half_w = u32::from(src.m_Width) / 2;
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {

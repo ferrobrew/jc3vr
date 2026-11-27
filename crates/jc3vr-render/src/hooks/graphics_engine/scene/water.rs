@@ -200,7 +200,7 @@ extern "system" fn wave_works_simulation_step(
 /// reflection camera is live, and with the frame tail deferred the draw thread can be rendering the
 /// previous frame's reflection passes from it while this runs; a correction after the call leaves a
 /// window in which the camera holds the double-wide parameters with its projection marked dirty, and
-/// with one the reflection kept the double-wide field for several seconds at a time.
+/// through that window the reflection can keep the double-wide field for several seconds at a time.
 #[detour(address = jc3gi::water_patch_manager::WaterPatchManager::UpdateReflectionCamera_ADDRESS)]
 fn update_reflection_camera(this: *mut WaterPatchManager) {
     let eye_size = double_wide_active();
@@ -374,8 +374,9 @@ const TEX_BIAS: [f32; 16] = [
 ];
 
 /// Re-issue the WaveWorks block's `Draw` once per eye with that eye's camera, or return `false` when
-/// the flag is off, the pass is one of the block's auxiliary passes, the per-eye camera is
-/// unavailable, or the collapse intercept declines.
+/// its single-pass switch ([`crate::stereo::single_pass::nv_water_per_eye`]) is off, the pass is
+/// one of the block's auxiliary passes, the per-eye camera is unavailable, or the collapse intercept
+/// declines.
 ///
 /// Every `NvWater*` permutation writes clip position from the model-view-projection
 /// [`NvWaterHighEndRenderBlock::Setup`] bakes into the block type's *own* vertex/domain constant

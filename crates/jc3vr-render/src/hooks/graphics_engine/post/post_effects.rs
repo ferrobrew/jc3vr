@@ -9,7 +9,7 @@
 //! HDR-to-LDR tonemap, so `DepthOfFieldEffect::Apply` always runs in VR. Outside VR the
 //! `post_fx.skip_*` switches skip the passes as bisection aids. Second, the manager-level filter
 //! enqueues (`ApplyWorldFilters` / `ApplyGlobalFilters`) step dt-driven accumulators that must only
-//! advance once per real frame, so their `dt` is zeroed on eye 1.
+//! advance once per real frame, so their `dt` is zeroed on later scene dispatches.
 
 use std::{
     ffi::c_void,
@@ -138,8 +138,8 @@ fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> b
 /// Draw driver at each dispatch begin ([`reset_post_block_gate`]).
 static WORLD_POST_BLOCK_RAN: AtomicBool = AtomicBool::new(false);
 
-/// Re-arm the once-per-dispatch world post-effects block gate. Called by the Draw driver
-/// (`hooks::game`) at the start of every dispatch.
+/// Re-arm the once-per-dispatch world post-effects block gate. Called by the Draw driver (the
+/// payload's `hooks::game`) at the start of every dispatch.
 pub fn reset_post_block_gate() {
     WORLD_POST_BLOCK_RAN.store(false, Ordering::Relaxed);
 }
@@ -210,7 +210,7 @@ fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);
 }
 
-// AntiAliasingEffect::Apply -- the AA stage of the post chain. Two roles:
+// AntiAliasingEffect::Apply -- the AA stage of the post chain. Three roles:
 //   * FSR or the mod's TAA chosen: resolve the slot color ourselves (post-tonemap) via
 //     temporal_dispatch, then neutralize the engine AA to AA_NONE so it passthrough-blits our result
 //     onward (docs/mod/rendering/fsr.md, docs/mod/rendering/taa.md).
@@ -240,9 +240,9 @@ fn anti_aliasing_apply(
     });
     let skip_aa = POST_FX_CONFIG.lock().skip_anti_aliasing;
 
-    // When FSR is on, resolve into the current slot ourselves, then let the engine AA run as a
-    // passthrough (AA_NONE blits the slot onward without filtering). FSR replaces SMAA, so its
-    // 1x-forcing is moot here.
+    // When FSR or the mod's TAA is chosen, resolve into the current slot ourselves, then let the
+    // engine AA run as a passthrough (AA_NONE blits the slot onward without filtering). The mod's
+    // resolve replaces SMAA, so its 1x-forcing is moot here.
     let saved_mode = unsafe { (*this).m_Mode };
     let mut restore = false;
     let fsr_ran = fsr.is_some_and(|resolve| {
@@ -365,11 +365,10 @@ fn dof_apply(
         #[cfg(feature = "profiler")]
         let gpu = crate::profiler::gpu::detail_interval("post: blur and composite");
         let slot = if dof_no_reproject {
-            // Bit 0 of the render context's flags is the engine's underwater bit
-            // (`m_CameraUnderwater`), which selects the DoF composite's underwater shader family --
-            // the variant that carries the reprojection-style distortion this toggle was validated to
-            // suppress. Clear just that bit for the call so DoF composites through the plain family,
-            // then restore.
+            // The render context's `m_CameraUnderwater` flag selects the DoF composite's underwater
+            // shader family -- the variant that carries the reprojection-style distortion this toggle
+            // suppresses. Clear just that flag for the call so DoF composites through the plain
+            // family, then restore.
             let rc = unsafe { pec.as_mut().and_then(|p| p.m_RenderContext.as_mut()) };
             if let Some(rc) = rc {
                 let saved = rc.m_Flags;

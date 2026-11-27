@@ -4,7 +4,7 @@
 //!
 //! Cross-referencing `CMatrix4f::PerspectiveFovInverse` gives a closed set of seven consumers. The
 //! deferred resolve ([`crate::hooks::graphics_engine::clustered_lighting`]) and the aerial perspective
-//! ([`crate::hooks::graphics_engine::atmospheric_scattering`]) are split per eye in their own modules; the wireframe-only
+//! ([`crate::hooks::graphics_engine::screen::atmospheric_scattering`]) are split per eye in their own modules; the wireframe-only
 //! `DrawPassThrough` never runs during shaded rendering; these are the rest. Collapsed, each of them
 //! is one draw spanning **both** eye halves of the double-wide target while the substituted basis
 //! describes one eye's frustum, so neither half reconstructs correctly and the error turns with the
@@ -25,8 +25,8 @@
 //! [`crate::stereo::single_pass::screen_space_reflection`] rewrites it to trace each half for its own
 //! eye from per-eye rows, and [`ssr_draw`] binds them for the block.
 //!
-//! The split blocks are behind their own config flags, because unlike the two already landed they are
-//! not idempotent -- re-issuing the whole block re-runs work that accumulates. **Subsurface skin**
+//! The split blocks, unlike the deferred resolve and the aerial perspective, are not idempotent --
+//! re-issuing the whole block re-runs work that accumulates. **Subsurface skin**
 //! builds its basis once per `Draw`, not once per blur axis: the two `PerspectiveFovInverse` calls in
 //! the function sit in mutually exclusive branches.
 //!
@@ -47,7 +47,7 @@
 //! the split, the first, since its output (the bokeh near-field coverage) is what the masked draws
 //! consume. That is the same single whole-target pass the un-split block makes, so the eye-seam bleed
 //! from the horizontal half of each separable blur is inherent to the collapse rather than introduced
-//! here, and is present with these flags off.
+//! here, and is present without the split.
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::{

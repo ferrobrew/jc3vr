@@ -29,7 +29,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::debug::trace::{TraceEvent, TraceState};
 
 /// The live `CSSAOPass` instance, captured from [`ssao_draw`]. The between-eye SSAO history-index
-/// restore in `game.rs` needs this pointer but has no singleton path to it, so the pass records itself
+/// restore in the payload's `hooks::game` needs this pointer but has no singleton path to it, so the pass records itself
 /// here each time it draws. Null until the first SSAO draw (so the first frame's restore is a no-op).
 static SSAO_PASS: AtomicPtr<SSAOPass> = AtomicPtr::new(ptr::null_mut());
 
@@ -74,14 +74,8 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SSAO_DRAW_BINDER)
 }
 
-// SSAOPass::Draw -- the per-dispatch SSAO pass. Its history double-steps across the two stereo
-// dispatches and the eyes would compound, so force m_FirstPass on (the engine's "compute fresh,
-// ignore history" state) for each eye while stereo is active, so each eye computes AO from its own
-// depth instead of blending against the other eye's history. The apply still runs; only the
-// cross-eye temporal blend is suppressed.
 #[detour(address = jc3gi::graphics_engine::ssao::SSAOPass::Draw_ADDRESS)]
 fn ssao_draw(this: *mut SSAOPass) {
-    // Record the pass instance for the between-eye history-index restore in `game.rs`.
     SSAO_PASS.store(this, Ordering::Relaxed);
 
     let stereo = stereo::active();

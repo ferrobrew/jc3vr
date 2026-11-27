@@ -69,9 +69,8 @@ pub(crate) fn on_render_setup_bound() {
 /// Called from the `Graphics::SetVertexProgramConstants` detour in [`crate::stereo::single_pass`],
 /// which owns that entry point. `ctx` identifies which graphics context is staging the upload: the
 /// detour sees every vertex-constant stage in the process, and `(cb_index, start_offset, count)` alone
-/// does not identify this one -- `RenderBlockTerrainPatch` also stages exactly four rows at vertex
-/// `cb1` offset 0, the same shape the sibling per-eye reprojection in `single_pass` guards against by
-/// comparing `ctx` too. Without the check, a `RenderBlockTerrainPatch` stage that happens to land while
+/// does not identify this one, which is why the sibling per-eye reprojection in `single_pass` compares
+/// `ctx` too. Without the check, another context's stage of the same shape that happens to land while
 /// this split is active would have its rows overwritten with the light-assignment view instead.
 pub(crate) fn substitute_assignment_view(
     ctx: usize,
@@ -299,7 +298,7 @@ fn narrow_assignment_viewport(state: &SplitState) -> Option<D3D11_VIEWPORT> {
         unsafe { d3d.RSGetViewports(&mut count, Some(viewports.as_mut_ptr())) };
         viewports[0]
     })?;
-    // One texel per 64-pixel tile: nothing else bound anywhere in the frame has these dimensions, so
+    // One texel per tile: nothing else bound anywhere in the frame has these dimensions, so
     // this is what tells the light-assignment target apart from whatever else this run might see.
     if full.Width != state.grid.texels_x as f32 || full.Height != state.grid.texels_y as f32 {
         return None;

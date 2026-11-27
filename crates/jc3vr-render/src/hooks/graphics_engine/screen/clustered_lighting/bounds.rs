@@ -96,7 +96,7 @@ mod tests {
         (right, left, top, bottom)
     }
 
-    /// Tile counts for a 1920×1080 display (the engine divides each dimension by 64).
+    /// Tile counts for a 1920×1080 display (the engine divides each dimension by the tile size).
     const TILE_COUNT_X: f32 = 1920.0 / TILE_SIZE as f32;
     const TILE_COUNT_Y: f32 = 1080.0 / TILE_SIZE as f32;
 

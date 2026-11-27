@@ -3,8 +3,8 @@
 
 use re_utilities::hook_library::HookLibrary;
 
-// `post_effects` is crate-visible so hooks::game can re-arm the once-per-dispatch world post-block
-// gate at each dispatch begin.
+// `post_effects` is public so the payload's `hooks::game` can re-arm the once-per-dispatch world
+// post-block gate at each dispatch begin.
 pub mod post_effects;
 // The auto-exposure / tone-mapping detours.
 pub mod tone_mapping;

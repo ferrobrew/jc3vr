@@ -17,7 +17,7 @@
 //! the engine builds the params it drops the *software-occlusion* frustums (occluders cast
 //! from the single centre viewpoint, wrong for two offset eyes). The per-eye *render* projections are
 //! untouched, and every correction is scoped to the main cull camera by its exact identity
-//! ([`camera == this + OccluderCollectionManager::CULLING_CAMERA_OFFSET`]) -- shadow and reflection
+//! (`camera == this + OccluderCollectionManager::CULLING_CAMERA_OFFSET`) -- shadow and reflection
 //! culls use different functions, and any other
 //! camera through this hook fails the check. See [`widen_main_cull_camera`], the tuning's
 //! [`crate::tuning::CullingTuning::size_cull_fov_deg`], and [`relax_main_view_occlusion`].
@@ -161,9 +161,7 @@ fn stamp_union_projection(camera: *const Camera) -> Option<Matrix4> {
 /// (no cull projection published). Rewriting to the same union value is idempotent, so re-entry from
 /// parallel cull jobs is harmless.
 fn widen_main_cull_camera(camera: *const Camera) {
-    // Stamp the union projection (permanent overwrite on the cull camera -- the saved value is
-    // discarded). A no-op on flatscreen (no cull projection published). Rewriting to the same union
-    // value is idempotent, so re-entry from parallel cull jobs is harmless.
+    // A permanent overwrite on the cull camera: the saved value is discarded.
     stamp_union_projection(camera);
     // Relax the screen-space size cull, which reads `m_FOVT1` and is otherwise ~2x too aggressive under
     // the mod's injected 90 deg FOV -- dropping small/distant geometry and vehicle sub-meshes at double
@@ -179,7 +177,7 @@ fn widen_main_cull_camera(camera: *const Camera) {
 // `TerrainPatchSystemUpdate` copies the narrow centre `m_ActiveCamera` into the landscape system's own
 // `m_TerrainCamera` and points every terrain render pass's frustum at it, so terrain patches cull
 // against that camera's precomputed `m_FrustumPlane` -- a *separate* camera from the occluder cull
-// camera the frustum widen above touches (which is why widening the occluder camera did nothing for
+// camera the frustum widen above touches (which is why widening the occluder camera does not reach
 // terrain). Make `m_TerrainCamera` the binocular union camera after the copy, so the terrain patch set
 // covers both eyes (fixes the outer-edge and bottom patch holes when flying). It runs once per frame
 // and the copy reverts the camera each call it fires, so the union is re-applied unconditionally --
@@ -308,8 +306,8 @@ unsafe fn relax_main_view_occlusion(out_params: *mut *mut BFBCFrustumCullParamet
     let Some(params) = (unsafe { (*out_params).as_mut() }) else {
         return;
     };
-    // The count is `occluderCount + 1` with at most 32 occluder slots, so a valid value is 2..=33
-    // (1 = camera frustum only, nothing to drop). Anything outside that is not a frustum count -- a
+    // The count is the occluder count plus one, bounded by the occluder slot capacity (one means the
+    // camera frustum only, nothing to drop). Anything outside that range is not a frustum count -- a
     // sign the offset is wrong -- so skip the write rather than corrupt whatever the field actually is.
     if (2..=33).contains(&params.m_FrustumCount) {
         params.m_FrustumCount = 1;
