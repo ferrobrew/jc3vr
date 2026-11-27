@@ -15,6 +15,8 @@
 //!   and removes it, the shared `Patcher`, the installation and removal steps other layers
 //!   register, the gameplay predicate, and the online timing detours ([`hooks::online`]).
 //! - [`frame_timing`] and [`render_frame`]: the always-on frame breakdown and the per-frame slots.
+//! - [`registration`]: the install-time check that every contribution a lower layer reads from the
+//!   layers above was registered, which lists every missing one and stops the startup.
 //! - [`published`]: the values one stage of the frame publishes for another and their freshness
 //!   windows, the wall and physics-step clocks they are stamped on, and the counters, event logs,
 //!   re-entry guards, and detour queues the layers above share.
@@ -43,6 +45,7 @@ pub mod module;
 #[cfg(feature = "profiler")]
 pub mod profiler;
 pub mod published;
+pub mod registration;
 pub mod render_frame;
 pub mod session;
 pub mod thread_role;

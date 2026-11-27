@@ -4,10 +4,8 @@
 //! ([`jc3vr_body::controllers::aim_state::PreWeaponHook`]), and the vehicle handling's mounted-gun fact
 //! ([`jc3vr_body::controllers::facts::mounted`]).
 //!
-//! The aim calls into each of these on every update, so the install refuses to finish with one
-//! missing: [`register`] panics naming it.
-
-use std::fmt::Write as _;
+//! The aim calls into each of these on every update, so [`register`] reports any of them still
+//! missing to the install's registration check, which stops the startup naming it.
 
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
@@ -16,6 +14,7 @@ use jc3vr_body::controllers::{
     aim_state::{PreWeaponHook, PreWeaponHookFn},
     facts::mounted,
 };
+use jc3vr_core::registration::RegistrationCheck;
 use jc3vr_physical::controllers::physical_hands;
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::weapons::{
@@ -26,7 +25,7 @@ use jc3vr_weapons::controllers::weapons::{
     unarmed_fire,
 };
 
-pub(super) fn register() {
+pub(super) fn register(check: &mut RegistrationCheck) {
     hooks::register_aim_hooks(AimHooks {
         observe_grenade_hands: grenade::observe_hands,
         observe_c4_hands: c4::observe_hands,
@@ -42,11 +41,13 @@ pub(super) fn register() {
         aim_state::register_pre_weapon_hook(hook, run);
     }
     vehicles::register_mounted::register();
-    let missing = missing();
-    assert!(
-        missing.is_empty(),
-        "aim: the install left contributions unregistered:{missing}"
+    check.require("aim", "the aim hooks", hooks::is_registered());
+    check.require_keys(
+        "aim",
+        "pre-weapon hook",
+        aim_state::missing_pre_weapon_hooks(),
     );
+    check.require("aim", "the mounted-gun source", mounted::is_registered());
 }
 
 /// The weapon handling's contributions around the local player's weapon handling, in the order
@@ -93,17 +94,14 @@ unsafe fn use_item_before(
     rest(c);
 }
 
-/// Every contribution the aim reads that nobody registered, one per line.
-fn missing() -> String {
-    let mut missing = String::new();
-    if !hooks::is_registered() {
-        missing.push_str("\n- the aim hooks");
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_registration_leaves_nothing_missing() {
+        let mut check = RegistrationCheck::new();
+        register(&mut check);
+        assert_eq!(check.missing(), []);
     }
-    for hook in aim_state::missing_pre_weapon_hooks() {
-        let _ = write!(missing, "\n- pre-weapon hook {hook:?}");
-    }
-    if !mounted::is_registered() {
-        missing.push_str("\n- the mounted-gun source");
-    }
-    missing
 }

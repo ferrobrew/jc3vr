@@ -127,9 +127,28 @@ fn initialize_startup(source: tuning::Source) -> bool {
     // (the dominant hand and the input layout among it), so it must already hold the saved settings.
     config::init();
     tracing::info!("startup: config init complete");
-    composition::install();
+    // A registration refused or missing stops the startup before any hook is installed.
+    if let Err(error) = composition::install() {
+        tracing::error!("startup: {error}");
+        tracing::error!("startup: stopped; the payload unloads itself");
+        undo_startup_before_hooks();
+        return false;
+    }
     tracing::info!("startup: hook installation returned");
     true
+}
+
+/// Undo what `initialize_startup` started before the composition refused to install the hooks: the
+/// tuning watcher's and the settings writers' threads, and the crash handler's process-wide
+/// registration, each of which would outlive the unmapped image. A thread that does not stop pins
+/// the image instead.
+fn undo_startup_before_hooks() {
+    let tuning_stopped = tuning::shutdown();
+    let config_stopped = config::shutdown();
+    if !(tuning_stopped && config_stopped) {
+        module::pin();
+    }
+    crash::uninstall();
 }
 
 /// Called to undo `initialize_startup` and eject, on its own thread once the game thread has run
