@@ -4,16 +4,16 @@
 //! rebuild the patches' detail, histogram, triangles, and morph targets every frame on the GPU from
 //! the camera position the vertex globals carry, which for those passes is the render camera's. The
 //! morph targets in particular blend each patch's interior vertices between levels of detail by their
-//! distance from that camera, and the patch's border stays fixed so neighbours meet. A dispatch that
-//! renders one eye at a time therefore morphed each eye's terrain from that eye's own position, while
-//! the single-pass collapse, which has one centred render camera, morphs both eyes from the centre.
-//! The two eyes of a multipass frame disagreed with each other about where the ground's surface lies,
-//! and an isolated eye disagreed with the same eye under single-pass by up to a few hundred floats of
-//! depth across each patch's interior.
+//! distance from that camera, and the patch's border stays fixed so neighbours meet. Left alone, a
+//! dispatch that renders one eye at a time morphs each eye's terrain from that eye's own position,
+//! while the single-pass collapse, which has one centred render camera, morphs both eyes from the
+//! centre. The two eyes of a multipass frame then disagree with each other about where the ground's
+//! surface lies, and an isolated eye disagrees with the same eye under single-pass by up to a few
+//! hundred floats of depth across each patch's interior.
 //!
 //! Like the level-of-detail and tessellation choices the rest of the engine makes from the centred
-//! active camera, the prep is a choice both eyes should share: an eye-at-a-time dispatch stages the centre camera's position for those passes, and puts the
-//! eye's back for the rest of the pass list.
+//! active camera, the prep is a choice both eyes should share: an eye-at-a-time dispatch stages the
+//! centre camera's position for those passes, and puts the eye's back for the rest of the pass list.
 
 use jc3gi::{
     graphics_engine::{
