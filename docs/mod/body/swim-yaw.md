@@ -52,7 +52,7 @@ Two measures close the lead itself. The swim turn rate (`swim.turn_rate_deg_s`) 
 
 ### What is deliberately not hooked
 
-`CPfxCharacterInstance::SetOrientation`. Rewriting the yaw of the matrix passed to it works while treading water and breaks the instant the swimmer moves: that matrix is the orientation composed with the frame's swimming capsule offset, and the surface crawl offset is a quarter turn about X — exact gimbal lock for a yaw/pitch/roll decomposition. The rewrite lands 180° out on every moving frame and the body thrashes between the two attractors. See [issues/swim-yaw-endless-spin.md](../../issues/swim-yaw-endless-spin.md).
+`CPfxCharacterInstance::SetOrientation`. Rewriting the yaw of the matrix passed to it works while treading water and breaks the instant the swimmer moves: that matrix is the orientation composed with the frame's swimming capsule offset, and the surface crawl offset is a quarter turn about X — exact gimbal lock for a yaw/pitch/roll decomposition. The rewrite lands 180° out on every moving frame and the body thrashes between the two attractors. See [swim-locomotion.md](../../engine/gameplay/swim-locomotion.md#the-capsule-offset-setorientation-does-not-receive-the-facing-frame).
 
 `DoRotate` is called a second time per swim frame, inside `ProcessMotion`, to slerp the *velocity* direction; a `ProcessMotion` detour sets a thread-local so the heading override skips that nested call.
 
