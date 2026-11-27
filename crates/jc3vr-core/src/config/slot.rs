@@ -13,6 +13,7 @@ use std::{
 
 use parking_lot::Mutex;
 use serde::{Serialize, de::DeserializeOwned};
+#[cfg(any(test, feature = "test-support"))]
 use toml::Value;
 
 #[cfg(any(test, feature = "test-support"))]
@@ -37,6 +38,8 @@ pub struct ConfigSlot<T: 'static> {
 /// wherever the slot is ([`with_children`](Self::with_children)), and the checks a load runs on
 /// the part ([`validated`](Self::validated)).
 pub struct SlotOptions<T: 'static> {
+    /// Read only by a test root, which has no aggregate to default its parts from.
+    #[cfg_attr(not(any(test, feature = "test-support")), allow(dead_code))]
     default: Option<fn() -> T>,
     children: Option<fn()>,
     validate: Option<Validate<T>>,
@@ -298,15 +301,20 @@ pub(crate) fn validate_bound(root: &mut Root, resets: &mut Vec<Reset>) {
 /// A bound slot, with its part's type erased: what a root that knows its parts only by their
 /// slots needs to default, copy, save, load, and check each part.
 pub(crate) trait Bound: Sync {
+    #[cfg(any(test, feature = "test-support"))]
     fn path(&self) -> &'static str;
 
     /// The part's default: the slot's declared default, or its type's.
+    #[cfg(any(test, feature = "test-support"))]
     fn default_part(&self) -> Box<Root>;
 
+    #[cfg(any(test, feature = "test-support"))]
     fn clone_part(&self, part: &Root) -> Box<Root>;
 
+    #[cfg(any(test, feature = "test-support"))]
     fn part_to_value(&self, part: &Root) -> Result<Value, toml::ser::Error>;
 
+    #[cfg(any(test, feature = "test-support"))]
     fn part_from_value(&self, value: Value) -> Result<Box<Root>, toml::de::Error>;
 
     /// The part as it is in `root`, as a value.
@@ -317,10 +325,12 @@ pub(crate) trait Bound: Sync {
 }
 
 impl<T: SlotValue> Bound for ConfigSlot<T> {
+    #[cfg(any(test, feature = "test-support"))]
     fn path(&self) -> &'static str {
         self.path
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn default_part(&self) -> Box<Root> {
         Box::new(
             self.options
@@ -329,14 +339,17 @@ impl<T: SlotValue> Bound for ConfigSlot<T> {
         )
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn clone_part(&self, part: &Root) -> Box<Root> {
         Box::new(part_ref::<T>(part).clone())
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn part_to_value(&self, part: &Root) -> Result<Value, toml::ser::Error> {
         Value::try_from(part_ref::<T>(part))
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     fn part_from_value(&self, value: Value) -> Result<Box<Root>, toml::de::Error> {
         Ok(Box::new(value.try_into::<T>()?))
     }
@@ -370,6 +383,7 @@ pub fn mismatched_defaults(root: &Root) -> Vec<&'static str> {
         .collect()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn part_ref<T: 'static>(part: &Root) -> &T {
     part.downcast_ref()
         .expect("config: a part is not of its slot's type")

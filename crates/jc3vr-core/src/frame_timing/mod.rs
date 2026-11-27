@@ -516,33 +516,44 @@ mod tests {
 
     #[test]
     fn an_interval_is_a_child_of_its_scope() {
+        // Spin until the clock has advanced, so every region has a nonzero length whatever the
+        // load; the checks are identities between the lengths, which hold at any speed.
+        fn tick() {
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_micros(1) {}
+        }
+
         // The only test that uses these three slots, so it has their counters to itself.
         std::thread::spawn(|| {
             {
                 let _outer = scope(Slot::SimTick);
                 let head = interval();
-                std::thread::sleep(Duration::from_millis(10));
+                tick();
                 {
                     let _inner = scope(Slot::SimOnline);
-                    std::thread::sleep(Duration::from_millis(20));
+                    tick();
                 }
                 head.finish(Slot::SimHead);
-                std::thread::sleep(Duration::from_millis(2));
+                tick();
             }
-            let outer = &SLOTS[Slot::SimTick.index()];
-            let head = &SLOTS[Slot::SimHead.index()];
-            let inner = &SLOTS[Slot::SimOnline.index()];
-            let outer_self = outer.self_ns.load(Ordering::Relaxed);
-            let head_self = head.self_ns.load(Ordering::Relaxed);
-            let inner_self = inner.self_ns.load(Ordering::Relaxed);
-            assert_eq!(head.calls.load(Ordering::Relaxed), 1);
-            assert!(inner_self >= 20 * MS, "{inner_self}");
+            let counters = |slot: Slot| {
+                let counters = &SLOTS[slot.index()];
+                (
+                    counters.calls.load(Ordering::Relaxed),
+                    counters.self_ns.load(Ordering::Relaxed),
+                    counters.max_ns.load(Ordering::Relaxed),
+                )
+            };
+            let (outer_calls, outer_self, outer_total) = counters(Slot::SimTick);
+            let (head_calls, head_self, head_total) = counters(Slot::SimHead);
+            let (inner_calls, inner_self, inner_total) = counters(Slot::SimOnline);
+            assert_eq!((outer_calls, head_calls, inner_calls), (1, 1, 1));
+            assert!(inner_self >= 1_000, "{inner_self}");
+            assert_eq!(inner_self, inner_total);
             // The interval's own time excludes the scope that closed inside it.
-            assert!((10 * MS..19 * MS).contains(&head_self), "{head_self}");
+            assert_eq!(head_total, head_self + inner_total);
             // The enclosing scope keeps only the time outside the interval.
-            assert!((2 * MS..9 * MS).contains(&outer_self), "{outer_self}");
-            // The interval's maximum is its whole length, the nested scope included.
-            assert!(head.max_ns.load(Ordering::Relaxed) >= head_self + inner_self);
+            assert_eq!(outer_total, outer_self + head_total);
         })
         .join()
         .unwrap();

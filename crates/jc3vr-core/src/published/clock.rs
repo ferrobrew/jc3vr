@@ -161,7 +161,8 @@ impl Step {
         Self(STEPS.fetch_add(1, Ordering::AcqRel) + 1)
     }
 
-    pub const fn from_count(steps: u64) -> Self {
+    #[cfg(test)]
+    pub(crate) const fn from_count(steps: u64) -> Self {
         Self(steps)
     }
 
@@ -277,6 +278,17 @@ mod tests {
         assert!(!window.holds(at, Step::from_count(44)));
         assert!(window.holds(at, Step::from_count(39)));
         assert!(!window.holds(None, Step::from_count(40)));
+    }
+
+    #[test]
+    fn each_begun_step_is_one_after_the_last() {
+        let first = Step::begin();
+        let second = Step::begin();
+        assert_eq!(second.steps_since(first), 1);
+        assert_eq!(first.steps_since(second), 0);
+        assert!(Step::now() >= second);
+        assert!(StepWindow::new(1).holds(first, second));
+        assert!(!StepWindow::new(0).holds(first, second));
     }
 
     #[test]

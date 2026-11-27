@@ -208,6 +208,36 @@ mod tests {
     }
 
     #[test]
+    fn a_stale_stamp_ahead_of_now_is_still_current() {
+        let stamped = Stamped {
+            value: 1,
+            at: Stamp::from_nanos(500 * MS),
+        };
+        let window = Window::from_millis(10);
+        assert!(stamped.fresh(Stamp::from_nanos(400 * MS), window).is_some());
+        assert!(stamped.fresh(Stamp::from_nanos(511 * MS), window).is_none());
+    }
+
+    #[test]
+    fn every_stage_has_its_own_label() {
+        use std::collections::HashSet;
+        let stages = [
+            Stage::InputPoll,
+            Stage::InputGame,
+            Stage::CharacterUpdate,
+            Stage::PhysicsStep,
+            Stage::PoseFinalize,
+            Stage::PostSimulation,
+            Stage::RenderUpdate,
+            Stage::FrameTail,
+            Stage::DebugUi,
+            Stage::EngineCall,
+        ];
+        let labels: HashSet<_> = stages.iter().map(|stage| stage.label()).collect();
+        assert_eq!(labels.len(), stages.len());
+    }
+
+    #[test]
     fn a_value_that_is_not_copy_is_read_in_place() {
         let slot: Published<Vec<u32>> = Published::new(Stage::DebugUi);
         slot.publish(vec![1, 2, 3]);

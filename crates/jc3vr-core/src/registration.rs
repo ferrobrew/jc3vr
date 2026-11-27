@@ -31,20 +31,6 @@ impl RegistrationCheck {
         }
     }
 
-    /// Report each key of a keyed table `reader` reads (a stage, an observer) that nobody filled,
-    /// as `kind` followed by the key.
-    pub fn require_keys<K: fmt::Debug>(
-        &mut self,
-        reader: &'static str,
-        kind: &'static str,
-        missing: impl IntoIterator<Item = K>,
-    ) {
-        self.missing.extend(missing.into_iter().map(|key| Missing {
-            reader,
-            contribution: format!("{kind} {key:?}"),
-        }));
-    }
-
     /// The contributions reported missing so far, in report order.
     pub fn missing(&self) -> &[Missing] {
         &self.missing
@@ -116,29 +102,24 @@ mod tests {
     fn a_check_with_everything_registered_finishes() {
         let mut check = RegistrationCheck::new();
         check.require("aim", "the aim hooks", true);
-        check.require_keys("hands", "hand stage", std::iter::empty::<u8>());
         assert_eq!(check.finish(), Ok(()));
     }
 
     #[test]
     fn every_missing_contribution_is_listed_in_report_order() {
-        #[derive(Debug)]
-        enum Stage {
-            First,
-            Second,
-        }
         let mut check = RegistrationCheck::new();
         check.require("aim", "the aim hooks", false);
         check.require("aim", "the mounted-gun source", true);
-        check.require_keys("hands", "hand stage", [Stage::First, Stage::Second]);
+        check.require("hands", "the first hand stage", false);
+        check.require("hands", "the second hand stage", false);
         let error = check.finish().unwrap_err();
         assert_eq!(error.missing().len(), 3);
         assert_eq!(
             error.to_string(),
             "registration: the install left 3 contributions unregistered:\n\
              - aim: the aim hooks\n\
-             - hands: hand stage First\n\
-             - hands: hand stage Second"
+             - hands: the first hand stage\n\
+             - hands: the second hand stage"
         );
     }
 }
