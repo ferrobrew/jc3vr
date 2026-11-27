@@ -23,7 +23,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, live},
     weapons::{
         engine::gun_position,
-        hud_feed::{icon::IconId, lost_weapons::LostWeapon},
+        hud_feed::{IconId, lost_weapons::LostWeapon},
         inventory::{
             engine,
             engine::Fate,

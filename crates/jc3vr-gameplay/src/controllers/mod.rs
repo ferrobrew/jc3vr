@@ -21,7 +21,9 @@
 //!   group;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
-//! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist.
+//! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist;
+//! - [`camera_height`]: the camera height readout, which observes where the camera puts the eyes
+//!   against Rico's animated eyes.
 //!
 //! [`register`] registers what these contribute to the layers below and fills the body's
 //! contributions this crate declares the order of. The controls map and the summary's presentation
@@ -35,6 +37,7 @@ use jc3vr_body::contributions::BodyContributions;
 use jc3vr_core::registration::RegistrationCheck;
 
 pub mod bindings;
+pub mod camera_height;
 pub mod config;
 mod register_aim;
 mod register_character;

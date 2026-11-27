@@ -40,9 +40,10 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::weapons::{c4, grenade};
 
 use crate::controllers::bindings::{
-    Idle, STATE, State, TickReport, loss,
+    Idle, STATE, State, TickReport,
     settings::Settings,
     stage::Segment,
     stand_down,
@@ -118,7 +119,11 @@ pub(super) fn tick(
         }
     };
     live.state.recovery.observe(&frame);
-    loss::cancel_throws(Hand::BOTH.map(|hand| !live.state.recovery.ready(hand)));
+    // A hand not ready since it became usable again cancels its throw before the filtered
+    // controls reach the grenade and the C4.
+    let unavailable = Hand::BOTH.map(|hand| !live.state.recovery.ready(hand));
+    grenade::input_unavailable(unavailable);
+    c4::input_unavailable(unavailable);
     // Mode selection precedes the next OpenXR sample. Preserve paused holds while waiting for it;
     // the poll runs here, so it releases their effectors, and only the clicks need undoing.
     let set_pending = frame.action_set != detection.mode.action_set()

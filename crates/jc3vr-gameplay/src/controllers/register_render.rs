@@ -31,7 +31,7 @@ use jc3vr_view::{
 use jc3vr_weapons::controllers::weapons::scope;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::hooks::camera::height;
+use crate::controllers::camera_height;
 
 pub(super) fn register(check: &mut RegistrationCheck) {
     register_dispatch_ticks(&DISPATCH_TICKS);
@@ -43,7 +43,7 @@ pub(super) fn register(check: &mut RegistrationCheck) {
     register_player_draw_edits(&PlayerBodyEdits);
     register_camera_participants(CameraParticipants {
         matrix_override: aim::camera_matrix_override,
-        placed: height::record,
+        placed: camera_height::record,
     });
 
     check.require(

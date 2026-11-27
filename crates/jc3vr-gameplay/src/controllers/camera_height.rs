@@ -1,8 +1,8 @@
 //! The camera height readout: where the camera puts the eyes against where Rico's animated eyes
 //! are, both measured up from his root, with the head-height remap, the posture and what the
 //! automatic posture decided it from, the seated eye reference and its source, and the crouch
-//! state, and the driving view's correction that account for the difference. Read-only: it observes the camera placement and changes
-//! nothing.
+//! state, and the driving view's correction that account for the difference. Read-only: it
+//! observes the camera placement and changes nothing.
 //!
 //! The camera hook records a sample each gameplay frame the headpose places the camera
 //! ([`record`]). Rico's eye midpoint is rebuilt from the published anchors exactly as the camera

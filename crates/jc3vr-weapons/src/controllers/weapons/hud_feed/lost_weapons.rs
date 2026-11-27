@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::hud_feed::icon::IconId;
+use crate::controllers::weapons::hud_feed::IconId;
 
 /// A weapon the table has lying in the world.
 #[derive(Debug, Copy, Clone, PartialEq)]

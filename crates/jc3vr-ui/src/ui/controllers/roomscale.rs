@@ -8,7 +8,7 @@ use jc3vr_body::controllers::{
     roomscale,
     roomscale::{FrameStatus, RoomscaleStatus, posture::EffectivePosture},
 };
-use jc3vr_gameplay::hooks::camera::height;
+use jc3vr_gameplay::controllers::camera_height as height;
 
 use crate::ui::controllers::yes_no;
 
@@ -123,7 +123,7 @@ fn posture_inputs(ui: &mut Ui, f: &FrameStatus) {
 }
 
 /// The camera's height against Rico's animated eyes, both above his root, and what sets the
-/// difference ([`jc3vr_gameplay::hooks::camera::height`]).
+/// difference ([`jc3vr_gameplay::controllers::camera_height`]).
 fn camera_height_readout(ui: &mut Ui) {
     let Some(r) = height::readout() else {
         ui.label("Camera height: the headpose has not placed the camera yet");

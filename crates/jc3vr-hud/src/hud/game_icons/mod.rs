@@ -26,7 +26,7 @@ use std::{
 };
 
 pub(crate) use avtx::Image;
-use jc3vr_weapons::controllers::weapons::hud_feed::icon::IconId;
+use jc3vr_weapons::controllers::weapons::hud_feed::IconId;
 use parking_lot::Mutex;
 
 use crate::hud::game_icons::archive::ArchiveIndex;

@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-use crate::controllers::{loadout::Socket, weapons::hud_feed::icon::IconId};
+use crate::controllers::{loadout::Socket, weapons::hud_feed::IconId};
 
 /// What one hand's grip would take, or swap, and where on the body.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

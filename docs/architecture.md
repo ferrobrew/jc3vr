@@ -97,7 +97,7 @@ The payload's code lives in the layer crates under `crates/`, each a library who
 - `jc3vr-physical`: the physical hands and the glass (`controllers::{physical_hands, glass}`).
 - `jc3vr-vehicles`: the vehicle handling with its settings checks (`controllers::vehicles`), and the equipment detours (`hooks::equipment`).
 - `jc3vr-grapple`: the grapple, the grapple button's gestures and the yank, and the snatch (`grapple`, `controllers::{grapple_button, yank, snatch}`).
-- `jc3vr-gameplay`: the controller subsystems built on the body, weapons, physical, vehicles, and grapple crates (`controllers::{bindings, summary}`), the controllers' settings aggregate (`controllers::config`) and their registration, and the gameplay detours (`hooks::{input::look, sim, online, camera}`, the last holding the camera height).
+- `jc3vr-gameplay`: the controller subsystems built on the body, weapons, physical, vehicles, and grapple crates (`controllers::{bindings, summary}`), the camera height readout (`controllers::camera_height`), the controllers' settings aggregate (`controllers::config`) and their registration, and the gameplay detours (`hooks::{input::look, sim, online}`).
 - `jc3vr-hud`: `hud`, `egui_impl`, the UI detours (`hooks::ui`), the controls map (`controllers::map`), and the summary's presentation (`controllers::summary`).
 - `jc3vr-tooling`: `recorder`, `director`, `testing`, and `diagnostics`.
 - `jc3vr-ui`: `ui`, `status`, `pause_menu`, the VR pages (`controllers::{menu, presets, body::menu}`), and the profiler's panel (`profiler`).

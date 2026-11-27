@@ -22,7 +22,7 @@ use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_body::controllers::scheme;
 use jc3vr_weapons::controllers::weapons::hud_feed::{
-    icon::IconId, lost_weapons, lost_weapons::LostWeapon,
+    IconId, lost_weapons, lost_weapons::LostWeapon,
 };
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;

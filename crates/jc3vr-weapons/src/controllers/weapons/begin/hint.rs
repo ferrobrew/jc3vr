@@ -14,9 +14,8 @@ use crate::controllers::{
     loadout::{ItemView, LoadoutSnapshot, Socket},
     weapons::{
         hud_feed::{
-            grab_hint,
+            IconId, grab_hint,
             grab_hint::{Hint, Place},
-            icon::IconId,
         },
         inventory::slots,
     },
