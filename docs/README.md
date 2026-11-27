@@ -139,8 +139,7 @@
 - [roomscale.md](mod/input/roomscale.md): the body dimensions, the posture, the head height, crouching, the fades, and the seat transitions.
 - [weapon-handling.md](mod/input/weapon-handling.md): the pouches, the foregrip, a held gun's weight, recoil, and grenades and C4 in outline.
 - [flight.md](mod/input/flight.md): the wingsuit's arm steering and barrel roll, the parachute's handles, and the ripcord.
-- [grip.md](mod/input/grip.md): the grip and how each hand picks a grab target.
-- [grip-poses.md](mod/input/grip-poses.md): the fingers wrapping what the hand holds.
+- [grip.md](mod/input/grip.md): the grip, how each hand picks a grab target, and the fingers wrapping what it holds.
 - [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands.
 - [inventory-world-and-carry.md](mod/input/inventory-world-and-carry.md): the weapons let go of, their pins and markers, the lost-weapon return, and the carry set.
 - [inventory-persistence.md](mod/input/inventory-persistence.md): the loadout table across caches, resets, saves, and the scheme switch.

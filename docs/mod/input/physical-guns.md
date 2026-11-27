@@ -97,7 +97,7 @@ A lone hand that takes a free gun takes it by its grip, wherever on the gun it c
 
 A trigger press on a gun the hand braces, or one the mod's fire path holds back (the controller untracked, a mode without firing, a dock's slide, a reload, a draw, or a holster playing, or the true reload holding the gun), gives the dead click of a dry fire (`DryFire`, [haptics.md](haptics.md)) and one log line naming the reason. That refusal (`weapons::finish::refused_fire`) is the one place that decides the click for a gun the mod fires; for a gun the true reload holds, the reason is what the reload checked ([reload.md](reload.md), `weapons::reload::fire_hold`).
 
-The fingers take each region's pose ([grip-poses.md](grip-poses.md)): the pistol grip on the grip, the foregrip's wrap on the handguard, a wrap round a thin bar on the barrel and a thicker one on the stock, a cup under the magazine, and a pinch on the action.
+The fingers take each region's pose ([grip.md, "Grip poses"](grip.md#grip-poses)): the pistol grip on the grip, the foregrip's wrap on the handguard, a wrap round a thin bar on the barrel and a thicker one on the stock, a cup under the magazine, and a pinch on the action.
 
 The debug UI has the gun bodies under the Physical hands feature's diagnostics (the `Left gun body` and `Right gun body` status rows) and the regions under Weapons > Hold, transfer, and grab regions, with each hand's region and role in the Status page's `Weapons in hand` section (`Left hand on gun`, `Right hand on gun`).
 
