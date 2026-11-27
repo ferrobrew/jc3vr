@@ -143,11 +143,10 @@
 - [controls-summary.md](mod/input/controls-summary.md): the controls summary on the off-hand wrist.
 - [haptics.md](mod/input/haptics.md): the controllers' vibration.
 - [slow-motion.md](mod/input/slow-motion.md): the game's slow motion against real time.
-- [physical-hands.md](mod/input/physical-hands.md): each empty palm colliding with the world.
+- [physical-hands.md](mod/input/physical-hands.md): the hand bodies, the palm probes, pushing and shoving, and picking up and holding objects.
 - [hand-climbing.md](mod/input/hand-climbing.md): climbing with gripping hands.
 - [character-grabs.md](mod/input/character-grabs.md): grabbing characters with an empty hand.
-- [held-prop-impacts.md](mod/input/held-prop-impacts.md): held-body contact feedback and damage.
-- [impact-sounds.md](mod/input/impact-sounds.md): impact sounds from the hands.
+- [impacts.md](mod/input/impacts.md): impact sounds, and what a held object striking something does.
 - [breaking-glass.md](mod/input/breaking-glass.md): breaking window glass by hand.
 - [grab-view.md](mod/input/grab-view.md): the grab view diagnostic.
 - [collider-view.md](mod/input/collider-view.md): the collider view diagnostic.

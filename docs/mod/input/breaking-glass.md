@@ -36,7 +36,7 @@ Hiding a pane leaves its glass shapes, so a bullet would still meet glass where 
 
 ## Feedback
 
-A strike plays a haptic strike on the striking hand, scaled by its damage, and at full strength when the pane comes down. The player's melee impact for glass plays at the strike, with its effect and its sound ([impact-sounds.md](impact-sounds.md) uses the same lookup for a palm's touch, sound only). The bullet's glass handler plays nothing of its own, so there is no glass-breaking effect of the game's to reuse; whether the melee impact has a glass entry is not known, and the log says so once when it has no sound.
+A strike plays a haptic strike on the striking hand, scaled by its damage, and at full strength when the pane comes down. The player's melee impact for glass plays at the strike, with its effect and its sound ([impacts.md](impacts.md#impact-sounds) uses the same lookup for a palm's touch, sound only). The bullet's glass handler plays nothing of its own, so there is no glass-breaking effect of the game's to reuse; whether the melee impact has a glass entry is not known, and the log says so once when it has no sound.
 
 ## Threading
 
