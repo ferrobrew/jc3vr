@@ -47,7 +47,7 @@ Code and docs cite [engine/rendering/rendering.md](engine/rendering/rendering.md
 - [input.md](engine/gameplay/input.md): the action effectors, the action enumeration, button mapping, and the mouse and UI input.
 - [aim-state.md](engine/gameplay/aim-state.md): the player's aim state, its writers and consumers, and the other stance switches.
 - [aim-pipeline.md](engine/gameplay/aim-pipeline.md): the aim target cache, shot construction, dual-wield, and auto-aim.
-- [weapon-firing.md](engine/gameplay/weapon-firing.md): what a shot needs and does, the shooting permission, and deferred weapon operations.
+- [weapon-firing.md](engine/gameplay/weapon-firing.md): the weapon's user, what a shot needs and does, the shooting permission, and camera hints.
 - [grapple-pipeline.md](engine/gameplay/grapple-pipeline.md): grapple targeting, the hook's flight and attach, and zip, tether, and retract.
 - [swim-locomotion.md](engine/gameplay/swim-locomotion.md): the swim state tasks, their turn dispatch, and their heading paths.
 - [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md): the parachute's steering and how the camera feeds it.
