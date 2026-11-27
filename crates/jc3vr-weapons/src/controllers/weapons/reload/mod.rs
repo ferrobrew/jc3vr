@@ -202,7 +202,7 @@ pub(super) struct BeginInputs<'a> {
     ///
     /// [`Wielded::hands`]: crate::controllers::weapons::engine::Wielded::hands
     pub weapons: [Option<&'a HeldWeapon>; 2],
-    /// The hands holding any gun, of these weapons or another, by [`Hand::index`].
+    /// The hands holding anything but the reload's own round, by [`Hand::index`].
     pub occupied: [bool; 2],
     pub active: &'a ActiveHands,
     pub config: &'a WeaponSettings,

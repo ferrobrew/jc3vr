@@ -24,7 +24,7 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    loadout::{LoadoutSnapshot, grab::swaps, live},
+    loadout::{contents::HandContents, grab::swaps, live},
     weapons::{
         ads,
         begin::place::{Place, held_foregrip, mark_size},
@@ -32,7 +32,7 @@ use crate::controllers::{
         capabilities::{Capabilities, gun_hands_now, tracked_hands, trigger_claims},
         collide,
         config::WeaponSettings,
-        docks,
+        contents, docks,
         docks::{SocketInputs, SocketUse, attachments::Sample, attract},
         engine,
         engine::HeldWeapon,
@@ -110,9 +110,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                 jc3vr_body::controllers::held::guns::GunHolds::default()
             });
             let snapshot = live::snapshot_now();
-            let table_hands = snapshot.as_ref().map_or([false; 2], hands_holding);
-            let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
-            let free = Hand::BOTH.map(|h| !table_hands[h.index()] && !gun_hands[h.index()]);
+            let contents = contents::sample(weapon.as_ref());
+            let free = contents.map(|hand| hand.free());
             let sockets = snapshot
                 .as_ref()
                 .filter(|_| capabilities.dock)
@@ -136,7 +135,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                 weapon,
                 guns,
                 beside,
-                table_hands,
+                contents,
                 sockets,
                 character: Some(Mat4::from(owner.m_WorldMatrixT1)),
                 docked_long,
@@ -166,11 +165,9 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                 weapon: w.address,
             })
     }));
-    let armed_hands = Hand::BOTH.map(|h| armed::in_hand(h).is_some());
-    let gun_hands = weapon.map_or([false; 2], |w| w.wielded.hands);
-    let free = Hand::BOTH.map(|h| {
-        !gun_hands[h.index()] && !armed_hands[h.index()] && !ticked.table_hands[h.index()]
-    });
+    // One notion of a free hand for every target: the C4 the planting mode wields leaves its hand
+    // free once the charge is planted, and the drawn detonator fills it.
+    let free = ticked.contents.map(|hand| hand.free());
     let claims = trigger_claims(capabilities, gun_hands_now(), tracked_hands());
     let held = claims
         .iter()
@@ -276,13 +273,12 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     {
         targets.push(target);
     }
-    let empty_handed = gun_hands == [false; 2] && ticked.table_hands == [false; 2];
+    let empty_handed = free == [true; 2];
     state.attractors.clear();
     if capabilities.dock {
         let draw = socket_candidates::DrawContext {
             dominant: config.dominant,
-            occupied: Hand::BOTH
-                .map(|hand| gun_hands[hand.index()] || ticked.table_hands[hand.index()]),
+            occupied: free.map(|free| !free),
         };
         let (draws, others) = socket_candidates(&ticked, &active, draw);
         state.status.docks_followed = draws.len();
@@ -329,10 +325,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         }
     }
     if pouches_act && let Some(body) = &body {
-        // A hand holding a gun, a prop, or an explosive takes nothing from the chest.
-        let grabbers = ChestGrabbers::for_guns(Hand::BOTH.map(|h| {
-            gun_hands[h.index()] || armed_hands[h.index()] || ticked.table_hands[h.index()]
-        }));
+        // A hand holding anything takes nothing from the chest.
+        let grabbers = ChestGrabbers::for_guns(free.map(|free| !free));
         // A pouch with nothing to give is neither offered nor drawn.
         if grenade::in_stock()
             && let Some(pouch) = volumes::grenade_pouch(body, pouches, config.dominant, grabbers)
@@ -382,13 +376,9 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         volumes::reserve_long_guns(&mut docked, config.dominant, empty_handed);
         targets.extend(docked.iter().map(|c| place.touch(c)));
     }
-    let charge = c4::throwing_hand();
-    let detonator = c4::detonator_hand();
     let inputs = grenade::BeginInputs {
         active: &active,
-        free: Hand::BOTH.map(|h| {
-            free[h.index()] && !grenade::holds(h) && charge != Some(h) && detonator != Some(h)
-        }),
+        free,
         acting: pouches_act,
     };
     let grenades = grenade::begin_tick(game, &inputs, GRENADE.get());
@@ -402,7 +392,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         game,
         &c4::placed::BeginInputs {
             active: &active,
-            free: Hand::BOTH.map(|h| free[h.index()] && !grenade::holds(h)),
+            free,
             acting: pouches_act,
         },
     );
@@ -418,7 +408,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     targets.extend(taken.iter().map(|c| place.world(c)));
     let reload_candidates = reload::begin_tick(&reload::BeginInputs {
         weapons: [weapon.as_ref(), beside.as_ref()],
-        occupied: free.map(|f| !f),
+        // The reload's own round leaves the hand free to the reload, which carries it on.
+        occupied: ticked.contents.map(|hand| !hand.free_but_for_round()),
         active: &active,
         config: &config,
         body: body.as_ref(),
@@ -700,8 +691,8 @@ struct Ticked {
     guns: [Option<HeldWeapon>; 2],
     /// The gun a hand holds beside the wielded weapon.
     beside: Option<HeldWeapon>,
-    /// Which hands the loadout table has something in, by [`Hand::index`].
-    table_hands: [bool; 2],
+    /// What each hand holds as the tick read its weapons, by [`Hand::index`].
+    contents: [HandContents; 2],
     /// Native socket observations and hand offers from this input tick.
     sockets: Option<Sample>,
     /// The character's model-to-world transform.
@@ -878,11 +869,6 @@ fn shown_props(body: &BodyFrame, config: &WeaponSettings) -> Vec<ShownPouch> {
         });
     }
     out
-}
-
-/// Which hands hold an item of `snapshot`'s, by [`Hand::index`].
-fn hands_holding(snapshot: &LoadoutSnapshot) -> [bool; 2] {
-    Hand::BOTH.map(|hand| snapshot.held(hand).is_some())
 }
 
 /// The sockets' grab volumes in the cockpit frame, each its socket's size: the weapons on the

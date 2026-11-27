@@ -71,14 +71,22 @@ impl HandContents {
         self.wielded || self.armed.is_some()
     }
 
-    /// Whether the hand holds nothing: no gun, nothing of the table's, no grenade, not the
-    /// detonator, and no round.
+    /// Whether the hand holds nothing: no gun, nothing of the table's, no grenade, no C4 throw, not
+    /// the detonator, and no round. The C4 the game's planting mode wields is not a gun, so a hand
+    /// whose charge is planted is free, and of the C4's parts only the throw and the drawn
+    /// detonator fill it.
     pub fn free(&self) -> bool {
+        self.free_but_for_round() && !self.round
+    }
+
+    /// Whether the hand holds nothing but, at most, the reload's round: the reload's own free hand,
+    /// which stays free to it while it carries the reload on.
+    pub fn free_but_for_round(&self) -> bool {
         !self.gun()
             && self.item.is_none()
             && self.grenade.is_none()
+            && self.charge.is_none()
             && !self.detonator
-            && !self.round
     }
 
     /// Whether the hand holds an explosive that its fire input would otherwise draw a gun over: a
@@ -143,17 +151,25 @@ mod tests {
                 ..Default::default()
             },
             HandContents {
-                detonator: true,
+                charge: Some(HeldCharge::Asked),
                 ..Default::default()
             },
             HandContents {
-                round: true,
+                detonator: true,
                 ..Default::default()
             },
         ];
         for contents in holding {
             assert!(!contents.free(), "{contents:?}");
+            assert!(!contents.free_but_for_round(), "{contents:?}");
         }
+        // The reload's round fills the hand for everything but the reload.
+        let round = HandContents {
+            round: true,
+            ..Default::default()
+        };
+        assert!(!round.free());
+        assert!(round.free_but_for_round());
         // The brace and the fire input are not things held.
         assert!(
             HandContents {
