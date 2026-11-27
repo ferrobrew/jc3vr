@@ -9,12 +9,11 @@
 //! hop the direct read never had.
 //!
 //! Reading before the source is registered is a programming error and panics; the install
-//! registers it before any hook is enabled. The handle holds are a plain published fact
+//! registers it before any hook is enabled. The handle holds are a published fact
 //! ([`holds`]), written as the vehicle handling's tick finishes and as it stands down.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use glam::Vec3;
+use jc3vr_core::published::{Published, Stage};
 
 use crate::{contributions, controllers::mode::VehicleSeat};
 
@@ -71,19 +70,17 @@ pub fn seated_body_aim(
 }
 
 /// Whether each hand holds a mounted gun's handle, indexed by
-/// [`Hand::index`](jc3vr_input::frame::Hand::index). Lock-free, for the physical hands to leave a
-/// hand on a handle out of their palms.
+/// [`Hand::index`](jc3vr_input::frame::Hand::index), for the physical hands to leave a hand on a
+/// handle out of their palms.
 #[inline]
 pub fn holds() -> [bool; 2] {
-    HOLDS.each_ref().map(|hold| hold.load(Ordering::Relaxed))
+    HOLDS.latest().map_or([false; 2], |holds| holds.value)
 }
 
 /// Publish each hand's hold on a mounted gun's handle for [`holds`].
 #[inline]
 pub fn publish_holds(holds: [bool; 2]) {
-    for (slot, hold) in HOLDS.iter().zip(holds) {
-        slot.store(hold, Ordering::Relaxed);
-    }
+    HOLDS.publish(holds);
 }
 
 #[inline]
@@ -93,4 +90,4 @@ fn source() -> &'static MountedSource {
         .expect("mounted: no mounted-gun source is registered; the install registers it")
 }
 
-static HOLDS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
+static HOLDS: Published<[bool; 2]> = Published::new(Stage::InputGame);

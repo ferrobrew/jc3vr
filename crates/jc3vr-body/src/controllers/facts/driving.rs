@@ -9,7 +9,7 @@
 
 use body_rig::math::smooth::smoothstep;
 use glam::Vec3;
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Published, Stage, Stamp};
 use parking_lot::Mutex;
 
 use crate::{controllers::roomscale::tuning::ROOMSCALE, tuning::FRESHNESS};
@@ -17,9 +17,10 @@ use crate::{controllers::roomscale::tuning::ROOMSCALE, tuning::FRESHNESS};
 /// Publish the input tick's correction for the driven seat, cockpit frame, metres, or `None` out
 /// of a measured driver's seat. A leaf slot, taken briefly.
 pub fn publish(applied: Option<Vec3>) {
-    let mut shared = SHARED.lock();
-    shared.target = applied;
-    shared.published_at = Some(Stamp::now());
+    match applied {
+        Some(applied) => TARGET.publish(applied),
+        None => TARGET.clear(),
+    }
 }
 
 /// The frame half's inputs to [`advance`].
@@ -35,15 +36,10 @@ pub struct FrameInputs {
 /// to the composed cockpit position. Called once per rendered VR frame by the pose composition,
 /// under the roomscale frame lock; takes only this module's slot.
 pub fn advance(enabled: bool, inputs: FrameInputs, now: Stamp) -> Vec3 {
+    let target = TARGET.fresh_at(now, FRESHNESS.get().facts.driving_ms.window());
     let mut shared = SHARED.lock();
-    let fresh = FRESHNESS
-        .get()
-        .facts
-        .driving_ms
-        .window()
-        .holds(shared.published_at, now);
-    let goal = match shared.target {
-        Some(applied) if enabled && inputs.seated && fresh => applied,
+    let goal = match target {
+        Some(applied) if enabled && inputs.seated => applied,
         _ => Vec3::ZERO,
     };
     let offset = shared
@@ -111,17 +107,16 @@ impl Ease {
     }
 }
 
+/// The input tick's correction for the driven seat, withdrawn out of a measured driver's seat.
+static TARGET: Published<Vec3> = Published::new(Stage::InputGame);
+
 struct Shared {
-    target: Option<Vec3>,
-    published_at: Option<Stamp>,
     ease: Ease,
     goal: Vec3,
     offset: Vec3,
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
-    target: None,
-    published_at: None,
     ease: Ease::new(),
     goal: Vec3::ZERO,
     offset: Vec3::ZERO,

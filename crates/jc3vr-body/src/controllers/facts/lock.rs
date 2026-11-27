@@ -1,23 +1,27 @@
 //! Whether the physical grapple holds a lock, as the grapple publishes it for the body and the
 //! weapon handling.
 //!
-//! The lock writes it as it takes the line and as it lets go
-//! (`grapple::physical::lock`), so a reader sees the lock's own state, not a copy a tick
-//! old.
+//! The lock writes it as it takes the line and as it lets go (`grapple::physical::lock`), so a
+//! reader sees the lock's own state, not a copy a tick old. The fact is published while the lock
+//! holds and withdrawn when it lets go.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use jc3vr_core::published::{Published, Stage};
 
-/// Whether the lock holds the line. An atomic, so the grapple's detours read it without waiting on
-/// the lock's own state.
+/// Whether the lock holds the line. A leaf slot, so the grapple's detours read it without waiting
+/// on the lock's own state.
 #[inline]
 pub fn holds() -> bool {
-    LOCKED.load(Ordering::Acquire)
+    HELD.latest().is_some()
 }
 
 /// Publish whether the lock holds the line.
 #[inline]
 pub fn publish(holds: bool) {
-    LOCKED.store(holds, Ordering::Release);
+    if holds {
+        HELD.publish(());
+    } else {
+        HELD.clear();
+    }
 }
 
-static LOCKED: AtomicBool = AtomicBool::new(false);
+static HELD: Published<()> = Published::new(Stage::EngineCall);
