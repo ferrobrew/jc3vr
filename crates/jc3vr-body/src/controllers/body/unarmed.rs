@@ -1,7 +1,8 @@
 //! The weapon-agnostic body: on foot under the controllers, the character's body plays what it
 //! plays unarmed, whatever is held, and the controller hands alone place the arms and the weapons.
 //!
-//! The weapon reaches the body through three routes (see `docs/engine/character/animation-layers.md`):
+//! The weapon reaches the body through four routes (see
+//! `docs/engine/character/animation-layers.md`):
 //!
 //! - the wielded weapon's animation modifiers, which select the base layer's weapon clip variants
 //!   (the bladed stances, the held arms, the off-hand on a rifle's foregrip). While the unarmed

@@ -3,10 +3,10 @@
 //! log. The accounting is pure; [`Tracer::step`] returns what to log and the caller logs it.
 //!
 //! The on-foot task's post-call writes the wanted velocity in stages (the task's own, the stick's
-//! in its place, the palms' push added, the step drive added), and the physics step after the tick moves
-//! the proxy by the last of them plus the velocity of the ground it stands on. So the root's move
-//! between two ticks is explained by the earlier tick's wanted velocity; a move beyond it came from
-//! something else (a collision, a depenetration, a proxy shape change, a moving surface the
+//! in its place, the palms' push added, the step drive added), and the physics step after the tick
+//! moves the proxy by the last of them plus the velocity of the ground it stands on. So the root's
+//! move between two ticks is explained by the earlier tick's wanted velocity; a move beyond it came
+//! from something else (a collision, a depenetration, a proxy shape change, a moving surface the
 //! surface velocity misses), and the trace's split names what the tick did ask for.
 
 use std::time::Duration;

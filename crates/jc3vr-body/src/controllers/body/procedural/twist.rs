@@ -5,10 +5,11 @@
 //! after the HumanIK solve has turned the hands to the controllers and the head override and the
 //! finger curls have written theirs, with `AnimationController::SetJoint` over the finalized
 //! model-space pose, as those do. A forearm turned past its range passes part of the turn to the
-//! upper arm's twist bones ([`solver::twist::passed_up`](crate::controllers::body::procedural::solver::twist::passed_up)).
-//! The arms' twist bones take the arms' twist while the procedural
-//! body poses the torso, and the legs' while it poses the legs, each by that region's weight, so
-//! the animation's own twist bones come back as the body hands back.
+//! upper arm's twist bones
+//! ([`solver::twist::passed_up`](crate::controllers::body::procedural::solver::twist::passed_up)).
+//! The arms' twist bones take the arms' twist while the procedural body poses the torso, and the
+//! legs' while it poses the legs, each by that region's weight, so the animation's own twist bones
+//! come back as the body hands back.
 
 use glam::Quat;
 use jc3gi::character::character::{AnimationController, Character, Joint};

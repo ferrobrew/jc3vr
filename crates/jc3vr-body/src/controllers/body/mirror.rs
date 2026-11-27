@@ -15,9 +15,9 @@
 //!
 //! The weapon handling draws what it owns on the body: the sockets' interaction targets on each
 //! pass, through the sampler it registers
-//! ([`crate::contributions::BodyContributions::attachment_sampler`]), and the pouches'
-//! render placement after each render publication ([`submit_pouch_render`]), with the drawing
-//! helpers and colours here.
+//! ([`crate::contributions::BodyContributions::attachment_sampler`]), and the pouches' render
+//! placement after each render publication ([`submit_pouch_render`]), with the drawing helpers and
+//! colours here.
 
 use std::time::Instant;
 

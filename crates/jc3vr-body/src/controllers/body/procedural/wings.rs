@@ -101,8 +101,8 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
     let torso = airborne_torso_heading(head.orientation, wrists.map(|w| w.map(|w| w.position)));
     let player = body::player();
     // The shoulders hang from the neck pivot, which a turn or a nod of the head leaves in place,
-    // with the eyes put back in front of it along the torso's heading. Hung from the eyes as they
-    // are, a glance at one arm swung the shoulders toward it and folded that arm's elbow.
+    // with the eyes put back in front of it along the torso's heading. Hung from the eyes, a glance
+    // at one arm would swing the shoulders toward it and fold that arm's elbow.
     let neck = head.position + head.orientation * EYES_TO_NECK;
     let level_eyes = neck - torso * EYES_TO_NECK;
     Some(PlayerArms {
@@ -287,8 +287,8 @@ impl WingHeading {
 }
 
 /// The heading the line between the wrists faces, when both are tracked and spread at least the
-/// tuning's `wings.spread_m` apart across the ground, and it faces within a right angle of the head's heading
-/// `head_yaw`: crossed arms face backward, and say nothing.
+/// tuning's `wings.spread_m` apart across the ground, and it faces within a right angle of the
+/// head's heading `head_yaw`: crossed arms face backward, and say nothing.
 fn spread_heading(wrists: [Option<Vec3>; 2], head_yaw: f32) -> Option<f32> {
     let [Some(left), Some(right)] = wrists else {
         return None;

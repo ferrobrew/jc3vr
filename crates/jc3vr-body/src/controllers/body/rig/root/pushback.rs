@@ -13,9 +13,9 @@
 //! thresholds, the cap, the span, and the episode's end are the rig tuning's `pushback` section
 //! ([`PushbackTuning`]).
 //!
-//! The thresholds depend on the root's owner: tight while the player's step drive is obstructed, seated
-//! or standing, loose while the animation carries the body (only a runaway gap), and an arm's
-//! length while climbing, where a lean is all the head does.
+//! The thresholds depend on the root's owner: tight while the player's step drive is obstructed,
+//! seated or standing, loose while the animation carries the body (only a runaway gap), and an
+//! arm's length while climbing, where a lean is all the head does.
 //!
 //! Vectors are world `(x, z)`, metres.
 
@@ -151,8 +151,8 @@ impl Pushback {
     }
 }
 
-/// The threshold for the root's owner, metres, or `None` when the step drive owns the gap or the game
-/// owns the root.
+/// The threshold for the root's owner, metres, or `None` when the step drive owns the gap or the
+/// game owns the root.
 pub fn threshold(
     owner: Option<RootOwner>,
     obstructed: bool,

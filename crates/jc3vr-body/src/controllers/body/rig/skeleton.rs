@@ -29,14 +29,14 @@ use crate::{
     tuning::FRESHNESS,
 };
 
-/// The tracing target for the divergence's once-a-second log. Public so that the debug UI can turn
-/// it up to `DEBUG`.
+/// The tracing target for the divergence's once-a-second log, which a log filter turns up to
+/// `DEBUG`.
 pub(crate) const SKELETON_TARGET: &str = "body_divergence";
 
 /// The character's skeleton in the cockpit frame, while the character's pose is fresh: what the
-/// body's grab volumes ride (`controllers::weapons::volumes`), with where it came from.
-/// `head_cockpit` is the head's cockpit position and `world_scale` the VR world scale the cockpit
-/// composes with.
+/// body's grab volumes ride (the weapons crate's `controllers::weapons::volumes`), with where it
+/// came from. `head_cockpit` is the head's cockpit position and `world_scale` the VR world scale
+/// the cockpit composes with.
 pub fn skeleton_in_cockpit(
     head_cockpit: Vec3,
     world_scale: f32,

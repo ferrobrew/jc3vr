@@ -15,8 +15,8 @@
 //! the anchor, the eye arm, and the body's turn under the view are expressed in. Where the view
 //! hangs from an animated head instead (a clip that poses the body, a vehicle), the camera's eyes
 //! are the clip's eye bones, held out in front of the face, and the pivot is the published head
-//! carried back by the head's turn ([`neck_pivot_offset`]), as it was before the steady view took
-//! the camera; the two are blended by the steady view's weight.
+//! carried back by the head's turn ([`neck_pivot_offset`]); the two are blended by the steady
+//! view's weight.
 
 use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};

@@ -4,9 +4,10 @@
 //!
 //! The probe casts from the player aim control's post-simulation update, where the game casts its
 //! own aim ray, for the local player, while the headset drives the view in gameplay. The eyes are
-//! the camera's ([`jc3vr_view::hooks::camera::eye_point`]): the head pose's position carried to the eyes as
-//! the camera hangs them, through the neck and the eye arm. The vehicle Rico rides in is ignored along with Rico himself, since
-//! between two ticks of a fast car the head's path runs through its cabin.
+//! the camera's ([`jc3vr_view::hooks::camera::eye_point`]): the head pose's position carried to the
+//! eyes as the camera hangs them, through the neck and the eye arm. The vehicle Rico rides in is
+//! ignored along with Rico himself, since between two ticks of a fast car the head's path runs
+//! through its cabin.
 
 pub mod probe;
 

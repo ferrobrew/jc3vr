@@ -256,9 +256,8 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
 }
 
 /// The arm [`eye_rig_slip`] turns: the camera's own head-to-eyes offset while the headset's eyes
-/// hang from the neutral head by the neck model, the
-/// offset the rig's pelvis assumes the upright eyes stand ahead of the root by; else the measured
-/// neck-to-eyes arm.
+/// hang from the neutral head by the neck model, the offset the rig's pelvis assumes the upright
+/// eyes stand ahead of the root by; else the measured neck-to-eyes arm.
 fn slip_arm() -> Vec3 {
     headpose::anchor_pair()
         .map(|[_, current]| current)

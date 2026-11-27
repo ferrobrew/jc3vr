@@ -6,10 +6,12 @@
 //! height gives their height. A seated player's gives the seated eye height the seated posture
 //! measures the head against, and their height is estimated from the arm span instead, which is
 //! close to the height for most adults; the player can correct it on the review. Every other
-//! dimension is derived from the height and the span with generic adult proportions ([`derive`]): the
-//! segment ratios of Drillis and Contini's anthropometric tables as tabulated in Winter's
-//! *Biomechanics and Motor Control of Human Movement*. The height, shoulder, and hand ratios are
-//! the ones [`BodyDimensions::GENERIC_ADULT`] follows. The arm segments are not: the tables'
+//! dimension is derived from the height and the span with generic adult proportions
+//! ([`derive`](mod@derive)): the segment ratios of Drillis and Contini's anthropometric tables as
+//! tabulated in Winter's *Biomechanics and Motor Control of Human Movement*. The height, shoulder,
+//! and hand ratios are the ones
+//! [`BodyDimensions::GENERIC_ADULT`](crate::controllers::body::BodyDimensions::GENERIC_ADULT)
+//! follows. The arm segments are not: the tables'
 //! per-height upper arm and forearm lengths, with the shoulders and hands, add up to more than an
 //! adult's arm span, so the derivation fits the two segments to the measured span instead and
 //! takes only their proportion to each other from the tables. The generic adult keeps the tables'
@@ -17,7 +19,7 @@
 //!
 //! [`Calibration`] is the flow's state: which step it is on, what it has measured, and the capture
 //! in progress. It takes the time and the live measurement as arguments, so it runs without a
-//! headset in tests; the pause menu's `VR: BODY` page (`controllers::body::menu`) drives
+//! headset in tests; the pause menu's `VR: BODY` page (the UI crate's `controllers::body`) drives
 //! it.
 
 mod derive;

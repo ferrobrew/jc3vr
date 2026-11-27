@@ -166,7 +166,7 @@ pub(super) unsafe fn place_feet(
 }
 
 /// The interpolation and blend-out rates the game's locomotion IK task queues its foot targets
-/// with; both are off, so the rates only keep the entry as the game writes it.
+/// with; both flags are off, so the rates only keep the entry as the game writes it.
 const LOCO_IK_INTERPOLATION_RATE: f32 = 3.0;
 const LOCO_IK_BLEND_OUT_RATE: f32 = 1.5;
 

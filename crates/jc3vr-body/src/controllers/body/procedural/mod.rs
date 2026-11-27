@@ -33,8 +33,8 @@
 //! - [`tuning`]: the procedural body's tuning file.
 //!
 //! [`at_solve_gate`] poses the torso, handing it between the player and the animation by the table
-//! in [`authority`], and fades the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the pre-solve IK (the body IK's torso) to
-//! stand down.
+//! in [`authority`], and fades the game's own IK targets on the bones it owns. While it has any
+//! weight, [`owns_body`] tells the pre-solve IK (the body IK's torso) to stand down.
 
 pub mod authority;
 mod gate_state;
@@ -210,13 +210,13 @@ pub(crate) fn gate_skipped() {
 
 /// Run the pose authority for the local player, at the `MAIN` pass's solve gate. `dt` is the
 /// pass's step, which paces the blend and the followers, so the body keeps the simulation's time
-/// rather than the wall clock's.
+/// rather than the wall clock's. Returns whether it wrote a procedural pose, which the weapons
+/// must be placed on.
 ///
 /// # Safety
 ///
 /// `character` must be the live local character, inside its pose-finalization pass, on the thread
 /// running it.
-/// Returns whether it wrote a procedural pose, which the weapons must be placed on.
 pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     // SAFETY: forwarded from the caller.
     let wrote = unsafe { run_gate(character, dt) };
@@ -487,14 +487,14 @@ struct TorsoGate<'a> {
     arm_shoulders: [Option<Vec3>; 2],
 }
 
-/// The standing idle states of Rico's base graph, the only states the square stance squares the
-/// feet in.
 /// The standing states outside [`STANCE_IDLES`] already logged.
 static UNLISTED_STANDING: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
 /// The most unlisted standing states logged in a session.
 const MAX_UNLISTED_LOGGED: usize = 64;
 
+/// The standing idle states of Rico's base graph, the only states the square stance squares the
+/// feet in.
 static STANCE_IDLES: LazyLock<StateSet> = LazyLock::new(|| {
     StateSet::new([
         "S_IDLE",

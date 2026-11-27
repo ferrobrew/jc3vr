@@ -1,5 +1,6 @@
 //! The grounded rig in the game: the pure core (`body-rig`) advanced once per rendered frame from
-//! the root's frame half, with the published results the rest of the mod reads (`docs/mod/body/rig.md`).
+//! the root's frame half, with the published results the rest of the mod reads
+//! (`docs/mod/body/rig.md`).
 //!
 //! The rig works in the room frame: the cockpit frame with its floor at zero height, in the player's
 //! own metres. The frame half hands it the eyes and the hands in that frame, and the floor point
@@ -355,7 +356,8 @@ fn player_body(dimensions: &BodyDimensions) -> PlayerBody {
     PlayerBody::from_heights(dimensions.height, dimensions.eye_height)
 }
 
-/// The horizontal arm from the upright eyes back to the neck pivot for a body facing `yaw`, `(x, z)`.
+/// The horizontal arm from the upright eyes back to the neck pivot for a body facing `yaw`,
+/// `(x, z)`.
 fn arm(yaw: f32) -> Vec2 {
     let v = Quat::from_rotation_y(yaw) * EYES_TO_NECK;
     Vec2::new(v.x, v.z)

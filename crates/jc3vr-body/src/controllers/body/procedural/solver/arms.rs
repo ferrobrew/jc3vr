@@ -9,11 +9,11 @@
 //! An elbow hint is where an arm's elbow naturally sits for a wrist target: the middle joint of an
 //! arm of two equal halves ([`middle_joint`]), bent along a pole that points down, out to the arm's
 //! side, and a little back. The side and the back are the chest's, so a chest turned toward the
-//! player's torso carries the elbows round with it. The pole is chosen from the
-//! reach: a hand reaching up or across the body lifts the elbow out to the side, as a person's
-//! does, rather than leaving it hanging under a raised arm. Where the reach runs along the pole (a
-//! hand reaching down, out, and back toward a hip holster), the pole's part across the reach
-//! vanishes, so a second pole, straight back, takes over smoothly as it does rather than at once.
+//! player's torso carries the elbows round with it. The pole is chosen from the reach: a hand
+//! reaching up or across the body lifts the elbow out to the side, as a person's does, rather than
+//! leaving it hanging under a raised arm. Where the reach runs along the pole (a hand reaching
+//! down, out, and back toward a hip holster), the pole's part across the reach vanishes, so a
+//! second pole, straight back, takes over smoothly as it does rather than at once.
 
 use body_rig::math::{
     Side, geometry::closest_on_segment, smooth::smoothstep, two_bone::middle_joint,

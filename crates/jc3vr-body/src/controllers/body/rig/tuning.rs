@@ -3,7 +3,8 @@
 //! jump trace, the ledger's obstruction, and the push-back.
 //!
 //! The pelvis solver's, the step commit's, and the yaw's tuning are the player's settings
-//! ([`crate::controllers::body::rig::RigConfig`]), as is the feet's contact tuning, not the file's.
+//! ([`crate::controllers::body::rig::RigConfig`]), as is the feet's contact tuning
+//! (`controllers.body.ik.contact`), not the file's.
 //! A tracking recording carries those settings, so `tools/tracking-synth` replays them as
 //! recorded; this file is not recorded, and a replay reads the repository's current `core` table.
 

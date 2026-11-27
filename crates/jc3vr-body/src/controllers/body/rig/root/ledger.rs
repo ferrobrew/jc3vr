@@ -151,8 +151,8 @@ impl Requests {
     }
 
     /// Whether something stopped the drive: over the last two completed steps, less than the rig
-    /// tuning's `ledger.obstructed_share` of the drive they asked for was credited. A wall the root slides along at a shallow angle
-    /// leaves most of the drive credited, so it is no obstruction.
+    /// tuning's `ledger.obstructed_share` of the drive they asked for was credited. A wall the root
+    /// slides along at a shallow angle leaves most of the drive credited, so it is no obstruction.
     pub fn obstructed(&self) -> bool {
         let requested: f32 = self.recent.iter().map(|(r, _)| r).sum();
         let credited: f32 = self.recent.iter().map(|(_, c)| c).sum();

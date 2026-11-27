@@ -41,9 +41,14 @@
 //! adult ones when they cannot describe a body; it never stops the mod.
 //!
 //! The section can be written by hand, or by the calibration flow on the pause menu's `VR: BODY`
-//! page ([`menu`]), which measures the player's eye height (standing or seated) and arm span in
-//! the headset and derives the other dimensions from them ([`calibration`]) before saving them
-//! with [`save`].
+//! page (the UI crate's `controllers::body`), which measures the player's eye height (standing or
+//! seated) and arm span in the headset and derives the other dimensions from them
+//! ([`calibration`]) before saving them with [`save`].
+//!
+//! The submodules hold what drives the character's body from that remap: the grounded rig
+//! ([`rig`]), the procedural body ([`procedural`]), the IK-first body ([`ik_body`]), the firm
+//! ragdoll ([`firm_ragdoll`]), the learned estimator ([`estimator`]), the weapon-agnostic body
+//! ([`unarmed`]), and the body mirror diagnostic ([`mirror`]).
 
 pub mod calibration;
 pub mod config;
@@ -121,8 +126,8 @@ impl BodyDimensions {
     };
 
     /// The character's proportions, estimated from his stated height of about 1.8 to 1.9 m and
-    /// generic adult ratios. A stand-in until the dimensions are measured from the character's
-    /// skeleton.
+    /// generic adult ratios rather than measured from the character's skeleton (his shoulders are
+    /// measured: [`CHARACTER_EYES_TO_RIGHT_SHOULDER`]).
     pub const CHARACTER_ESTIMATE: BodyDimensions = BodyDimensions {
         height: 1.85,
         eye_height: 1.73,

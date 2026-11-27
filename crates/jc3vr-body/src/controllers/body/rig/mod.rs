@@ -8,7 +8,9 @@
 //! - [`collision`]: the head-through-geometry probe;
 //! - [`skeleton`] and [`frames`]: Rico's solved skeleton for the body's volumes, and its divergence
 //!   from the player's torso;
+//! - [`torso`]: the cockpit-space torso readout and the heading and neck geometry it shares;
 //! - [`visual`]: the grounded rig's in-world diagnostics;
+//! - [`config`]: the rig's settings, the step switch and the pure core's tuning;
 //! - [`tuning`]: the rig's tuning file.
 
 pub mod collision;
@@ -73,7 +75,7 @@ pub(crate) fn torso_turn(character_rotation: Quat) -> Option<f32> {
     yaw_of(character_rotation.inverse() * (view * direction(estimate.yaw)))
 }
 
-/// The torso's turn, bounded for the remaining pre-solve IK consumers.
+/// The torso's turn, bounded for the pre-solve IK consumers.
 pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
     let limit = RIG.get().torso.chest_limit_deg.to_radians();
     let turn = torso_turn(character_rotation).map(|turn| wrap(turn).clamp(-limit, limit));

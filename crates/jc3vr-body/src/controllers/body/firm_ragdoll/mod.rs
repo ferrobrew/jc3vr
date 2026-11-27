@@ -1,8 +1,8 @@
 //! The firm ragdoll: Rico's body hung from the physics for grapple swings, hangs, and the canopy.
 //!
 //! Swinging on the grapple lock, hanging from a hook, and riding the canopy, Rico's animated legs
-//! ignored the swing: they stayed in the clip's pose however the line threw the body, and under
-//! the canopy they hung stiff. The game's ragdoll has presets that keep the upper body keyframed to
+//! ignore the swing: they stay in the clip's pose however the line throws the body, and under the
+//! canopy they hang stiff. The game's ragdoll has presets that keep the upper body keyframed to
 //! the animated pose and drive the hips and legs as dynamic bodies with constraint motors toward
 //! it: the grapple hang's ([`RagdollParamIdSymbolTable::GRAPPLE_HANG`]) and the canopy's, which the
 //! game already applies under the canopy. A preset with keyframed bones keeps the ragdoll under the

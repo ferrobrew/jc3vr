@@ -4,8 +4,9 @@
 //! The camera is `anchor + body × (cockpit × scale)`, and the anchor rides the root. When the step
 //! drive walks the root toward the head, the anchor moves with the root while the cockpit offset
 //! stays, so without a correction the camera runs ahead by the distance the root covered and the
-//! gap never shrinks: the root would follow the head forever. The shift takes the drive's part of the root's
-//! displacement back out of the cockpit, so the camera stays with the real head and the gap closes.
+//! gap never shrinks: the root would follow the head forever. The shift takes the drive's part of
+//! the root's displacement back out of the cockpit, so the camera stays with the real head and the
+//! gap closes.
 //!
 //! The ledger ([`crate::controllers::body::rig::root::ledger`]) attributes each completed step's
 //! displacement to the drive and keeps the running total at the last two completed steps

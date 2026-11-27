@@ -31,7 +31,8 @@ impl WantedStore for Memory {
 }
 
 /// One tick's inputs: what the task wrote, the stick's velocity (`None` while the animation moves
-/// the body), the palms' push, and the drive's step (`None` while the player does not own the root).
+/// the body), the palms' push, and the drive's step (`None` while the player does not own the
+/// root).
 #[derive(Debug, Clone, Copy)]
 struct Case {
     task: Vec3,

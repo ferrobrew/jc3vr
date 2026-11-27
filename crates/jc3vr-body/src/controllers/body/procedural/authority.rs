@@ -7,8 +7,8 @@
 //! clavicles) is posed on the animation's hips where the table gives it to the player, the arms are
 //! the controllers' in every case, through the hand IK, and the head is the headset's, through the
 //! head override.
-//! [`classify`] reads the character's state
-//! and names the case, first match winning:
+//!
+//! [`classify`] reads the character's state and names the case, first match winning:
 //!
 //! | Case | Torso |
 //! | --- | --- |

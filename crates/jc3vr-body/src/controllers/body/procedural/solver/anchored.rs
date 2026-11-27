@@ -3,9 +3,8 @@
 //! vehicle seat, under the parachute's harness, in the water). Pure, in Rico's model space.
 //!
 //! The clip's posture is the base the player's head moves from: a walk's stride, a bike's lean
-//! into a turn, a driver's reach for the wheel. [`solve_anchored`] keeps the
-//! hips where the clip has them and the clip's shape of the spine, and changes the spine only by
-//! the player's own motion:
+//! into a turn, a driver's reach for the wheel. [`solve_anchored`] keeps the hips where the clip has
+//! them and the clip's shape of the spine, and changes the spine only by the player's own motion:
 //!
 //! 1. The chest twists to face the player's torso: the torso's turn against Rico's facing, less the
 //!    heading the clip's own shoulder line already faces, so a clip that stands with its shoulders

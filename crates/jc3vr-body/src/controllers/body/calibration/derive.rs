@@ -209,7 +209,7 @@ pub fn derive(measurements: Measurements) -> Result<BodyDimensions, CalibrationE
 /// Derive the body dimensions from a seated player's measurements, rounded to the
 /// millimetre. The height is the one the player set, else the estimate from the span
 /// ([`height_from_grip_span`]); the standing eye height follows from it, and everything else is
-/// derived as [`derive`] does. The seated eye height is kept as measured.
+/// derived as [`derive`](fn@derive) does. The seated eye height is kept as measured.
 pub(crate) fn derive_seated(
     measurements: SeatedMeasurements,
 ) -> Result<BodyDimensions, CalibrationError> {
