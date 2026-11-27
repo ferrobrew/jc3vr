@@ -1,8 +1,14 @@
-//! Native width-only human proxy shapes and reversible live restoration.
+//! The human hull: every human character proxy's shape narrowed to half its authored width across
+//! the ground, its height kept, and restored when it is switched off or the payload ejects
+//! (`docs/mod/body/human-hull-restoration.md`).
 //!
-//! Construction hooks retain the authored table and install narrowed human entries. Live bodies
-//! change only in the existing native physics phase. Shutdown requests keep constructors on the
-//! authored geometry while that phase restores all tracked replacements.
+//! The settings table constructor's hook ([`SharedPfxCharacterSettings::Construct`]) keeps each
+//! human proxy state's authored shape and installs a narrowed replacement in its slot ([`native`],
+//! [`geometry`]); a discovery walk adopts the tables made before the hooks. Live bodies change
+//! shape only in the pre-simulation pass ([`step`]), which narrows them, or restores each one once
+//! its surroundings are clear, and then steps the narrowed player up the steps the authored hull
+//! would climb ([`step_up`]). Once a shutdown is requested, constructors keep the authored geometry
+//! while the pass restores every tracked body ([`HumanHullShutdown`]).
 
 #[cfg(test)]
 mod clearance;
@@ -87,7 +93,7 @@ impl Default for HumanHullStatus {
     }
 }
 
-/// The readout copies state and never retains native pointers.
+/// The hull's readout, copied out of its state; it holds no native pointer.
 pub fn status() -> HumanHullStatus {
     let state = STATE.lock();
     HumanHullStatus {
@@ -117,7 +123,9 @@ pub fn status() -> HumanHullStatus {
     }
 }
 
-/// Disable requests restore at the next native phase; a blocked restore retains the narrow hull.
+/// Switch the narrowed hull on or off. Off, the native passes restore each body once its
+/// surroundings are clear, and an obstructed body keeps the narrowed hull meanwhile. No effect
+/// once the shutdown has committed.
 pub fn set_enabled(enabled: bool) {
     let mut state = STATE.lock();
     if !state.committed {
@@ -131,12 +139,14 @@ pub fn hook_library() -> HookLibrary {
         .with_static_binder(&SETTINGS_DESTRUCT_BINDER)
 }
 
-/// Hook removal must keep the image mapped if a settings callback remains active after unpatching.
+/// How many settings hook detours are running: hook removal must keep the image mapped while any
+/// still is after unpatching.
 pub fn active_entries() -> usize {
     ACTIVE_ENTRIES.load(Ordering::Acquire)
 }
 
-/// Called before the hands' existing pre-simulation work, with its native write authority.
+/// The hull's pre-simulation pass, run before the rest of the hands' pre-simulation work: narrow or
+/// restore the human bodies ([`pass`]), then step the narrowed player up ([`step_up::step`]).
 ///
 /// # Safety
 ///
@@ -197,7 +207,8 @@ unsafe fn pass(state: &mut NativeState, world: *mut hknpWorld) {
 /// The name the human hull's participant registers under.
 pub const PARTICIPANT: ParticipantId = ParticipantId::new("the human hull");
 
-/// Register this participant, under [`PARTICIPANT`], before enabling the construction hooks.
+/// The hull's shutdown participant: register it, under [`PARTICIPANT`], before enabling the
+/// construction hooks.
 pub struct HumanHullShutdown;
 
 impl ShutdownParticipant for HumanHullShutdown {
@@ -249,8 +260,8 @@ static ACTIVE_ENTRIES: AtomicUsize = AtomicUsize::new(0);
 enum Resolution {
     /// The native phase restored every tracked body in this generation.
     Restored { generation: u64 },
-    /// Restoration did not complete within the tuning's `restore.shutdown_attempts`: commit with the shapes as they
-    /// are in this generation ([`NativeState::commit_in_place`]).
+    /// Restoration did not complete within the tuning's `restore.shutdown_attempts`: commit with
+    /// the shapes as they are in this generation ([`NativeState::commit_in_place`]).
     LeaveInPlace { generation: u64 },
     /// Wait for the native phase, or for a settings hook still running payload code.
     Wait,

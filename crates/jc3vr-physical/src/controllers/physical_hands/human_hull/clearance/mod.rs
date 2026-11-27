@@ -1,8 +1,9 @@
-//! Test-only evidence checks for a proposed human-hull activation pose.
+//! A pure clearance policy for a proposed human hull pose, over evidence a native query dispatcher
+//! would supply, compiled only for its own tests: no native adapter supplies that evidence, and the
+//! live clearance check is `query`, run from the restoration in `native`.
 //!
 //! A clear result requires complete world coverage and accepted distance outputs for every target
-//! leaf. It grants no engine access or mutation authority. These checks remain test-only until a
-//! native adapter can prove the owner, read-phase, dispatcher, and ordinary-GSK contracts.
+//! leaf. It grants no engine access or mutation authority.
 
 use std::num::NonZeroU64;
 

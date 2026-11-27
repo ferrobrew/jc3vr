@@ -313,8 +313,8 @@ fn stale_tracking_resets_intent() {
     assert!(intent.settled_lag.is_none());
 }
 
-/// The session's attempt: a door at rest, held through a joint, pulled at under a metre per
-/// second. The pull grows the lag as fast as the hand moves, so it is a yank.
+/// A recorded attempt: a door at rest, held through a joint, pulled at under a metre per second.
+/// The pull grows the lag as fast as the hand moves, so it is a yank.
 #[test]
 fn a_firm_pull_on_a_door_that_does_not_give_tears_it() {
     let mut intent = armed();
@@ -349,8 +349,8 @@ fn a_grip_settled_far_off_the_hand_measures_from_its_settled_lag() {
         assert!(!tears(&mut intent, hanging, config()));
     }
     assert_eq!(intent.settled_lag, Some(0.12));
-    // The old absolute threshold would read this as a yank already; above the settled lag it
-    // is not.
+    // An absolute lag threshold would read this as a yank already; above the settled lag it is
+    // not.
     let small = Gesture {
         lag_m: 0.2,
         separating_speed_mps: 3.0,

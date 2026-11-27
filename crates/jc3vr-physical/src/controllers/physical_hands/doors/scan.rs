@@ -1,16 +1,17 @@
 //! The doors near the hands, offered by their handles whatever the reach's rays hit: every door of
 //! every vehicle near the player is a target at its handle ([`door_handle`]: the embedded table's,
 //! or the box guess for a door the table lacks) for a palm within the tuning's
-//! `grip.handle_reach_m` of it. A latched door is merged into its vehicle's body, so the
-//! grip that takes it needs that body, which proves the vehicle alive while the hand holds the
-//! latch: a short cast from the palm to the handle finds it. What each door near a palm was, and
-//! why it was not offered, is noted for the grip press's log.
+//! `grip.handle_reach_m` of it, and a canopy is a target anywhere on its surface, found by casts
+//! from the palm. A latched door is merged into its vehicle's body, so the grip that takes it
+//! needs that body, which proves the vehicle alive while the hand holds the latch: a short cast
+//! from the palm to the handle finds it. What each door near a palm was, and why it was not
+//! offered, is noted for the grip press's log.
 //!
 //! The vehicles come from the target system's vehicle set
-//! ([`jc3vr_body::controllers::aim::targets`]), read on the aim update's thread as the palms' tick runs,
-//! and from the vehicles a hand's reach rays hit this tick: the set does not keep every vehicle
-//! near the player (a parked car can be missing from it), and a door a hand is at is on a vehicle
-//! its rays meet.
+//! ([`jc3vr_body::controllers::aim::targets`]), read on the aim update's thread as the palms' tick
+//! runs, and from the vehicles a hand's reach rays hit this tick: the set does not keep every
+//! vehicle near the player (a parked car can be missing from it), and a door a hand is at is on a
+//! vehicle its rays meet.
 
 use std::num::NonZeroUsize;
 
@@ -74,7 +75,8 @@ pub(crate) unsafe fn near(palms: &[Vec3], world_scale: f32) -> Vec<NonZeroUsize>
     out
 }
 
-/// The existing handle readouts and a bounded copy of its evaluated branches.
+/// Where [`handle_reach`] records what it saw: the notes for the grip press's log, the handles for
+/// the grab view when given, and a bounded copy of its evaluated branches.
 pub(crate) struct HandleObservations<'a> {
     pub notes: &'a mut Vec<String>,
     pub handles: Option<&'a mut Vec<HandleSeen>>,

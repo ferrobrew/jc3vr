@@ -13,7 +13,7 @@
 //! along one edge of the box, and the handle is on the outer face at the opposite edge, halfway
 //! along it (at mid-height for a side door). Which edge is the hinge's is read from the part's
 //! origin when it lies near one, and otherwise from the kind of door: a side door hinges at its
-//! front, a hood at its back, and a trunk or a rear door at its top.
+//! front, a hood at its back, and a trunk or a rear door at its top (its front when it lies flat).
 
 use glam::{Mat4, Vec3};
 
@@ -240,7 +240,8 @@ pub enum DoorKind {
     Side,
     /// A hood, hinged across the vehicle at its back.
     Front,
-    /// A trunk, a rear door, or a hatch, hinged across the vehicle at its top.
+    /// A trunk, a rear door, or a hatch, hinged across the vehicle at its top, or at its front when
+    /// it lies flat.
     Rear,
 }
 

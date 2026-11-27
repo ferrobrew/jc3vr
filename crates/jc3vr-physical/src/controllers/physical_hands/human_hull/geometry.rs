@@ -1,4 +1,5 @@
-//! Builds a horizontally narrowed copy through Havok's own convex factory.
+//! The narrowed hull's shape: a copy of a human proxy's convex hull half as wide across the ground,
+//! built through Havok's own convex factory, and the step profile of a hull's bottom cone.
 
 use std::{mem::MaybeUninit, ptr::NonNull};
 
@@ -20,7 +21,12 @@ pub(super) enum GeometryError {
     ChangedHeightOrCenter,
 }
 
-/// The source is a retained native convex shape, and the calling thread has a Havok router.
+/// A copy of the convex hull `source` half as wide across the ground, its height and centre kept
+/// ([`narrow_points`]), built by [`hknpConvexShape::createFromVertices`], with the source's bounds.
+///
+/// # Safety
+///
+/// `source` is a retained native convex shape, and the calling thread has a Havok router.
 pub(super) unsafe fn narrow(
     source: NonNull<hknpShape>,
 ) -> Result<(NonNull<hknpShape>, Bounds), GeometryError> {

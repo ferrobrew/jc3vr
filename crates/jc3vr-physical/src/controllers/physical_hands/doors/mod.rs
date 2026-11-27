@@ -9,15 +9,20 @@
 //! - [`geometry`]: a door's box, its handle area, its handle, and the pull on its latch, pure;
 //! - [`table`]: the door handle table derived offline from the game's files;
 //! - [`engine`]: a vehicle's doors as its door controller keeps them, and the latch;
+//! - [`acquisition`]: what a palm takes of a door panel a ray on the vehicle's body reported, pure;
 //! - [`hinge`]: what keeps a door the hands opened where it is left, and when it latches;
-//! - [`scan`]: the doors near the hands, offered by their handles whatever the reach's rays hit.
+//! - [`scan`]: the doors near the hands, offered by their handles whatever the reach's rays hit;
+//! - [`pressure`]: a palm pushing a door open from inside, unlatching a closed one or shoving an
+//!   open one;
+//! - [`tearing`]: a deliberate tear of a held door off its hinge.
 //!
-//! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks [`reach`] about
-//! every ray hit on a vehicle or a loosened vehicle part. A hit on an open door's own body takes the
-//! door as a loose object; a palm at a closed door's handle area, found from the vehicle's door
-//! boxes, takes it as latched. The pickup tick ([`crate::controllers::physical_hands::pickup::tick`])
-//! keeps a latched grip ([`Latch`]): the hand stays at the grab point on the vehicle ([`LatchStep::Pin`])
-//! until it has pulled outward past the tuning's `grip.unlatch_pull_m`, when the latch gives
+//! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks
+//! [`observed_reach`] about every ray hit on a vehicle or a loosened vehicle part. A hit on an open
+//! door's own body takes the door as a loose object; a palm at a closed door, found from the
+//! vehicle's door boxes, takes it as latched, closing on its handle when within the handle reach.
+//! The pickup tick ([`crate::controllers::physical_hands::pickup::tick`]) keeps a latched grip
+//! ([`Latch`]): the hand stays at the grab point on the vehicle ([`LatchStep::Pin`]) until it has
+//! pulled outward past the tuning's `grip.unlatch_pull_m`, when the latch gives
 //! ([`engine::unlatch`]) and the hold becomes an ordinary one of the door's own body.
 
 pub(crate) mod acquisition;
@@ -68,11 +73,11 @@ pub(crate) unsafe fn reach(
     palm: Vec3,
     reach: PanelReach,
 ) -> Option<Reach> {
-    // SAFETY: forwarded from the caller; the bounded output is discarded for remote reach.
+    // SAFETY: forwarded from the caller; the scan record is discarded.
     unsafe { observed_reach(object, body, hit, palm, reach, &mut Scan::new()) }
 }
 
-/// The same production door reach, with a bounded copy of its evaluated panel refusals.
+/// [`reach`], with each door panel it evaluates, and why it refused one, recorded in `scan`.
 ///
 /// # Safety
 ///

@@ -171,8 +171,8 @@ pub(super) unsafe fn check_body(
 
 /// Paces restoration while the hull is disabled and some body stays obstructed, which may last as
 /// long as an NPC leans on a wall: each pass that restores nothing doubles the wait before the
-/// next attempt, up to the tuning's `restore.max_retry_wait_passes`. A shutdown never waits on it, since its own
-/// attempts are bounded.
+/// next attempt, up to the tuning's `restore.max_retry_wait_passes`. A shutdown never waits on it,
+/// since its own attempts are bounded.
 #[derive(Debug, Default)]
 pub(super) struct RetryBackoff {
     wait: u32,

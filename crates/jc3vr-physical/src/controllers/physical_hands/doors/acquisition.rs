@@ -58,7 +58,9 @@ pub enum PanelRefusal {
     LatchedWithOwnBody,
 }
 
-/// Apply the closed-handle and open-panel rules without reading the engine.
+/// What a palm at `palm` takes of `door`: a latched door anywhere within the box reach, closing on
+/// its handle from the outer side within the handle reach, and an open door's own body within the
+/// box reach.
 pub(crate) fn panel(
     door: &DoorRead,
     palm: Vec3,
@@ -115,7 +117,7 @@ pub(crate) fn panel(
     })
 }
 
-/// Apply the production panel rules and retain their exact result.
+/// [`panel`], with its result recorded in `scan` under `entry`.
 pub(crate) fn observed_panel(
     door: &DoorRead,
     palm: Vec3,

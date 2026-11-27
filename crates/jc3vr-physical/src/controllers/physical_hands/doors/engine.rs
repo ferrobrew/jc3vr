@@ -6,9 +6,10 @@
 //! red-black tree keyed by [`DoorSlot`]. A closed door is merged into the vehicle's body; an open
 //! one hangs on its hinge as a body of its own ([`PartInstance::GetPfxVehiclePartIfAny`]) owned by
 //! a [`VehiclePartGameObject`](jc3gi::vehicle::parts::VehiclePartGameObject). The latch is undone
-//! the way the door controller undoes it, without the hinge's motor: [`Vehicle::OpenDoor`] puts the vehicle's body in the world and the vehicle in
-//! the update, so that the controller's own latch runs on the door afterwards, and its opening
-//! request is withdrawn before the controller acts on it;
+//! the way the door controller undoes it, without the hinge's motor: [`Vehicle::OpenDoor`] puts
+//! the vehicle's body in the world and the vehicle in the update, so that the controller's own
+//! latch runs on the door afterwards, and its opening request is withdrawn before the controller
+//! acts on it;
 //! [`PfxBreakable::EnablePart`](jc3gi::vehicle::parts::PfxBreakable::EnablePart) then loosens the
 //! part onto its hinge.
 //!

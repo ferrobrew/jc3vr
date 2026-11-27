@@ -158,7 +158,7 @@ fn a_destroyed_or_freed_slot_is_free_whatever_shape_it_still_names() {
 #[test]
 fn the_worlds_shapeless_fixed_body_does_not_stall_the_inventory() {
     // The body manager makes the world's fixed body static, with the static motion and no
-    // shape. Every world has one, so counting it as unaccountable refused every native pass.
+    // shape. Every world has one, so counting it as unaccountable would refuse every native pass.
     assert_eq!(
         slot_kind(hknpBody::IS_STATIC, 0, false),
         SlotKind::Shapeless

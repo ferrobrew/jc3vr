@@ -1,8 +1,8 @@
 //! The embedded door handle table: `tools/door_handles/door_handles.json`, derived offline from the
-//! game's entry clips, door meshes, and door constraints by `tools/door_handles/extract_door_handles.py`
-//! and compiled into the payload. Each entry is keyed by its door part's name hash
-//! ([`Part::m_name`](jc3gi::vehicle::parts::Part)), and gives the handle and the outer face's normal
-//! in the part's own space, with the tool's grade ([`HandleGrade`]).
+//! game's entry clips, door meshes, and door constraints by
+//! `tools/door_handles/extract_door_handles.py` and compiled in. Each entry is keyed by its door
+//! part's name hash ([`Part::m_name`](jc3gi::vehicle::parts::Part)), and gives the handle and the
+//! outer face's normal in the part's own space, with the tool's grade ([`HandleGrade`]).
 
 use std::{collections::HashMap, fmt, sync::OnceLock};
 
@@ -60,6 +60,8 @@ pub fn parse(json: &str) -> Result<Vec<TableEntry>, DoorHandleTableError> {
     serde_json::from_str(json).map_err(DoorHandleTableError)
 }
 
+/// Whether the door part whose name hashes to `part_hash` is an aircraft canopy, which a hand
+/// takes anywhere on its surface, glass included, rather than at a handle.
 pub(crate) fn is_canopy(part_hash: Option<u32>) -> bool {
     part_hash.and_then(lookup).is_some_and(|entry| {
         matches!(

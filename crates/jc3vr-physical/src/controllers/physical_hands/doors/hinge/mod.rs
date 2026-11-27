@@ -1,16 +1,17 @@
 //! The hinges of the doors the hands opened: what keeps a loose door where it is left.
 //!
 //! The door controller leaves a loose door on a bare limited hinge, with no friction, and latches it
-//! once it swings shut within a couple of degrees at a speed a rebound easily reaches
-//! ([`DoorInfo`](jc3gi::vehicle::vehicle::DoorInfo)). So every door the hands opened has the
-//! controller's latch switched off ([`engine::set_native_latch`]), and this module stands in for it
-//! each palm tick:
+//! once it swings shut within its latch angle ([`DoorInfo::LATCH_ANGLE_DEG`]) at a speed a rebound
+//! easily reaches. So every door the hands opened has the controller's latch switched off
+//! ([`engine::set_native_latch`]), and this module stands in for it each palm tick:
 //!
 //! - a door a hand holds never latches, so the hold keeps it wherever the hand has it;
 //! - a free side door is damped, so a door thrown open slows and settles rather than bouncing back
 //!   off its stop;
 //! - a free lid (a hood, a trunk, a hatch) above [`HingeTuning::strut_fraction`] of its travel is
 //!   held where it is against its weight, as a gas strut holds it, and falls freely below it;
+//! - a free aircraft canopy is held where it is left, pulled back when it drifts, and yields for a
+//!   while to a palm pushing it ([`yield_support`]) or to a hard closing;
 //! - a free door latches only when it swings shut faster than [`HingeTuning::latch_speed_deg_s`], or
 //!   when it rests shut for [`HingeTuning::settle_s`], through the controller's own merge
 //!   ([`engine::latch`]).
@@ -60,6 +61,8 @@ pub(crate) fn opened(vehicle: NonZeroUsize, vehicle_body: u32, part_index: u32, 
     });
 }
 
+/// Let the support of the canopy at part index `part_index` of `vehicle` yield to a palm pushing
+/// it, so that the push swings it.
 pub(crate) fn yield_support(vehicle: NonZeroUsize, part_index: u32) {
     if let Some(door) = OPENED
         .lock()

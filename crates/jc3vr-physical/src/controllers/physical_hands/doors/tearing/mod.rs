@@ -1,4 +1,6 @@
-//! Deliberate tear intent and the synchronous native damage boundary for a held door.
+//! Tearing a held door off its hinge: the gestures a settled open grip makes to ask for a tear
+//! ([`TearGesture`]), and the game's own break-off damage, applied at once on the game thread when
+//! the vehicle and the part allow it.
 
 use std::{fmt, mem::MaybeUninit, num::NonZeroUsize};
 
@@ -56,6 +58,9 @@ impl fmt::Display for AcquireRefusal {
 impl std::error::Error for AcquireRefusal {}
 
 impl TearGrip {
+    /// The tear grip of a hand that took `door` by its own body `body`, owned by `object`, or the
+    /// news that the door has already come off.
+    ///
     /// # Safety
     /// The game thread, outside the physics step. The queued target need not still be live.
     pub unsafe fn take(
@@ -192,8 +197,10 @@ fn body_continuity(same: bool, broken: bool, open: bool) -> TearResult {
     }
 }
 
-/// Apply one native break-damage request after selective protection checks. No forced work is
-/// queued across a parallel phase.
+/// Ask the game to break the held door off with forced damage
+/// ([`PartInstance::DamagePart_ToBreakOff`](jc3gi::vehicle::parts::PartInstance::DamagePart_ToBreakOff)),
+/// unless the vehicle or the part is protected, the part is not authored to break off whole, or
+/// the vehicle is in its parallel update, when the request would be deferred past this tick.
 ///
 /// # Safety
 /// The game thread, outside the physics step; the held body's owner was checked this tick.

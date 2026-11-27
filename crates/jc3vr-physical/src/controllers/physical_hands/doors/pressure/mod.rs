@@ -1,3 +1,8 @@
+//! A palm pushing a vehicle door open from inside, without a grip: a palm pressing outward on a
+//! latched door's inner face past the tuning's `grip.unlatch_pull_m` unlatches it and shoves it
+//! open, and a palm pushing an open door shoves it along its hinge. A probe that meets a hidden
+//! glass pane refuses the press, and each refusal's reason is kept for the readouts.
+
 use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};

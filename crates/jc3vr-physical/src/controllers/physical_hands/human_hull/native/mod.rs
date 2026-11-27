@@ -1,4 +1,6 @@
-//! Retained native shape tables and bounded world-body transactions.
+//! The narrowed hulls' native bookkeeping: the character settings tables adopted, each human proxy
+//! state's authored shape paired with its narrowed replacement, and the passes that move live
+//! bodies between the two in verified changes, rolled back when the engine refuses one.
 
 mod restore;
 mod scan;
@@ -105,7 +107,8 @@ impl NativeState {
         self.generation
     }
 
-    /// The native phase has restored every tracked body, and pending hooks cannot install shapes.
+    /// Commit the shutdown once the native phase has restored every tracked body; pending hooks
+    /// then cannot install shapes.
     ///
     /// The retained originals are released: every slot and restored body holds its own reference.
     /// The replacements are deliberately kept: a body made from a slot read before the restoration
@@ -606,7 +609,7 @@ enum SlotKind {
 /// Classify a slot by the engine's own validity test, a static or dynamic flag, and its motion.
 ///
 /// Destroying a body clears its type flags at once and freeing the slot later invalidates its
-/// motion, but neither clears its shape ([`hknpBody::INVALID_MOTION_ID`]), so a dead human's slot
+/// motion ([`hknpBody::INVALID_MOTION_ID`]), but neither clears its shape, so a dead human's slot
 /// keeps naming the narrowed replacement until the slot is reused. Its shape is therefore never
 /// evidence of a body: such a slot has nothing to restore, and the body it once held released its
 /// reference when it was destroyed.
@@ -632,6 +635,8 @@ unsafe fn apply(
     })
 }
 
+/// Make each change with `set_verified`, which reports whether the shape took; on a refusal, undo
+/// the changes made so far, newest first.
 fn apply_with(
     changes: &[Change],
     mut set_verified: impl FnMut(u32, NonNull<hknpShape>) -> bool,

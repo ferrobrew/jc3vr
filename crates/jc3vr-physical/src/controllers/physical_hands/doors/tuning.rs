@@ -1,6 +1,6 @@
 //! The vehicle doors' tuning, read from the shipped `tuning/doors.toml` ([`DOORS`]): the grip's
 //! reach and unlatching pull, the box guess for a handle, the handle scan, the hinges of the doors
-//! the hands opened, the palm's pressure on a closed door, and the tearing of a door off its hinge.
+//! the hands opened, the palm's pressure on a door, and the tearing of a door off its hinge.
 //! Distances are metres of the player's hand, scaled by the VR world scale where the code acts in
 //! the world.
 

@@ -1,4 +1,8 @@
-//! Native leaf inventory and status-checked GSK queries for authored-shape restoration.
+//! The clearance query that decides whether a narrowed body's authored shape may come back: the
+//! authored shape is checked against each nearby body's shape, a convex one whole and a compressed
+//! mesh or height field leaf by leaf, with Havok's closest-point query
+//! ([`hkcdGskGetClosestPoint`]), whose status is checked on every call. A contact is allowed only
+//! where the narrowed shape already has the same one.
 
 use std::{mem::MaybeUninit, ptr::NonNull};
 
@@ -52,8 +56,13 @@ impl Budget {
     }
 }
 
-/// Both native shapes and transforms stay alive under the pre-simulation world authority.
-/// Every leaf is checked; no collector-hit count is interpreted as successful clearance.
+/// Check that the authored shape `query`, at `query_transform` in place of the replacement
+/// `current` the body holds, clears `target` at `target_transform`. Every leaf of a composite
+/// target is checked within `budget`; a count of the collector's hits never stands in for a check.
+///
+/// # Safety
+///
+/// The pre-simulation phase, which keeps both shapes and their transforms alive.
 pub(super) unsafe fn check_target(
     query: NonNull<hknpShape>,
     current: NonNull<hknpShape>,
@@ -165,7 +174,8 @@ unsafe fn check_leaf(
     budget: &mut Budget,
 ) -> Result<(), ClearanceUnavailableReason> {
     budget.take()?;
-    // Scaled collector leaves require their scale-mode contract, not unscaled GSK geometry.
+    // A scaled leaf needs its shape's scaling mode applied to its vertices, which the closest-point
+    // query here does not do.
     if scale
         .iter()
         .any(|value| !value.is_finite() || (*value - 1.0).abs() > SCALE_TOLERANCE)
@@ -215,7 +225,8 @@ fn compare_contacts(
     proposed: Contact,
     existing: Contact,
 ) -> Result<(), ClearanceUnavailableReason> {
-    // Width changes cannot justify new support penetration, nor excuse a wall contact.
+    // Narrowing cannot have caused a support's penetration, nor does it excuse a wall's contact:
+    // only a level support the narrowed shape already rests on at the same depth is allowed.
     let unchanged_support = proposed.normal.y >= MINIMUM_SUPPORT_NORMAL_Y
         && existing.normal.y >= MINIMUM_SUPPORT_NORMAL_Y
         && proposed.normal.dot(existing.normal) >= MINIMUM_NORMAL_AGREEMENT
