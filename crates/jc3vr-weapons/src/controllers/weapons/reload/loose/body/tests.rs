@@ -12,18 +12,18 @@ use crate::controllers::weapons::reload::{
 };
 
 struct FakeBodies {
-    read: Result<(Vec3, Quat), BodyError>,
-    write: Result<(), BodyError>,
+    read: Result<(Vec3, Quat), PhysicsError>,
+    write: Result<(), PhysicsError>,
     reads: usize,
     writes: usize,
 }
 
 impl Bodies for FakeBodies {
-    fn pose(&mut self, _: Loose) -> Result<(Vec3, Quat), BodyError> {
+    fn pose(&mut self, _: Loose) -> Result<(Vec3, Quat), PhysicsError> {
         self.reads += 1;
         self.read
     }
-    fn velocities(&mut self, _: Loose, _: Vec3, _: Vec3) -> Result<(), BodyError> {
+    fn velocities(&mut self, _: Loose, _: Vec3, _: Vec3) -> Result<(), PhysicsError> {
         self.writes += 1;
         self.write
     }
@@ -71,7 +71,7 @@ fn carry<'a>(config: &'a LooseTuning) -> Carry<'a> {
 fn reownership_from_carry_read_seat_read_or_velocity_write_is_sticky_between_maintenance_calls() {
     let config = RELOAD.get().loose;
     for operation in 0..3 {
-        for error in [BodyError::NoBody, BodyError::Reowned] {
+        for error in [PhysicsError::NoBody, PhysicsError::Reowned] {
             let (mut state, magazine) = state();
             let mut bodies = FakeBodies {
                 read: Ok((Vec3::ZERO, Quat::IDENTITY)),
@@ -117,10 +117,10 @@ fn reownership_from_carry_read_seat_read_or_velocity_write_is_sticky_between_mai
 fn temporary_pose_or_write_errors_defer_and_recover_without_consuming_rounds() {
     let config = RELOAD.get().loose;
     for error in [
-        BodyError::NoPhysicsWorld,
-        BodyError::NotDynamic,
-        BodyError::BadMotion,
-        BodyError::Fixture,
+        PhysicsError::NoPhysicsWorld,
+        PhysicsError::NotDynamic,
+        PhysicsError::BadMotion,
+        PhysicsError::Fixture,
     ] {
         let (mut state, magazine) = state();
         let mut bodies = FakeBodies {
@@ -174,7 +174,7 @@ fn a_late_observation_cannot_quarantine_the_replacement_generation() {
         )
         .unwrap();
     assert_eq!(
-        state.observe(old, Err::<(), _>(BodyError::Reowned)),
+        state.observe(old, Err::<(), _>(PhysicsError::Reowned)),
         Operation::Gone
     );
     assert!(state.records.usable(replacement));

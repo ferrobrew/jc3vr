@@ -39,7 +39,7 @@ use jc3vr_body::controllers::{
     grab::{Candidate, GrabVolume},
     physics,
     physics::{
-        bodies,
+        error::PhysicsError,
         rigid::{RigidBody, Velocities},
     },
 };
@@ -78,18 +78,18 @@ enum Maintenance {
     Gone,
 }
 
-fn body_status(result: Result<(), bodies::BodyError>) -> Maintenance {
+fn body_status(result: Result<(), PhysicsError>) -> Maintenance {
     match result {
         Ok(()) => Maintenance::Live,
-        Err(bodies::BodyError::NoBody | bodies::BodyError::Reowned) => Maintenance::Unavailable {
+        Err(PhysicsError::NoBody | PhysicsError::Reowned) => Maintenance::Unavailable {
             identity_lost: true,
         },
         Err(
-            bodies::BodyError::NoPhysicsWorld
-            | bodies::BodyError::NotDynamic
-            | bodies::BodyError::BadMotion
-            | bodies::BodyError::Fixture
-            | bodies::BodyError::NoPlayer,
+            PhysicsError::NoPhysicsWorld
+            | PhysicsError::NotDynamic
+            | PhysicsError::BadMotion
+            | PhysicsError::Fixture
+            | PhysicsError::NoPlayer,
         ) => Maintenance::Unavailable {
             identity_lost: false,
         },

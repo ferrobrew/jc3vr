@@ -1,7 +1,7 @@
 //! Current body reads and writes, with committed-generation observations before further access.
 
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::{physics, physics::bodies::BodyError};
+use jc3vr_body::controllers::{physics, physics::error::PhysicsError};
 
 use crate::controllers::weapons::reload::{
     loose::{Loose, Operation, State, body_status, carry_velocities, upright_toward},
@@ -9,16 +9,20 @@ use crate::controllers::weapons::reload::{
 };
 
 pub(super) trait Bodies {
-    fn pose(&mut self, magazine: Loose) -> Result<(Vec3, Quat), BodyError>;
-    fn velocities(&mut self, magazine: Loose, linear: Vec3, angular: Vec3)
-    -> Result<(), BodyError>;
+    fn pose(&mut self, magazine: Loose) -> Result<(Vec3, Quat), PhysicsError>;
+    fn velocities(
+        &mut self,
+        magazine: Loose,
+        linear: Vec3,
+        angular: Vec3,
+    ) -> Result<(), PhysicsError>;
     fn disable(&mut self, magazine: Loose);
 }
 
 pub(super) struct NativeBodies;
 
 impl Bodies for NativeBodies {
-    fn pose(&mut self, magazine: Loose) -> Result<(Vec3, Quat), BodyError> {
+    fn pose(&mut self, magazine: Loose) -> Result<(Vec3, Quat), PhysicsError> {
         unsafe { physics::body_pose(magazine.body, magazine.owner) }
     }
     fn velocities(
@@ -26,7 +30,7 @@ impl Bodies for NativeBodies {
         magazine: Loose,
         linear: Vec3,
         angular: Vec3,
-    ) -> Result<(), BodyError> {
+    ) -> Result<(), PhysicsError> {
         unsafe { physics::set_body_velocities(magazine.body, magazine.owner, linear, angular) }
     }
     fn disable(&mut self, magazine: Loose) {
@@ -46,7 +50,7 @@ impl State {
     pub(super) fn observe<T>(
         &mut self,
         magazine: Loose,
-        result: Result<T, BodyError>,
+        result: Result<T, PhysicsError>,
     ) -> Operation<T> {
         let status = body_status(result.as_ref().map(|_| ()).map_err(|error| *error));
         match self.records.observe(magazine, status) {

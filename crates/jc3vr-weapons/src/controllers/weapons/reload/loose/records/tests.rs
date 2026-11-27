@@ -1,6 +1,6 @@
 use std::{num::NonZeroUsize, time::Duration};
 
-use jc3vr_body::controllers::physics::bodies::BodyError;
+use jc3vr_body::controllers::physics::error::PhysicsError;
 use jc3vr_input::frame::Hand;
 
 use super::*;
@@ -153,12 +153,12 @@ fn stale_copied_result_cannot_take_or_remove_identical_native_fields_in_a_new_ge
 #[test]
 fn every_body_error_preserves_held_unread_rounds_and_capacity() {
     for error in [
-        BodyError::NoPhysicsWorld,
-        BodyError::NoBody,
-        BodyError::NotDynamic,
-        BodyError::Reowned,
-        BodyError::BadMotion,
-        BodyError::Fixture,
+        PhysicsError::NoPhysicsWorld,
+        PhysicsError::NoBody,
+        PhysicsError::NotDynamic,
+        PhysicsError::Reowned,
+        PhysicsError::BadMotion,
+        PhysicsError::Fixture,
     ] {
         let now = Instant::now();
         let mut state = State {
@@ -185,7 +185,7 @@ fn every_body_error_preserves_held_unread_rounds_and_capacity() {
         );
         assert!(state.records.reserve(key(CAPACITY)).is_none());
         state.maintain(now, 60.0, |_| Maintenance::Live);
-        let lost = matches!(error, BodyError::NoBody | BodyError::Reowned);
+        let lost = matches!(error, PhysicsError::NoBody | PhysicsError::Reowned);
         assert_eq!(state.records.usable(held), !lost);
         if lost {
             assert!(!state.records.remove(held));
@@ -200,7 +200,7 @@ fn unavailable_empty_records_do_not_expire_and_confirmed_invalidation_checks_onl
     let (token, empty) = commit(&mut records, 0, 0, now);
     records.release(token);
     records.maintain(now + Duration::from_secs(60), 0.0, None, |_| {
-        body_status(Err(BodyError::NotDynamic))
+        body_status(Err(PhysicsError::NotDynamic))
     });
     assert!(records.contains(empty));
     let pending = records.reserve(key(1)).unwrap();
