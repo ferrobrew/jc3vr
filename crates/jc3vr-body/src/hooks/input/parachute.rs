@@ -27,7 +27,6 @@
 //!
 //! [`UpdateParachutePhysics`]: jc3gi::input::parachute::UpdateParachutePhysics
 
-
 use body_rig::math::angle::{wrap, yaw_of_flat};
 use detours_macro::detour;
 use glam::{Mat4, Vec2, Vec3};

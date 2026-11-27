@@ -15,7 +15,6 @@
 //!
 //! [`NAirMovement_UpdateAirPhysics`]: jc3gi::input::parachute::NAirMovement_UpdateAirPhysics
 
-
 use body_rig::math::smooth::smoothstep;
 use detours_macro::detour;
 use jc3gi::{

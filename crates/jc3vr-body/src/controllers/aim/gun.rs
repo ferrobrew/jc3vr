@@ -16,7 +16,6 @@
 //! update and the weapon updates run one after the other on the same thread, aim first, so the
 //! points are always the current tick's.
 
-
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{

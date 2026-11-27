@@ -8,7 +8,6 @@
 //! tick ([`jc3vr_body::controllers::aim`]), for the local player's vehicle. With no hand aim, the
 //! gaze point goes through unchanged.
 
-
 use detours_macro::detour;
 use glam::Vec3;
 use jc3gi::{

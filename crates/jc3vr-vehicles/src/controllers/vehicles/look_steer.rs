@@ -14,7 +14,6 @@
 //!
 //! [`NAirMovement_UpdateStdLookSteering`]: jc3gi::input::parachute::NAirMovement_UpdateStdLookSteering
 
-
 use detours_macro::detour;
 use jc3gi::{
     character::character::Character, input::parachute::CharacterAirMovementSettings,
