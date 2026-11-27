@@ -1,58 +1,39 @@
 //! Runtime configuration: every user-facing toggle, consolidated into one mutex-guarded struct with
-//! sub-structs by concern. The debug UI reads and writes the whole struct; hooks copy out the
-//! field(s) they need at the top of a detour. Live engine-interface state (the current eye, frame
-//! counters, the trace arm-flag) does not live here; see [`jc3vr_view::stereo::StereoState`] and the
-//! per-subsystem runtime statics. A field that is configuration-shaped but holds state for the
-//! session (a value discovered at runtime, a diagnostic armed for one capture) is `#[serde(skip)]`.
+//! sub-structs by concern, each defined beside the subsystem that owns it. The debug UI reads and
+//! writes the whole struct; hooks copy out the field(s) they need at the top of a detour. Live
+//! engine-interface state (the current eye, frame counters, the trace arm-flag) does not live here
+//! but in the per-subsystem runtime state, such as [`jc3vr_view::stereo`]'s. A field that is
+//! configuration-shaped but holds state for the session (a value discovered at runtime, a
+//! diagnostic armed for one capture) is `#[serde(skip)]`.
 //!
 //! The store, the load, and the save are the configuration engine ([`engine`]), which names no
 //! subsystem: it holds the configuration as an erased root and works through the
 //! [`Schema`](engine::Schema) this module registers for [`Config`] ([`schema`]). Each subsystem
 //! reads and changes its own settings through the [`ConfigSlot`](engine::ConfigSlot) it declares
 //! beside their type; this module owns the aggregate, binds every slot to its place in it
-//! ([`slots`]), and keeps the access paths over the whole configuration ([`CONFIG`] and [`get`]),
-//! each of which registers the configuration on first use ([`register`]).
+//! ([`slots`]), and keeps the access paths over the whole configuration ([`CONFIG`] and
+//! [`Config::lock_query`]), each of which registers the configuration on first use ([`register`]).
 //!
 //! The configuration is saved to `settings.toml` in the per-user configuration directory
-//! ([`paths`]), which holds only the settings that differ from their defaults ([`format`]), so a
-//! setting the user never changed follows its default when a later build changes it. It is loaded
-//! once at startup, before VR initialization reads it ([`init`]); the load is tolerant
-//! ([`engine::load`]),
-//! so a file from another build costs at most the settings it gets wrong. A change the user meant
-//! goes through an edit guard (a slot's `edit`), which marks the configuration
-//! changed; [`tick`] saves it from the game thread's frame once the changes settle, handing the
-//! write to a short-lived writer thread, and [`shutdown`] flushes a pending save. A change the
-//! payload makes on its own, such as a fallback after a failure, takes a plain lock instead and is
-//! not saved for its own sake; one that switches off a setting the user chose goes through
-//! [`engine::disable_automatically`], so a later save keeps the user's choice. Every guard locks
-//! the one configuration lock, so a thread must not lock it again while it holds one (the
-//! [nesting rule](jc3vr_core::config::store#lock-nesting)). See `docs/mod/settings.md`.
+//! ([`engine::paths`]), which holds only the settings that differ from their defaults
+//! ([`format`](mod@format)), so a setting the user never changed follows its default when a later
+//! build changes it. It is loaded once at startup, before VR initialization reads it ([`init`]);
+//! the load is tolerant ([`engine::load`]), so a file from another build costs at most the settings
+//! it gets wrong. A change the user meant goes through an edit guard (a slot's `edit`), which marks
+//! the configuration changed; [`tick`] saves it from the game thread's frame once the changes
+//! settle, handing the write to a short-lived writer thread, and [`shutdown`] flushes a pending
+//! save. A change the payload makes on its own, such as a fallback after a failure, takes a plain
+//! lock instead and is not saved for its own sake; one that switches off a setting the user chose
+//! goes through [`engine::disable_automatically`], so a later save keeps the user's choice. Every
+//! guard locks the one configuration lock, so a thread must not lock it again while it holds one
+//! (the [nesting rule](jc3vr_core::config::store#lock-nesting)). See `docs/mod/settings.md`.
 //!
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
 //! the load then reads a missing key as `None` and a present one as `Some`. A setting whose value is
 //! kept while it is switched off is a switch beside the value instead (see
-//! [`FsrConfig::sharpen`](jc3vr_view::fsr::FsrConfig::sharpen)).
+//! [`FsrConfig::sharpen`]).
 //!
 //! The trace manifest and screenshot sidecar also serialize the capture's configuration.
-//!
-//! The sub-structs are defined in their owning modules:
-//! [`StereoConfig`](jc3vr_view::stereo::config::StereoConfig) and
-//! [`SinglePassConfig`](jc3vr_view::stereo::config::SinglePassConfig) in `stereo::config`,
-//! [`ExposureConfig`](jc3vr_render::hooks::graphics_engine::config::ExposureConfig) and
-//! [`PostFxConfig`](jc3vr_render::hooks::graphics_engine::config::PostFxConfig) in
-//! `hooks::graphics_engine::config`,
-//! [`FoveationConfig`](jc3vr_view::vr::FoveationConfig) in `vr::config`,
-//! [`CameraConfig`](jc3vr_view::hooks::camera::CameraConfig) in `hooks::camera::config`,
-//! [`OnlineConfig`](jc3vr_gameplay::hooks::online::OnlineConfig) in `hooks::online`,
-//! [`FsrConfig`](jc3vr_view::fsr::FsrConfig) in `fsr::config`,
-//! [`HudConfig`](jc3vr_hud::hud::HudConfig) in `hud::config`,
-//! [`HeadPoseConfig`](jc3vr_view::headpose::HeadPoseConfig) in `headpose::config`,
-//! [`VrConfig`](jc3vr_view::vr::VrConfig) in `vr::config`, and
-//! [`DirectorConfig`](jc3vr_tooling::director::DirectorConfig) in `director`,
-//! [`RecorderConfig`](jc3vr_tooling::recorder::RecorderConfig) in `recorder`,
-//! [`ControllersConfig`](jc3vr_gameplay::controllers::ControllersConfig) in `controllers::config`,
-//! [`TestingConfig`](jc3vr_tooling::testing::TestingConfig) in `testing::config`, and
-//! [`BodyDimensions`](jc3vr_body::controllers::body::BodyDimensions) in `controllers::body`.
 
 pub(crate) mod format;
 #[cfg(test)]
@@ -119,7 +100,7 @@ pub(crate) fn shutdown() -> bool {
 
 /// Bind the slot table and register the configuration's schema with the store, once. Every access
 /// path in this module calls it first, so the configuration reads as its defaults from the first
-/// lock, as it did when it was a constant.
+/// lock.
 pub(crate) fn register() {
     static REGISTER: Once = Once::new();
     REGISTER.call_once(|| {

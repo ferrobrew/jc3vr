@@ -1,6 +1,5 @@
-//! Golden tests for the settings file, recorded from the configuration module before its engine
-//! was separated from the aggregate, so that the file a save writes and what a load makes of one
-//! stay as they were; and tests of the store as the payload uses it.
+//! Golden tests for the settings file, which pin the text a save writes and what a load makes of a
+//! file; and tests of the store as the payload uses it.
 
 use std::{
     borrow::Cow,

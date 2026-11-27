@@ -3,14 +3,13 @@
 //!
 //! Three subsystems receive them: inventory spawns, the magazine executor's serial callback, and
 //! the human hull's collider callbacks (with the grenade locker's). Each registers a participant so
-//! shutdown waits for its work to drain, opens its admission only once its detour is live, and,
-//! after every hook is removed, proves no callback is still running in the image before it may be
-//! unmapped.
+//! shutdown waits for its work to drain and, after every hook is removed, proves no callback is
+//! still running in the image before it may be unmapped. The inventory spawns and the magazine
+//! executor also open their admission only once their detours are live.
 //!
 //! The steps after hook removal run in registration order and stop at the first that refuses, so
 //! the magazine executor's admission closes first: it never refuses, and it must close even when a
-//! check after it keeps the image mapped. The participants prepare for shutdown in registration
-//! order, and the steps after enabling open admission in theirs.
+//! check after it keeps the image mapped.
 
 use std::sync::Arc;
 

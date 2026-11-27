@@ -61,15 +61,15 @@ use crate::{
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GAME_UPDATE_BINDER)
-        // Nop the `m_UpdateFlags & 4` gate (the `jz`) at
-        // [`Game::UPDATE_RENDER_GATE_OFFSET`], so we will _always_ be UpdateRender-ing.
+        // Nop the update-flags gate (the `jz`) at [`Game::UPDATE_RENDER_GATE_OFFSET`], so
+        // `UpdateRender` runs every update.
         .with_patch(
             Game::Update_ADDRESS + Game::UPDATE_RENDER_GATE_OFFSET as usize,
             &[0x90; 2],
         )
         .with_static_binder(&GAME_UPDATE_RENDER_BINDER)
-        // Nop everything between UpdateRender and ++m_RenderCount at
-        // [`Game::UPDATE_RENDER_LENGTH_OFFSET`]; we'll be doing that ourselves!
+        // Nop everything between `UpdateRender` and the render-count increment at
+        // [`Game::UPDATE_RENDER_LENGTH_OFFSET`]: `game_update_render` runs the draws itself.
         .with_patch(
             Game::Update_ADDRESS + Game::UPDATE_RENDER_LENGTH_OFFSET as usize,
             &[0x90; 0x3A],
@@ -244,13 +244,12 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // fraction `dtf` *before* it calls `UpdateRender`, so everything the pose pair needs is already
         // current here (and the views are located by `frame_wait` above). The camera's T0->T1
         // interpolation is consumed *inside* `UpdateRender` (`Camera::UpdateRender`'s `dtf` lerp), so
-        // publishing after that call fed it the previous frame's pair -- one rendered frame stale,
-        // which snapped the camera a full tick backward at every `dtf` reset (the residual sawtooth
-        // after 1879c65 landed the interpolation content). Publishing here puts the current pair in
-        // phase with `dtf`, exactly as the flatscreen sim path publishes on the sim tick, and drops a
-        // frame of HMD-tracking latency as a bonus. When the runtime asks to skip rendering, clear the
-        // parameters so the camera hook falls back to flatscreen stereo for the (non-submitted)
-        // keep-alive Draws.
+        // publishing after that call would feed it the previous frame's pair, one rendered frame
+        // stale, which snaps the camera a full tick backward at every `dtf` reset. Publishing here
+        // puts the current pair in phase with `dtf`, as the flatscreen sim path publishes on the sim
+        // tick, and saves a frame of HMD-tracking latency. When the runtime asks to skip rendering,
+        // clear the parameters so the camera hook falls back to flatscreen stereo for the
+        // (non-submitted) keep-alive Draws.
         let vr_cfg = Config::lock_query(|c| c.vr.clone());
         let located = waited
             .as_ref()
@@ -316,7 +315,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         let game = game.as_mut().unwrap();
 
         // Start of a frame: every frame renders both eyes, which the render hooks read via
-        // `jc3vr_render::stereo`.
+        // `jc3vr_view::stereo`.
         let render_mode = dispatch::mode();
         mark_stereo_frame();
 
@@ -326,10 +325,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // as "GPU idle". Safe by construction: the next frame blocks on the submit side the tail
         // holds (at its `WaitedFrame::begin`, or at the top of the render update in the serial
         // ordering) before it dispatches, and the tail releases it only after the blit is
-        // recorded. The mirror moves
-        // before the XR submit in this mode, costing it a little HMD submit latency. Requires a VR
-        // frame to hand over, and falls back to the inline tail while a render trace needs the
-        // eyes drained on this thread before the frame ends.
+        // recorded. The mirror moves before the XR submit in this mode, costing it a little HMD
+        // submit latency. Requires a VR frame to hand over, and falls back to the inline tail while
+        // a render trace needs the eyes drained on this thread before the frame ends.
         let defer_tail = vr_frame.is_some()
             && !tracing_active()
             && render_mode == RenderMode::Native
@@ -387,8 +385,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         drop(snapshot_scope);
 
         // The per-eye camera offset is injected on the render camera in the SetupRenderCamera
-        // hook (see hooks::camera and docs/engine/rendering/rendering.md section 2); here we just drive
-        // the dispatches and tag each with its eye index via `enter_dispatch`.
+        // hook (see `jc3vr_view::hooks::camera` and `docs/engine/rendering/rendering.md`, "Camera
+        // data flow"); here the dispatches are driven and each is tagged with its eye index via
+        // `enter_dispatch`.
         // Eye 1 reaches the screen (the other's flip is blocked).
         let collapsed = layout::collapse_active();
         let plan = DispatchPlan::new(render_mode, collapsed);
@@ -539,9 +538,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // swapchain's back buffer, letterboxed to the window aspect, composite the egui overlay, and
         // present it ourselves -- the only present this frame. This must come after the XR submit
         // (the compositor paces the loop), so the mirror never delays the HMD path. The present is
-        // unsynced by mandate: a vsynced mirror on a 60 Hz monitor would throttle the 90 Hz HMD loop (see
-        // `jc3vr_view::vr::mirror::present_mirror`). When no session runs the engine presents normally, so
-        // the mirror is skipped and flatscreen behaviour is unchanged.
+        // unsynced by mandate: a vsynced mirror on a 60 Hz monitor would throttle the 90 Hz HMD
+        // loop (see `jc3vr_view::vr::mirror::present_mirror`). When no session runs, the engine
+        // presents normally and the mirror is skipped.
         if !tail_deferred && vr_running && vr_cfg.mirror {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("Desktop mirror");
@@ -563,8 +562,9 @@ static GAME_UPDATE_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static GAME_UPDATE_RENDER_THREAD: AtomicU32 = AtomicU32::new(0);
 
-/// Snapshot of the reflection-proxy depth-history lifecycle (the 5 slot counters + the picked
-/// index). Advanced once per scene dispatch, so we restore it between the two stereo Draws.
+/// Snapshot of the reflection-proxy depth-history lifecycle (the slot counters and the picked
+/// index). The engine advances it once per scene dispatch, so it is restored between the stereo
+/// Draws.
 struct EffectInfoState {
     frame_index: [u8; 5],
     index: u32,
@@ -599,10 +599,10 @@ fn restore_effect_info(state: &EffectInfoState) {
 /// Wait for the engine's draw-dispatch CPU fragment to finish, the drain `WaitForCPUDrawToFinish`
 /// omits. `DispatchDraw` runs the render passes on an async fragment signalled at
 /// [`GraphicsEngine::m_DrawThreadWorkSignal`], and the engine itself only waits on it at the next
-/// `Draw`'s entry (gated by `CpuPrimaryCount() > 1`). In stereo we mutate the shared render-frame state
-/// between the eyes' Draws, so eye 0's fragment must be drained here first -- otherwise it reads a torn
-/// per-camera context and faults (the intermittent open-world crash). Mirrors the engine's own guard so
-/// it cannot spin on a build that draws inline.
+/// `Draw`'s entry (gated on `CpuPrimaryCount`). In stereo the shared render-frame state changes
+/// between the eyes' Draws, so eye 0's fragment must be drained here first -- otherwise it reads a
+/// torn per-camera context and faults (the intermittent open-world crash). Mirrors the engine's own
+/// guard so it cannot spin when the engine draws inline.
 pub(crate) unsafe fn drain_draw_thread_fragment(ge: &mut GraphicsEngine) {
     unsafe {
         if CpuPrimaryCount() <= 1 {

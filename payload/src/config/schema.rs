@@ -1,6 +1,6 @@
 //! The configuration's schema: how the engine defaults, migrates, and reports a [`Config`] (the
-//! checks a load runs are the ones the groups' slots carry), registered with the store before anything reads the configuration
-//! ([`crate::config::register`]).
+//! checks a load runs are the ones the groups' slots carry), registered with the store before
+//! anything reads the configuration ([`crate::config::register`]).
 
 use jc3vr_core::config::{
     ConfigRoot, Parts, Schema,
@@ -30,8 +30,8 @@ impl ConfigRoot for Config {
 }
 
 /// A configuration value is itself the parts of one root, so code that changes several groups
-/// together ([`set_single_pass_feature`](jc3vr_view::stereo::config::set_single_pass_feature)) runs on a
-/// `Config` as it does on the live configuration.
+/// together ([`set_single_pass_feature`](jc3vr_view::stereo::config::set_single_pass_feature))
+/// runs on a `Config` as it does on the live configuration.
 impl Parts for Config {
     fn root(&self) -> &Root {
         self

@@ -1,5 +1,5 @@
 //! The settings file's format for this configuration: the engine's diff-from-defaults text
-//! ([`jc3vr_core::config::format`]) for a [`Config`], and the migrations of a file an older
+//! ([`jc3vr_core::config::format`]) for a [`Config`](crate::config::Config), and the migrations of a file an older
 //! build wrote, which name the subsystems' settings.
 //!
 //! Format zero, a file without a version, holds every setting, each default as it stood when the

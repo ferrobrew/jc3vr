@@ -78,8 +78,8 @@ pub fn install() {
     // Open the crash log with a raw handle. It is a *separate* file from `session.log` because the
     // vectored handler writes it directly (raw `WriteFile`, no allocation, no tracing subscriber), so
     // a record survives a fault that has already broken the normal logging path. It lives in the
-    // session directory (see [`jc3vr_core::session`]), opened append-only; each record is timestamped to
-    // line up with the (UTC-stamped) tracing log of the run that produced it.
+    // session directory (see [`jc3vr_core::session`]), opened append-only; each record is
+    // timestamped to line up with the (UTC-stamped) tracing log of the run that produced it.
     match jc3vr_core::session::file(SessionFile::CrashLog) {
         Ok(path) => {
             let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
@@ -123,8 +123,8 @@ pub fn install() {
     // ones -- the sentinel and location touch nothing heap-derived.
     //
     // The previously installed hook (lib.rs installs the tracing hook before this runs) is
-    // chained afterwards, so panics still reach `session.log`: set_hook replaces rather than stacks,
-    // which silently disabled the tracing hook until this chaining. The allocation-free crash-log
+    // chained afterwards, so panics still reach `session.log`: `set_hook` replaces rather than
+    // stacks, so without the chaining the tracing hook would be lost. The allocation-free crash-log
     // lines land first, so a fault in the richer tracing path cannot mask them.
     let previous_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

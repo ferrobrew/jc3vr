@@ -72,8 +72,8 @@ fn start(source: tuning::Source) {
     }
 }
 
-/// Called when the DLL is loaded. Returns `false` when the startup stopped before installing
-/// anything, in which case the caller unloads the payload.
+/// The startup the `run` exports perform. Returns `false` when the startup stopped before
+/// installing anything, in which case the caller unloads the payload.
 fn initialize_startup(source: tuning::Source) -> bool {
     // Resolve this run's output directory first, so the log, crash dumps, and every other artifact
     // land under the same timestamped session folder.
@@ -188,7 +188,7 @@ fn shutdown_startup() {
     module::exit();
 }
 
-/// Called when we're on the game thread for the first time
+/// The startup that needs the game thread, run once, on its first update.
 fn initialize_from_game() -> anyhow::Result<()> {
     static INITIALIZED: OnceLock<bool> = OnceLock::new();
     if INITIALIZED.get().is_some() {
@@ -206,7 +206,8 @@ fn initialize_from_game() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Called to undo `initialize_from_game`; called once shutdown is triggered
+/// Undo `initialize_from_game` and run the cleanups, on the game thread once shutdown preparation
+/// commits.
 fn shutdown_from_game() {
     eject_gpu::log_video_memory("eject begins");
     // Let an in-flight frame tail submit before anything below takes the egui state lock: the VR
@@ -310,10 +311,9 @@ fn update() {
         // no engine thread mutates the world's game objects.
         unsafe { GameTick::enter(physical_hands::physics::frame_tick) };
 
-        // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the screenshots.
-        // Driven here rather than from inside the egui closure below: they are what VR submits, and
-        // preparing them only as a side effect of the debug UI meant an `EguiState` that failed to
-        // install left VR with nothing to present and no indication why.
+        // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the
+        // screenshots. Driven here rather than from inside the egui closure below: they are what VR
+        // submits, so they must not depend on the debug UI.
         capture::EGUI_DEBUG_RENDER_STATE.lock().ensure_eye_targets();
 
         {
@@ -323,10 +323,10 @@ fn update() {
                 // nothing in it may block on the VR runtime lock (see `jc3vr_core::thread_role`).
                 let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
 
-                // Drive the egui UI as the VR floating panel when a session is running and the panel is
-                // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
-                // the desktop mouse or a controller onto the panel surface. Off, this is `None` and the
-                // flat overlay path is unchanged.
+                // Drive the egui UI as the VR floating panel when a session is running and the panel
+                // is enabled: size the layout to the panel texture and re-source the pointer from the
+                // desktop mouse or a controller onto the panel surface. Without the panel the size is
+                // `None` and the UI draws as the flat overlay.
                 let panel_size = hud::egui_panel::active_size();
                 egui_state.set_panel_mode(panel_size);
                 match panel_size {
@@ -339,10 +339,10 @@ fn update() {
                 let visible = debug_ui_visible(panel_size.is_some());
                 egui_state.run(|ctx, renderer| {
                     hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
-                    // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
-                    // registrations for surfaces the render thread created without a renderer. The eye
-                    // captures themselves are prepared above, off this path. The HUD preview's retired
-                    // registrations are released first, outside the capture lock.
+                    // The UI-side half of capture upkeep: the Previews tab's own textures, and the
+                    // egui registrations for surfaces the render thread created without a renderer.
+                    // The HUD preview's retired registrations are released first, outside the
+                    // capture lock.
                     hud::HUD_STATE.lock().drain_preview_retirements(renderer);
                     capture::EGUI_DEBUG_RENDER_STATE
                         .lock()
@@ -354,8 +354,8 @@ fn update() {
                     }
                     ui::startup_banner(ctx);
                     ui::restart_banner(ctx);
-                    // The dock area fills whatever space the window gives it, so the window carries an
-                    // explicit default size instead of auto-sizing to content.
+                    // The dock area fills whatever space the window gives it, so the window carries
+                    // an explicit default size instead of auto-sizing to content.
                     egui::Window::new("Debug")
                         .default_pos(egui::pos2(0.0, 0.0))
                         .default_size(egui::vec2(760.0, 560.0))

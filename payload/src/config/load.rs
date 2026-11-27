@@ -1,7 +1,8 @@
 //! The tolerant load of this configuration, for the tests: the engine's load
-//! ([`jc3vr_core::config::load`]) for a [`Config`]. The checks it runs on the settings whose types admit unusable values are the
-//! ones the groups' slots carry ([`SlotOptions::validated`](jc3vr_core::config::SlotOptions::validated)):
-//! the controller settings, the VR turn settings, the HUD, and the body dimensions.
+//! ([`jc3vr_core::config::load`]) for a [`Config`]. The checks it runs on the settings whose types
+//! admit unusable values are the ones the groups' slots carry
+//! ([`SlotOptions::validated`](jc3vr_core::config::SlotOptions::validated)): the controller
+//! settings, the VR turn settings, the HUD, and the body dimensions.
 
 use jc3vr_core::config::{
     self,

@@ -100,7 +100,7 @@ const FATAL_CODES: &[u32] = &[
     0xC0000094, // INTEGER_DIVIDE_BY_ZERO
     0xC0000096, // PRIVILEGED_INSTRUCTION
     0xC00000FD, // STACK_OVERFLOW
-    // Genuinely process-killing conditions, added after a session died with no record at all:
+    // Genuinely process-killing conditions, which otherwise end a session with no record at all:
     // heap corruption is the likely end state of the observed Scaleform exception storms, and
     // fail-fast may bypass handlers on real Windows but is visible under Wine's dispatch.
     0xC0000374, // HEAP_CORRUPTION

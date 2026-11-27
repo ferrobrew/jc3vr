@@ -143,8 +143,8 @@ struct NamedLibrary {
     build: fn() -> HookLibrary,
 }
 
-/// The hook libraries, in enable order. The vehicles crate's equipment detours come from its
-/// registration, so they enable only once it has registered.
+/// The hook libraries, in enable order. The vehicles crate's equipment detours come from the value
+/// its registration returns.
 fn libraries(registered: &VehiclesRegistered) -> Vec<NamedLibrary> {
     #[cfg_attr(
         not(feature = "profiler"),
