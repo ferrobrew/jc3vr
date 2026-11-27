@@ -18,7 +18,7 @@ use jc3vr_body::controllers::{
     locomotion::config::LocomotionDirection,
     mode,
     mode::{Mode, VehicleClass},
-    physics::local_player::LocalPlayer,
+    physics::{local_player::LocalPlayer, release},
 };
 use jc3vr_grapple::{
     controllers::{
@@ -95,6 +95,8 @@ pub(super) fn offers(live: &mut Live<'_, '_>, filtered: &Filtered, routed: &Rout
             vehicles::TickVolumes::default(),
         )
     } else {
+        // The rig's motion every release carries, sampled before anything this tick lets go.
+        release::sample();
         (
             weapons::begin_tick(game, detection.mode),
             vehicles::begin_tick(game, detection.mode),

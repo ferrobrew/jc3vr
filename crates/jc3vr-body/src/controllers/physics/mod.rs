@@ -16,6 +16,7 @@
 //! - [`scan`]: bodies' motion kinds and boxes, and the walks that find dynamic bodies by their
 //!   boxes;
 //! - [`rig`]: the rig that carries the hands, and a reader's watch for its jumps;
+//! - [`release`]: the one motion everything a hand lets go of leaves with;
 //! - [`wanted`]: the character's wanted velocity and the one order its writers apply in;
 //! - [`refs`]: weak and strong references to game objects held across ticks;
 //! - [`characters`]: a character's place and object, its proxy body, its protection, and the
@@ -37,6 +38,7 @@ pub mod havok;
 pub mod local_player;
 pub mod proxy;
 pub mod refs;
+pub mod release;
 pub mod rig;
 pub mod rigid;
 pub mod scan;

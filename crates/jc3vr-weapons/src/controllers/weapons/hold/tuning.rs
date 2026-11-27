@@ -59,8 +59,6 @@ pub struct HoldTuning {
     /// How long a draw off a socket, a dock onto one, or a take from the world slides the gun
     /// between where it was and the hand, seconds.
     pub snap_s: f32,
-    /// The fastest a let-go gun leaves the hand, metres per second, against tracking glitches.
-    pub max_throw_mps: f32,
     /// The radius around the held gun's pistol grip for the free hand to take it, in player-scale
     /// metres. A touch on another gun region keeps that region's action.
     pub handle_radius_m: f32,
@@ -87,11 +85,6 @@ pub struct HoldTuning {
     pub use_item_grant_ms: Millis,
     /// How long a hand's aim target stays current for the native armed-weapon update.
     pub target_max_age_ms: Millis,
-    /// The oldest a release's frames, its controller publication, and its sampled point may be for
-    /// the release to carry their motion, seconds.
-    pub release_max_age_s: f32,
-    /// The fastest carried motion a release keeps, metres per second: past the game's fastest jets.
-    pub max_carried_mps: f32,
     pub steal: StealTuning,
     pub swap: SwapTuning,
     pub rack: RackTuning,
@@ -100,7 +93,6 @@ pub struct HoldTuning {
 impl HoldTuning {
     fn validate(&self) -> Result<(), Invalid> {
         positive("hold.snap_s", self.snap_s, 2.0)?;
-        positive("hold.max_throw_mps", self.max_throw_mps, 100.0)?;
         positive("hold.handle_radius_m", self.handle_radius_m, 1.0)?;
         positive("hold.handover_max_m", self.handover_max_m, 2.0)?;
         positive("hold.take_radius_m", self.take_radius_m, 2.0)?;
@@ -110,8 +102,6 @@ impl HoldTuning {
             .validate("hold.use_item_grant_ms", 5_000)?;
         self.target_max_age_ms
             .validate("hold.target_max_age_ms", 5_000)?;
-        range("hold.release_max_age_s", self.release_max_age_s, 0.001, 1.0)?;
-        positive("hold.max_carried_mps", self.max_carried_mps, 1_000.0)?;
         self.steal.validate()?;
         self.swap.validate()?;
         self.rack.validate()

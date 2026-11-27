@@ -1,6 +1,11 @@
 # The physics substrate's tuning: `PhysicsTuning` in `src/controllers/physics/tuning.rs` and the
 # structs under it, whose fields say what each value does. Every key is required and no other is
-# accepted. Angles are radians.
+# accepted. Angles are radians, speeds metres per second, and times seconds.
 
 [rig]
 unannounced_turn_rad = 1.5707964
+
+[release]
+max_hand_mps = 15.0
+max_carried_mps = 150.0
+max_age_s = 0.15

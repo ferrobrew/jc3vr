@@ -43,7 +43,7 @@ use jc3vr_body::controllers::{
         hold::{Desired, MapKind},
     },
     physics,
-    physics::{local_player::LocalPlayer, refs::Weak},
+    physics::{local_player::LocalPlayer, refs::Weak, release},
     telemetry,
     telemetry::Thrown,
 };
@@ -71,7 +71,6 @@ use crate::controllers::{
             stock::Stock,
             tuning::{GRENADE, GrenadeTuning},
         },
-        hold::{act, tuning::HOLD},
         in_hand,
         in_hand::{Held, Slot},
         inventory::engine::weapon_of,
@@ -130,10 +129,11 @@ impl Release {
 }
 
 /// The release of the `item` `hand` holds at `point_world`, held since `since_s` (display time): the
-/// estimate and the cap a gun's let-go takes ([`act::release_at`], the hold's
-/// [`max_throw_mps`](crate::controllers::weapons::hold::tuning::HoldTuning::max_throw_mps)), so a
-/// grenade, a charge, and a gun leave the hand with the same motion for the same swing. The release
-/// is recorded as a throw of `item`, `armed` when the item has a live state.
+/// one release everything a hand lets go of takes ([`release::at`], [`ReleaseMotion::thrown`]), so
+/// a grenade, a charge, a gun, and a prop leave the hand with the same motion for the same swing.
+/// The release is recorded as a throw of `item`, `armed` when the item has a live state.
+///
+/// [`ReleaseMotion::thrown`]: jc3vr_body::controllers::physics::release::ReleaseMotion::thrown
 pub(crate) fn throw_release(
     hand: Hand,
     point_world: Vec3,
@@ -141,8 +141,8 @@ pub(crate) fn throw_release(
     item: &'static str,
     armed: Option<bool>,
 ) -> Release {
-    let estimate = act::release_at(hand, point_world, since_s);
-    let requested = estimate.capped(HOLD.get().hold.max_throw_mps);
+    let estimate = release::at(hand, point_world, since_s);
+    let requested = estimate.thrown();
     telemetry::note_throw_at(
         Thrown {
             hand,

@@ -24,13 +24,13 @@ use jc3gi::{
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
-use jc3vr_body::controllers::{aim::gun, hands::grip, physics};
+use jc3vr_body::controllers::{aim::gun, hands::grip, physics, physics::release::ReleaseMotion};
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::weapons::{
     dual_wield::single,
     engine::{skip_interpolation, slot_from_raw, slot_of},
-    hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
+    hold::release_diagnostics::{DropObservation, NativeWrite, SampleStage},
     inventory::{carry, engine::strong_to, slots},
 };
 

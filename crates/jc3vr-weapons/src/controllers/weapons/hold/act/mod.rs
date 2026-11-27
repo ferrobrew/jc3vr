@@ -20,8 +20,6 @@
 #[cfg(test)]
 mod release_tests;
 
-use std::time::Instant;
-
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
@@ -29,24 +27,18 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     aim::gun,
-    clock::TimeScale,
     hands::grip,
     held::{SnapStart, SnapView},
     intent,
-    physics::{local_player::LocalPlayer, rig::RigSample},
+    physics::{local_player::LocalPlayer, release, release::ReleaseMotion, tuning::PHYSICS},
     telemetry,
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{
-    frame::{self, Hand, Pose},
+    frame::{Hand, Pose},
     motion,
 };
-use jc3vr_view::{
-    headpose,
-    headpose::teleport,
-    recorder::tracking::{events, events::EventKind},
-    vr::VR_CONFIG,
-};
+use jc3vr_view::recorder::tracking::{events, events::EventKind};
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -64,11 +56,7 @@ use crate::controllers::{
             equip,
             equip::{DockRefusal, Thrown},
             layout,
-            release_diagnostics::{
-                ControllerContext, ReleaseFrame, ReleaseInput, ReleaseMotion, ReleaseRecord,
-                ReleaseRoute, ReleaseStatus, ReleaseTransport, RigMotion, SampleStage,
-                estimate_release,
-            },
+            release_diagnostics::{ReleaseRecord, ReleaseRoute, ReleaseStatus, SampleStage},
             tuning::HOLD,
         },
         inventory,
@@ -372,7 +360,7 @@ pub(crate) fn release_tick(
                     if let Some(object) = live::in_hand(hand) {
                         intend_release(hand, object, None);
                     }
-                    let _ = let_go(game, hand, HOLD.get().hold.max_throw_mps);
+                    let _ = let_go(game, hand, PHYSICS.get().release.max_hand_mps);
                 }
                 Err((refusal, StowFallback::Keep)) => tracing::info!(
                     target: "controllers",
@@ -515,7 +503,6 @@ pub(crate) fn draw_ready(hand: Hand) -> bool {
 /// whose weapon left its hand is dropped.
 pub(crate) fn tick(game: &GameTick<'_>, dt: f32) {
     STATE.lock().docked_this_tick.clear();
-    sample_release_transport(dt);
     STATE.lock().draw_rearm.observe(physical_grips());
     let pressed = pressed_grips();
     for hand in Hand::BOTH {
@@ -555,8 +542,6 @@ pub(crate) fn clear() {
     state.snaps = [None; 2];
     state.intents = [None; 2];
     state.draw_rearm = DrawRearm::new();
-    state.transport = ReleaseTransport::new();
-    state.rig = None;
     state.watches.iter_mut().for_each(Watch::stand_down);
 }
 
@@ -709,8 +694,6 @@ struct State {
     intents: [Option<ReleaseIntent>; 2],
     docked_this_tick: Vec<usize>,
     draw_rearm: DrawRearm,
-    transport: ReleaseTransport,
-    rig: Option<(Instant, RigMotion)>,
     status: DockStatus,
 }
 
@@ -815,8 +798,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     intents: [None; 2],
     docked_this_tick: Vec::new(),
     draw_rearm: DrawRearm::new(),
-    transport: ReleaseTransport::new(),
-    rig: None,
     status: DockStatus {
         snapping: [None; 2],
         grip_holds: [false; 2],
@@ -827,36 +808,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         releases: ReleaseStatus::EMPTY,
     },
 });
-
-fn sample_release_transport(dt: f32) {
-    let scale = VR_CONFIG.lock().world_scale;
-    let frame = headpose::xr::cockpit_pose().map(|head_cockpit| {
-        let head_world = jc3vr_view::hooks::camera::eye_point();
-        ReleaseFrame {
-            origin: head_world,
-            rig: RigSample::now(),
-            scale,
-            teleport_epoch: teleport::epoch(),
-        }
-        .with_composed_head(head_world, head_cockpit.position)
-    });
-    let time_s = motion::latest_time();
-    // The rig's origin moves only on sim ticks, which a frame may run none or two of, so its
-    // difference over a frame read the platform's speed as zero or about double, and a charge
-    // thrown forward off a moving jeep on the 14 November take landed behind. The character's own
-    // measured velocity is the tick's, and the platform carries the rig with it.
-    // SAFETY: the local player, read on the game thread before the world update.
-    let measured = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .map(|character| Vec3::from(character.m_MeasuredWorldVelocity))
-        .filter(|velocity| velocity.is_finite());
-    let mut state = STATE.lock();
-    state.rig = state.transport.update(frame, dt, time_s).map(|mut rig| {
-        if let Some(measured) = measured {
-            rig.motion.linear = measured;
-        }
-        (Instant::now(), rig)
-    });
-}
 
 /// Copy the estimate before disarm changes the gun's attach pose or cached native motion.
 unsafe fn release_motion(
@@ -875,45 +826,7 @@ unsafe fn release_motion(
             .flatten()
             .unwrap_or(f64::INFINITY)
     };
-    estimate(hand, point_world, since_s, diagnostic.controller.as_ref())
-}
-
-/// The world motion of the point at `point_world` that `hand` lets go of, for an item the hand has
-/// held since `since_s` (display time; earlier samples belong to whatever the hand did before).
-///
-/// This is the estimate a gun's let-go takes, so everything a hand throws leaves it the same way:
-/// the hand's timestamped history read at its fastest moment, the rotation's lever at the point,
-/// and the player's own movement through the rig, each once. A grenade, a caught grenade, and a
-/// charge use it as well.
-pub(crate) fn release_at(hand: Hand, point_world: Vec3, since_s: f64) -> ReleaseMotion {
-    let controller = frame::with_latest(|frame| ControllerContext::from_frame(frame, hand));
-    estimate(hand, point_world, since_s, controller.as_ref())
-}
-
-fn estimate(
-    hand: Hand,
-    point_world: Vec3,
-    since_s: f64,
-    controller: Option<&ControllerContext>,
-) -> ReleaseMotion {
-    let (rig, history_after_s) = {
-        let state = STATE.lock();
-        let rig = state
-            .rig
-            .filter(|(at, _)| at.elapsed().as_secs_f32() <= HOLD.get().hold.release_max_age_s);
-        (rig.map(|(_, rig)| rig), state.transport.history_after_s())
-    };
-    let samples = motion::history(hand);
-    estimate_release(ReleaseInput {
-        rig,
-        controller,
-        samples: &samples,
-        since_s,
-        history_after_s,
-        point_world,
-    })
-    // SAFETY: a release happens while the game runs.
-    .in_game_time(unsafe { TimeScale::current() })
+    release::at_with(hand, point_world, since_s, diagnostic.controller.as_ref())
 }
 
 /// Draw the weapon on `socket` into `hand` through the loadout table, which the reconcile carries

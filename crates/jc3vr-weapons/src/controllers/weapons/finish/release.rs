@@ -8,6 +8,7 @@ use jc3vr_body::controllers::{
     hands::ActiveHands,
     haptics,
     intent::{controls::ButtonControl, finish::FinishInputs},
+    physics::tuning::PHYSICS,
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Event, motion};
@@ -196,7 +197,8 @@ fn release(
             if braced {
                 return;
             }
-            if let Err(refusal) = hold::act::let_go(game, hand, HOLD.get().hold.max_throw_mps) {
+            if let Err(refusal) = hold::act::let_go(game, hand, PHYSICS.get().release.max_hand_mps)
+            {
                 tracing::debug!(target: "controllers", %refusal, "hold: the weapon was not let go of");
             }
         }

@@ -6,7 +6,9 @@
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
-use jc3vr_body::controllers::physics::{characters::character_position, local_player::LocalPlayer};
+use jc3vr_body::controllers::physics::{
+    characters::character_position, local_player::LocalPlayer, release::ReleaseMotion,
+};
 use jc3vr_core::game_tick::GameTick;
 use tracking_format::event::WorldMotion;
 
@@ -18,7 +20,6 @@ use crate::controllers::{
         engine::grip_points,
         hold::{
             equip::{self, DockRefusal},
-            release_diagnostics::ReleaseMotion,
             tuning::HOLD,
         },
         inventory::{

@@ -6,7 +6,6 @@
 
 [hold]
 snap_s = 0.12
-max_throw_mps = 15.0
 handle_radius_m = 0.14
 handover_max_m = 0.20
 take_radius_m = 0.3
@@ -14,8 +13,6 @@ steal_radius_m = 0.4
 release_intent_s = 0.35
 use_item_grant_ms = 500
 target_max_age_ms = 250
-release_max_age_s = 0.15
-max_carried_mps = 150.0
 
 [hold.steal]
 notice_range_m = 3.0
