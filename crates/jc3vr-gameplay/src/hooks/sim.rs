@@ -27,7 +27,7 @@
 //! The rest of the tick is split in two by [`frame_timing::interval`]s: the head, from the tick's
 //! start to the world's pre-simulation queue, and the tail, from the end of the streaming block to
 //! the tick's end. The online managers, which run in both and keep their own clocks, are timed on
-//! their own inside them by `jc3vr_core::hooks::online`.
+//! their own inside them by [`crate::hooks::online`].
 //!
 //! Threading: everything here except the AI thread bodies and the input job runs on the game thread,
 //! inside the engine's `Game::Update`.

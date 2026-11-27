@@ -7,8 +7,8 @@ use std::{collections::VecDeque, time::Instant};
 use jc3vr_core::{
     frame_timing,
     frame_timing::{Kind, ThreadClass, TickLoad, ns_to_ms},
-    hooks::online::ONLINE_CONFIG,
 };
+use jc3vr_gameplay::hooks::online::ONLINE_CONFIG;
 use parking_lot::Mutex;
 
 use crate::{tuning::UI, ui::util::patchbox};

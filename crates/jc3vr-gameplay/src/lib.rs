@@ -15,8 +15,8 @@
 //!   the scope read, and the cockpit transform, live in the view crate, under
 //!   [`jc3vr_view::controllers`]; the passes that draw them live in the render crate's
 //!   `controllers`, which this crate does not depend on.
-//! - [`hooks`]: the gameplay detours (the input tick's look detour, the equipment, and the sim
-//!   step) and the stance height the view crate's camera adjust applies.
+//! - [`hooks`]: the gameplay detours (the input tick's look detour, the sim step, and the online
+//!   managers the sim tick runs) and the stance height the view crate's camera adjust applies.
 //!
 //! # The public surface
 //!

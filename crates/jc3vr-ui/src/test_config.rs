@@ -2,8 +2,7 @@
 //! before any test runs; see [`test_root`](jc3vr_core::config::engine::test_root).
 
 use jc3vr_body::controllers::body::BODY_CONFIG;
-use jc3vr_core::hooks::online::ONLINE_CONFIG;
-use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_gameplay::{controllers::config::CONTROLLERS_CONFIG, hooks::online::ONLINE_CONFIG};
 use jc3vr_hud::hud::config::HUD_CONFIG;
 use jc3vr_render::hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG};
 use jc3vr_tooling::{

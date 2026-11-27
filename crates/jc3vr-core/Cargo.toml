@@ -18,10 +18,7 @@ windows = { workspace = true }
 glam = { workspace = true }
 anyhow = { workspace = true }
 jc3gi = { path = "../../jc3gi" }
-# The online timing detours. The detour macro emits `::re_utilities` paths, so a crate that defines
-# detours depends on `re-utilities` directly.
 re-utilities = { workspace = true }
-detours-macro = { workspace = true }
 parking_lot = "0.12.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

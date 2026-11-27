@@ -13,7 +13,7 @@
 //!   crate's own file.
 //! - [`hooks`]: the hook plumbing, which installs a composed hook library under thread suspension
 //!   and removes it, the shared `Patcher`, the installation and removal steps other layers
-//!   register, the gameplay predicate, and the online timing detours ([`hooks::online`]).
+//!   register, and the gameplay predicate.
 //! - [`frame_timing`] and [`render_frame`]: the always-on frame breakdown and the per-frame slots.
 //! - [`registration`]: the install-time check that every contribution a lower layer reads from the
 //!   layers above was registered, which lists every missing one and stops the startup.

@@ -10,7 +10,7 @@ use jc3vr_body::controllers::{
     overlay::config::OVERLAY_CONFIG,
     roomscale::config::ROOMSCALE_CONFIG,
 };
-use jc3vr_core::{director::clean_view::CLEAN_VIEW_CONFIG, hooks::online::ONLINE_CONFIG};
+use jc3vr_core::director::clean_view::CLEAN_VIEW_CONFIG;
 use jc3vr_physical::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG;
 use jc3vr_view::{
     fsr::FSR_CONFIG,
@@ -34,7 +34,6 @@ jc3vr_core::test_root!(
     FSR_CONFIG,
     HEADPOSE_CONFIG,
     VR_CONFIG,
-    ONLINE_CONFIG,
     INPUT_CONFIG,
     CONTROLLERS_ENABLED,
     DOMINANT_HAND,

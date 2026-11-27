@@ -46,7 +46,7 @@ slots! {
     jc3vr_tooling::director::DIRECTOR_CONFIG = director,
     jc3vr_tooling::recorder::RECORDER_CONFIG = recorder,
     jc3vr_tooling::testing::TESTING_CONFIG = testing,
-    jc3vr_core::hooks::online::ONLINE_CONFIG = online,
+    jc3vr_gameplay::hooks::online::ONLINE_CONFIG = online,
     jc3vr_body::controllers::body::BODY_CONFIG = body,
 }
 

@@ -2355,7 +2355,6 @@ name = "jc3vr-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "detours-macro",
  "directories",
  "erased-serde",
  "glam",

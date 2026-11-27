@@ -13,7 +13,7 @@ use jc3vr_body::{
     },
     hooks::input::wingsuit::WINGSUIT_EVADE_CONFIG,
 };
-use jc3vr_core::{director::clean_view::CLEAN_VIEW_CONFIG, hooks::online::ONLINE_CONFIG};
+use jc3vr_core::director::clean_view::CLEAN_VIEW_CONFIG;
 use jc3vr_physical::controllers::{
     glass::config::GLASS_CONFIG, physical_hands::config::PHYSICAL_HANDS_CONFIG,
 };
@@ -37,7 +37,6 @@ jc3vr_core::test_root!(
     FSR_CONFIG,
     HEADPOSE_CONFIG,
     VR_CONFIG,
-    ONLINE_CONFIG,
     INPUT_CONFIG,
     CONTROLLERS_ENABLED,
     DOMINANT_HAND,

@@ -43,7 +43,7 @@
 //! `hooks::graphics_engine::config`,
 //! [`FoveationConfig`](jc3vr_view::vr::FoveationConfig) in `vr::config`,
 //! [`CameraConfig`](jc3vr_view::hooks::camera::CameraConfig) in `hooks::camera::config`,
-//! [`OnlineConfig`](jc3vr_core::hooks::online::OnlineConfig) in `hooks::online`,
+//! [`OnlineConfig`](jc3vr_gameplay::hooks::online::OnlineConfig) in `hooks::online`,
 //! [`FsrConfig`](jc3vr_view::fsr::FsrConfig) in `fsr::config`,
 //! [`HudConfig`](jc3vr_hud::hud::HudConfig) in `hud::config`,
 //! [`HeadPoseConfig`](jc3vr_view::headpose::HeadPoseConfig) in `headpose::config`,
@@ -63,11 +63,8 @@ pub(crate) mod slots;
 use std::sync::Once;
 
 use jc3vr_body::controllers::body::BodyDimensions;
-use jc3vr_core::{
-    config::{engine, engine::SlotGuard},
-    hooks::online::OnlineConfig,
-};
-use jc3vr_gameplay::controllers::ControllersConfig;
+use jc3vr_core::config::{engine, engine::SlotGuard};
+use jc3vr_gameplay::{controllers::ControllersConfig, hooks::online::OnlineConfig};
 use jc3vr_hud::hud::HudConfig;
 use jc3vr_render::hooks::graphics_engine::config::{ExposureConfig, PostFxConfig};
 use jc3vr_tooling::{director::DirectorConfig, recorder::RecorderConfig, testing::TestingConfig};

@@ -1,5 +1,5 @@
 //! Timing detours around the online managers and the online suite's parts, for the always-on frame
-//! breakdown (`crate::frame_timing`).
+//! breakdown (`jc3vr_core::frame_timing`).
 //!
 //! The online managers run on the game thread inside the sim tick and keep their own wall-clock
 //! timers, so a periodic stall in the tick's head or tail can be one of them. Each hook opens a
@@ -48,14 +48,13 @@ use jc3gi::{
     },
     profile_manager::ProfileManager,
 };
-use re_utilities::hook_library::HookLibrary;
-use serde::{Deserialize, Serialize};
-
-use crate::{
+use jc3vr_core::{
     config::engine::ConfigSlot,
     frame_timing::{self, Slot},
     published::ReentryGuard,
 };
+use re_utilities::hook_library::HookLibrary;
+use serde::{Deserialize, Serialize};
 
 /// The online-feature settings, at `online` in the settings file; the payload binds the slot at
 /// startup.

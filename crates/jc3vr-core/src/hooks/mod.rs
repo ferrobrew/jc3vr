@@ -6,7 +6,6 @@ use re_utilities::hook_library::HookLibrary;
 
 pub use crate::hooks::stages::{register_post_enable, register_post_unpatch, register_pre_unpatch};
 
-pub mod online;
 mod stages;
 pub mod suspend;
 

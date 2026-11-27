@@ -1,7 +1,7 @@
 //! The configuration root of the crate's tests: the slots the crate's code reads, registered once
 //! before any test runs; see [`test_root`](jc3vr_core::config::engine::test_root).
 
-use jc3vr_core::{director::clean_view::CLEAN_VIEW_CONFIG, hooks::online::ONLINE_CONFIG};
+use jc3vr_core::director::clean_view::CLEAN_VIEW_CONFIG;
 
 use crate::{
     fsr::FSR_CONFIG,
@@ -22,7 +22,6 @@ jc3vr_core::test_root!(
     FSR_CONFIG,
     HEADPOSE_CONFIG,
     VR_CONFIG,
-    ONLINE_CONFIG,
     INPUT_CONFIG,
     CONTROLLERS_ENABLED,
     DOMINANT_HAND,

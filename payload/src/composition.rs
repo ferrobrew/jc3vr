@@ -15,13 +15,13 @@ use std::fmt;
 use jc3vr_body::hooks::{animation, character};
 use jc3vr_capture::screenshot::harness::register_probes;
 use jc3vr_core::{
-    hooks::{self as core_hooks, online},
+    hooks as core_hooks,
     lifecycle::RegistrationError,
     registration::{MissingRegistrations, RegistrationCheck},
 };
 use jc3vr_gameplay::{
     controllers,
-    hooks::{input, sim},
+    hooks::{input, online, sim},
 };
 use jc3vr_grapple::grapple;
 use jc3vr_hud::{controllers::map, hooks::ui};

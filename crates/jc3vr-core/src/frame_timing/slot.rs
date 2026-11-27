@@ -48,7 +48,7 @@ pub enum Slot {
     /// The online-suite manager's first-party check in its suite retry
     /// (`AccountManagerSteam::IsConnectedToFirstPartyService`, which asks the Steam client whether
     /// it is logged on), nested in [`Self::SimOnline`]. Its calls count the ticks that reach the
-    /// check, whether or not the call is skipped (`crate::hooks::online`).
+    /// check, whether or not the online hooks skip the call.
     SimLoggedOn,
     /// The online suite's player accounts (`osuite::PlayerAccountManager::Update`), excluding the
     /// service-account parts timed on their own: the manager's mutex and the Steam account's
