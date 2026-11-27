@@ -247,7 +247,7 @@ pub(crate) fn handover_candidate(input: Handover) -> Option<Candidate> {
 /// The broad transfer policy, independent of whether region geometry was available this tick.
 pub(crate) struct HandoverPolicy {
     pub allowed: bool,
-    pub engaged_foregrip: bool,
+    pub(crate) engaged_foregrip: bool,
     pub guns: [Option<HeldWeapon>; 2],
     pub offer: Handover,
 }
@@ -306,7 +306,7 @@ pub(crate) fn grip_on_current_wrist(
 /// `under_ragdoll` share of the knockdown
 /// ([`StealTuning`](crate::controllers::weapons::hold::tuning::StealTuning)). `None` without a
 /// usable tuning, or when no impulse staggers without knocking down.
-pub fn stagger_impulse(
+pub(crate) fn stagger_impulse(
     type_scale: f32,
     stumble_threshold: f32,
     ragdoll_threshold: f32,

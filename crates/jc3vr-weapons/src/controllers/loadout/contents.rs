@@ -81,7 +81,7 @@ impl HandContents {
 
     /// Whether the hand holds nothing but, at most, the reload's round: the reload's own free hand,
     /// which stays free to it while it carries the reload on.
-    pub fn free_but_for_round(&self) -> bool {
+    pub(crate) fn free_but_for_round(&self) -> bool {
         !self.gun()
             && self.item.is_none()
             && self.grenade.is_none()

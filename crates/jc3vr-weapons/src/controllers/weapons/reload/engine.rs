@@ -74,7 +74,7 @@ pub struct Reading {
     pub capacity: i32,
     pub magazine: i32,
     /// Chamber-owned rounds already included in `magazine`.
-    pub chambers: i32,
+    pub(crate) chambers: i32,
     /// The game's magazine-out flag.
     pub out: bool,
     /// The weapon has unlimited magazines or an untimed reload.
@@ -176,7 +176,7 @@ pub unsafe fn gun_index(weapon: &WeaponBase, hand: Hand) -> Option<usize> {
 /// # Safety
 ///
 /// As [`read`].
-pub unsafe fn measure_gun(
+pub(crate) unsafe fn measure_gun(
     weapon: &WeaponBase,
     index: usize,
     target: TickTarget,
@@ -450,7 +450,7 @@ pub(super) fn finish_detach(
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn load_rounds(address: usize, rounds: i32) {
+pub(crate) unsafe fn load_rounds(address: usize, rounds: i32) {
     let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return;
     };
@@ -479,7 +479,7 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
+pub(crate) unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
     let mut source = unsafe { owned_handle(address) }?;
     let weapon = unsafe { source.as_mut() };
     let gun = unsafe { gun_at(weapon, index) }?;
@@ -491,7 +491,7 @@ pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub unsafe fn local_player_matrix() -> Option<Mat4> {
+pub(crate) unsafe fn local_player_matrix() -> Option<Mat4> {
     let player = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     Some(Mat4::from(player.m_WorldMatrixT1))
 }
@@ -568,7 +568,7 @@ unsafe fn discard_spent_round(weapon: &mut WeaponBase) {
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn load_one(address: usize) -> bool {
+pub(crate) unsafe fn load_one(address: usize) -> bool {
     let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return false;
     };
@@ -682,7 +682,7 @@ pub(super) fn feed_chamber(address: usize, gun: usize) -> Option<Chamber> {
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
+pub(crate) unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
     let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return;
     };
@@ -762,7 +762,7 @@ pub(super) unsafe fn bolt_fired(address: usize) -> bool {
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
+pub(crate) unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
     let source = unsafe { owned_handle(address) }?;
     unsafe { gun_ptr(source.as_ref(), index) }.map(|gun| gun.as_ptr() as usize)
 }
@@ -958,7 +958,7 @@ unsafe fn model_parts<'a>(
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn show_magazine_part(address: usize, shown: bool) {
+pub(crate) unsafe fn show_magazine_part(address: usize, shown: bool) {
     let Some(source) = (unsafe { owned_handle(address) }) else {
         return;
     };

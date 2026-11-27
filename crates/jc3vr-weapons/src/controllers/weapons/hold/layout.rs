@@ -15,7 +15,7 @@ use jc3vr_input::frame::Hand;
 /// The bone a gun on `bone` rides while `holder` holds the weapon, when it differs from `bone`:
 /// the counterpart on the holder's hand of the other hand's attach bone. `None` for a bone that
 /// already is the holder's, or is not a hand attach bone.
-pub fn held_bone(bone: u32, holder: Hand) -> Option<u32> {
+pub(crate) fn held_bone(bone: u32, holder: Hand) -> Option<u32> {
     let (hand, mirror) = HAND_BONES
         .into_iter()
         .find(|&(_, safe, _)| safe as u32 == bone)
@@ -29,7 +29,7 @@ pub fn held_bone(bone: u32, holder: Hand) -> Option<u32> {
 /// first in the holder's and the second in the other, so held in the left hand its layout is
 /// mirrored. Like [`held_bone`], applying it to its own result changes nothing, so it can be
 /// written at every point the table is.
-pub fn placed_bone(bone: u32, holder: Hand, index: usize, guns: usize) -> Option<u32> {
+pub(crate) fn placed_bone(bone: u32, holder: Hand, index: usize, guns: usize) -> Option<u32> {
     let hand = if guns > 1 && index % 2 == 1 {
         holder.other()
     } else {
@@ -39,7 +39,7 @@ pub fn placed_bone(bone: u32, holder: Hand, index: usize, guns: usize) -> Option
 }
 
 /// The primary attach bone of `hand`.
-pub fn hand_bone(hand: Hand) -> u32 {
+pub(crate) fn hand_bone(hand: Hand) -> u32 {
     match hand {
         Hand::Left => SafeBoneIndex::ATTACH_HAND_LEFT as u32,
         Hand::Right => SafeBoneIndex::ATTACH_HAND_RIGHT as u32,
@@ -48,7 +48,7 @@ pub fn hand_bone(hand: Hand) -> u32 {
 
 /// The dock bone a docked gun on `bone` sits on: a hip holster, a back attach, or the chest's
 /// explosive bone, the bones the sockets place weapons on.
-pub fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
+pub(crate) fn dock_bone(bone: u32) -> Option<SafeBoneIndex> {
     DOCK_BONES.into_iter().find(|&safe| safe as u32 == bone)
 }
 

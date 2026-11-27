@@ -78,7 +78,7 @@ pub unsafe fn hold_back(character: &mut Character, holstering: bool) -> Option<H
 
 /// Whether the weapon handling would draw a weapon from these inputs: the fire input with nothing
 /// wielded or during a holster, or the precision-aim input with nothing wielded.
-pub fn would_draw(wielding: bool, holstering: bool, fire: f32, precision_aim: f32) -> bool {
+pub(crate) fn would_draw(wielding: bool, holstering: bool, fire: f32, precision_aim: f32) -> bool {
     (fire > 0.0 && (!wielding || holstering)) || (precision_aim > 0.0 && !wielding)
 }
 

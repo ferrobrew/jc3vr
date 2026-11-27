@@ -169,7 +169,7 @@ pub fn candidates(seen: &[Sighting], radius_m: f32, free: [bool; 2]) -> Vec<Cand
 
 /// Whether a grenade launched `age_s` ago may be caught: another's at once, the player's own once
 /// `grace_s` has passed.
-pub fn catchable(own: bool, age_s: f32, grace_s: f32) -> bool {
+pub(crate) fn catchable(own: bool, age_s: f32, grace_s: f32) -> bool {
     !own || age_s >= grace_s
 }
 

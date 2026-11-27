@@ -33,7 +33,7 @@ pub struct ActionTravel {
     /// The hand's hold on the handle, while it holds it.
     pub grip: Option<TravelGrip>,
     /// The slide is held at the rear by its catch.
-    pub locked_back: bool,
+    pub(crate) locked_back: bool,
     /// The part reached the rear since it last cycled.
     pub pulled: bool,
 }
@@ -42,7 +42,7 @@ pub struct ActionTravel {
 /// and, for a bolt, its turn about the bolt's axis ahead of the bolt's.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct TravelGrip {
-    pub along_m: f32,
+    pub(crate) along_m: f32,
     pub angle_rad: f32,
 }
 
@@ -60,9 +60,9 @@ pub struct TravelEvents {
     /// The part came home: forward of the return share, or a bolt turned back down.
     pub home: bool,
     /// The action cycled: home after a rack. The chamber loads from the magazine.
-    pub cycled: bool,
+    pub(crate) cycled: bool,
     /// The slide caught at the rear.
-    pub locked_back: bool,
+    pub(crate) locked_back: bool,
     /// A hand freed the slide from its catch.
     pub unlocked: bool,
 }
@@ -74,7 +74,7 @@ pub struct TravelInputs {
     /// The handle's place with the part at home.
     pub handle: Vec3,
     /// The gun's rearward axis (from the muzzle toward the stock), unit length.
-    pub rearward: Vec3,
+    pub(crate) rearward: Vec3,
     /// The direction from a bolt's axis toward its handle at rest, across the gun's axis, unit
     /// length.
     pub side: Vec3,
@@ -88,13 +88,13 @@ pub struct TravelInputs {
     pub grip_pressed: bool,
     pub grip_held: bool,
     /// For the pump: the working hand holds the foregrip.
-    pub on_foregrip: bool,
+    pub(crate) on_foregrip: bool,
     /// The chamber waits for the action.
     pub needed: bool,
     /// The magazine is in.
-    pub magazine_in: bool,
+    pub(crate) magazine_in: bool,
     /// The magazine is in and holds a round to feed.
-    pub feeds: bool,
+    pub(crate) feeds: bool,
     pub dt: f32,
 }
 
@@ -111,12 +111,12 @@ impl ActionTravel {
 
     /// Whether the action is closed: the part home, and a bolt turned down. A gun fires only from
     /// battery.
-    pub fn in_battery(&self, config: &ActionTuning) -> bool {
+    pub(crate) fn in_battery(&self, config: &ActionTuning) -> bool {
         self.position <= config.return_fraction && self.lift <= 0.0
     }
 
     /// Whether a held action delays ordinary gun release. A pump foregrip at home is support.
-    pub fn holds_release(&self, kind: ActionKind) -> bool {
+    pub(crate) fn holds_release(&self, kind: ActionKind) -> bool {
         self.grip.is_some()
             && (kind != ActionKind::Pump || self.position > 0.0 || self.lift > 0.0 || self.pulled)
     }
@@ -127,7 +127,7 @@ impl ActionTravel {
     }
 
     /// Hold the slide at the rear on its catch: the shot that emptied the magazine leaves it there.
-    pub fn lock_back(&mut self) {
+    pub(crate) fn lock_back(&mut self) {
         self.position = 1.0;
         self.locked_back = true;
         self.pulled = true;

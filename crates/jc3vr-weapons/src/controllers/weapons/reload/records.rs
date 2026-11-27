@@ -36,11 +36,11 @@ impl<I> RecordKey<I> {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(super) struct Record {
     /// Each gun's chamber, by [`gun_entry`].
-    pub chambers: [Chamber; GUN_ENTRIES],
+    pub(crate) chambers: [Chamber; GUN_ENTRIES],
     /// Each gun's action on its travel, by [`gun_entry`].
-    pub travels: [ActionTravel; GUN_ENTRIES],
+    pub(crate) travels: [ActionTravel; GUN_ENTRIES],
     /// The game's magazine as of the last tick.
-    pub last_magazine: Option<i32>,
+    pub(crate) last_magazine: Option<i32>,
 }
 
 /// The entry of a record's per-gun arrays for the gun at `index` within its weapon. A weapon has

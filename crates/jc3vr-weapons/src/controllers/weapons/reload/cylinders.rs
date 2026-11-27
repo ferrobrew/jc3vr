@@ -24,7 +24,7 @@ pub(super) struct CylinderTick {
     /// Shut, so the gun may fire.
     pub shut: bool,
     /// Out with every chamber empty, ready for a speedloader.
-    pub takes_speedloader: bool,
+    pub(crate) takes_speedloader: bool,
 }
 
 impl State {

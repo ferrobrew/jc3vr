@@ -51,23 +51,23 @@ pub struct ForegripTuning {
     /// The foregrip volume's radius around the weapon's grip point, metres.
     pub radius_m: f32,
     /// How far the off-hand may move from the foregrip before it lets go, metres.
-    pub release_distance_m: f32,
+    pub(crate) release_distance_m: f32,
     /// How long the weapon takes to turn onto the line between the hands after a grab, and back
     /// onto the dominant hand after a release, seconds.
     pub blend_s: f32,
     /// Where the foregrip sits along the barrel from the dominant wrist, metres, for a weapon with
     /// no grip point of its own for the off-hand.
-    pub fallback_distance_m: f32,
+    pub(crate) fallback_distance_m: f32,
     /// The shortest distance between the hands that still sets a direction, metres. Closer, the
     /// line between them is too short to aim along, and the weapon stays on the dominant hand; the
     /// two-handed pose fades out over the next `min_span_m` as the hands close in, so the weapon
     /// does not jump between the two.
-    pub min_span_m: f32,
+    pub(crate) min_span_m: f32,
     /// The furthest the line between the hands may turn the weapon away from where the holding
     /// hand points it, degrees. Past it the weapon stops turning, the off-hand falls away from
     /// the foregrip, and the hold lets go once that passes the release distance, so an off-hand
     /// that crosses behind the holding hand cannot spin the weapon round.
-    pub max_turn_deg: f32,
+    pub(crate) max_turn_deg: f32,
 }
 
 /// The weapon's geometry in the holding hand's wrist frame.
@@ -229,14 +229,14 @@ pub(crate) fn pumping(weapon: usize) -> bool {
 }
 
 /// The foregrip moved `back_m` back along the barrel, with the pump.
-pub fn slid_foregrip(geometry: &GripGeometry, back_m: f32) -> Vec3 {
+pub(crate) fn slid_foregrip(geometry: &GripGeometry, back_m: f32) -> Vec3 {
     geometry.foregrip - geometry.barrel * back_m
 }
 
 /// The hands in the pose of `hold`: the two-handed pose for an off-hand that steers the gun, and
 /// for one that does not (on the stock), the off-hand moved onto its point on the gun with the
 /// holding hand as it is.
-pub fn hold_pose(
+pub(crate) fn hold_pose(
     hold: &Hold,
     holder: CockpitHand,
     off: CockpitHand,
@@ -255,7 +255,7 @@ pub fn hold_pose(
 }
 
 /// The foregrip's point in the frame `holder` is given in.
-pub fn foregrip_point(holder: &CockpitHand, geometry: &GripGeometry) -> Vec3 {
+pub(crate) fn foregrip_point(holder: &CockpitHand, geometry: &GripGeometry) -> Vec3 {
     holder
         .wrist
         .compose(Pose {
@@ -267,7 +267,7 @@ pub fn foregrip_point(holder: &CockpitHand, geometry: &GripGeometry) -> Vec3 {
 
 /// The hands in a two-handed pose.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TwoHandPose {
+pub(crate) struct TwoHandPose {
     pub holder: CockpitHand,
     pub off: CockpitHand,
     pub turn: Turn,
@@ -283,7 +283,7 @@ pub struct TwoHandPose {
 /// `config.max_turn_deg`, and it fades out as the hands close in from twice `config.min_span_m` to
 /// `config.min_span_m`. `None` when nothing of the pose is left or the geometry is degenerate,
 /// leaving the hands as they are.
-pub fn two_hand(
+pub(crate) fn two_hand(
     holder: CockpitHand,
     off: CockpitHand,
     geometry: &GripGeometry,
@@ -330,7 +330,7 @@ pub fn two_hand(
 
 /// The off-hand moved `weight` of the way onto the foregrip of the gun on `holder`, keeping its
 /// rotation.
-pub fn onto_foregrip(
+pub(crate) fn onto_foregrip(
     holder: &CockpitHand,
     off: CockpitHand,
     geometry: &GripGeometry,
@@ -364,7 +364,7 @@ pub struct Inputs {
     /// The two-handed weapon in the hands and its measured geometry.
     pub weapon: Option<TwoHandedWeapon>,
     /// Whether the off-hand pressed its grip in the foregrip volume this tick.
-    pub grab_pressed: bool,
+    pub(crate) grab_pressed: bool,
     /// Whether the off-hand's grip is held, which keeps a hold.
     pub grip_held: bool,
     /// Where an engaged hold's off-hand has slid to along the gun, in the holding wrist's frame,

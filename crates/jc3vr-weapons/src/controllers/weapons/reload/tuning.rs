@@ -20,7 +20,7 @@ jc3vr_core::tuning_file! {
 
 /// The true reload as the tuning file holds it: everything short of the switch, which the
 /// configuration holds.
-pub type ReloadTuning = Reload<()>;
+pub(crate) type ReloadTuning = Reload<()>;
 
 /// The true reload. Acts only under the controller scheme. `S` is the switch: `bool` as the
 /// reload runs ([`Reload::of`]), and `()` in the file, which carries no switch.
@@ -37,58 +37,58 @@ pub struct Reload<S = bool> {
     pub tap_s: f32,
     /// The longest from the end of a double tap's first tap to the end of its second, seconds
     /// ([`DoubleTapDetector`](crate::controllers::weapons::reload::eject::DoubleTapDetector)).
-    pub double_tap_gap_s: f32,
+    pub(crate) double_tap_gap_s: f32,
     /// The magazine well of a weapon the wells table has no entry for, in the holding hand's wrist
     /// frame (-Z toward the fingers, +Y out of the back of the hand), metres: under the gun, just
     /// ahead of the grip. Given for the right hand and mirrored for the left.
-    pub well_offset_m: Vec3,
+    pub(crate) well_offset_m: Vec3,
     /// How far ahead of the hand's grip the top of a held magazine sits, metres, along the
     /// direction the closed hand points.
-    pub held_top_m: f32,
+    pub(crate) held_top_m: f32,
     /// How far out of the palm a held magazine's centre line sits, metres: about half a rifle
     /// magazine's depth from its back, which lies in the palm, to its front. The grip's origin is
     /// about where Rico's palm is drawn, so a magazine centred on it sinks into the hand.
-    pub held_palm_gap_m: f32,
+    pub(crate) held_palm_gap_m: f32,
     /// How close the top of a held magazine must come to the well's mouth to catch it, metres: a
     /// little more than a magazine's own width, since nothing stops the hand at the well as the
     /// gun would, and the hand and the well each carry a centimetre or two of tracking and
     /// placement error.
-    pub capture_radius_m: f32,
+    pub(crate) capture_radius_m: f32,
     /// How far a held magazine may be turned from the well's axis and still catch, degrees.
-    pub capture_angle_deg: f32,
+    pub(crate) capture_angle_deg: f32,
     /// How far a caught magazine may stray from the well's axis, and how far back out of the
     /// mouth, before the well lets it go, as a multiple of the capture radius.
-    pub retain_radius_scale: f32,
+    pub(crate) retain_radius_scale: f32,
     /// The slowest push of the held magazine's tip into the well's mouth while the old magazine is
     /// still in, along the well into the gun and relative to it, that knocks the old one out,
     /// metres per second at the player's scale; a slower push is refused. In the 10 November 2026
     /// session the pushes that came to load were 0.3 to 0.5 m/s at the mouth and the strikes 1.9
     /// to 3.2.
-    pub push_knock_mps: f32,
+    pub(crate) push_knock_mps: f32,
     /// How close the top of a held round must come to a launcher's well to catch it, metres. A
     /// launcher's well (a rocket tube's front, the UPU-210's cartridge bay) is large and sits far
     /// from the hand on the grip, so it catches from farther than a gun's.
-    pub launcher_capture_radius_m: f32,
+    pub(crate) launcher_capture_radius_m: f32,
     /// How far a round held for a launcher may be turned from the well's axis and still catch,
     /// degrees.
-    pub launcher_capture_angle_deg: f32,
+    pub(crate) launcher_capture_angle_deg: f32,
     /// How far past the mouth a caught magazine travels to seat, metres.
-    pub seat_depth_m: f32,
+    pub(crate) seat_depth_m: f32,
     /// The window of depths, as shares of the seat depth, in which a caught magazine let go of
     /// seats where it is rather than floating in: from the first to the second.
-    pub release_seat_shares: (f32, f32),
+    pub(crate) release_seat_shares: (f32, f32),
     /// How long a magazine taken from the pouch stays in the hand before it is dropped, seconds.
     pub timeout_s: f32,
     /// How long after a seat's bump the gun hand's ready cue plays, seconds, for a seat that leaves
     /// the gun able to fire.
-    pub ready_cue_delay_s: f32,
+    pub(crate) ready_cue_delay_s: f32,
     /// How many pulses the ready cue plays, and the seconds between their starts: longer than the
     /// pulse itself, so the pulses stay apart.
-    pub ready_cue_pulses: (u32, f32),
+    pub(crate) ready_cue_pulses: (u32, f32),
     /// How long an armed weapon's magazine stays empty before the game's reload refills it,
     /// milliseconds: about as long as the game's reload takes
     /// ([`crate::controllers::weapons::reload::native`]).
-    pub refill_delay_ms: u64,
+    pub(crate) refill_delay_ms: u64,
     /// The one-handed belt reload: push the gun's well down onto the pouch.
     pub belt: BeltTuning,
     /// The slide, charging handle, bolt, and pump.
@@ -96,7 +96,7 @@ pub struct Reload<S = bool> {
     /// Ejected magazines that stay in the world with their rounds.
     pub loose: LooseTuning,
     /// Grip-and-pull removal of an inserted detachable magazine.
-    pub extraction: ExtractionTuning,
+    pub(crate) extraction: ExtractionTuning,
     /// A round let go of near the well, floating into it.
     pub float: FloatTuning,
     /// A held magazine knocking the inserted one out.
@@ -106,7 +106,7 @@ pub struct Reload<S = bool> {
     /// A revolver's cylinder.
     pub revolver: RevolverTuning,
     /// The casings a revolver's cylinder dumps.
-    pub casings: CasingsTuning,
+    pub(crate) casings: CasingsTuning,
     /// The insertion guide drawn at the well.
     pub guide: GuideTuning,
     /// The stop on the game's own reloads.
@@ -178,7 +178,7 @@ impl Reload {
 
 impl<S: Copy> Reload<S> {
     /// The tuning with a launcher's capture radius and angle in place of a gun's.
-    pub fn launcher_capture(self) -> Self {
+    pub(crate) fn launcher_capture(self) -> Self {
         Self {
             capture_radius_m: self.launcher_capture_radius_m,
             capture_angle_deg: self.launcher_capture_angle_deg,
@@ -190,7 +190,7 @@ impl<S: Copy> Reload<S> {
     /// launcher capture radius and angle, and a stand-in round (a shell, or a revolver's ring of
     /// rounds) is held with its side in the palm, its axis as far out of the palm as the group's
     /// half width rather than a rifle magazine's.
-    pub fn for_plan(self, plan: &ReloadPlan) -> Self {
+    pub(crate) fn for_plan(self, plan: &ReloadPlan) -> Self {
         let tuning = if plan.launcher {
             self.launcher_capture()
         } else {
@@ -258,11 +258,11 @@ pub struct LooseTuning {
     /// body there.
     pub half_length_m: f32,
     /// The fastest a held magazine is moved toward the hand, metres per second.
-    pub max_carry_mps: f32,
+    pub(crate) max_carry_mps: f32,
     /// The fastest a held magazine is turned toward the hand's pose, radians per second.
-    pub max_carry_turn_radps: f32,
+    pub(crate) max_carry_turn_radps: f32,
     /// How long a dropped magazine is remembered, seconds.
-    pub keep_s: f32,
+    pub(crate) keep_s: f32,
 }
 
 impl LooseTuning {
@@ -297,7 +297,7 @@ pub struct BeltTuning {
     pub approach_m: f32,
     /// How long after a draw the belt reload waits, seconds, so that drawing from a hip holster
     /// beside the pouch does not reload.
-    pub after_draw_s: f32,
+    pub(crate) after_draw_s: f32,
 }
 
 impl BeltTuning {
@@ -321,24 +321,24 @@ pub struct ActionTuning {
     /// ([`prefer_waiting_action`](crate::controllers::weapons::reload::chamber::prefer_waiting_action)).
     pub grab_radius_m: f32,
     /// The share of the action's travel a pull must reach, `0..=1`.
-    pub pull_fraction: f32,
+    pub(crate) pull_fraction: f32,
     /// How close to its rest a pulled action must come back to count as returned, as a share of
     /// its travel.
-    pub return_fraction: f32,
+    pub(crate) return_fraction: f32,
     /// How far the hand may stray from the gun's axis before the grab lets go, metres.
-    pub release_distance_m: f32,
+    pub(crate) release_distance_m: f32,
     /// The travel of an action the wells table gives none for, metres.
-    pub default_travel_m: f32,
+    pub(crate) default_travel_m: f32,
     /// How long a released slide or charging handle takes to run home from the rear on its
     /// spring, seconds.
-    pub spring_s: f32,
+    pub(crate) spring_s: f32,
     /// How far a bolt's handle turns up to unlock it, degrees.
-    pub bolt_lift_deg: f32,
+    pub(crate) bolt_lift_deg: f32,
     /// How far a bolt's handle is from the bolt's axis, metres.
-    pub bolt_radius_m: f32,
+    pub(crate) bolt_radius_m: f32,
     /// The share of the bolt's turn that counts as turned all the way, `0.5..=1`; the turn down
     /// counts once it is within the same share of the bottom.
-    pub lift_fraction: f32,
+    pub(crate) lift_fraction: f32,
 }
 
 impl ActionTuning {
@@ -364,13 +364,13 @@ impl ActionTuning {
 /// [`crate::controllers::weapons::reload::extraction`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ExtractionTuning {
+pub(crate) struct ExtractionTuning {
     /// The inserted magazine's grab radius, metres at the player's scale.
     pub grab_radius_m: f32,
     /// The outward hand travel required to detach the magazine, metres at the player's scale.
     pub pull_m: f32,
     /// How far the hand may move sideways from its acquired path, metres at the player's scale.
-    pub lateral_tolerance_m: f32,
+    pub(crate) lateral_tolerance_m: f32,
 }
 
 impl ExtractionTuning {
@@ -397,17 +397,17 @@ pub struct FloatTuning {
     pub radius_m: f32,
     /// The multiple of the capture radius a round floats in from when that is farther than
     /// [`radius_m`](Self::radius_m).
-    pub capture_radius_scale: f32,
+    pub(crate) capture_radius_scale: f32,
     /// How far a round let go of may be turned from the well's axis and float in, degrees: wider
     /// than the capture angle, as the round turns onto the axis on the way.
     pub angle_deg: f32,
     /// How fast the round travels in on average, metres per second.
     pub speed_mps: f32,
     /// The shortest and the longest the float takes, seconds.
-    pub min_s: f32,
-    pub max_s: f32,
+    pub(crate) min_s: f32,
+    pub(crate) max_s: f32,
     /// The share of a float spent bringing the top onto the axis, before it slides down it.
-    pub approach_share: f32,
+    pub(crate) approach_share: f32,
 }
 
 impl FloatTuning {
@@ -444,25 +444,25 @@ pub struct KnockTuning {
     pub radius_m: f32,
     /// How far into the well above the mouth the zone reaches, so a strike at the joint of the
     /// magazine and the gun counts.
-    pub lip_m: f32,
+    pub(crate) lip_m: f32,
     /// The share of the tip's speed the struck point is sent on at. A collision with a hand-driven
     /// body would send it on faster than the tip, but a magazine knocked at that speed leaves the
     /// view before the eye finds it; at about half, a strike of two to four metres per second
     /// drops it clear of the gun where it can be seen falling.
     pub share: f32,
     /// The most a knock adds to the magazine's speed, metres per second.
-    pub max_knock_mps: f32,
+    pub(crate) max_knock_mps: f32,
     /// The most a knock adds to the magazine's spin, radians per second.
-    pub max_spin_radps: f32,
+    pub(crate) max_spin_radps: f32,
     /// How many input ticks a knocked magazine's impulse waits on its body becoming readable.
-    pub impulse_ticks: u32,
+    pub(crate) impulse_ticks: u32,
     /// How many input ticks the gun's magazine part stays drawn in the well after the knocked
     /// prop's impulse lands, so the magazine does not vanish while its prop is not yet drawn.
-    pub linger_ticks: u32,
+    pub(crate) linger_ticks: u32,
     /// How long the grab view shows a knock, milliseconds.
-    pub flash_ms: u64,
+    pub(crate) flash_ms: u64,
     /// How long a published knock view is drawn without a newer one, milliseconds.
-    pub view_max_age_ms: u64,
+    pub(crate) view_max_age_ms: u64,
 }
 
 impl KnockTuning {
@@ -487,14 +487,14 @@ impl KnockTuning {
 pub struct ZoneTuning {
     /// How far into the well above its mouth: the base plate of a pistol's magazine sits at the
     /// bottom of the grip, and a hand pinching it is level with the mouth.
-    pub lip_m: f32,
+    pub(crate) lip_m: f32,
     /// How far below the mouth: past the longest magazine, plus a hand's grip on its end.
     pub length_m: f32,
     /// How far from the axis: a magazine's half-width plus the hand's tracking and placement
     /// error, short of a long gun's pistol grip behind the well.
     pub radius_m: f32,
     /// How long a published zone view is drawn without a newer one, milliseconds.
-    pub view_max_age_ms: u64,
+    pub(crate) view_max_age_ms: u64,
 }
 
 impl ZoneTuning {
@@ -511,18 +511,18 @@ impl ZoneTuning {
 #[serde(deny_unknown_fields)]
 pub struct RevolverTuning {
     /// How fast the gun hand must roll about the barrel's line for a flick, degrees per second.
-    pub flick_dps: f32,
+    pub(crate) flick_dps: f32,
     /// The shortest time between one flick and the next, seconds.
-    pub flick_cooldown_s: f32,
+    pub(crate) flick_cooldown_s: f32,
     /// How long the cylinder takes to swing out, seconds, about as long as the clip's swing.
     pub open_s: f32,
     /// How long it takes to swing shut, seconds.
-    pub close_s: f32,
+    pub(crate) close_s: f32,
     /// How far the muzzle must point above the horizon to dump the cylinder, degrees.
-    pub dump_elevation_deg: f32,
+    pub(crate) dump_elevation_deg: f32,
     /// How many turns the cylinder spins as it closes, and over how long, seconds.
-    pub spin_turns: f32,
-    pub spin_s: f32,
+    pub(crate) spin_turns: f32,
+    pub(crate) spin_s: f32,
 }
 
 impl RevolverTuning {
@@ -545,13 +545,13 @@ impl RevolverTuning {
 /// The casings a revolver's cylinder dumps (see [`crate::controllers::weapons::reload::casings`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CasingsTuning {
+pub(crate) struct CasingsTuning {
     /// How long a dumped casing is drawn falling, seconds.
-    pub fall_s: f32,
+    pub(crate) fall_s: f32,
     /// How fast a casing leaves its chamber, out of the cylinder's rear, metres per second.
-    pub eject_mps: f32,
+    pub(crate) eject_mps: f32,
     /// How fast a casing tumbles, radians per second.
-    pub tumble_radps: f32,
+    pub(crate) tumble_radps: f32,
 }
 
 impl CasingsTuning {
@@ -573,28 +573,28 @@ pub struct GuideTuning {
     /// The outline's line width, metres at the player's scale.
     pub width_m: f32,
     /// The outline's colour while the magazine is held toward the well, linear RGB.
-    pub holding_rgb: [f32; 3],
+    pub(crate) holding_rgb: [f32; 3],
     /// The outline's colour once the well has caught the magazine, linear RGB.
-    pub caught_rgb: [f32; 3],
+    pub(crate) caught_rgb: [f32; 3],
     /// The opacity of the outline's parts hidden behind the gun, as a share of its own.
     pub occluded_alpha: f32,
     /// The seat outline's opacity while the magazine is held toward the well.
-    pub seat_holding_alpha: f32,
+    pub(crate) seat_holding_alpha: f32,
     /// The seat outline's opacity once the well has caught the magazine.
-    pub seat_caught_alpha: f32,
+    pub(crate) seat_caught_alpha: f32,
     /// The sliding preview's opacity at its fullest.
-    pub preview_alpha: f32,
+    pub(crate) preview_alpha: f32,
     /// How long one slide of the preview takes, seconds.
-    pub preview_period_s: f32,
+    pub(crate) preview_period_s: f32,
     /// The share of a slide's period the preview fades in over, at the capture radius.
-    pub preview_fade_in_share: f32,
+    pub(crate) preview_fade_in_share: f32,
     /// The share of a slide's period the preview travels from the capture radius to the seat over,
     /// once faded in.
-    pub preview_travel_share: f32,
+    pub(crate) preview_travel_share: f32,
     /// The share of a slide's period at which the preview has faded out, and the share it fades
     /// out over before that.
-    pub preview_fade_out_end_share: f32,
-    pub preview_fade_out_share: f32,
+    pub(crate) preview_fade_out_end_share: f32,
+    pub(crate) preview_fade_out_share: f32,
 }
 
 impl GuideTuning {

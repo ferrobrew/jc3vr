@@ -28,7 +28,7 @@ pub(super) struct HintInputs<'a> {
     /// Each hand's chosen grip target, by [`Hand::index`].
     pub chosen: [Option<GrabVolume>; 2],
     /// The socket whose dock attraction each hand holding a weapon is in, by [`Hand::index`].
-    pub attracted: [Option<Socket>; 2],
+    pub(crate) attracted: [Option<Socket>; 2],
 }
 
 /// Publish each hand's hint.

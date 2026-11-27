@@ -114,11 +114,11 @@ pub(crate) struct Tick<'a> {
     /// The weapon armed in each hand, by [`Hand::index`].
     pub armed: [Option<ObjectAddress>; 2],
     /// What became of the table's weapons that are in no slot, the carry set, or a hand.
-    pub fates: &'a [(ObjectAddress, Fate)],
+    pub(crate) fates: &'a [(ObjectAddress, Fate)],
     /// What the hands hold that is not a weapon.
     pub others: &'a HeldOthers,
     /// How long a hand expects the game to wield the weapon a grab asked for, seconds.
-    pub expect_s: f32,
+    pub(crate) expect_s: f32,
 }
 
 /// What the hands hold that is not a weapon, as the physical hands and the throws have it: each

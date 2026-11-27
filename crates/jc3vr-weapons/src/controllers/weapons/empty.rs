@@ -90,7 +90,7 @@ pub(crate) fn refuses_check_request(character: *const Character) -> bool {
 
 /// Whether a marked check was a dry fire to pulse: the check tried the switch, which it does only
 /// for a requested shot of an empty weapon that cannot reload, at the pull's press edge.
-pub fn is_dry_fire(tried_switch: bool, was_trigger_pulled: bool) -> bool {
+pub(crate) fn is_dry_fire(tried_switch: bool, was_trigger_pulled: bool) -> bool {
     tried_switch && !was_trigger_pulled
 }
 
@@ -98,7 +98,7 @@ pub fn is_dry_fire(tried_switch: bool, was_trigger_pulled: bool) -> bool {
 /// of an empty magazine at the pull's press edge, which the check cleared. The check asks for a
 /// reload rather than a switch, which the true reload stops
 /// ([`crate::controllers::weapons::reload`]), so the pull only clicks.
-pub fn is_reloadable_dry_fire(
+pub(crate) fn is_reloadable_dry_fire(
     requested: bool,
     empty: bool,
     cleared: bool,

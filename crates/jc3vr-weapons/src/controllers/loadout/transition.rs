@@ -342,7 +342,7 @@ impl fmt::Display for Transition {
 
 /// Why a transition was refused. The table is as it was.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum TransitionError {
+pub(crate) enum TransitionError {
     NoRestoreSocket,
     HandEmpty(Hand),
     HandOccupied {

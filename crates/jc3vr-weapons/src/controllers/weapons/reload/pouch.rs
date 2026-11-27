@@ -38,7 +38,7 @@ pub(super) struct PouchFacts {
     pub placed: bool,
     pub free: bool,
     pub gun: bool,
-    pub stocked: bool,
+    pub(crate) stocked: bool,
     pub takes: bool,
     pub holding: bool,
 }

@@ -53,7 +53,7 @@ impl Stock {
     }
 
     /// Whether the pouch has a grenade to give.
-    pub fn may_draw(self) -> bool {
+    pub(crate) fn may_draw(self) -> bool {
         self.unlimited || self.count() > 0
     }
 
@@ -73,7 +73,7 @@ impl Stock {
 
     /// What giving a grenade back does to the stock. A full stock refuses, except under unlimited
     /// ammunition, where the grenade is put away without a count to raise.
-    pub fn give_back(self) -> Result<Change, StockError> {
+    pub(crate) fn give_back(self) -> Result<Change, StockError> {
         let room = self
             .capacity
             .is_none_or(|capacity| self.count() < capacity && self.reserve < capacity);
@@ -98,7 +98,7 @@ pub enum Change {
 
 /// Why the stock could not be read or changed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum StockError {
+pub(crate) enum StockError {
     /// There is no local player to read.
     NoPlayer,
     /// The player's hand-grenade slot holds no weapon.

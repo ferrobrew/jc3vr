@@ -37,14 +37,14 @@ use crate::controllers::{
 #[serde(deny_unknown_fields)]
 pub struct LostRules {
     /// How far below the sea's level a weapon is out of the world, metres.
-    pub lost_depth_m: f32,
+    pub(crate) lost_depth_m: f32,
     /// How far from the player a weapon let go of at speed is left behind, metres.
-    pub left_behind_m: f32,
+    pub(crate) left_behind_m: f32,
     /// The speed from which the player travels fast, so a let-go is one at speed, metres per
     /// second.
-    pub fast_speed_mps: f32,
+    pub(crate) fast_speed_mps: f32,
     /// How long the player's speed is smoothed over, seconds.
-    pub speed_time_s: f32,
+    pub(crate) speed_time_s: f32,
 }
 
 /// A weapon the table has lying in the world, as the return judges it.

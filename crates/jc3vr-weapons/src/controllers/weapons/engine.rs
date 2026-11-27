@@ -83,7 +83,7 @@ pub fn in_hands(
 /// each hand is free (`free`, holding no gun or other item), both by [`Hand::index`]: the gun the
 /// free hand may take over, touch, or, for a long gun, brace. With a gun in each hand neither hand
 /// is free, so there is one at most.
-pub fn lone_gun(guns: [Option<HeldWeapon>; 2], free: [bool; 2]) -> Option<HeldWeapon> {
+pub(crate) fn lone_gun(guns: [Option<HeldWeapon>; 2], free: [bool; 2]) -> Option<HeldWeapon> {
     Hand::BOTH
         .into_iter()
         .find_map(|hand| guns[hand.index()].filter(|_| free[hand.other().index()]))
@@ -91,7 +91,7 @@ pub fn lone_gun(guns: [Option<HeldWeapon>; 2], free: [bool; 2]) -> Option<HeldWe
 
 /// Whether a weapon of `slot` is a long gun, held in both hands' reach and by its stock and
 /// handguard as well as its grip: the two-handed, the special, and the heavy slots.
-pub fn long_slot(slot: WeaponSlot) -> bool {
+pub(crate) fn long_slot(slot: WeaponSlot) -> bool {
     matches!(
         slot,
         WeaponSlot::E_SLOT_TWO_HANDED
@@ -385,7 +385,7 @@ pub unsafe fn held_weapon(owner: &Character) -> Option<HeldWeapon> {
 ///
 /// `weapon` must be the live weapon [`held_weapon`] returned, read on the game thread before the
 /// world update.
-pub unsafe fn measure_geometry(
+pub(crate) unsafe fn measure_geometry(
     weapon: &HeldWeapon,
     target: TickTarget,
     aim: &AimConfig,

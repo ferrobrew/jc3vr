@@ -56,7 +56,7 @@ impl ActionKind {
     }
 
     /// Whether a ready action supports deliberate physical extraction and feeding.
-    pub const fn ready_rack(self) -> bool {
+    pub(crate) const fn ready_rack(self) -> bool {
         matches!(
             self,
             ActionKind::Slide | ActionKind::Bolt | ActionKind::Pump
@@ -77,7 +77,7 @@ impl ActionKind {
 /// The chamber after a shot that left `magazine` rounds, for a gun worked by `action`: empty once
 /// the gun runs dry, and after every shot of a bolt or a pump, which are worked by hand in place of
 /// the game's own cycling.
-pub fn after_shot(magazine: i32, action: ActionKind) -> Chamber {
+pub(crate) fn after_shot(magazine: i32, action: ActionKind) -> Chamber {
     if action == ActionKind::None {
         return Chamber::Chambered;
     }
@@ -89,7 +89,7 @@ pub fn after_shot(magazine: i32, action: ActionKind) -> Chamber {
 }
 
 /// The chamber after the action is worked with `magazine` rounds in a magazine that is in.
-pub fn after_work(magazine: i32, magazine_in: bool) -> Chamber {
+pub(crate) fn after_work(magazine: i32, magazine_in: bool) -> Chamber {
     if magazine_in && magazine > 0 {
         Chamber::Chambered
     } else {
@@ -126,7 +126,7 @@ pub struct WorkInputs {
     /// The handle's place at rest.
     pub handle: Vec3,
     /// The gun's rearward axis (from the muzzle toward the stock), unit length.
-    pub rearward: Vec3,
+    pub(crate) rearward: Vec3,
     /// The action's travel, metres.
     pub travel_m: f32,
     /// The working hand's grip position.
@@ -135,7 +135,7 @@ pub struct WorkInputs {
     pub grip_pressed: bool,
     pub grip_held: bool,
     /// For the pump: the hand holds the foregrip.
-    pub on_foregrip: bool,
+    pub(crate) on_foregrip: bool,
     /// Whether the chamber needs the action worked.
     pub needed: bool,
 }

@@ -18,12 +18,12 @@ pub(super) struct UpdateFacts {
     pub owner: usize,
     pub weapon: usize,
     pub hand_target: Option<HandTarget>,
-    pub native_target: Option<Vec3>,
+    pub(crate) native_target: Option<Vec3>,
     pub now: Stamp,
     pub loaded: bool,
     pub fire: bool,
-    pub reload_held: bool,
-    pub animation_allows: bool,
+    pub(crate) reload_held: bool,
+    pub(crate) animation_allows: bool,
 }
 
 pub(super) enum UpdateArguments {

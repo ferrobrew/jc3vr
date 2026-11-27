@@ -29,13 +29,13 @@ use crate::controllers::{
 };
 
 /// A live weapon object's address, the key the inventory's stores keep it by.
-pub type ObjectKey = usize;
+pub(crate) type ObjectKey = usize;
 
 /// What kind of weapon a weapon is: its spawn tag's hash, the form the save keeps a weapon's type
 /// in, and its inventory slot.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct WeaponKind {
-    pub tag_hash: u32,
+    pub(crate) tag_hash: u32,
     pub slot: WeaponSlot,
 }
 
@@ -49,7 +49,7 @@ pub struct Seen {
 
 /// What became of a weapon that is in no slot and not carried.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Fate {
+pub(crate) enum Fate {
     /// It lies in the world (or anywhere else outside a character), at this distance from the
     /// player when it could be read.
     Lying { distance_m: Option<f32> },

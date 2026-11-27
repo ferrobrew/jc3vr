@@ -130,7 +130,7 @@ impl Loadout {
     /// The spawn reset is about to replace the slots' weapons: every item the game's slots hold
     /// now waits for its slot's new object. A second begin before the reset completes changes
     /// nothing.
-    pub fn begin_reset(&mut self) -> Vec<Transition> {
+    pub(crate) fn begin_reset(&mut self) -> Vec<Transition> {
         let projection = project(self);
         let mut out = Vec::new();
         for fill in projection.slots {
@@ -166,7 +166,7 @@ impl Loadout {
     /// new object re-binds the item that waits for that slot with the same type,
     /// and a new object nothing waits for goes onto the body; an item whose slot the game emptied
     /// or gave another type leaves the table. What the hands keep follows `kind`.
-    pub fn complete_reset(
+    pub(crate) fn complete_reset(
         &mut self,
         kind: ResetKind,
         slots: &[SlotObject],
@@ -338,7 +338,7 @@ impl Loadout {
     }
 
     /// Which snapshots the table holds.
-    pub fn caches_held(&self) -> impl Iterator<Item = CacheKind> + '_ {
+    pub(crate) fn caches_held(&self) -> impl Iterator<Item = CacheKind> + '_ {
         self.caches.held()
     }
 

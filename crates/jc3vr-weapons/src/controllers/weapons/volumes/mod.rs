@@ -50,44 +50,44 @@ use crate::controllers::{loadout::Socket, weapons::hold::tuning::HOLD};
 #[serde(deny_unknown_fields)]
 pub struct VolumesTuning {
     pub sockets: SocketTuning,
-    pub pouches: PouchTuning,
+    pub(crate) pouches: PouchTuning,
     /// How far the back's sockets' reach is moved from where their weapons sit, in the chest's
     /// frame (+X right, mirrored for the left side; +Y up the spine; +Z back), metres: down by about
     /// a hand's width and out from the spine. In the 10 November 17:07 session the releases over
     /// the shoulder that dropped the weapon came lower and further out than the place; the draws,
     /// which closed at eye height behind the head on the weapon, are left there
     /// ([`reach_back_sockets`]).
-    pub back_reach_offset_m: Vec3,
+    pub(crate) back_reach_offset_m: Vec3,
     /// The look down below which the chest pouches ride the chest as it is, radians: about ten
     /// degrees ([`BodyFrame::looking`]).
-    pub look_down_start_rad: f32,
+    pub(crate) look_down_start_rad: f32,
     /// The look down from which the chest pouches are kept off the whole bend, radians: about forty
     /// degrees.
-    pub look_down_full_rad: f32,
+    pub(crate) look_down_full_rad: f32,
     /// The spine's tilt from upright within which a look down's bend is undone, radians: about
     /// thirty degrees.
-    pub bend_full_rad: f32,
+    pub(crate) bend_full_rad: f32,
     /// The spine's tilt from upright past which nothing is undone, radians: about fifty degrees.
-    pub bend_none_rad: f32,
+    pub(crate) bend_none_rad: f32,
     /// How far above the hip joints the belt's front is, where the magazine pouch hangs, as a
     /// fraction of the torso: the waist.
-    pub belt_rise_fraction: f32,
+    pub(crate) belt_rise_fraction: f32,
     /// How far out from the midline the belt's front landmark on a side sits, as a fraction of the
     /// shoulder width: toward the middle of the belt, well inside the hip socket on that side, so
     /// that a hand feeling for the pouch does not land in the socket.
-    pub belt_out_fraction: f32,
+    pub(crate) belt_out_fraction: f32,
     /// How far in front of the hip joints' line the front of the belly is, metres, beyond the eyes'
     /// own offset in front of the shoulders ([`EYES_FORWARD_OF_SHOULDERS`]).
-    pub belly_front_m: f32,
+    pub(crate) belly_front_m: f32,
     /// How far below the shoulder joints the chest pouches' landmark sits, as a fraction of the
     /// torso: the upper chest.
-    pub chest_pouch_drop_fraction: f32,
+    pub(crate) chest_pouch_drop_fraction: f32,
     /// How far out from the midline the chest pouches' landmark sits, as a fraction of the shoulder
     /// width: about under the shoulder joint.
-    pub chest_pouch_out_fraction: f32,
+    pub(crate) chest_pouch_out_fraction: f32,
     /// How far in front of the shoulder joints' line the front of the chest is, metres, beyond the
     /// eyes' own offset in front of the shoulders: a little deeper than the belly.
-    pub chest_front_m: f32,
+    pub(crate) chest_front_m: f32,
     pub stride: StrideTuning,
 }
 
@@ -171,7 +171,7 @@ pub struct SocketTuning {
     /// The sockets on both hips. A hand reaching for the pistol closes on the front of the hip
     /// more often than on the pistol's grip behind it, and in the 10 November 17:07 session five
     /// draws missed a reach of 0.18 m by 1 to 4 cm.
-    pub hip_radius_m: f32,
+    pub(crate) hip_radius_m: f32,
     /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
     /// the left one where it docks the special slot.
     pub shoulder_radius_m: f32,
@@ -184,7 +184,7 @@ pub struct SocketTuning {
 /// for the left.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PouchTuning {
+pub(crate) struct PouchTuning {
     /// The grenade pouch, offset from the chest's front on its side: at the chest's surface and a
     /// little below the landmark, and wider than the magazine pouch, so that both a hand laid flat
     /// on the chest with the gaze level and a hand reaching out in front of it close inside it. In
@@ -217,7 +217,7 @@ pub struct PouchTuning {
 /// A spherical grab volume placed relative to a body landmark.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct VolumeSpec {
+pub(crate) struct VolumeSpec {
     /// The centre's offset from the landmark in the body frame (+X right, +Y up, +Z back), metres,
     /// given for the right side and mirrored across the body's midline for the left.
     pub offset_m: Vec3,
@@ -299,7 +299,7 @@ impl BodyFrame {
     }
 
     /// The orientation of the chest the chest pouches ride.
-    pub fn pouch_chest(&self) -> Quat {
+    pub(crate) fn pouch_chest(&self) -> Quat {
         self.pouch_chest.basis
     }
 
@@ -321,7 +321,7 @@ impl BodyFrame {
 /// below and outside that. Only the reach for docking moves: a draw is reached on
 /// the weapon the player sees, a docked weapon stays where its socket puts it, and the attraction
 /// travels a weapon to the socket's own place.
-pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
+pub(crate) fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
     let back_reach = HOLD.get().volumes.back_reach_offset_m;
     let midline = body.skeleton.chest();
     let right = body.chest * Vec3::X;
@@ -346,7 +346,7 @@ pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
 /// holds a weapon (`empty`): an offer with no hand of its own goes to the dominant hand, and an
 /// offer the socket already names stays with that hand. With a weapon in a hand, the offers are
 /// left as they are.
-pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty: bool) {
+pub(crate) fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty: bool) {
     if !empty {
         return;
     }
@@ -366,7 +366,7 @@ pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty:
 
 /// The sides of the chest the two chest pouches take, by the body's own sides.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ChestSides {
+pub(crate) struct ChestSides {
     pub grenade: Hand,
     pub c4: Hand,
 }
@@ -375,7 +375,7 @@ pub struct ChestSides {
 /// dominant side and the C4 pouch on the other. Unlike the magazine pouch, they do not follow the gun
 /// hand: with a pistol in each hand there is no single gun hand, and pouches that changed sides with
 /// each handover would have to be found again each time.
-pub fn chest_sides(dominant: Hand) -> ChestSides {
+pub(crate) fn chest_sides(dominant: Hand) -> ChestSides {
     ChestSides {
         grenade: dominant,
         c4: dominant.other(),
@@ -388,13 +388,13 @@ pub fn chest_sides(dominant: Hand) -> ChestSides {
 /// layout keyed off the dominant hand would then put the magazine pouch on the gun's side, out of
 /// the free hand's reach. Remembering the last holder keeps the pouches from changing sides each
 /// time a gun is docked.
-pub fn gun_side(holder: Option<Hand>, last_holder: Option<Hand>, dominant: Hand) -> Hand {
+pub(crate) fn gun_side(holder: Option<Hand>, last_holder: Option<Hand>, dominant: Hand) -> Hand {
     holder.or(last_holder).unwrap_or(dominant)
 }
 
 /// The hands that may take from the chest pouches.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ChestGrabbers {
+pub(crate) enum ChestGrabbers {
     Either,
     Only(Hand),
     /// No hand is free: the pouches are not placed.
@@ -405,7 +405,7 @@ impl ChestGrabbers {
     /// The hands that may take from the chest pouches while `gun_hands` (by [`Hand::index`]) hold
     /// guns: either hand with no gun drawn, the free hand while one hand holds a gun, and neither
     /// while both do. A gun hand that took a grenade or a charge would prime it in the gun's hand.
-    pub fn for_guns(gun_hands: [bool; 2]) -> Self {
+    pub(crate) fn for_guns(gun_hands: [bool; 2]) -> Self {
         match gun_hands {
             [false, false] => ChestGrabbers::Either,
             [true, true] => ChestGrabbers::Neither,
@@ -426,7 +426,7 @@ impl ChestGrabbers {
 
 /// The grenade pouch on the front of the chest, a volume for `grabbers` (whichever grabs it
 /// throws), or `None` while no hand may take from it.
-pub fn grenade_pouch(
+pub(crate) fn grenade_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
     dominant: Hand,
@@ -439,7 +439,7 @@ pub fn grenade_pouch(
 
 /// The C4 pouch on the front of the chest, on the side the grenade pouch leaves, a volume for
 /// `grabbers` (whichever grabs it throws), or `None` while no hand may take from it.
-pub fn c4_pouch(
+pub(crate) fn c4_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
     dominant: Hand,
@@ -454,7 +454,7 @@ pub fn c4_pouch(
 /// reload ([`crate::controllers::weapons::reload`]) puts it with one gun or none, so that the free
 /// hand's take and the gun hand's push onto it ([`magazine_pouch`]'s one-handed reload) both reach
 /// it without crossing the body.
-pub fn centre_magazine_pouch(
+pub(crate) fn centre_magazine_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
     grabber: Option<Hand>,
@@ -479,7 +479,7 @@ pub fn centre_magazine_pouch(
 /// `grabber`: with a gun in each hand, the reload places one on each gun's own side, so neither gun
 /// is pushed across the body onto the one pouch. A gun's well pushed onto it reloads in one hand,
 /// so it is placed whether or not a hand is free.
-pub fn magazine_pouch(
+pub(crate) fn magazine_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
     side: Hand,

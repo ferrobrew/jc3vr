@@ -394,7 +394,7 @@ pub fn counts() -> LooseCounts {
 
 /// The velocities that carry a body from `from` (centre, orientation) to `to` over `dt`, capped at
 /// `config`'s carry speed and turn rate.
-pub fn carry_velocities(
+pub(crate) fn carry_velocities(
     from: (Vec3, Quat),
     to: (Vec3, Quat),
     dt: f32,
@@ -412,7 +412,7 @@ pub fn carry_velocities(
 
 /// `orientation` turned the least way that points its +Y along `axis`: a magazine's top is its +Y,
 /// and it should point out of the hand into the well.
-pub fn upright_toward(orientation: Quat, axis: Vec3) -> Quat {
+pub(crate) fn upright_toward(orientation: Quat, axis: Vec3) -> Quat {
     let Some(axis) = axis.try_normalize() else {
         return orientation;
     };

@@ -38,7 +38,7 @@ impl StrideTuning {
 
 /// Low-passes the hip joints of the skeleton the belt rides while Rico moves.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct StrideFilter {
+pub(crate) struct StrideFilter {
     state: Option<Smoothed>,
 }
 

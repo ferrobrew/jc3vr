@@ -95,15 +95,15 @@ pub(super) unsafe fn capture(id: MagazineId) -> Option<Identity> {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct SerialStatus {
     pub installed: bool,
-    pub accepting: bool,
+    pub(crate) accepting: bool,
     pub pending: [bool; 2],
-    pub executing: [bool; 2],
+    pub(crate) executing: [bool; 2],
     pub completed: [bool; 2],
     pub callbacks: u64,
     pub submitted: u64,
     pub executed: u64,
     pub refused: u64,
-    pub canceled: u64,
+    pub(crate) canceled: u64,
     pub last_refusal: Option<Refusal>,
 }
 

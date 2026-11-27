@@ -31,14 +31,14 @@ pub enum PushStage {
 
 /// One tick's inputs for one gun, in the frame the pouch is placed in.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PushInputs {
+pub(crate) struct PushInputs {
     /// The point pushed onto the pouch ([`push_point`]).
     pub point: Vec3,
     /// The direction a round travels into the gun from the mouth, unit length.
     pub axis: Vec3,
-    pub pouch_centre: Vec3,
+    pub(crate) pouch_centre: Vec3,
     /// The push sphere's radius around the pouch's centre.
-    pub pouch_radius: f32,
+    pub(crate) pouch_radius: f32,
     /// Whether the gun can be reloaded from the belt now.
     pub eligible: bool,
 }
@@ -46,7 +46,7 @@ pub struct PushInputs {
 /// The point of a gun that is pushed onto the pouch: the base of the magazine hanging `below` out
 /// of the well along its axis, from the mouth at `mouth`, or the mouth itself for a magazine that
 /// is out or modelled into the gun (`below` zero).
-pub fn push_point(mouth: Vec3, axis: Vec3, below: f32) -> Vec3 {
+pub(crate) fn push_point(mouth: Vec3, axis: Vec3, below: f32) -> Vec3 {
     let below = if below.is_finite() {
         below.max(0.0)
     } else {
@@ -58,7 +58,7 @@ pub fn push_point(mouth: Vec3, axis: Vec3, below: f32) -> Vec3 {
 /// Whether a gun whose point is at `point`, with its insertion axis `axis`, is upright enough for
 /// a push and near enough the pouch at `centre` for the push to be offered: within `approach` of
 /// the push sphere's surface of radius `radius`.
-pub fn approaching(
+pub(crate) fn approaching(
     point: Vec3,
     axis: Vec3,
     centre: Vec3,
@@ -71,7 +71,7 @@ pub fn approaching(
 
 /// One gun's push detector.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct BeltPush {
+pub(crate) struct BeltPush {
     pub stage: PushStage,
 }
 
@@ -116,7 +116,7 @@ impl BeltPush {
     }
 
     /// Whether the push holds the gun's fire: from the reload until the mouth leaves the pouch.
-    pub fn holds_fire(&self) -> bool {
+    pub(crate) fn holds_fire(&self) -> bool {
         self.stage == PushStage::Reloaded
     }
 

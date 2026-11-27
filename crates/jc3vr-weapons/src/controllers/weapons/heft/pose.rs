@@ -15,7 +15,7 @@ use crate::controllers::weapons::{
 
 /// The weighted pose of a gun held at `grip`, before the spring.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WeightedPose {
+pub(crate) struct WeightedPose {
     /// The sagged and swayed grip orientation.
     pub orientation: Quat,
     /// The sag applied, radians.
@@ -25,7 +25,7 @@ pub struct WeightedPose {
     /// The sway asked for at full share, pitch and yaw, radians.
     pub sway: Vec2,
     /// The share of the sway the reach lets through, `0..=1`.
-    pub sway_reach: f32,
+    pub(crate) sway_reach: f32,
 }
 
 /// What a gun's weight asks of its pose: its one-handed and its braced tunings blended by how
@@ -35,16 +35,16 @@ pub struct Weight {
     /// The sag close in, degrees.
     pub sag_deg: f32,
     /// The further sag at full reach, degrees.
-    pub reach_sag_deg: f32,
+    pub(crate) reach_sag_deg: f32,
     /// The sway's amplitude, degrees.
     pub sway_deg: f32,
     /// How much of the sway shows, `0..=1`.
-    pub sway_share: f32,
+    pub(crate) sway_share: f32,
     /// The spring's stiffness, per second squared; zero follows rigidly.
     pub stiffness: f32,
     pub damping_ratio: f32,
     /// The furthest the gun may turn from where the hands turn it, degrees.
-    pub max_angle_deg: f32,
+    pub(crate) max_angle_deg: f32,
 }
 
 impl Weight {
@@ -101,7 +101,7 @@ impl Weight {
 /// how level the barrel is; `sway` (pitch and yaw, radians, at full share) pitches it about that
 /// same horizontal axis and yaws it about the vertical, so that neither rolls the gun, the near
 /// share of it close in ([`Heft::sway_near_share`]) and all of it at full reach.
-pub fn weighted_pose(
+pub(crate) fn weighted_pose(
     hand: &CockpitHand,
     head: Vec3,
     weight: &Weight,
@@ -155,7 +155,7 @@ pub fn sway(t: f32, amplitude: f32, config: &Heft) -> Vec2 {
 
 /// The share of the weight left by a two-hand `grip` on `hand`'s gun: one in one hand, zero with
 /// the foregrip fully engaged.
-pub fn unbraced_share(grip: Option<foregrip::TwoHandGrip>, hand: Hand) -> f32 {
+pub(crate) fn unbraced_share(grip: Option<foregrip::TwoHandGrip>, hand: Hand) -> f32 {
     1.0 - grip
         .filter(|g| g.holder == hand)
         .map_or(0.0, |g| g.weight.clamp(0.0, 1.0))
@@ -163,7 +163,7 @@ pub fn unbraced_share(grip: Option<foregrip::TwoHandGrip>, hand: Hand) -> f32 {
 
 /// A damped spring on an orientation, pulled toward a target orientation.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RotSpring {
+pub(crate) struct RotSpring {
     pub orientation: Quat,
     /// The angular velocity, radians per second, as a rotation vector.
     pub velocity: Vec3,

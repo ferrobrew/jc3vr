@@ -64,7 +64,7 @@ impl Tuning for GrenadeTuning {
 pub struct HeldTuning {
     /// How long a held explosive's registration stays current without a refresh: a little past a
     /// tick.
-    pub registration_ms: Millis,
+    pub(crate) registration_ms: Millis,
 }
 
 /// The fuse warning: a ring at the hand holding a live grenade, turning from calm to urgent as the
@@ -78,17 +78,17 @@ pub struct WarningTuning {
     /// seconds.
     pub interval_s: [f32; 2],
     /// The ring's size in the world when the fuse is lit, metres.
-    pub ring_size_m: f32,
+    pub(crate) ring_size_m: f32,
     /// How much the ring grows by the time the fuse runs out, metres.
-    pub ring_size_growth_m: f32,
+    pub(crate) ring_size_growth_m: f32,
     /// The ring's thickness when the fuse is lit, as a share of its radius.
     pub ring_thickness: f32,
     /// How much the ring thickens by the time the fuse runs out, as a share of its radius.
-    pub ring_thickness_growth: f32,
+    pub(crate) ring_thickness_growth: f32,
     /// The ring's colour when the fuse is lit.
-    pub calm_rgba: Rgba,
+    pub(crate) calm_rgba: Rgba,
     /// The ring's colour when the fuse is about to run out.
-    pub urgent_rgba: Rgba,
+    pub(crate) urgent_rgba: Rgba,
     /// The ring's opacity where something is in front of it, as a share of its colour's.
     pub occluded_alpha: f32,
     /// How long one tick's ring lasts when it is not drawn again, milliseconds.
@@ -136,9 +136,9 @@ pub struct CatchTuning {
     pub range_m: f32,
     /// How long after the player's own throw the grenade cannot be caught, seconds, so that the
     /// hand that threw it does not take it back as it leaves.
-    pub own_grace_s: f32,
+    pub(crate) own_grace_s: f32,
     /// The fastest a caught grenade is moved toward the hand, metres per second.
-    pub max_carry_mps: f32,
+    pub(crate) max_carry_mps: f32,
 }
 
 impl CatchTuning {
@@ -163,11 +163,11 @@ pub struct PinTuning {
     pub radius_m: f32,
     /// How long the pin stays at the mouth before the teeth pull it, seconds: longer than a grenade
     /// passing the face takes.
-    pub teeth_dwell_s: f32,
+    pub(crate) teeth_dwell_s: f32,
     /// The mouth in the head's frame (the eye midpoint, -Z forward, +Y up), metres.
-    pub mouth_in_head_m: Vec3,
+    pub(crate) mouth_in_head_m: Vec3,
     /// How near the mouth the pin must come for the teeth to take it, metres.
-    pub mouth_radius_m: f32,
+    pub(crate) mouth_radius_m: f32,
 }
 
 impl PinTuning {

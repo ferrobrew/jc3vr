@@ -46,22 +46,22 @@ pub(super) struct FireFacts {
     /// The belt reload holds the gun.
     pub belt: bool,
     /// An eject of the gun's magazine is under way.
-    pub ejecting: bool,
+    pub(crate) ejecting: bool,
     /// The other hand is pulling the gun's magazine out.
     pub extracting: bool,
     /// A round is caught in the gun's well with a hand still on it.
-    pub inserting: bool,
+    pub(crate) inserting: bool,
     /// The gun's plan chambers a round, so its chamber decides whether it fires.
-    pub chambering: bool,
-    pub chamber_empty: bool,
+    pub(crate) chambering: bool,
+    pub(crate) chamber_empty: bool,
     /// The physical action is on and the gun's action is out of battery.
-    pub out_of_battery: bool,
+    pub(crate) out_of_battery: bool,
     /// The game's magazine-out flag.
-    pub magazine_out: bool,
+    pub(crate) magazine_out: bool,
     /// The game's magazine holds no rounds.
-    pub magazine_empty: bool,
+    pub(crate) magazine_empty: bool,
     /// A revolver's cylinder is swung out, or not yet all the way shut.
-    pub cylinder_open: bool,
+    pub(crate) cylinder_open: bool,
 }
 
 /// Why the reload keeps the gun `facts` describes from firing, or `None` when it may fire. A

@@ -13,7 +13,7 @@ use jc3vr_input::frame::Hand;
 
 /// The reload button's tap detector.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct TapDetector {
+pub(crate) struct TapDetector {
     /// How long the button has been down, while it is.
     held_s: Option<f32>,
 }
@@ -46,7 +46,7 @@ impl TapDetector {
 /// ending within the gap of the first. The seated magazine release, where the hands
 /// are on the vehicle's controls and the reload button is not bound.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct DoubleTapDetector {
+pub(crate) struct DoubleTapDetector {
     tap: TapDetector,
     /// The seconds since the first tap ended, while a second may still follow.
     since_first_s: Option<f32>,
@@ -84,7 +84,7 @@ impl DoubleTapDetector {
 /// The hand whose gun a tap ejects, from the rounds in each hand's ejectable magazine by
 /// [`Hand::index`] (`None` for a hand with no gun, or whose gun has no magazine to eject) and the
 /// `dominant` hand: the fewest rounds, the dominant hand's on a tie.
-pub fn tap_target(rounds: [Option<i32>; 2], dominant: Hand) -> Option<Hand> {
+pub(crate) fn tap_target(rounds: [Option<i32>; 2], dominant: Hand) -> Option<Hand> {
     [dominant, dominant.other()]
         .into_iter()
         .filter_map(|hand| Some((hand, rounds[hand.index()]?)))

@@ -72,7 +72,7 @@ pub struct HandOnGun {
 /// The hands on the guns in the hands: each hand holding its own gun (`holders`, by
 /// [`Hand::index`]) at its grip, and the bracing hand at its region, when it holds no gun of its
 /// own.
-pub fn hands_on_guns(
+pub(crate) fn hands_on_guns(
     holders: [bool; 2],
     brace: Option<(Hand, GunRegion)>,
 ) -> [Option<HandOnGun>; 2] {
@@ -125,7 +125,7 @@ pub fn status() -> RegionsStatus {
 /// Where `weapon` is on its way onto `hand`'s grip, for the rigid grip's placement of `hand`'s gun:
 /// the anchor and the turn where the slide has them now. A leaf lock, so the placement may read it
 /// from the thread that runs it.
-pub fn slide_for(weapon: usize, hand: Hand) -> Option<GripSlide> {
+pub(crate) fn slide_for(weapon: usize, hand: Hand) -> Option<GripSlide> {
     let now = Instant::now();
     STATE.lock().slides[hand.index()]
         .filter(|s| s.weapon == weapon)
@@ -180,13 +180,13 @@ pub(crate) fn grip_from_brace(
 /// The anchor of a hand sliding from `from` to `to` along a gun, `elapsed` into a slide of length
 /// `over`: eased in and out, so the gun neither jumps into nor stops dead in the hand, and at `to`
 /// once the slide is over.
-pub fn slid_anchor(from: Vec3, to: Vec3, elapsed: Duration, over: Duration) -> Vec3 {
+pub(crate) fn slid_anchor(from: Vec3, to: Vec3, elapsed: Duration, over: Duration) -> Vec3 {
     from.lerp(to, eased_share(elapsed, over))
 }
 
 /// How long a bracing hand takes to slide onto the grip
 /// ([`RegionsTuning::grip_slide_ms`](crate::controllers::weapons::hold::tuning::RegionsTuning::grip_slide_ms)).
-pub fn grip_slide() -> Duration {
+pub(crate) fn grip_slide() -> Duration {
     HOLD.get().regions.grip_slide_ms.duration()
 }
 

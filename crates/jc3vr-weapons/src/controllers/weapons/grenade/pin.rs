@@ -96,10 +96,10 @@ pub(crate) struct TeethTick {
     /// Whether the hand holds a grenade whose pin is in.
     pub pin_in: bool,
     /// Whether the pin is at the mouth ([`at_mouth`]).
-    pub at_mouth: bool,
+    pub(crate) at_mouth: bool,
     /// Whether the other hand is occupied: it holds something, its grip is closed on something, or
     /// it is not tracked.
-    pub other_occupied: bool,
+    pub(crate) other_occupied: bool,
     /// The tick's length, seconds.
     pub dt: f32,
 }

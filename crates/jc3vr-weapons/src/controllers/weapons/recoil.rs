@@ -38,19 +38,19 @@ use crate::controllers::weapons::{config::RecoilConfig, foregrip, handling_tunin
 #[serde(deny_unknown_fields)]
 pub struct RecoilTuning {
     /// How far the gun moves back along the grip per radian of pitch kick, metres.
-    pub kick_back_m_per_rad: f32,
+    pub(crate) kick_back_m_per_rad: f32,
     /// The largest rotation the offset reaches, degrees, however fast the shots come.
-    pub max_angle_deg: f32,
+    pub(crate) max_angle_deg: f32,
     /// The return spring's stiffness, per second squared.
-    pub spring_stiffness: f32,
+    pub(crate) spring_stiffness: f32,
     /// The return spring's damping ratio: `1` is critically damped, below `1` overshoots.
-    pub spring_damping_ratio: f32,
+    pub(crate) spring_damping_ratio: f32,
     /// Multiplies the stiffness while the off-hand holds the foregrip.
-    pub two_hand_stiffness_scale: f32,
+    pub(crate) two_hand_stiffness_scale: f32,
     /// Multiplies the kick while the off-hand holds the foregrip.
-    pub two_hand_kick_scale: f32,
+    pub(crate) two_hand_kick_scale: f32,
     /// A gap longer than this between reads settles the springs at once.
-    pub max_gap_ms: Millis,
+    pub(crate) max_gap_ms: Millis,
 }
 
 /// A damped spring per component, pulled toward zero.
@@ -138,7 +138,7 @@ pub fn clamp_offset(offset: Vec3, max_angle_deg: f32) -> Vec3 {
 /// the hand holds it; the controller's grip -Z runs up the handle. Pitch turns the barrel up about
 /// the axis across it (the grip's palm axis, +X), yaw turns it about the axis up the handle, square
 /// to the barrel (positive to the left), and the shift is back along the barrel.
-pub fn offset_motion(hand: &CockpitHand, offset: Vec3) -> Motion {
+pub(crate) fn offset_motion(hand: &CockpitHand, offset: Vec3) -> Motion {
     let grip = hand.grip;
     let barrel = (hand.wrist.orientation * Vec3::NEG_Z).normalize();
     let across = (grip.orientation * Vec3::X)

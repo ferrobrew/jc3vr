@@ -43,7 +43,7 @@ use crate::controllers::{
 
 /// A long gun in a hand, as the input tick measured it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct AdsWeapon {
+pub(crate) struct AdsWeapon {
     pub holder: Hand,
     pub sight: WristSight,
     pub scoped: bool,
@@ -198,7 +198,7 @@ pub fn raised(solutions: [Option<AdsSolution>; 2]) -> Option<Hand> {
 
 /// The aiming eye's position: the eyes' midpoint moved half the eyes' spacing to the side of
 /// `holder`, the hand that holds the gun.
-pub fn aiming_eye(head: Pose, holder: Hand) -> Vec3 {
+pub(crate) fn aiming_eye(head: Pose, holder: Hand) -> Vec3 {
     let sign = match holder {
         Hand::Left => -1.0,
         Hand::Right => 1.0,

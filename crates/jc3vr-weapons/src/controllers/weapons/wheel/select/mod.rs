@@ -61,12 +61,12 @@ impl WheelSlot {
     }
 
     /// The arm a slot-select action highlights, for the four slot-select actions.
-    pub fn of_action(action: Action) -> Option<Self> {
+    pub(crate) fn of_action(action: Action) -> Option<Self> {
         WheelSlot::ALL.into_iter().find(|s| s.action() == action)
     }
 
     /// The inventory slot the arm shows.
-    pub const fn inventory_slot(self) -> WeaponSlot {
+    pub(crate) const fn inventory_slot(self) -> WeaponSlot {
         match self {
             WheelSlot::DualWield => WeaponSlot::E_SLOT_DUAL_WIELD,
             WheelSlot::TwoHanded => WeaponSlot::E_SLOT_TWO_HANDED,
@@ -76,7 +76,7 @@ impl WheelSlot {
     }
 
     /// The arm that shows an inventory slot, for the four slots on the cross.
-    pub fn of_inventory(slot: WeaponSlot) -> Option<Self> {
+    pub(crate) fn of_inventory(slot: WeaponSlot) -> Option<Self> {
         WheelSlot::ALL
             .into_iter()
             .find(|s| s.inventory_slot() == slot)
@@ -93,7 +93,7 @@ impl WheelSlot {
     }
 
     /// The arm's direction, degrees clockwise from up.
-    pub const fn centre_deg(self) -> f32 {
+    pub(crate) const fn centre_deg(self) -> f32 {
         match self {
             WheelSlot::DualWield => 0.0,
             WheelSlot::TwoHanded => 90.0,
@@ -198,7 +198,7 @@ impl Wheel {
     }
 
     /// Whether the wheel is open.
-    pub fn is_open(&self) -> bool {
+    pub(crate) fn is_open(&self) -> bool {
         matches!(self.phase, Phase::Open(_))
     }
 

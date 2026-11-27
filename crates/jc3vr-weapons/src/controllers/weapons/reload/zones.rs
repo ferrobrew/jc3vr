@@ -32,7 +32,7 @@ pub(crate) struct MagazineZone {
     /// Out of the well, the way a magazine leaves it: a unit vector.
     pub outward: Vec3,
     /// How far above the mouth the zone starts, into the well.
-    pub lip: f32,
+    pub(crate) lip: f32,
     /// How far below the mouth it ends.
     pub length: f32,
     /// How far from the well's axis it reaches.

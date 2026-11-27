@@ -19,7 +19,7 @@ use crate::controllers::weapons::reload::{
 };
 
 /// The most rounds a hand holds at once: a revolver's cylinder.
-pub const MAX_HELD_ROUNDS: usize = 6;
+pub(crate) const MAX_HELD_ROUNDS: usize = 6;
 
 /// What a weapon loads.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -52,14 +52,14 @@ impl LoadKind {
 
     /// Whether the well of a gun of this kind, its magazine `out` or not, is occupied: a magazine
     /// still in the gun, which has to leave before a fresh one can seat.
-    pub const fn well_occupied(self, out: bool) -> bool {
+    pub(crate) const fn well_occupied(self, out: bool) -> bool {
         self.ejects() && !out
     }
 
     /// Whether the gun shows its round part on its own once no round is in the hand: a magazine
     /// while it is in the gun, and a rocket while the launcher holds one, which the launcher's own
     /// update shows and hides with its magazine.
-    pub const fn part_shown(self, out: bool, magazine: i32) -> bool {
+    pub(crate) const fn part_shown(self, out: bool, magazine: i32) -> bool {
         match self {
             LoadKind::Rocket => magazine > 0,
             LoadKind::Magazine | LoadKind::Shell | LoadKind::Cylinder => !out,
@@ -121,7 +121,7 @@ impl ReloadPlan {
     /// The model a round taken from the pouch is drawn with in the hand, and how it lies: the
     /// gun's spare magazine model for a magazine that has one, the stand-in round model for a
     /// shell or a cylinder, or `None`, which leaves the round to the gun's own part, if any.
-    pub fn hand_round(&self) -> Option<HandRound> {
+    pub(crate) fn hand_round(&self) -> Option<HandRound> {
         match (self.spare_top_m, self.round) {
             (Some(top), _) => Some(HandRound {
                 model: HandModel::Spare,
@@ -142,7 +142,7 @@ impl ReloadPlan {
     /// The plan with no action worked by hand: every action is [`ActionKind::None`], so the gun
     /// chambers its first round as its magazine seats, as a launcher or a revolver does, and
     /// nothing waits on a slide, a charging handle, a bolt, or a pump.
-    pub fn cocked(self) -> Self {
+    pub(crate) fn cocked(self) -> Self {
         Self {
             action: ActionKind::None,
             ..self
@@ -164,12 +164,12 @@ pub struct RoundModel {
     /// How many rounds the hand holds, `1..=MAX_HELD_ROUNDS`.
     pub count: usize,
     /// The ring the rounds stand on around the group's axis, metres; zero for one round.
-    pub ring_m: f32,
+    pub(crate) ring_m: f32,
 }
 
 impl RoundModel {
     /// The model from a table entry, or `None` when the entry has no complete, finite model.
-    pub fn from_entry(entry: &RoundEntry) -> Option<Self> {
+    pub(crate) fn from_entry(entry: &RoundEntry) -> Option<Self> {
         let axis = entry.round_axis?.try_normalize()?;
         let top = entry.round_top_m.filter(|t| t.is_finite())?;
         let radius_m = entry.round_radius_m.filter(|r| r.is_finite() && *r > 0.0)?;
@@ -205,7 +205,7 @@ impl RoundModel {
 
 /// What draws a round in the hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum HandModel {
+pub(crate) enum HandModel {
     /// The gun's spare magazine model.
     Spare,
     /// The stand-in round model.
@@ -214,7 +214,7 @@ pub enum HandModel {
 
 /// A round in the hand drawn by an instance of a model separate from the gun.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HandRound {
+pub(crate) struct HandRound {
     pub model: HandModel,
     /// The round's feed end, centred across it, in the model's own frame, metres.
     pub top: Vec3,
@@ -223,7 +223,7 @@ pub struct HandRound {
     /// The model's turn into the gun's model frame as it lies in the well: none for a spare
     /// magazine, whose frame is the gun's magazine part's, and for a stand-in round, its axis onto
     /// the well's.
-    pub in_gun: Quat,
+    pub(crate) in_gun: Quat,
 }
 
 /// The facts about a weapon the plan is made from.

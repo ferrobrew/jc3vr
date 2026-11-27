@@ -18,7 +18,7 @@ use crate::controllers::weapons::hold::tuning::HOLD;
 
 /// One input tick's view of the dual-wield slot.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GrantTick {
+pub(crate) struct GrantTick {
     /// The slot's weapon.
     pub slot: Option<usize>,
     /// Whether the slot's weapon is a single pistol already.
@@ -29,14 +29,14 @@ pub struct GrantTick {
     /// Whether the carried weapons are stashed for a mission.
     pub stashed: bool,
     /// Whether a hip socket is free for a twin.
-    pub socket_free: bool,
+    pub(crate) socket_free: bool,
     /// The tick's length, seconds.
     pub dt: f32,
 }
 
 /// Why a weapon that arrived in the slot is one pistol.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum OneWhy {
+pub(crate) enum OneWhy {
     /// A rack with unlimited stock handed over a copy for one pistol.
     RackCopy,
     /// The respawn after a reset brought back a slot that held one pistol.
@@ -78,7 +78,7 @@ impl PairWhy {
 
 /// What to do about the slot's weapon this tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Grant {
+pub(crate) enum Grant {
     Nothing,
     /// Make the slot's weapon a single pistol, with no twin.
     One {
@@ -115,7 +115,7 @@ pub enum TwinState {
 
 /// The slot's weapon across input ticks.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Grants {
+pub(crate) struct Grants {
     seen: Option<usize>,
     state: TwinState,
     rack_copy: Option<f32>,
@@ -149,14 +149,14 @@ impl Grants {
     }
 
     /// The game's pickup of a rack with unlimited stock asked for a copy.
-    pub fn cover_rack_copy(&mut self) {
+    pub(crate) fn cover_rack_copy(&mut self) {
         self.rack_copy = Some(HOLD.get().dual_wield.rack_copy_cover_s);
     }
 
     /// A reset is under way, and the slot's pistol comes back as one pistol (`Some(true)`), a pair
     /// (`Some(false)`), or with nothing known of it (`None`, which a pair the game hands over
     /// follows).
-    pub fn cover_respawn(&mut self, single: Option<bool>) {
+    pub(crate) fn cover_respawn(&mut self, single: Option<bool>) {
         let cover_s = HOLD.get().dual_wield.respawn_cover_s;
         self.respawn = single.map(|single| (single, cover_s));
     }
@@ -164,12 +164,12 @@ impl Grants {
     /// The respawn's one pistol was the only pistol the player carried: a respawn hands it a twin
     /// for the empty hip, as a split of the game's pair does, rather than leaving one holster empty.
     /// Only a respawn does this, never a load or a mission's give-back.
-    pub fn cover_lone_respawn(&mut self) {
+    pub(crate) fn cover_lone_respawn(&mut self) {
         self.lone = self.respawn.is_some_and(|(single, _)| single);
     }
 
     /// A mission took the slots' weapons, the pistol slot holding one pistol or not.
-    pub fn cover_mission(&mut self, single: bool) {
+    pub(crate) fn cover_mission(&mut self, single: bool) {
         self.mission = Some(single);
     }
 

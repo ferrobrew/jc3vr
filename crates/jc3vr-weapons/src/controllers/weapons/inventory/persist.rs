@@ -48,7 +48,7 @@ pub const VERSION: u32 = 2;
 /// How many inventory slots the save stores a weapon type for.
 pub const SLOTS: usize = 8;
 /// How many reserves the save stores.
-pub const RESERVES: usize = 17;
+pub(crate) const RESERVES: usize = 17;
 
 /// The maximum encoded input, including comments and whitespace.
 pub const MAX_BYTES: usize = 64 * 1024;
@@ -58,7 +58,7 @@ pub const MAX_BYTES: usize = 64 * 1024;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Fingerprint {
     pub slots: [u32; SLOTS],
-    pub reserves: [i32; RESERVES],
+    pub(crate) reserves: [i32; RESERVES],
 }
 
 /// How a loaded fingerprint differs from the sidecar's.
@@ -131,7 +131,7 @@ impl Fingerprint {
 /// One carried weapon: its type, its magazine, its socket, and whether it is a single pistol.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Record {
-    pub tag_hash: u32,
+    pub(crate) tag_hash: u32,
     pub magazine: i32,
     pub socket: Socket,
     /// Whether the weapon is one pistol of the pistol slot rather than the game's pair
@@ -145,7 +145,7 @@ pub struct Sidecar {
     pub fingerprint: Fingerprint,
     pub carried: Vec<Record>,
     /// Whether the pistol slot's weapon is one pistol, when the file says.
-    pub slot_pistol_single: Option<bool>,
+    pub(crate) slot_pistol_single: Option<bool>,
 }
 
 /// Why a sidecar could not be read or encoded.
@@ -253,7 +253,7 @@ impl Sidecar {
     }
 
     /// The carried weapons a load restores: those whose type the game knows now.
-    pub fn restorable(&self, known: impl Fn(u32) -> bool) -> (Vec<Record>, usize) {
+    pub(crate) fn restorable(&self, known: impl Fn(u32) -> bool) -> (Vec<Record>, usize) {
         let (known, unknown): (Vec<Record>, Vec<Record>) =
             self.carried.iter().partition(|r| known(r.tag_hash));
         (known, unknown.len())

@@ -11,16 +11,16 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct WheelTuning {
     /// How far the `weapon_wheel` action must be pushed to open the wheel, `0..=1`.
-    pub stick_open: f32,
+    pub(crate) stick_open: f32,
     /// How far the `weapon_wheel` action must stay pushed to keep the wheel open, `0..=1`. Below
     /// [`stick_open`](Self::stick_open), so that a push held near the threshold does not flicker.
-    pub stick_release: f32,
+    pub(crate) stick_release: f32,
     /// How far the hand must turn from where the wheel opened to leave the centre, degrees: the
     /// hand chooses an arm by pointing toward it.
-    pub point_leave_deg: f32,
+    pub(crate) point_leave_deg: f32,
     /// How far back toward where the wheel opened the hand must turn to return to the centre,
     /// degrees. Below [`point_leave_deg`](Self::point_leave_deg).
-    pub point_return_deg: f32,
+    pub(crate) point_return_deg: f32,
     /// How far past the line between two arms the hand must go before the other arm is chosen,
     /// degrees around the wheel.
     pub hysteresis_deg: f32,

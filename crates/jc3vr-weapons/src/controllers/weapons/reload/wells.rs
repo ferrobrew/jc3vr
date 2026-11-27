@@ -98,16 +98,16 @@ pub struct WellEntry {
     pub weapon_hash: u32,
     pub kind: WellKind,
     /// Where a round enters the gun, on its surface; `None` for a weapon with nothing to load.
-    pub mouth_m: Option<Vec3>,
+    pub(crate) mouth_m: Option<Vec3>,
     /// The direction a round travels into the gun, unit length.
-    pub insert_axis: Option<Vec3>,
+    pub(crate) insert_axis: Option<Vec3>,
     /// Whether the weapon draws its magazine as a separate model part.
-    pub magazine_part: bool,
+    pub(crate) magazine_part: bool,
     /// The top of the magazine part's mesh along the insertion axis, from the part's origin.
     pub part_top_m: Option<f32>,
     /// The magazine part's extent along the insertion axis; without a part, the visible length of
     /// a magazine modelled below the receiver, or `None` for one inside the grip.
-    pub part_length_m: Option<f32>,
+    pub(crate) part_length_m: Option<f32>,
     /// The top of the gun's spare magazine model along the insertion axis, centred across it, in
     /// that model's own frame; `None` when the gun has no spare magazine model that depicts the
     /// magazine a hand loads.
@@ -117,11 +117,11 @@ pub struct WellEntry {
     /// of the spare magazine prop it borrows from another weapon, whose model matches the built-in
     /// magazine best; [`spare_top_m`](Self::spare_top_m) is then that prop's.
     #[serde(default)]
-    pub spare_from: Option<String>,
+    pub(crate) spare_from: Option<String>,
     /// Where the borrowed prop's model origin sits in the gun's frame with the magazine seated:
     /// where a borrowed magazine is dropped from.
     #[serde(default)]
-    pub spare_origin_m: Option<Vec3>,
+    pub(crate) spare_origin_m: Option<Vec3>,
     /// The stand-in model a round in the hand is drawn with, for a gun with no model of its own
     /// for a loose round.
     #[serde(flatten)]
@@ -140,18 +140,18 @@ pub struct WellEntry {
 #[derive(Debug, Clone, PartialEq, Default, Deserialize)]
 pub struct RoundEntry {
     /// The casing model's `.lod` path, under whose `hashlittle` the game's model cache holds it.
-    pub round_model: Option<String>,
+    pub(crate) round_model: Option<String>,
     /// The casing's feed end on its axis, in the model's own frame.
-    pub round_top_m: Option<Vec3>,
+    pub(crate) round_top_m: Option<Vec3>,
     /// The direction the round travels into the gun, in the model's own frame, unit length.
-    pub round_axis: Option<Vec3>,
+    pub(crate) round_axis: Option<Vec3>,
     /// The casing's radius across its axis.
-    pub round_radius_m: Option<f32>,
+    pub(crate) round_radius_m: Option<f32>,
     /// How many rounds one push loads: one shell, or a revolver's cylinder.
-    pub round_count: Option<u32>,
+    pub(crate) round_count: Option<u32>,
     /// The ring the rounds of a group stand on, from the group's axis to each round's; zero for
     /// one round.
-    pub round_ring_m: Option<f32>,
+    pub(crate) round_ring_m: Option<f32>,
 }
 
 /// The embedded table's entries. A table that does not parse is logged once and treated as empty,

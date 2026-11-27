@@ -26,23 +26,23 @@ pub struct LensTuning {
     /// The lens's magnification.
     pub zoom: f32,
     /// The lens's radius, metres.
-    pub lens_radius_m: f32,
+    pub(crate) lens_radius_m: f32,
     /// How far behind the sight line's origin the eyepiece sits along the sight line, metres. The
     /// sight line's origin is above the muzzle (with the weapon's sight-table entry), so this is
     /// roughly the distance from the muzzle back to the scope's rear lens.
-    pub eyepiece_back_m: f32,
+    pub(crate) eyepiece_back_m: f32,
     /// How close an eye must be to the eyepiece for the lens to draw, metres.
-    pub max_eye_distance_m: f32,
+    pub(crate) max_eye_distance_m: f32,
     /// Where the dark rim starts, as a fraction of the lens radius.
     pub vignette_start: f32,
     /// The nearest the aim point is taken to be, metres: a closer point would make the other eye's
     /// image swing with the tiny parallax between the eyes.
-    pub min_focus_m: f32,
+    pub(crate) min_focus_m: f32,
 }
 
 /// The sight line in the holding hand's wrist frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SightAnchor {
+pub(crate) struct SightAnchor {
     pub hand: Hand,
     /// The sight line's origin, in the wrist frame.
     pub origin: Vec3,
@@ -102,7 +102,7 @@ impl Lens {
 }
 
 /// The eye nearest the eyepiece and its distance, among the eyes whose positions are known.
-pub fn nearest_eye(eyepiece: Vec3, eyes: [Option<Vec3>; 2]) -> Option<(usize, f32)> {
+pub(crate) fn nearest_eye(eyepiece: Vec3, eyes: [Option<Vec3>; 2]) -> Option<(usize, f32)> {
     eyes.iter()
         .enumerate()
         .filter_map(|(i, eye)| eye.map(|p| (i, p.distance(eyepiece))))
@@ -112,14 +112,18 @@ pub fn nearest_eye(eyepiece: Vec3, eyes: [Option<Vec3>; 2]) -> Option<(usize, f3
 /// The eye that sights through the lens: the nearest one, when it is within `max_distance` of the
 /// eyepiece and behind it (looking along the sight line), so that a scope held backwards or beside
 /// the head draws nothing.
-pub fn sighting_eye(lens: &Lens, eyes: [Option<Vec3>; 2], max_distance: f32) -> Option<usize> {
+pub(crate) fn sighting_eye(
+    lens: &Lens,
+    eyes: [Option<Vec3>; 2],
+    max_distance: f32,
+) -> Option<usize> {
     let (eye, distance) = nearest_eye(lens.eyepiece, eyes)?;
     let behind = (lens.eyepiece - eyes[eye]?).dot(lens.direction) > 0.0;
     (distance <= max_distance && behind).then_some(eye)
 }
 
 /// The lens's draw: its geometry with the tuning's look.
-pub fn draw_of(lens: &Lens, config: &LensTuning) -> LensDraw {
+pub(crate) fn draw_of(lens: &Lens, config: &LensTuning) -> LensDraw {
     LensDraw {
         eyepiece: lens.eyepiece,
         direction: lens.direction,

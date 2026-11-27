@@ -37,13 +37,13 @@ pub struct C4Tuning {
     /// standing on its origin along the model's +Y. It stands up the fist as a pistol grip does,
     /// its +Y along the grip's -Z, toward the thumb, centred on the grip's origin, the middle of
     /// the closed hand.
-    pub detonator_hold: HoldPlacement,
+    pub(crate) detonator_hold: HoldPlacement,
     /// Pressing a held charge onto a surface sticks it there.
     pub stick: StickTuning,
     /// Taking a placed charge back into a hand.
     pub placed: PlacedTuning,
     /// The detonator's request to detonate the placed charges.
-    pub detonation: DetonationTuning,
+    pub(crate) detonation: DetonationTuning,
 }
 
 impl Tuning for C4Tuning {
@@ -57,10 +57,10 @@ impl Tuning for C4Tuning {
 }
 
 /// How far the in-hand model's top face is from its origin along its +Y, metres.
-pub const CHARGE_TOP_M: f32 = 0.029;
+pub(crate) const CHARGE_TOP_M: f32 = 0.029;
 
 /// The middle of the charge in its in-hand model's frame, metres: where the surface probes start.
-pub const CHARGE_CENTRE_M: Vec3 = Vec3::new(0.0, CHARGE_TOP_M / 2.0, 0.0);
+pub(crate) const CHARGE_CENTRE_M: Vec3 = Vec3::new(0.0, CHARGE_TOP_M / 2.0, 0.0);
 
 /// Pressing a held charge onto a surface sticks it there.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
@@ -68,18 +68,18 @@ pub const CHARGE_CENTRE_M: Vec3 = Vec3::new(0.0, CHARGE_TOP_M / 2.0, 0.0);
 pub struct StickTuning {
     /// How far from the held charge's centre a surface counts as touching it, metres: about half
     /// the charge's thickness.
-    pub contact_m: f32,
+    pub(crate) contact_m: f32,
     /// How far off the surface the charge is placed before it is pushed onto it, metres.
-    pub standoff_m: f32,
+    pub(crate) standoff_m: f32,
     /// How fast the charge is pushed onto the surface, metres per second, so that the charge's own
     /// collision sticks it there.
-    pub push_mps: f32,
+    pub(crate) push_mps: f32,
     /// How long after a charge comes out of the pouch before it sticks, seconds, so that the body
     /// the pouch is on is not mistaken for a surface as the hand leaves it.
-    pub after_prime_s: f32,
+    pub(crate) after_prime_s: f32,
     /// How far from the held charge a surface is previewed, where the charge would stick if pressed
     /// on, metres.
-    pub preview_m: f32,
+    pub(crate) preview_m: f32,
 }
 
 impl StickTuning {
@@ -101,7 +101,7 @@ pub struct PlacedTuning {
     pub radius_m: f32,
     /// How far from the player a placed charge is offered, metres: beyond any reach, so that only
     /// the few charges a hand might take are carried into the cockpit frame.
-    pub offer_range_m: f32,
+    pub(crate) offer_range_m: f32,
 }
 
 impl PlacedTuning {
@@ -114,14 +114,14 @@ impl PlacedTuning {
 /// The detonator's request to detonate the placed charges.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DetonationTuning {
+pub(crate) struct DetonationTuning {
     /// How long a detonation request waits for the weapon to start the detonation, seconds: long
     /// enough for the character to finish an act that keeps the detonate act out.
     pub timeout_s: f32,
     /// The longest a started detonation's charges count as on their way to going off, seconds: the
     /// detonate act's lead-in and the charges' own timers. A charge still live after this did not
     /// go off, and a press may detonate it again.
-    pub in_flight_s: f32,
+    pub(crate) in_flight_s: f32,
 }
 
 impl DetonationTuning {

@@ -32,7 +32,7 @@ pub struct Capabilities {
     /// The weapon wheel opens.
     pub wheel: bool,
     /// The explosive pouches (the grenades and the C4) give and take.
-    pub pouches: bool,
+    pub(crate) pouches: bool,
 }
 
 impl Capabilities {

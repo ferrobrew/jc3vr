@@ -11,25 +11,25 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct Heft {
     /// The hand's distance from the head at which the reach sag starts, metres.
-    pub reach_near_m: f32,
+    pub(crate) reach_near_m: f32,
     /// The hand's distance from the head at which the reach sag is full, metres.
-    pub reach_far_m: f32,
+    pub(crate) reach_far_m: f32,
     /// The sway's frequency, hertz; the two axes run at incommensurate multiples of it.
-    pub sway_hz: f32,
+    pub(crate) sway_hz: f32,
     /// The yaw sway's frequency relative to the pitch sway's.
-    pub sway_yaw_ratio: f32,
+    pub(crate) sway_yaw_ratio: f32,
     /// The yaw sway's phase offset from the pitch sway's, radians.
-    pub sway_yaw_phase: f32,
+    pub(crate) sway_yaw_phase: f32,
     /// The yaw sway's share of the amplitude.
-    pub sway_yaw_share: f32,
+    pub(crate) sway_yaw_share: f32,
     /// The share of the sway that shows with the hand close in; all of it shows at full reach.
-    pub sway_near_share: f32,
+    pub(crate) sway_near_share: f32,
     /// The furthest the weapon may trail or sag away from the controller, degrees.
-    pub max_angle_deg: f32,
+    pub(crate) max_angle_deg: f32,
     /// How long a published weapon stays in effect without a new input tick.
-    pub target_ms: Millis,
+    pub(crate) target_ms: Millis,
     /// A gap longer than this between reads puts the spring at rest on its target.
-    pub max_gap_ms: Millis,
+    pub(crate) max_gap_ms: Millis,
     /// Pistols, revolvers, and SMGs.
     pub sidearm: HeftTuning,
     /// Assault rifles, shotguns, and sniper rifles.
@@ -63,7 +63,7 @@ pub struct BracedHeft {
     pub strength: f32,
     /// The furthest a braced gun may lag or sag from where the hands turn it, degrees, so that the
     /// hands, carried with it, never stray far from the controllers.
-    pub max_angle_deg: f32,
+    pub(crate) max_angle_deg: f32,
     /// SMGs, the lightest.
     pub smg: BracedTuning,
     /// Assault rifles, shotguns, and sniper rifles.
@@ -105,7 +105,7 @@ impl BracedTuning {
 
     /// This tuning at `strength`: the sag scaled by it, and the stiffness by its inverse square,
     /// so that the lag scales with it. Zero or less carries no weight.
-    pub fn at_strength(self, strength: f32) -> Self {
+    pub(crate) fn at_strength(self, strength: f32) -> Self {
         if !(strength.is_finite() && strength > 0.0) {
             return Self::NONE;
         }
@@ -123,18 +123,18 @@ pub struct HeftTuning {
     /// How far the weapon pitches down with the hand close to the body, degrees.
     pub sag_deg: f32,
     /// How much further it pitches down with the arm extended, degrees.
-    pub reach_sag_deg: f32,
+    pub(crate) reach_sag_deg: f32,
     /// The stiffness of the spring the weapon follows the hand's rotation on, per second squared.
     /// Zero follows the hand rigidly.
-    pub lag_stiffness: f32,
+    pub(crate) lag_stiffness: f32,
     /// The spring's damping ratio: `1` is critically damped, below `1` overshoots.
-    pub lag_damping_ratio: f32,
+    pub(crate) lag_damping_ratio: f32,
     /// The sway's amplitude, degrees.
     pub sway_deg: f32,
     /// Multiplies the recoil kick while the weapon is held in one hand.
     pub kick_scale: f32,
     /// Multiplies the game's shot scatter while the weapon is held in one hand.
-    pub spread_scale: f32,
+    pub(crate) spread_scale: f32,
 }
 
 impl HeftTuning {

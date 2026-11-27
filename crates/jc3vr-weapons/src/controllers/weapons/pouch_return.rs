@@ -21,11 +21,11 @@ use crate::controllers::{loadout::ItemId, weapons::hold::tuning::HOLD};
 #[serde(deny_unknown_fields)]
 pub struct PressTuning {
     /// How far outside the pouch's surface the hand must go before it can press again, metres.
-    pub leave_margin_m: f32,
+    pub(crate) leave_margin_m: f32,
     /// How far into the pouch the hand must go for a press, metres.
     pub depth_m: f32,
     /// Additional return reach beyond the pouch's surface, metres. Does not widen draws.
-    pub return_margin_m: f32,
+    pub(crate) return_margin_m: f32,
     /// How far the press's reach rises above the pouch, metres: the hand is measured to a segment
     /// rising this far from the pouch's centre rather than to the centre. Does not widen draws.
     pub rise_m: f32,
@@ -41,9 +41,9 @@ pub struct Pouch {
 /// What the begin tick hands the presses.
 pub(crate) struct Inputs {
     /// The grenade pouch, while the grenade throw is on and the body is placed.
-    pub grenade_pouch: Option<Pouch>,
+    pub(crate) grenade_pouch: Option<Pouch>,
     /// The C4 pouch, likewise.
-    pub charge_pouch: Option<Pouch>,
+    pub(crate) charge_pouch: Option<Pouch>,
     /// The hands' grips in the cockpit frame, by [`Hand::index`].
     pub grips: [Option<Vec3>; 2],
     /// The grenade each hand holds that could go back: its pin is in.

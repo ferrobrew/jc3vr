@@ -48,7 +48,7 @@ pub(crate) struct Attachment {
     pub socket: Socket,
     pub hand: Option<Hand>,
     pub usage: Option<SocketUse>,
-    pub occupancy: Occupancy,
+    pub(crate) occupancy: Occupancy,
     /// The loadout's session identity of the socket occupant, when occupied.
     pub item: Option<ItemId>,
     pub source: PoseSource,
@@ -61,7 +61,7 @@ pub(crate) struct Sample {
     pub owner: usize,
     pub at: Instant,
     pub character: Mat4,
-    pub attachments: Vec<Attachment>,
+    pub(crate) attachments: Vec<Attachment>,
 }
 
 impl Sample {

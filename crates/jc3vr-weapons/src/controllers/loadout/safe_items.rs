@@ -111,7 +111,7 @@ impl Loadout {
     }
 
     /// Resolve a model identity through its current table owner.
-    pub fn safe_item_for_lease(&self, model: ItemLeaseId) -> Option<SafeItemView> {
+    pub(crate) fn safe_item_for_lease(&self, model: ItemLeaseId) -> Option<SafeItemView> {
         self.safe_items().find(|item| item.binding.lease == model)
     }
 

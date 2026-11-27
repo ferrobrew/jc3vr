@@ -200,9 +200,9 @@ pub(super) struct RefusedFire<'a> {
     pub roles: [GunHand; 2],
     pub ready: [bool; 2],
     /// Whether the mode allows firing at all.
-    pub may_fire: bool,
+    pub(crate) may_fire: bool,
     /// Why the reload holds each hand's gun, when it does.
-    pub reload_held: [Option<FireHold>; 2],
+    pub(crate) reload_held: [Option<FireHold>; 2],
 }
 
 /// Each hand whose trigger was pressed this tick, on a gun it holds or braces, without firing it,

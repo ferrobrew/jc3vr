@@ -43,7 +43,7 @@ pub const fn bone(socket: Socket) -> SafeBoneIndex {
 /// The offset a weapon on `socket` is placed by from its bone, in the character's frame: none for a
 /// hip, whose weapon sits in the hip's holster, unless the pistol slot holds the game's pair
 /// (`pair`), whose two pistols take both holsters; any other socket's configured offset.
-pub fn placed_offset(offsets: &Offsets, socket: Socket, pair: bool) -> Vec3 {
+pub(crate) fn placed_offset(offsets: &Offsets, socket: Socket, pair: bool) -> Vec3 {
     match socket {
         Socket::Hip(_) if !pair => Vec3::ZERO,
         _ => offsets.of(socket),
@@ -56,10 +56,10 @@ pub fn placed_offset(offsets: &Offsets, socket: Socket, pair: bool) -> Vec3 {
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Offsets {
-    pub back_first: Vec3,
-    pub back_second: Vec3,
-    pub hip_left: Vec3,
-    pub hip_right: Vec3,
+    pub(crate) back_first: Vec3,
+    pub(crate) back_second: Vec3,
+    pub(crate) hip_left: Vec3,
+    pub(crate) hip_right: Vec3,
 }
 
 impl Offsets {

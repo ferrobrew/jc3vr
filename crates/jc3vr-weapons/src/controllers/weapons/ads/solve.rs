@@ -36,44 +36,44 @@ use crate::controllers::weapons::handling_tuning::HANDLING;
 #[serde(deny_unknown_fields)]
 pub struct AdsTuning {
     /// How far the eye may be off the sight line for the line to start turning onto it, metres.
-    pub engage_m: f32,
+    pub(crate) engage_m: f32,
     /// How far off the sight line the eye is when the line passes through it fully, metres.
-    pub lock_m: f32,
+    pub(crate) lock_m: f32,
     /// How far behind the holding grip, along the sight line, the eye may be, metres.
-    pub max_eye_behind_m: f32,
+    pub(crate) max_eye_behind_m: f32,
     /// How far the sights fade over at each end of the eye's range behind the grip, metres: in over
     /// the first stretch behind the grip, and out over the last before
     /// [`AdsTuning::max_eye_behind_m`].
-    pub eye_behind_fade_m: f32,
+    pub(crate) eye_behind_fade_m: f32,
     /// The widest angle between the head's forward and the sight line, degrees: a gun the head does
     /// not look along is not being aimed.
-    pub max_view_angle_deg: f32,
+    pub(crate) max_view_angle_deg: f32,
     /// The angle between the head's forward and the sight line within which the head fully looks
     /// along it, degrees; the sights fade out from here to [`AdsTuning::max_view_angle_deg`].
-    pub full_view_angle_deg: f32,
+    pub(crate) full_view_angle_deg: f32,
     /// How far ahead of the holding grip, along the sight line, the gun turns about to bring the
     /// sights to the eye, metres: about where the front sight is.
-    pub pivot_ahead_m: f32,
+    pub(crate) pivot_ahead_m: f32,
     /// How far behind the holding grip the butt is, along the sight line, metres.
-    pub butt_behind_grip_m: f32,
+    pub(crate) butt_behind_grip_m: f32,
     /// How far from the shoulder pocket the butt starts to seat, metres.
-    pub shoulder_engage_m: f32,
+    pub(crate) shoulder_engage_m: f32,
     /// How far from the shoulder pocket the butt is when it is fully seated, metres.
-    pub shoulder_lock_m: f32,
+    pub(crate) shoulder_lock_m: f32,
     /// How far off a scope's axis the eye may be for the cheek weld to start, metres.
-    pub weld_engage_m: f32,
+    pub(crate) weld_engage_m: f32,
     /// How far off a scope's axis the eye is when the cheek weld is full, metres.
-    pub weld_lock_m: f32,
+    pub(crate) weld_lock_m: f32,
     /// The time constant the solved move eases toward each new one with, seconds ([`ease`]).
-    pub ease_s: f32,
+    pub(crate) ease_s: f32,
     /// The longest step the eased moves take between two poses, seconds: after a pause in the poses
     /// (a hitch, or the hands going inert), the moves take one long step rather than replaying it.
-    pub max_ease_step_s: f32,
+    pub(crate) max_ease_step_s: f32,
     /// How far each eye sits from the eyes' midpoint, metres.
-    pub half_ipd_m: f32,
+    pub(crate) half_ipd_m: f32,
     /// The shoulder pocket's offset from the shoulder joint in the torso's frame (+X right, +Y up,
     /// -Z forward), metres, given for the right shoulder and mirrored for the left.
-    pub pocket_offset_m: Vec3,
+    pub(crate) pocket_offset_m: Vec3,
 }
 
 /// A gun's sight line in its holding wrist's frame, in cockpit metres.
@@ -96,7 +96,7 @@ pub struct AdsInputs {
     /// The head's forward.
     pub forward: Vec3,
     /// The shoulder pocket on the holding hand's side, when known.
-    pub pocket: Option<Vec3>,
+    pub(crate) pocket: Option<Vec3>,
     /// Whether the gun is scoped, which welds rather than turns.
     pub scoped: bool,
 }
@@ -147,7 +147,7 @@ impl RigidMove {
 
     /// This move seen from `frame`: the move of a point given in `frame`'s coordinates. A move
     /// kept in the holding wrist's frame stays with the gun as the hands move it.
-    pub fn in_frame(&self, frame: Pose) -> RigidMove {
+    pub(crate) fn in_frame(&self, frame: Pose) -> RigidMove {
         let inverse = frame.orientation.conjugate();
         RigidMove {
             rotation: (inverse * self.rotation * frame.orientation).normalize(),
@@ -158,7 +158,7 @@ impl RigidMove {
 
     /// The move in `frame`'s coordinates brought back out of it: the inverse of
     /// [`RigidMove::in_frame`].
-    pub fn out_of_frame(&self, frame: Pose) -> RigidMove {
+    pub(crate) fn out_of_frame(&self, frame: Pose) -> RigidMove {
         let rotation =
             (frame.orientation * self.rotation * frame.orientation.conjugate()).normalize();
         RigidMove {
@@ -251,7 +251,7 @@ fn sight_line(inputs: &AdsInputs, moved: RigidMove) -> (Vec3, Vec3) {
 }
 
 /// The turn that seats the butt in `pocket`, faded by its distance, and its weight.
-pub fn shoulder_move(inputs: &AdsInputs, pocket: Vec3) -> Option<(RigidMove, f32)> {
+pub(crate) fn shoulder_move(inputs: &AdsInputs, pocket: Vec3) -> Option<(RigidMove, f32)> {
     let tuning = &HANDLING.get().ads;
     let (_, direction) = sight_line(inputs, RigidMove::IDENTITY);
     let grip = inputs.holder.grip.position;
@@ -315,7 +315,7 @@ pub fn eye_view(
 
 /// The turn about a point `pivot_ahead_m` ahead of `grip` on the line that brings the line through
 /// `eye`, at `weight`.
-pub fn eye_move(
+pub(crate) fn eye_move(
     (origin, direction): (Vec3, Vec3),
     grip: Vec3,
     eye: Vec3,
@@ -331,7 +331,7 @@ pub fn eye_move(
 }
 
 /// The move across the line that puts it through the eye, at `weight`.
-pub fn weld_move(view: EyeView, weight: f32) -> RigidMove {
+pub(crate) fn weld_move(view: EyeView, weight: f32) -> RigidMove {
     RigidMove {
         rotation: Quat::IDENTITY,
         translation: view.offset * weight,

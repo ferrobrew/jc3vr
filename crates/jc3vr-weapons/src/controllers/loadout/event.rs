@@ -67,7 +67,7 @@ pub enum Event {
 
 /// What folding one event did.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Folded {
+pub(crate) struct Folded {
     pub transitions: Vec<Transition>,
     /// For a store or a cache: what the game's slots and the sidecar should hold before the game
     /// goes on.

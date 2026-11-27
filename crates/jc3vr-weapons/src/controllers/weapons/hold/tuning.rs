@@ -31,9 +31,9 @@ pub struct HoldFileTuning {
     pub volumes: VolumesTuning,
     pub regions: RegionsTuning,
     pub dual_wield: DualWieldTuning,
-    pub gun_bodies: GunBodiesTuning,
+    pub(crate) gun_bodies: GunBodiesTuning,
     pub pouch_models: PouchModelsTuning,
-    pub pouch_return: PouchReturnTuning,
+    pub(crate) pouch_return: PouchReturnTuning,
 }
 
 impl Tuning for HoldFileTuning {
@@ -61,30 +61,30 @@ pub struct HoldTuning {
     pub snap_s: f32,
     /// The radius around the held gun's pistol grip for the free hand to take it, in player-scale
     /// metres. A touch on another gun region keeps that region's action.
-    pub handle_radius_m: f32,
+    pub(crate) handle_radius_m: f32,
     /// The farthest a free hand may be from a gun's grip or handguard to take it, in player-scale
     /// metres. The volume around the touched region otherwise reaches as far as the hand does,
     /// which would take a gun from any distance the palm ray meets it; beyond this reach the grab
     /// is refused, and within it the gun slides into the hand over [`HoldTuning::snap_s`].
-    pub handover_max_m: f32,
+    pub(crate) handover_max_m: f32,
     /// The reach from the nearest point of a gun's grip-to-grip segment on a rack or in a locker,
     /// in player-scale metres. Acquisition and completion use the same boundary.
-    pub take_radius_m: f32,
+    pub(crate) take_radius_m: f32,
     /// The reach from the nearest point of a gun's grip-to-grip segment in a living character's
     /// hands, in player-scale metres: wider than a rack's, since the character moves and turns
     /// while the hand closes, and a hand within it takes the gun rather than the character holding
     /// it. Acquisition and completion use the same boundary.
-    pub steal_radius_m: f32,
+    pub(crate) steal_radius_m: f32,
     /// How long a weapon let go of beside a socket keeps trying to dock there before it is left
     /// to fall, seconds of the hand staying near (see
     /// [`crate::controllers::weapons::hold::dock::ReleaseIntent`]).
-    pub release_intent_s: f32,
+    pub(crate) release_intent_s: f32,
     /// How long a [`crate::controllers::weapons::hold::button_pickup::grant`] lets the use-item
     /// input through: long enough for the injected click to reach the weapon handling a tick or two
     /// later, short enough that a button press after it does not ride along.
-    pub use_item_grant_ms: Millis,
+    pub(crate) use_item_grant_ms: Millis,
     /// How long a hand's aim target stays current for the native armed-weapon update.
-    pub target_max_age_ms: Millis,
+    pub(crate) target_max_age_ms: Millis,
     pub steal: StealTuning,
     pub swap: SwapTuning,
     pub rack: RackTuning,
@@ -115,14 +115,14 @@ impl HoldTuning {
 pub struct StealTuning {
     /// How far from the player a character's gun is noted, metres, short of the grapple's snatch
     /// widening it.
-    pub notice_range_m: f32,
+    pub(crate) notice_range_m: f32,
     /// How long a noted character stays a target without being noted again.
-    pub seen_for_ms: Millis,
+    pub(crate) seen_for_ms: Millis,
     /// The stagger a take puts on the character it takes from, as a multiple of the character's
     /// stumble threshold (see [`crate::controllers::weapons::hold::world::stagger_impulse`]).
-    pub over_stumble: f32,
+    pub(crate) over_stumble: f32,
     /// The most the stagger may be, as a share of the character's knockdown threshold.
-    pub under_ragdoll: f32,
+    pub(crate) under_ragdoll: f32,
 }
 
 impl StealTuning {
@@ -142,9 +142,9 @@ impl StealTuning {
 pub struct SwapTuning {
     /// How fast an ejected weapon leaves its socket, metres per second: enough to clear the body
     /// before it lands, slow enough to stay at the player's feet.
-    pub eject_mps: f32,
+    pub(crate) eject_mps: f32,
     /// The upward share of an ejected weapon's direction against its outward one.
-    pub eject_lift: f32,
+    pub(crate) eject_lift: f32,
 }
 
 impl SwapTuning {
@@ -159,7 +159,7 @@ impl SwapTuning {
 #[serde(deny_unknown_fields)]
 pub struct RackTuning {
     /// How long a rack's weapon stays hidden after its copy left it.
-    pub restock_after_ms: Millis,
+    pub(crate) restock_after_ms: Millis,
     /// How long a rack's copy is waited for.
     pub copy_wait_ms: Millis,
     pub paired: PairedRackTuning,
@@ -180,12 +180,12 @@ impl RackTuning {
 #[serde(deny_unknown_fields)]
 pub struct PairedRackTuning {
     /// How long a paired source stays known without being seen again.
-    pub source_grace_ms: Millis,
+    pub(crate) source_grace_ms: Millis,
     /// How long a paired member's copy is waited for.
     pub copy_wait_ms: Millis,
     /// How far the second pistol of a finite source is drawn from the first, metres: a pistol's
     /// thickness, a little more.
-    pub stack_m: f32,
+    pub(crate) stack_m: f32,
 }
 
 impl PairedRackTuning {
@@ -203,10 +203,10 @@ impl PairedRackTuning {
 #[serde(deny_unknown_fields)]
 pub struct BeginTuning {
     /// How far past the hand a volume on a gun reaches, metres.
-    pub gun_volume_margin_m: f32,
+    pub(crate) gun_volume_margin_m: f32,
     /// How deep in a volume on a gun the hand is, as a share of its radius.
-    pub gun_volume_depth: f32,
-    pub marks: MarksTuning,
+    pub(crate) gun_volume_depth: f32,
+    pub(crate) marks: MarksTuning,
 }
 
 impl BeginTuning {
@@ -222,15 +222,15 @@ impl BeginTuning {
 /// covering what is around it.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MarksTuning {
+pub(crate) struct MarksTuning {
     /// The smallest mark, metres.
-    pub min_m: f32,
+    pub(crate) min_m: f32,
     /// The largest mark, metres.
     pub max_m: f32,
     /// The mark where a held charge would stick, metres.
-    pub charge_m: f32,
+    pub(crate) charge_m: f32,
     /// The mark on a braced foregrip, metres.
-    pub foregrip_m: f32,
+    pub(crate) foregrip_m: f32,
 }
 
 impl MarksTuning {
@@ -248,7 +248,7 @@ impl MarksTuning {
 pub struct DocksTuning {
     /// How long the sockets' attachment offers stay current after the input observations stop,
     /// for the mirror and the pouch models.
-    pub attachments_max_age_ms: Millis,
+    pub(crate) attachments_max_age_ms: Millis,
     pub attraction: AttractionTuning,
 }
 
@@ -287,9 +287,9 @@ pub struct RegionsTuning {
     /// How far outside the gun's model box a hand still touches the gun, metres.
     pub reach_m: f32,
     /// How far from the pistol grip a hand still holds the grip, metres.
-    pub grip_radius_m: f32,
+    pub(crate) grip_radius_m: f32,
     /// How long a bracing hand takes to slide onto the grip.
-    pub grip_slide_ms: Millis,
+    pub(crate) grip_slide_ms: Millis,
     pub shape: GunShapeTuning,
 }
 
@@ -309,24 +309,24 @@ impl RegionsTuning {
 #[serde(deny_unknown_fields)]
 pub struct GunShapeTuning {
     /// The bottom of the pistol grip, from the attach point: down and a little back, metres.
-    pub grip_bottom_m: Vec3,
+    pub(crate) grip_bottom_m: Vec3,
     /// How far along the bore either side of the grip the grip's hand reaches, metres: the
     /// receiver's length the grip hand covers.
-    pub grip_reach_m: f32,
+    pub(crate) grip_reach_m: f32,
     /// The radius of the action's handle, metres.
-    pub action_radius_m: f32,
+    pub(crate) action_radius_m: f32,
     /// How far a magazine hangs from its well, metres.
-    pub magazine_length_m: f32,
+    pub(crate) magazine_length_m: f32,
     /// How thick a magazine is, metres.
-    pub magazine_radius_m: f32,
+    pub(crate) magazine_radius_m: f32,
     /// How far past the foregrip the handguard reaches, metres.
-    pub past_foregrip_m: f32,
+    pub(crate) past_foregrip_m: f32,
     /// The share of the way to the muzzle the handguard covers on a gun without a foregrip.
-    pub handguard_share: f32,
+    pub(crate) handguard_share: f32,
     /// The diameter the fingers wrap on a barrel, metres.
-    pub barrel_diameter_m: f32,
+    pub(crate) barrel_diameter_m: f32,
     /// The diameter the fingers wrap on a stock, metres.
-    pub stock_diameter_m: f32,
+    pub(crate) stock_diameter_m: f32,
 }
 
 impl GunShapeTuning {
@@ -365,12 +365,12 @@ impl GunShapeTuning {
 #[serde(deny_unknown_fields)]
 pub struct DualWieldTuning {
     /// How long a twin is waited for once asked, seconds: the respawn's own wait.
-    pub twin_wait_s: f32,
+    pub(crate) twin_wait_s: f32,
     /// How long a rack's copy is expected after the game's pickup of a rack with unlimited stock,
     /// seconds.
-    pub rack_copy_cover_s: f32,
+    pub(crate) rack_copy_cover_s: f32,
     /// How long a respawn's cover waits for the slot's pistol to come back after a reset, seconds.
-    pub respawn_cover_s: f32,
+    pub(crate) respawn_cover_s: f32,
 }
 
 impl DualWieldTuning {
@@ -388,9 +388,9 @@ impl DualWieldTuning {
 /// The guns' own bodies (see [`crate::controllers::weapons::gun_bodies`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GunBodiesTuning {
+pub(crate) struct GunBodiesTuning {
     /// How lately the rigid grip must have pinned a gun for it to count as in the hand.
-    pub pinned_lately_ms: Millis,
+    pub(crate) pinned_lately_ms: Millis,
 }
 
 /// Where the pouches' models sit on their pouches (see
@@ -428,7 +428,7 @@ impl PouchModelsTuning {
 /// [`crate::controllers::weapons::pouch_return`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct PouchReturnTuning {
+pub(crate) struct PouchReturnTuning {
     /// A grenade's press. Its reach rises above the pouch: a hand bringing a grenade back stops
     /// high, and in the 14 November 02:05 session the grenades at 2560 to 2580 s were let go at
     /// shoulder height, above the pouch, and fell.

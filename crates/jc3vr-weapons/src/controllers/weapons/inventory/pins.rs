@@ -21,13 +21,13 @@ pub struct PinSettings {
     pub radius_m: f32,
     /// A pinned weapon stays pinned until it is this far away, metres; below `radius_m` it is
     /// taken as `radius_m`.
-    pub release_m: f32,
+    pub(crate) release_m: f32,
     /// The most weapons pinned at once.
-    pub max_pinned: usize,
+    pub(crate) max_pinned: usize,
     /// An unpinned weapon this far away is forgotten, metres.
-    pub forget_m: f32,
+    pub(crate) forget_m: f32,
     /// The most weapons in the world the table keeps.
-    pub max_tracked: usize,
+    pub(crate) max_tracked: usize,
 }
 
 /// A weapon the table has lying in the world, as the pins see it.
@@ -44,7 +44,7 @@ pub struct WorldWeapon {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PinPlan {
     pub pin: Vec<ObjectAddress>,
-    pub unpin: Vec<ObjectAddress>,
+    pub(crate) unpin: Vec<ObjectAddress>,
     pub forget: Vec<ObjectAddress>,
 }
 

@@ -107,7 +107,7 @@ pub fn weapons_for_hand() -> Vec<&'static SpawnDefinition> {
 /// The socket a give of a weapon for `hand` comes onto, by whether the weapon is one-handed
 /// (`small`) and which sockets are `occupied`: the first empty one of the sockets that fit it, the
 /// hand's own side first, else the first of them, which the give clears.
-pub fn hand_socket(hand: Hand, small: bool, occupied: impl Fn(Socket) -> bool) -> Socket {
+pub(crate) fn hand_socket(hand: Hand, small: bool, occupied: impl Fn(Socket) -> bool) -> Socket {
     let candidates = if small {
         [Socket::Hip(hand), Socket::Hip(hand.other())]
     } else {

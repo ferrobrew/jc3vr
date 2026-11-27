@@ -104,7 +104,7 @@ pub struct SpawnDefinition {
     /// ([`WeaponBase::m_WeaponNameHash`](jc3gi::equipment::weapon::WeaponBase::m_WeaponNameHash)).
     /// Absent from a table extracted before the tool wrote it; see [`Self::name_hash`].
     #[serde(default)]
-    pub entity_hash: Option<u32>,
+    pub(crate) entity_hash: Option<u32>,
 }
 
 impl SpawnDefinition {

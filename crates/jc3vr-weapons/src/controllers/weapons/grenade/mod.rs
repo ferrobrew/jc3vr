@@ -424,11 +424,11 @@ pub(super) struct TickInputs {
     pub acting: bool,
     /// The hands whose grenade's pin the other hand squeezed this tick, by [`Hand::index`] of the
     /// hand holding the grenade.
-    pub pin_grabs: [bool; 2],
-    pub pouch_grab: Option<Hand>,
-    pub locker_grabs: [bool; 2],
-    pub catch_grab: Option<Hand>,
-    pub cockpit_grips: [Option<Vec3>; 2],
+    pub(crate) pin_grabs: [bool; 2],
+    pub(crate) pouch_grab: Option<Hand>,
+    pub(crate) locker_grabs: [bool; 2],
+    pub(crate) catch_grab: Option<Hand>,
+    pub(crate) cockpit_grips: [Option<Vec3>; 2],
     pub triggers: [ButtonControl; 2],
     pub dominant: Hand,
     pub opened: [bool; 2],
@@ -882,7 +882,7 @@ fn most_urgent(fuses: impl Iterator<Item = (Hand, Fuse)>) -> Option<(Hand, Fuse)
 /// How near a running fuse is to its end: the share of its `total_s` that has burnt, from zero when
 /// it was lit to one when it runs out, so that the warning rises from the pin on whatever the
 /// fuse's length.
-pub fn fuse_urgency(remaining_s: f32, total_s: f32) -> f32 {
+pub(crate) fn fuse_urgency(remaining_s: f32, total_s: f32) -> f32 {
     if !remaining_s.is_finite() || !total_s.is_finite() || total_s <= 0.0 {
         return 0.0;
     }

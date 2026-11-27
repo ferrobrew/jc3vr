@@ -195,14 +195,14 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3, config: &Heft) {
 /// The multiplier on a shot's kick for the gun in `hand` held in one hand: the class's kick scale
 /// for a gun the weight acts on in that hand, one otherwise. The recoil blends it toward its own
 /// two-hand kick scale by the foregrip's weight.
-pub fn one_hand_kick(hand: Hand) -> f32 {
+pub(crate) fn one_hand_kick(hand: Hand) -> f32 {
     let target = STATE.lock().hands[hand.index()].target.map(|(t, _)| t);
     target.map_or(1.0, |t| HANDLING.get().heft.tuning(t.class).kick_scale)
 }
 
 /// The multiplier on the scatter of a shot from `weapon`: the class's spread scale, scaled by the
 /// unbraced share, for a weapon the weight acts on in either hand, one otherwise.
-pub fn spread_scale(weapon: usize) -> f32 {
+pub(crate) fn spread_scale(weapon: usize) -> f32 {
     let target = STATE
         .lock()
         .hands

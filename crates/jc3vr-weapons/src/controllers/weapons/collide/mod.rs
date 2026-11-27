@@ -46,18 +46,18 @@ use crate::controllers::{
 pub struct CollideTuning {
     /// How far past the muzzle the gun's probe reaches, metres, so the muzzle stops just short of a
     /// wall.
-    pub tip_margin_m: f32,
+    pub(crate) tip_margin_m: f32,
     /// The furthest the gun turns away from a wall about its grip, degrees.
-    pub max_turn_deg: f32,
+    pub(crate) max_turn_deg: f32,
     /// The furthest the gun is pulled back into the hands, metres.
-    pub max_retract_m: f32,
+    pub(crate) max_retract_m: f32,
     /// How long a wall is kept after the probe last met it, seconds.
-    pub keep_s: f32,
+    pub(crate) keep_s: f32,
 }
 
 /// A long gun in a hand, as the input tick measured it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct CollideWeapon {
+pub(crate) struct CollideWeapon {
     pub holder: Hand,
     /// The muzzle in the holding wrist's frame, cockpit metres.
     pub muzzle: Vec3,

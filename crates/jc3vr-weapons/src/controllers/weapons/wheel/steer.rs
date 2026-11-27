@@ -9,7 +9,7 @@ use crate::controllers::weapons::wheel::select::WheelSlot;
 /// The steering hand's frame when the wheel opened: where it pointed, and the directions the
 /// cross's arms lie in.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SteerOrigin {
+pub(crate) struct SteerOrigin {
     /// The controller's aim direction at the open.
     forward: Vec3,
     /// The aim's own right and up, perpendicular to [`forward`](Self::forward): the turn toward
@@ -86,7 +86,7 @@ pub fn aim(previous: Aimed, deflection: Vec2, leave: f32, back: f32, hysteresis_
 
 /// The arm whose quarter of the wheel holds `angle` (degrees clockwise from up), keeping
 /// `previous` until `angle` is more than `hysteresis_deg` outside its quarter.
-pub fn sector(angle: f32, previous: Option<WheelSlot>, hysteresis_deg: f32) -> WheelSlot {
+pub(crate) fn sector(angle: f32, previous: Option<WheelSlot>, hysteresis_deg: f32) -> WheelSlot {
     let hysteresis = hysteresis_deg.clamp(0.0, 44.0);
     if let Some(arm) = previous
         && angular_distance(angle, arm.centre_deg()) <= 45.0 + hysteresis

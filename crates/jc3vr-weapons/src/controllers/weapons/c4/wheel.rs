@@ -45,7 +45,7 @@ pub enum WheelStep {
 }
 
 /// How long the planting mode has to end once it is left, seconds.
-pub const TIMEOUT_S: f32 = 1.0;
+pub(crate) const TIMEOUT_S: f32 = 1.0;
 
 /// What to do about the planting mode `planting`, with the throw at `stage`, a charge pending for
 /// a hand from an earlier tick (with the seconds since the planting mode was left), and the tick's

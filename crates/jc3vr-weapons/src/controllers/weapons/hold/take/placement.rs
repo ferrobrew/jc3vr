@@ -13,7 +13,7 @@ pub(crate) struct Identity {
     pub primary_gun: usize,
     pub holder: Hand,
     pub state: WeaponState,
-    pub gun_world: Mat4,
+    pub(crate) gun_world: Mat4,
 }
 
 pub(crate) struct Sample {

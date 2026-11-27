@@ -106,7 +106,7 @@ const PROBE_AXES: [Vec3; 6] = [
 /// The nearest of `hits` (each a point, a normal, the probe's direction, and whether it is on an
 /// object) within `reach` of `centre`. A normal that is not finite, or that faces away from the
 /// charge, is taken as the probe's direction reversed.
-pub fn nearest_contact(
+pub(crate) fn nearest_contact(
     centre: Vec3,
     hits: impl IntoIterator<Item = (Vec3, Vec3, Vec3, bool)>,
     reach: f32,
@@ -140,13 +140,13 @@ pub fn placement(contact: Contact, tuning: &StickTuning) -> StickAt {
 
 /// Whether a held charge may stick: it has been in the hand `held_s` seconds, and the hand has not
 /// opened.
-pub fn may_stick(held_s: f32, released: bool, tuning: &StickTuning) -> bool {
+pub(crate) fn may_stick(held_s: f32, released: bool, tuning: &StickTuning) -> bool {
     !released && held_s >= tuning.after_prime_s
 }
 
 /// The held charge's centre, where the probes start: the charge's middle `centre` (in its model's
 /// frame) carried by its model's place `local` in the grip frame.
-pub fn probe_origin(grip: Pose, local: Pose, centre: Vec3) -> Vec3 {
+pub(crate) fn probe_origin(grip: Pose, local: Pose, centre: Vec3) -> Vec3 {
     held_matrix(grip, local).transform_point3(centre)
 }
 

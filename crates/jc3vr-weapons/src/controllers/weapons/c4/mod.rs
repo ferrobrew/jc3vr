@@ -397,12 +397,12 @@ pub(super) struct TickInputs {
     /// Whether the throw may act this tick: its toggle is on and the mode has free hands.
     pub acting: bool,
     /// The hand that grabbed the C4 pouch this tick.
-    pub pouch_grab: Option<Hand>,
+    pub(crate) pouch_grab: Option<Hand>,
     /// Each hand's trigger over the tick, indexed by [`Hand::index`]: it swaps a held charge for
     /// the detonator, and the detonator's detonates.
     pub triggers: [ButtonControl; 2],
     /// The hand that grabbed a placed charge this tick.
-    pub placed_grab: Option<Hand>,
+    pub(crate) placed_grab: Option<Hand>,
     /// The hands whose fingers opened this tick, indexed by [`Hand::index`].
     pub opened: [bool; 2],
     /// The hands holding nothing, by [`Hand::index`], for a charge from the weapon wheel.

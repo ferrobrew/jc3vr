@@ -144,7 +144,7 @@ pub struct ModelPlacement {
 /// the cockpit frame, the side of the body it is on, and for the magazine, the gun whose magazine
 /// it holds.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ShownPouch {
+pub(crate) struct ShownPouch {
     pub prop: Prop,
     pub pouch: Pose,
     pub side: Hand,
@@ -170,7 +170,7 @@ pub struct PouchModelsStatus {
     /// Whether the round in the hand is the stand-in round model, and how many are drawn.
     pub hand_rounds: usize,
     /// How many rounds each gun hand's speedloader on its belt pouch shows, by [`Hand::index`].
-    pub speedloaders: [usize; 2],
+    pub(crate) speedloaders: [usize; 2],
     /// Instances created since the payload loaded.
     pub created: u64,
     /// Render frames that drew at least one model.
@@ -208,7 +208,7 @@ pub(crate) fn display_centre(
 /// The model's world matrix at the interpolation fraction `dtf`: its placement in the character's
 /// model space between the last two ticks', carried by the character's world transform between its
 /// last two ticks'.
-pub fn render_matrix(character: [Mat4; 2], local: [Mat4; 2], dtf: f32) -> Option<Mat4> {
+pub(crate) fn render_matrix(character: [Mat4; 2], local: [Mat4; 2], dtf: f32) -> Option<Mat4> {
     let matrix = render_transform(character, dtf) * render_transform(local, dtf);
     matrix.is_finite().then_some(matrix)
 }

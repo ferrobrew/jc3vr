@@ -46,7 +46,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// Where the cross goes on the panel.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PanelPoint {
+pub(crate) struct PanelPoint {
     /// The point in the panel texture's UV.
     pub uv: Vec2,
     /// The panel's width over its height, which is the HUD texture's.
@@ -55,7 +55,7 @@ pub struct PanelPoint {
 
 /// The panel point under `hand`, seen from `head`, both in the cockpit frame, or `None` when no
 /// panel was drawn recently or the hand is not in front of it.
-pub fn panel_point(head: Vec3, hand: Vec3) -> Option<PanelPoint> {
+pub(crate) fn panel_point(head: Vec3, hand: Vec3) -> Option<PanelPoint> {
     let direction = (hand - head).try_normalize()?;
     let (ray, corners) = aim_at_panel(Pose {
         position: head,
@@ -95,7 +95,7 @@ pub fn clear() {
 /// `bb` (the signed bottom, top, left, and right edge offsets, as
 /// [`HUDUI::m_SelectionWheelBB`] holds them) stays inside `safe`. On an axis where the extent does
 /// not fit, the clip is centred in the safe area.
-pub fn stage_position(
+pub(crate) fn stage_position(
     point: PanelPoint,
     stage: Vec2,
     safe: (Vec2, Vec2),

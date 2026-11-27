@@ -67,7 +67,7 @@ pub struct ScopeTuning {
     /// How long an input tick's identification of the scoped weapon stands. The input tick runs at
     /// the simulation rate while the bindings inject, so an older one belongs to a menu or the
     /// gamepad scheme.
-    pub scoped_ms: Millis,
+    pub(crate) scoped_ms: Millis,
     pub lens: LensTuning,
 }
 

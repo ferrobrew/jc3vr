@@ -208,7 +208,7 @@ pub(super) struct BeginInputs<'a> {
     /// The character's body the pouch rides, when its skeleton could be read.
     pub body: Option<&'a BodyFrame>,
     /// The hand the pouches are laid out around ([`volumes::gun_side`]).
-    pub gun_side: Hand,
+    pub(crate) gun_side: Hand,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub gameplay: bool,
 }

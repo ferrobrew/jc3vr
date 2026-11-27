@@ -39,7 +39,7 @@ pub(crate) struct Sample {
     pub at: Instant,
     /// The interaction sample's world transform, without render interpolation.
     pub character: Mat4,
-    pub attachments: Vec<Attachment>,
+    pub(crate) attachments: Vec<Attachment>,
 }
 
 /// One render publication and the input observation it compares against.

@@ -58,7 +58,7 @@ impl GunRegion {
     }
 
     /// The fingers' pose for a hand holding the gun here.
-    pub fn finger_pose(self) -> GripPose {
+    pub(crate) fn finger_pose(self) -> GripPose {
         match self {
             GunRegion::Grip => GripPose::PistolGrip,
             GunRegion::Handguard => GripPose::Foregrip,
@@ -141,7 +141,7 @@ impl GunShape {
 }
 
 /// The bore's direction in the gun's frame.
-pub const BORE: Vec3 = Vec3::NEG_Z;
+pub(crate) const BORE: Vec3 = Vec3::NEG_Z;
 
 /// Where a hand touched a gun.
 #[derive(Debug, Copy, Clone, PartialEq)]

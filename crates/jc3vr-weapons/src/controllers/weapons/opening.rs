@@ -29,7 +29,7 @@ pub struct OpeningTuning {
 
 /// Each hand's fingers across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct OpenWatch {
+pub(crate) struct OpenWatch {
     /// Whether each hand's fingers are closed, by [`Hand::index`].
     closed: [bool; 2],
 }

@@ -36,7 +36,7 @@ pub(super) struct Published {
     /// by [`Hand::index`].
     pub weapons: [usize; 2],
     /// Each hand's weapon cycles its own bolt once the trigger is let go, by [`Hand::index`].
-    pub self_cycling: [bool; 2],
+    pub(crate) self_cycling: [bool; 2],
     /// The hands whose guns may not fire, by [`Hand::index`].
     pub held: [bool; 2],
 }

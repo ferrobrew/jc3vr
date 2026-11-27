@@ -48,7 +48,7 @@ impl Stage {
     }
 
     /// Whether a primed charge is in the hand, so that it follows the hand.
-    pub fn charge_in_hand(self) -> bool {
+    pub(crate) fn charge_in_hand(self) -> bool {
         matches!(self, Stage::Held { .. } | Stage::Throwing { .. })
     }
 
@@ -67,7 +67,7 @@ impl Stage {
 
 /// What the input tick reports.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum InputEvent {
+pub(crate) enum InputEvent {
     /// A grip press at the C4 pouch.
     Grab(Hand),
     /// The grip of `hand` opened.
@@ -109,7 +109,7 @@ pub struct WeaponView {
     /// The weapon holds a live primed charge.
     pub primed: bool,
     /// The primed charge has its physics body, so it can be dropped.
-    pub physics_ready: bool,
+    pub(crate) physics_ready: bool,
     /// The weapon is in the game's own planting mode.
     pub planting: bool,
     /// Why a charge cannot be placed now, if it cannot: [`Refusal::NoRoom`].
@@ -157,7 +157,7 @@ impl Outcome {
 }
 
 /// Fold an input-tick event into the stage.
-pub fn on_input(stage: Stage, event: InputEvent) -> Stage {
+pub(crate) fn on_input(stage: Stage, event: InputEvent) -> Stage {
     match (stage, event) {
         (Stage::Idle, InputEvent::Grab(hand)) => Stage::Wanted {
             hand,
@@ -268,7 +268,11 @@ pub fn before_update(stage: Stage, view: WeaponView) -> (Stage, WeaponAction, Op
 
 /// Settle the stage once `action` has run: `primed` is whether the weapon holds a live primed
 /// charge now.
-pub fn after_action(stage: Stage, action: WeaponAction, primed: bool) -> (Stage, Option<Outcome>) {
+pub(crate) fn after_action(
+    stage: Stage,
+    action: WeaponAction,
+    primed: bool,
+) -> (Stage, Option<Outcome>) {
     match (stage, action) {
         (Stage::Held { .. }, WeaponAction::Prime) if primed => (stage, Some(Outcome::Primed)),
         (Stage::Held { .. }, WeaponAction::Prime) => (Stage::Idle, Some(Outcome::SpawnFailed)),

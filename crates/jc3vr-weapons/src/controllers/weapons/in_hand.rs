@@ -118,7 +118,7 @@ impl HoldPlacement {
 
 /// The direction out of `hand`'s palm in its grip frame, toward what the hand holds: -X for the
 /// right hand, whose +X is out of the back of the hand, and +X for the left.
-pub const fn away_from_palm(hand: Hand) -> Vec3 {
+pub(crate) const fn away_from_palm(hand: Hand) -> Vec3 {
     match hand {
         Hand::Right => Vec3::NEG_X,
         Hand::Left => Vec3::X,
@@ -137,7 +137,7 @@ pub fn updated() -> u64 {
 
 /// The world matrix of a model held at `local` (its pose in the grip frame) in a hand whose grip is
 /// `grip`. The throws place the explosive on the tick the same way.
-pub fn held_matrix(grip: Pose, local: Pose) -> Mat4 {
+pub(crate) fn held_matrix(grip: Pose, local: Pose) -> Mat4 {
     let orientation = grip.orientation.normalize();
     Mat4::from_rotation_translation(
         (orientation * local.orientation).normalize(),

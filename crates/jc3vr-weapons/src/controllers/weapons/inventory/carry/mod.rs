@@ -84,7 +84,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// Why a weapon did not come into the carry set or leave it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum CarryRefusal {
+pub(crate) enum CarryRefusal {
     /// The weapon is not one the inventory carries.
     Unsupported,
     /// The weapon did not end up holstered on the player, or no longer lives.

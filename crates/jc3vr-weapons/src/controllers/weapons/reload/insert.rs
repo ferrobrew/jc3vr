@@ -502,7 +502,7 @@ fn swept_mouth(previous: Vec3, current: Vec3, radius: f32) -> bool {
 
 /// The held round of a hand whose grip is at `grip` pointing along `pointing` (the direction the
 /// closed hand points), its top `top_m` ahead of the grip, moving at `velocity`.
-pub fn held_round(grip: Vec3, pointing: Vec3, top_m: f32, velocity: Vec3) -> Option<Held> {
+pub(crate) fn held_round(grip: Vec3, pointing: Vec3, top_m: f32, velocity: Vec3) -> Option<Held> {
     let axis = pointing.try_normalize()?;
     Some(Held {
         top: grip + axis * top_m,
@@ -516,7 +516,11 @@ pub fn held_round(grip: Vec3, pointing: Vec3, top_m: f32, velocity: Vec3) -> Opt
 /// [`Hand::index`]), the hand that would take the round (`taker`, `None` while no hand is free),
 /// and the `dominant` hand: the gun in the other hand from the taker, or without a taker, the
 /// dominant hand's gun and then the other hand's. `None` without a gun.
-pub fn loading_hand(gun_hands: [bool; 2], taker: Option<Hand>, dominant: Hand) -> Option<Hand> {
+pub(crate) fn loading_hand(
+    gun_hands: [bool; 2],
+    taker: Option<Hand>,
+    dominant: Hand,
+) -> Option<Hand> {
     let first = taker.map_or(dominant, Hand::other);
     [first, first.other()]
         .into_iter()

@@ -23,7 +23,7 @@ pub(super) struct NativeAmmo {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct Ammo {
     pub magazine: i32,
-    pub chambers: [Chamber; 2],
+    pub(crate) chambers: [Chamber; 2],
     pub detached: i32,
     pub out: bool,
 }
@@ -140,7 +140,7 @@ impl Ammo {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct Observation {
     pub native: NativeAmmo,
-    pub chambers: [Chamber; 2],
+    pub(crate) chambers: [Chamber; 2],
     pub topology: [bool; 2],
     pub guns: [Option<(usize, bool)>; 2],
     pub active: bool,

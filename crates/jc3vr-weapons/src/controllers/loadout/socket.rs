@@ -57,7 +57,7 @@ impl BodyLayout {
     /// The sockets a weapon of `weapon`'s type goes to when the player does not choose (a game's
     /// give with the hands full, a lost weapon's return, a respawn), the first choice first: the
     /// socket the game docks its slot on, then the snuggest that fits, the dominant side first.
-    pub fn preference(self, weapon: WeaponType) -> impl Iterator<Item = Socket> {
+    pub(crate) fn preference(self, weapon: WeaponType) -> impl Iterator<Item = Socket> {
         let dominant = self.dominant;
         let other = dominant.other();
         let by_size: [Socket; Socket::COUNT] = match weapon.size() {

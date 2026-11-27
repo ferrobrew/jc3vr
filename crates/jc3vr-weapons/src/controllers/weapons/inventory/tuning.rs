@@ -32,7 +32,7 @@ pub struct InventoryTuning {
     pub lost: LostRules,
     /// Where each socket's weapon sits relative to its bone.
     pub sockets: Offsets,
-    pub docked_view: DockedViewTuning,
+    pub(crate) docked_view: DockedViewTuning,
     pub restore: RestoreTuning,
     pub loadout: LoadoutTuning,
     pub wheel: WheelTuning,
@@ -53,17 +53,17 @@ impl Tuning for InventoryTuning {
 /// The docked guns' in-world diagnostic (`weapons::inventory::docked_view`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DockedViewTuning {
+pub(crate) struct DockedViewTuning {
     /// How long a submission is drawn without a newer one, milliseconds.
     pub ttl_ms: u64,
     /// The ring's diameter, metres.
-    pub ring_m: f32,
+    pub(crate) ring_m: f32,
     /// The ring's thickness, a share of its radius.
     pub ring_thickness: f32,
     /// The barrel line's length, metres.
-    pub barrel_m: f32,
+    pub(crate) barrel_m: f32,
     /// The barrel line's width, metres.
-    pub barrel_width_m: f32,
+    pub(crate) barrel_width_m: f32,
     /// The marks' colour while the gun's model is shown, linear RGBA.
     pub shown: Rgba,
     /// The marks' colour while the gun's model is hidden, linear RGBA.
@@ -98,35 +98,35 @@ impl DockedViewTuning {
 #[serde(deny_unknown_fields)]
 pub struct RestoreTuning {
     /// How long a give's spawn is waited for when its definition's entity is loaded, seconds.
-    pub give_wait_s: f32,
+    pub(crate) give_wait_s: f32,
     /// How long a give's spawn is waited for at most, while its definition's entity is still
     /// streaming in, seconds. Not below `give_wait_s`.
-    pub give_wait_loading_s: f32,
+    pub(crate) give_wait_loading_s: f32,
     /// How long a spawn is waited for, seconds.
-    pub spawn_wait_s: f32,
+    pub(crate) spawn_wait_s: f32,
     /// How long a reset's record waits for the player, seconds: a load screen's length. A record
     /// older than this is taken for a quit to the menu, and a new game does not get it.
-    pub reset_record_s: f32,
+    pub(crate) reset_record_s: f32,
 }
 
 impl RestoreTuning {
     /// [`give_wait_s`](Self::give_wait_s) as a duration.
-    pub fn give_wait(&self) -> Duration {
+    pub(crate) fn give_wait(&self) -> Duration {
         Duration::from_secs_f32(self.give_wait_s)
     }
 
     /// [`give_wait_loading_s`](Self::give_wait_loading_s) as a duration.
-    pub fn give_wait_loading(&self) -> Duration {
+    pub(crate) fn give_wait_loading(&self) -> Duration {
         Duration::from_secs_f32(self.give_wait_loading_s)
     }
 
     /// [`spawn_wait_s`](Self::spawn_wait_s) as a duration.
-    pub fn spawn_wait(&self) -> Duration {
+    pub(crate) fn spawn_wait(&self) -> Duration {
         Duration::from_secs_f32(self.spawn_wait_s)
     }
 
     /// [`reset_record_s`](Self::reset_record_s) as a duration.
-    pub fn reset_record(&self) -> Duration {
+    pub(crate) fn reset_record(&self) -> Duration {
         Duration::from_secs_f32(self.reset_record_s)
     }
 
@@ -148,14 +148,14 @@ impl RestoreTuning {
 #[serde(deny_unknown_fields)]
 pub struct LoadoutTuning {
     /// The longest a reset's completion waits for the slots' spawns to arrive, seconds.
-    pub settle_wait_s: f32,
+    pub(crate) settle_wait_s: f32,
     /// How long a hand expects the game to wield the weapon a grab asked for, seconds.
-    pub expect_s: f32,
+    pub(crate) expect_s: f32,
 }
 
 impl LoadoutTuning {
     /// [`settle_wait_s`](Self::settle_wait_s) as a duration.
-    pub fn settle_wait(&self) -> Duration {
+    pub(crate) fn settle_wait(&self) -> Duration {
         Duration::from_secs_f32(self.settle_wait_s)
     }
 

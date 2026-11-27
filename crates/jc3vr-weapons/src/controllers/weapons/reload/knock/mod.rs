@@ -43,7 +43,7 @@ pub(crate) struct KnockZone {
     /// How far the magazine hangs below the mouth: its base is this far out along the axis.
     pub below: f32,
     /// How far into the well above the mouth the zone reaches.
-    pub lip: f32,
+    pub(crate) lip: f32,
     /// How far from the axis a tip touches the magazine.
     pub radius: f32,
 }
@@ -106,7 +106,7 @@ pub(super) struct Strike {
     /// scale.
     pub velocity: Vec3,
     /// How fast the tip closed on the magazine's surface.
-    pub closing_mps: f32,
+    pub(crate) closing_mps: f32,
 }
 
 /// The knock's state across input ticks.
@@ -119,9 +119,9 @@ pub(super) struct Knocks {
     /// The knocked magazine's impulse, while it waits on a readable body.
     pub impulse: Option<PendingImpulse>,
     /// When a magazine was last knocked out.
-    pub knocked_at: Option<Stamp>,
+    pub(crate) knocked_at: Option<Stamp>,
     /// The gun whose magazine part stays drawn while its knocked prop appears.
-    pub linger: Option<Linger>,
+    pub(crate) linger: Option<Linger>,
     gun_approaches: [Option<GunApproach>; 2],
 }
 
@@ -145,7 +145,7 @@ struct GunApproach {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) struct Linger {
     pub weapon: usize,
-    pub ticks_left: u32,
+    pub(crate) ticks_left: u32,
 }
 
 impl Linger {
@@ -238,7 +238,7 @@ pub(super) struct PendingImpulse {
     /// The tip's velocity relative to the gun, game metres per second.
     pub velocity: Vec3,
     /// The ticks left to find the body readable.
-    pub ticks_left: u32,
+    pub(crate) ticks_left: u32,
 }
 
 /// The visible length of an inserted magazine below its well, model metres: the magazine part's
@@ -375,7 +375,7 @@ pub(crate) struct KnockView {
     /// relative to the gun is at least the threshold.
     pub fast: bool,
     /// When the magazine was last knocked out.
-    pub knocked_at: Option<Stamp>,
+    pub(crate) knocked_at: Option<Stamp>,
 }
 
 impl KnockView {

@@ -135,7 +135,7 @@ pub fn project(loadout: &Loadout) -> Projection {
 
 /// What a store or a cache writes: the store projection, and every weapon on the body for the
 /// sidecar.
-pub fn project_store(loadout: &Loadout) -> StoreProjection {
+pub(crate) fn project_store(loadout: &Loadout) -> StoreProjection {
     let projection = project(loadout);
     let sidecar = loadout
         .items()

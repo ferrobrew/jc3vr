@@ -46,7 +46,7 @@ use crate::controllers::weapons::{
 
 /// The detonator, and the hand that holds it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct Detonator {
+pub(crate) struct Detonator {
     hand: Option<Hand>,
     /// Whether the trigger has let go since the detonator came into the hand, so that a press
     /// detonates.
@@ -55,7 +55,7 @@ pub struct Detonator {
 
 /// What a tick of the detonator did.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DetonatorStep {
+pub(crate) enum DetonatorStep {
     /// The hand's trigger pressed: detonate.
     Detonate(Hand),
     /// The hand opened: the detonator went back on the chest.

@@ -41,7 +41,7 @@ impl GunFrame {
     }
 
     /// The gun's rearward axis: the model's +Z, from the muzzle toward the stock.
-    pub fn rearward(&self) -> Vec3 {
+    pub(crate) fn rearward(&self) -> Vec3 {
         self.direction(Vec3::Z)
     }
 }
@@ -90,7 +90,7 @@ pub fn well(
 
 /// The point of a round held in `hand` level with its grip at `grip`: on the round's centre line,
 /// `palm_gap_m` out of the palm.
-pub fn held_line(grip: Pose, hand: Hand, palm_gap_m: f32) -> Vec3 {
+pub(crate) fn held_line(grip: Pose, hand: Hand, palm_gap_m: f32) -> Vec3 {
     grip.position + grip.orientation * (away_from_palm(hand) * palm_gap_m)
 }
 

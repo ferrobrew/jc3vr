@@ -50,17 +50,17 @@ use crate::controllers::weapons::{engine::FULL_WEIGHT, handling_tuning::HANDLING
 #[serde(deny_unknown_fields)]
 pub struct GripWatchTuning {
     /// A tick-to-tick change in the gun's rotation on the wrist larger than this is a snap, degrees.
-    pub flip_deg: f32,
+    pub(crate) flip_deg: f32,
     /// A departure from the grab's rotation larger than this, held for
     /// [`GripWatchTuning::sweep_hold_ms`], is a sweep, degrees.
     pub sweep_deg: f32,
     /// The share of [`GripWatchTuning::sweep_deg`] the departure must fall back under before
     /// another excursion can be reported.
-    pub sweep_rearm_share: f32,
+    pub(crate) sweep_rearm_share: f32,
     /// How long a departure past [`GripWatchTuning::sweep_deg`] lasts before it is a sweep.
-    pub sweep_hold_ms: Millis,
+    pub(crate) sweep_hold_ms: Millis,
     /// A grip record older than this is from a placement that no longer runs.
-    pub record_ms: Millis,
+    pub(crate) record_ms: Millis,
 }
 
 /// The watch's readout.

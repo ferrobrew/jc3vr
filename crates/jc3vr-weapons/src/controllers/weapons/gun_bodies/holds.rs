@@ -76,7 +76,7 @@ pub(crate) unsafe fn read_holds(weapons: [Option<(usize, HeftClass)>; 2]) -> Gun
 /// Convert a measured support region and the tracked hand's grip-to-palm displacement into the
 /// gun's local contact. The measured gun translation is in cockpit metres; native gun-local
 /// coordinates and the physical palm offset are in game units after this conversion.
-pub fn brace_contact(
+pub(crate) fn brace_contact(
     geometry: &GripGeometry,
     off: &CockpitHand,
     palm_offset_m: Vec3,

@@ -60,7 +60,7 @@ use crate::controllers::weapons::{
 
 /// Why a weapon was not armed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ArmRefusal {
+pub(crate) enum ArmRefusal {
     /// The weapon is not holstered, or another character uses it.
     NotHolstered,
     /// The hand has a weapon armed already.

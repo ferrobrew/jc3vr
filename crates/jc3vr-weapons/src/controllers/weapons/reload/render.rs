@@ -39,7 +39,7 @@ pub(super) struct ActionPart {
     /// The gun's index in the weapon, which a separate part names as its own.
     pub gun: u32,
     /// The gun's address, whose skeleton carries a pump or a bolt bone.
-    pub gun_address: usize,
+    pub(crate) gun_address: usize,
     pub kind: ActionKind,
     /// How far back the part is, as a share of its travel, `0..=1`.
     pub share: f32,
@@ -49,9 +49,9 @@ pub(super) struct ActionPart {
     pub travel_m: f32,
     /// A bolt's turn up at full lift, radians, signed so that it turns the handle's side toward
     /// the gun's top about the model's +Z.
-    pub lift_rad: f32,
+    pub(crate) lift_rad: f32,
     /// The weapon's magazine is empty, which holds a slide back on its own.
-    pub magazine_empty: bool,
+    pub(crate) magazine_empty: bool,
 }
 
 /// A revolver's cylinder where the reload has it, for the crane and cylinder bones of its gun's
@@ -61,13 +61,13 @@ pub(super) struct CylinderPart {
     /// The address of the weapon the gun belongs to.
     pub weapon: usize,
     /// The gun's address, whose skeleton carries the crane and the cylinder.
-    pub gun_address: usize,
+    pub(crate) gun_address: usize,
     /// The crane's turn about the model's +Z, radians.
-    pub crane_rad: f32,
+    pub(crate) crane_rad: f32,
     /// The crane's slide along the model's X, metres.
-    pub crane_shift_m: f32,
+    pub(crate) crane_shift_m: f32,
     /// The cylinder's spin about its own axis, radians.
-    pub spin_rad: f32,
+    pub(crate) spin_rad: f32,
 }
 
 /// A round part carried in a hand.
@@ -77,11 +77,11 @@ pub(super) struct HeldPart {
     pub weapon: usize,
     pub hand: Hand,
     /// How far ahead of the grip the top of the held round is, in the world's metres.
-    pub top_world_m: f32,
+    pub(crate) top_world_m: f32,
     /// How far out of the palm the held round's centre line is, in the world's metres.
-    pub palm_gap_world_m: f32,
+    pub(crate) palm_gap_world_m: f32,
     /// The top of the round's model, centred across it, in the model's own frame and metres.
-    pub part_top: Vec3,
+    pub(crate) part_top: Vec3,
     /// The direction the round travels into the gun, in the model's own frame, unit length.
     pub part_axis: Vec3,
     /// What draws the round.
@@ -109,7 +109,7 @@ pub(super) struct Published {
     pub actions: [Option<ActionPart>; 2],
     pub held: Option<HeldPart>,
     /// Each hand's revolver's cylinder, by [`Hand::index`].
-    pub cylinders: [Option<CylinderPart>; 2],
+    pub(crate) cylinders: [Option<CylinderPart>; 2],
 }
 
 pub(super) fn publish(published: Published) {

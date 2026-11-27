@@ -26,7 +26,7 @@ pub(super) struct Crane {
     /// The crane bone's pivot: the line about which it turns runs through it along Z.
     pub pivot: Vec3,
     /// How far the crane turns out, radians.
-    pub open_rad: f32,
+    pub(crate) open_rad: f32,
     /// How far the crane slides along X as it opens, metres, the way it turns.
     pub shift_m: f32,
 }
@@ -71,7 +71,7 @@ pub(super) struct Cylinder {
     /// Whether every chamber is empty: dumped and not loaded since.
     pub empty: bool,
     /// The seconds since the cylinder began to spin shut, while it spins.
-    pub spin_s: Option<f32>,
+    pub(crate) spin_s: Option<f32>,
     last: Option<Quat>,
     cooldown_s: f32,
 }

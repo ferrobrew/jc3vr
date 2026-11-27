@@ -187,7 +187,7 @@ const ROUNDING_S: f32 = 1e-5;
 
 /// Watches the holding hand's grip while the grip holds the gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct ReleaseWatch {
+pub(crate) struct ReleaseWatch {
     state: ReleaseState,
     /// Each hand's grip on the last tick, by [`Hand::index`], for [`Self::latch_press`].
     before: [bool; 2],
@@ -208,7 +208,7 @@ impl ReleaseWatch {
 
     /// Stop watching a gun that left the hand for another, keeping the grip's last state, so that
     /// a grip already held when the new gun arrived is not taken for a press.
-    pub fn unarm(&mut self) {
+    pub(crate) fn unarm(&mut self) {
         self.state = ReleaseState::Unarmed;
     }
 
@@ -225,7 +225,7 @@ impl ReleaseWatch {
     /// grip's on the tick the grip closes on it. Only a press counts, not a grip already held when
     /// the gun arrived, so a hand that held a vehicle's control while the game drew the gun does
     /// not drop it on letting go. Returns the hand when it latched.
-    pub fn latch_press(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
+    pub(crate) fn latch_press(&mut self, holder: Option<Hand>, grips: [bool; 2]) -> Option<Hand> {
         let before = std::mem::replace(&mut self.before, grips);
         let hand = holder.filter(|h| self.armed().is_none() && grips[h.index()])?;
         if before[hand.index()] {
@@ -245,7 +245,7 @@ impl ReleaseWatch {
 
     /// Retain an open grip while a physical action owns the hand. The owning watch resets this
     /// state when its exact weapon changes; a regrip cancels the deferred release.
-    pub fn observe_action(
+    pub(crate) fn observe_action(
         &mut self,
         holder: Option<Hand>,
         grips: [bool; 2],

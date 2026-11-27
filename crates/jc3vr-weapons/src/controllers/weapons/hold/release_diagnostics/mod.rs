@@ -158,13 +158,13 @@ pub struct DropObservation {
     pub branch: DropBranch,
     pub sample_stage: SampleStage,
     pub sample_source: SampleSource,
-    pub sample_age: Unavailable,
+    pub(crate) sample_age: Unavailable,
     pub cached_world_motion: Option<WorldMotion>,
     /// From `WeaponData::m_PfxInstance`, distinct from the mod-owned held-gun body.
     /// This identifier is never used for a later native read.
-    pub native_body_id: Option<u32>,
+    pub(crate) native_body_id: Option<u32>,
     /// Sanitized, capped world-space values passed to the existing native setter, if called.
-    pub requested_world_motion: Option<WorldMotion>,
+    pub(crate) requested_world_motion: Option<WorldMotion>,
     pub release_source: SampleSource,
     pub history_age_s: Option<f32>,
     /// The game's time scale the release was converted at.
@@ -272,9 +272,9 @@ pub enum NativeWrite {
 /// No native motion reader is called at any of these stages.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct NativeReadback {
-    pub after_setter: Unavailable,
-    pub after_slot_clear: Unavailable,
-    pub next_step: Unavailable,
+    pub(crate) after_setter: Unavailable,
+    pub(crate) after_slot_clear: Unavailable,
+    pub(crate) next_step: Unavailable,
 }
 
 impl NativeReadback {

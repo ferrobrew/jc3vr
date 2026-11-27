@@ -82,7 +82,7 @@ impl WeaponType {
         })
     }
 
-    pub const fn tag_hash(self) -> u32 {
+    pub(crate) const fn tag_hash(self) -> u32 {
         self.tag_hash
     }
 
