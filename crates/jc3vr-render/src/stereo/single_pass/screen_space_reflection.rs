@@ -42,10 +42,7 @@ use jc3gi::{
     graphics_engine::{graphics_engine::RenderContext, render_engine::RenderEngine},
     types::math::{Matrix4, Vector4},
 };
-use jc3vr_view::{
-    stereo::{center_transform, engine_context::EngineContext},
-    vr::render_params,
-};
+use jc3vr_view::stereo::{collapse_eyes, engine_context::EngineContext};
 use parking_lot::Mutex;
 
 use crate::stereo::single_pass::{
@@ -88,7 +85,7 @@ pub(crate) fn bind_eye_rows(rc: &RenderContext) -> Option<EyeRowsBound> {
     if !REWRITTEN.load(Ordering::Relaxed) {
         return None;
     }
-    let center = glam::Mat4::from(center_transform()?);
+    let eyes = collapse_eyes()?;
     // SAFETY: the render engine singleton outlives the frame; the block reads the staged rows on this
     // same thread.
     let staged = unsafe { RenderEngine::get() }?.m_VPGlobalConstData;
@@ -100,11 +97,10 @@ pub(crate) fn bind_eye_rows(rc: &RenderContext) -> Option<EyeRowsBound> {
         uv_scale: rc.m_UVScale,
     };
     let rows = per_eye_rows(|eye| {
-        let params = render_params(eye)?;
         Some(eye_rows(
             &EyeCamera {
-                projection: params.projection_reverse_z,
-                world: params.resolve(center),
+                projection: eyes[eye].params.projection_reverse_z,
+                world: eyes[eye].world(),
             },
             &previous,
             screen,

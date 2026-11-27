@@ -33,10 +33,7 @@ use dxbc_stereo::{
     snap_ambient_occlusion_uv,
 };
 use jc3gi::types::math::{Matrix4, Vector4};
-use jc3vr_view::{
-    stereo::{center_transform, engine_context::EngineContext},
-    vr::render_params,
-};
+use jc3vr_view::stereo::{collapse_eyes, engine_context::EngineContext};
 use parking_lot::Mutex;
 
 use crate::stereo::single_pass::{
@@ -109,12 +106,11 @@ pub(crate) fn bind_eye_rows() -> Option<EyeRowsBound> {
         BuiltWith::Exact => AmbientOcclusionSampling::Exact,
         BuiltWith::DoubleWide => AmbientOcclusionSampling::DoubleWide,
     };
-    let center = glam::Mat4::from(center_transform()?);
+    let eyes = collapse_eyes()?;
     let rows = per_eye_rows(|eye| {
-        let params = render_params(eye)?;
         Some(eye_rows(
-            &params.projection_reverse_z,
-            params.resolve(center),
+            &eyes[eye].params.projection_reverse_z,
+            eyes[eye].world(),
             eye,
             sampling,
         ))

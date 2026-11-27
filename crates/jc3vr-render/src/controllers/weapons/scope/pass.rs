@@ -7,14 +7,13 @@
 
 use std::time::Duration;
 
-use glam::Mat4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_view::{
     controllers::weapons::scope::{
         lens_frame,
         lens_frame::{EyeCamera, LensFrame},
     },
-    stereo::{center_transform, layout::collapse_active},
+    stereo::{collapse_eye, layout::collapse_active},
 };
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
@@ -187,14 +186,12 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 /// An eye's camera under the collapse, which keeps the render camera centred.
 fn collapse_camera(eye: usize) -> Option<EyeCamera> {
-    let center = center_transform()?;
-    let params = jc3vr_view::vr::render_params(eye)?;
-    let eye_world = params.resolve(Mat4::from(center));
+    let eye = collapse_eye(eye)?;
     // The lens is drawn after FSR has resolved the eye, so it takes the projection without FSR's
     // jitter, as `view::current` does.
     Some(camera_of(&EyeView::from_eye_world(
-        eye_world,
-        params.unjittered_projection_reverse_z(),
+        eye.world(),
+        eye.params.unjittered_projection_reverse_z(),
     )))
 }
 

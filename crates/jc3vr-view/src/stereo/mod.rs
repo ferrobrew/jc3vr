@@ -4,12 +4,15 @@
 //! ([`mark_stereo_frame`]) and enters each of its dispatches ([`enter_dispatch`]); the camera hooks
 //! in this crate record the per-eye camera state. The state itself is private to this crate: the
 //! render hooks read it through [`is_second_eye`], [`draw_index`], [`active`], [`center_transform`],
-//! [`shadow_anchor`], and the other accessors below, and the one value they publish into it, the
+//! [`collapse_eye`] (an eye's camera against the centre), [`shadow_anchor`], and the other accessors
+//! below, and the one value they publish into it, the
 //! sun-shadow fit's camera position, goes through [`record_shadow_fit_position`]. This is *runtime*
 //! state, distinct from the `stereo` config toggles in [`crate::stereo::config`].
 
 use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
+
+use crate::vr::{EyeRenderParams, render_params};
 
 pub mod config;
 pub mod dispatch;
@@ -164,6 +167,56 @@ pub fn enter_dispatch(eye: usize, ordinal: usize, last: bool) {
 #[inline]
 pub fn center_transform() -> Option<Matrix4> {
     STEREO_STATE.lock().center_transform
+}
+
+/// One eye's camera under the single-pass collapse, which keeps the render camera centred: the eye's
+/// render parameters for the frame in flight and the centred camera they resolve against. The one
+/// source the render hooks build an eye's camera from while the engine's camera stays on the centre.
+#[derive(Clone, Copy)]
+pub struct CollapseEye {
+    /// The eye's render parameters (projections, offset, and cant) for the frame in flight.
+    pub params: EyeRenderParams,
+    /// The render camera's centre world transform ([`center_transform`]).
+    pub center: glam::Mat4,
+}
+
+impl CollapseEye {
+    /// The eye's world transform: the centre displaced to the eye and canted
+    /// ([`EyeRenderParams::resolve`]).
+    #[inline]
+    pub fn world(&self) -> glam::Mat4 {
+        self.params.resolve(self.center)
+    }
+
+    /// The eye's world-space offset from the centre ([`EyeRenderParams::world_offset`]).
+    #[inline]
+    pub fn offset(&self) -> glam::Vec3 {
+        self.params.world_offset(self.center)
+    }
+}
+
+/// `eye`'s camera under the collapse, or `None` before the camera hook has recorded a centre or
+/// while no VR frame is rendering.
+#[inline]
+pub fn collapse_eye(eye: usize) -> Option<CollapseEye> {
+    let center = glam::Mat4::from(center_transform()?);
+    Some(CollapseEye {
+        params: render_params(eye)?,
+        center,
+    })
+}
+
+/// Both eyes' cameras under the collapse, against one read of the centre; `None` as for
+/// [`collapse_eye`].
+pub fn collapse_eyes() -> Option<[CollapseEye; 2]> {
+    let center = glam::Mat4::from(center_transform()?);
+    let eye = |eye| {
+        Some(CollapseEye {
+            params: render_params(eye)?,
+            center,
+        })
+    };
+    Some([eye(0)?, eye(1)?])
 }
 
 /// Record the active camera's world position as the sun-shadow cascade fit reads it this frame (see

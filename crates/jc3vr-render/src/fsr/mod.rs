@@ -32,7 +32,7 @@ use jc3gi::{
 use jc3vr_view::{
     fsr::{FSR_CONFIG, jitter},
     hooks::camera::SCENE_NEAR_CLIP_M,
-    stereo::{center_transform, with_vp_history},
+    stereo::{collapse_eye, with_vp_history},
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -141,13 +141,12 @@ impl EyeViewProjections {
     /// This frame's matrices for `eye` under the single-pass collapse, where the render camera stays
     /// centred and each eye's view-projection comes from the VR frame's per-eye parameters.
     fn current(eye: usize) -> Option<Self> {
-        let center = glam::Mat4::from(center_transform()?);
-        let params = jc3vr_view::vr::render_params(eye)?;
-        let projection = params.unjittered_projection_reverse_z();
+        let eye = collapse_eye(eye)?;
+        let projection = eye.params.unjittered_projection_reverse_z();
         Some(Self {
-            center: projection * center.inverse(),
-            eye: projection * params.resolve(center).inverse(),
-            jitter: params.jitter_ndc(),
+            center: projection * eye.center.inverse(),
+            eye: projection * eye.world().inverse(),
+            jitter: eye.params.jitter_ndc(),
         })
     }
 }

@@ -6,9 +6,9 @@
 //! camera constants, how they are uploaded and bound, and how they are pinned to one eye for a
 //! re-issue that has to submit each eye separately.
 
-use jc3vr_view::{
-    stereo::layout::{Capability, capability, collapse_active, double_wide_active},
-    vr::render_params,
+use jc3vr_view::stereo::{
+    collapse_eyes,
+    layout::{Capability, capability, collapse_active, double_wide_active},
 };
 
 use crate::stereo::single_pass::{per_eye_cb::PerEyeCb, *};
@@ -166,8 +166,8 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 /// The engine `Matrix4` <-> `glam::Mat4` bridge is a transpose, so the math is done in glam
 /// column-vector form and converted back once (see the `Matrix4` doc-comment).
 fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
-    let center_transform = jc3vr_view::stereo::center_transform()?;
-    let center_world = glam::Mat4::from(center_transform);
+    let eyes = collapse_eyes()?;
+    let center_world = eyes[0].center;
     let center_campos = engine.m_VPGlobalConstData[4];
 
     // Invert only the translation-free center VP; a full f32 world-space VP loses precision before
@@ -192,11 +192,10 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     };
     let mut forwards = [glam::Vec3::ZERO; 2];
     let mut m_eyes = [glam::Mat4::IDENTITY; 2];
-    for eye in 0..2 {
-        let params = render_params(eye)?;
-
-        let eye_world = params.resolve(center_world);
-        let world_offset = params.world_offset(center_world);
+    for (eye, camera) in eyes.iter().enumerate() {
+        let params = camera.params;
+        let eye_world = camera.world();
+        let world_offset = camera.offset();
         // Camera forward is -Z of the world transform; kept for the divergence diagnostic below.
         forwards[eye] = (-eye_world.z_axis.truncate()).normalize_or_zero();
 
@@ -265,75 +264,73 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     // Diagnostic (rate-limited): the angle between the two eyes' forward vectors. A stereo pair should
     // diverge only by the display cant (a few degrees on the Index) -- a large value means a per-eye
     // matrix bug rather than the canted-runtime views that merely look divergent on a flat capture.
-    if let (Some(p0), Some(p1)) = (render_params(0), render_params(1)) {
-        let diverge = forwards[0]
-            .dot(forwards[1])
-            .clamp(-1.0, 1.0)
-            .acos()
-            .to_degrees();
+    let [p0, p1] = eyes.map(|eye| eye.params);
+    let diverge = forwards[0]
+        .dot(forwards[1])
+        .clamp(-1.0, 1.0)
+        .acos()
+        .to_degrees();
 
-        // Flatten one eye's four `cb13` view-projection rows into a 16-float matrix.
-        let vp16 = |base: usize| {
-            let mut m = [0.0f32; 16];
-            for r in 0..4 {
-                m[r * 4..r * 4 + 4].copy_from_slice(&rows[base + r].data);
-            }
-            m
-        };
-        let eye_diag = |p: &jc3vr_view::vr::EyeRenderParams, i: usize| EyeDiagnostics {
-            world_offset: p.world_offset(center_world).to_array(),
-            orientation_delta_quat: p.orientation_delta.to_array(),
-            orientation_delta_deg: p.orientation_delta.to_axis_angle().1.to_degrees(),
-            forward: forwards[i].to_array(),
-            projection_reverse_z: p.projection_reverse_z.data,
-            cb13_view_projection: vp16(i * 5),
-            cb13_camera_position: rows[i * 5 + 4].data,
-            cb13_m_eye: vp16(MEYE_ROW_BASE + i * 4),
-        };
-        let full_viewport =
-            crate::stereo::single_pass::viewport_record::scene_viewport().map(|v| {
-                [
-                    v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
-                ]
-            });
-        *LAST_FRAME_DIAG.lock() = Some(FrameDiagnostics {
-            single_pass: active(),
-            dual_eye: active(),
-            collapse: collapse_active(),
-            double_wide: double_wide_active(),
-            capability: match capability() {
-                Capability::Supported => "supported",
-                Capability::Unsupported => "unsupported",
-                Capability::Unprobed => "unprobed",
-            },
-            full_viewport,
-            center_transform: center_transform.data,
-            center_camera_position: center_campos.data,
-            forward_divergence_deg: diverge,
-            substitution: substitution_stats(),
-            eyes: [eye_diag(&p0, 0), eye_diag(&p1, 1)],
-        });
-
-        if CB13_DIVERGE_LOG
-            .fetch_add(1, Ordering::Relaxed)
-            .is_multiple_of(240)
-        {
-            // Max |M_eye - I|: the reprojection matrix is near-identity for a small IPD and cant, so a
-            // large deviation flags a construction bug (a wrong VP convention or a bad inverse).
-            let meye_dev = |base: usize| {
-                let m = vp16(base);
-                (0..16)
-                    .map(|k| (m[k] - if k % 5 == 0 { 1.0 } else { 0.0 }).abs())
-                    .fold(0.0f32, f32::max)
-            };
-            tracing::info!(
-                target: "single_pass",
-                "cb13 eyes: fwd divergence={diverge:.2}deg | eye0 delta={:.2}deg off={:.4?} | eye1 delta={:.2}deg off={:.4?} | M_eye dev eye0={:.4} eye1={:.4}",
-                p0.orientation_delta.to_axis_angle().1.to_degrees(), p0.world_offset(center_world),
-                p1.orientation_delta.to_axis_angle().1.to_degrees(), p1.world_offset(center_world),
-                meye_dev(MEYE_ROW_BASE), meye_dev(MEYE_ROW_BASE + 4),
-            );
+    // Flatten one eye's four `cb13` view-projection rows into a 16-float matrix.
+    let vp16 = |base: usize| {
+        let mut m = [0.0f32; 16];
+        for r in 0..4 {
+            m[r * 4..r * 4 + 4].copy_from_slice(&rows[base + r].data);
         }
+        m
+    };
+    let eye_diag = |p: &jc3vr_view::vr::EyeRenderParams, i: usize| EyeDiagnostics {
+        world_offset: p.world_offset(center_world).to_array(),
+        orientation_delta_quat: p.orientation_delta.to_array(),
+        orientation_delta_deg: p.orientation_delta.to_axis_angle().1.to_degrees(),
+        forward: forwards[i].to_array(),
+        projection_reverse_z: p.projection_reverse_z.data,
+        cb13_view_projection: vp16(i * 5),
+        cb13_camera_position: rows[i * 5 + 4].data,
+        cb13_m_eye: vp16(MEYE_ROW_BASE + i * 4),
+    };
+    let full_viewport = crate::stereo::single_pass::viewport_record::scene_viewport().map(|v| {
+        [
+            v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
+        ]
+    });
+    *LAST_FRAME_DIAG.lock() = Some(FrameDiagnostics {
+        single_pass: active(),
+        dual_eye: active(),
+        collapse: collapse_active(),
+        double_wide: double_wide_active(),
+        capability: match capability() {
+            Capability::Supported => "supported",
+            Capability::Unsupported => "unsupported",
+            Capability::Unprobed => "unprobed",
+        },
+        full_viewport,
+        center_transform: Matrix4::from(center_world).data,
+        center_camera_position: center_campos.data,
+        forward_divergence_deg: diverge,
+        substitution: substitution_stats(),
+        eyes: [eye_diag(&p0, 0), eye_diag(&p1, 1)],
+    });
+
+    if CB13_DIVERGE_LOG
+        .fetch_add(1, Ordering::Relaxed)
+        .is_multiple_of(240)
+    {
+        // Max |M_eye - I|: the reprojection matrix is near-identity for a small IPD and cant, so a
+        // large deviation flags a construction bug (a wrong VP convention or a bad inverse).
+        let meye_dev = |base: usize| {
+            let m = vp16(base);
+            (0..16)
+                .map(|k| (m[k] - if k % 5 == 0 { 1.0 } else { 0.0 }).abs())
+                .fold(0.0f32, f32::max)
+        };
+        tracing::info!(
+            target: "single_pass",
+            "cb13 eyes: fwd divergence={diverge:.2}deg | eye0 delta={:.2}deg off={:.4?} | eye1 delta={:.2}deg off={:.4?} | M_eye dev eye0={:.4} eye1={:.4}",
+            p0.orientation_delta.to_axis_angle().1.to_degrees(), p0.world_offset(center_world),
+            p1.orientation_delta.to_axis_angle().1.to_degrees(), p1.world_offset(center_world),
+            meye_dev(MEYE_ROW_BASE), meye_dev(MEYE_ROW_BASE + 4),
+        );
     }
 
     Some(rows)

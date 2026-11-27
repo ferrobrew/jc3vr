@@ -93,7 +93,7 @@ pub use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
 pub(crate) use jc3vr_view::stereo::engine_context::EngineContext;
 use jc3vr_view::stereo::{
-    center_transform,
+    collapse_eye,
     config::SinglePassSwitch,
     layout::{Capability, capability, collapse_active},
 };
@@ -261,10 +261,8 @@ pub fn collapse_ui_eye_override() -> Option<(D3D11_VIEWPORT, Matrix4)> {
         ..full
     };
     // The UI draws after FSR has resolved the eyes, so its view-projection leaves out FSR's jitter.
-    let center_transform = center_transform()?;
-    let params = jc3vr_view::vr::render_params(eye)?;
-    let eye_world = params.resolve(glam::Mat4::from(center_transform));
-    let view_projection = params.unjittered_projection_reverse_z() * eye_world.inverse();
+    let eye = collapse_eye(eye)?;
+    let view_projection = eye.params.unjittered_projection_reverse_z() * eye.world().inverse();
     Some((viewport, Matrix4::from(view_projection)))
 }
 
@@ -287,10 +285,8 @@ pub fn set_ui_viewport_raw(context: &ID3D11DeviceContext, viewport: &D3D11_VIEWP
 /// takes [`collapse_ui_eye_override`]'s, which leaves the jitter out. `None` if the centre transform
 /// or per-eye params are unavailable.
 pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
-    let center_transform = center_transform()?;
-    let params = jc3vr_view::vr::render_params(eye)?;
-    let eye_world = params.resolve(glam::Mat4::from(center_transform));
-    let vp = glam::Mat4::from(params.projection_reverse_z) * eye_world.inverse();
+    let eye = collapse_eye(eye)?;
+    let vp = glam::Mat4::from(eye.params.projection_reverse_z) * eye.world().inverse();
     Some(Matrix4::from(vp))
 }
 

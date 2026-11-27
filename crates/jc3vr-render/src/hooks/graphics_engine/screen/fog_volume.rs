@@ -37,7 +37,7 @@ use jc3gi::{
     },
     types::math::{Matrix4, Vector3},
 };
-use jc3vr_view::{stereo::center_transform, vr::render_params};
+use jc3vr_view::stereo::collapse_eye;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -111,8 +111,7 @@ impl SavedBasis {
 /// available.
 fn stage_eye_basis(rc: &mut RenderContext, eye: usize) -> Option<SavedBasis> {
     let view_projection = glam::Mat4::from(full_eye_view_projection(eye)?);
-    let center = center_transform()?;
-    let offset = render_params(eye)?.world_offset(glam::Mat4::from(center));
+    let offset = collapse_eye(eye)?.offset();
     let staged = half_target_view_projection(eye, view_projection);
     if !staged.is_finite() || !offset.is_finite() {
         return None;

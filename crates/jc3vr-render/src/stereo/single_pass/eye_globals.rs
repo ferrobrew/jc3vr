@@ -24,7 +24,7 @@ use std::cell::Cell;
 
 use glam::Vec3;
 use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
-use jc3vr_view::{stereo::center_transform, vr::render_params};
+use jc3vr_view::stereo::collapse_eye;
 
 use crate::hooks::graphics_engine::upload_global_constants;
 
@@ -139,8 +139,7 @@ thread_local! {
 /// `eye`'s world-space offset from the centred render camera, or `None` when no stereo frame is
 /// rendering.
 fn eye_world_offset(eye: usize) -> Option<Vec3> {
-    let center = center_transform()?;
-    let offset = render_params(eye)?.world_offset(glam::Mat4::from(center));
+    let offset = collapse_eye(eye)?.offset();
     offset.is_finite().then_some(offset)
 }
 
