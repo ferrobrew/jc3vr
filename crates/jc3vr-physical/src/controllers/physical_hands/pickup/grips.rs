@@ -3,7 +3,7 @@
 //! as. Each runs from the pickup tick, on the main thread outside the physics step.
 
 use jc3vr_body::controllers::{
-    grab::world_reach::{Reach, SeatAccess, TargetKind},
+    grab::world_reach::{SeatAccess, TargetKind},
     physics::{bodies, error::PhysicsError, vehicles},
 };
 use jc3vr_core::published::Stamp;
@@ -351,7 +351,6 @@ pub(super) unsafe fn keep_regrip(
     state: &mut PickupState,
     hand: Hand,
     palm: Option<PalmMotion>,
-    _reach: Option<Reach>,
     joints: &JointInputs,
     config: &PickupTuning,
     outcome: &mut TickOutcome,

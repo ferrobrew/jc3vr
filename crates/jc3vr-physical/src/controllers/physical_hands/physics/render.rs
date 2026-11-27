@@ -8,7 +8,6 @@
 use body_rig::math::rotation::shortest;
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::hands::CockpitHand;
-use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
 
 /// The offset that draws a hand where its body is.
@@ -107,34 +106,31 @@ pub(crate) fn apply_offsets(
     }
 }
 
-/// The last step's offsets, kept for when the post-step read of a body fails.
+/// The last step's offsets, kept for when the post-step read of a body fails. The latest step is
+/// shown as it is: blending between steps would draw the hands a step behind their bodies.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct OffsetTimeline {
-    current: Option<([RenderOffset; 2], Stamp)>,
+    latest: Option<[RenderOffset; 2]>,
 }
 
 impl OffsetTimeline {
-    pub const EMPTY: Self = Self { current: None };
+    pub const EMPTY: Self = Self { latest: None };
 
-    pub fn push(&mut self, offsets: [RenderOffset; 2], at: Stamp) {
-        self.current = Some((offsets, at));
+    pub fn push(&mut self, offsets: [RenderOffset; 2]) {
+        self.latest = Some(offsets);
     }
 
     pub fn reset(&mut self) {
         *self = Self::EMPTY;
     }
 
-    /// The last step's offsets, whatever `now` is: blending between steps would draw the hands a
-    /// step behind their bodies.
-    pub fn at(&self, _now: Stamp) -> Option<[RenderOffset; 2]> {
-        self.current.map(|(offsets, _)| offsets)
+    pub fn latest(&self) -> Option<[RenderOffset; 2]> {
+        self.latest
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
@@ -247,19 +243,18 @@ mod tests {
     }
 
     #[test]
-    fn the_latest_step_is_visible_immediately_without_an_extra_blend_interval() {
-        let now = Stamp::now();
+    fn the_latest_step_replaces_the_one_before_until_reset() {
         let mut timeline = OffsetTimeline::EMPTY;
-        assert!(timeline.at(now).is_none());
-        timeline.push([RenderOffset::NONE; 2], now);
+        assert!(timeline.latest().is_none());
+        timeline.push([RenderOffset::NONE; 2]);
         let latest = [RenderOffset {
             shift: Vec3::X * 0.1,
             turn: Quat::IDENTITY,
         }; 2];
-        timeline.push(latest, now + Duration::from_millis(20));
-        assert_eq!(timeline.at(now + Duration::from_millis(20)), Some(latest));
+        timeline.push(latest);
+        assert_eq!(timeline.latest(), Some(latest));
         timeline.reset();
-        assert!(timeline.at(now).is_none());
+        assert!(timeline.latest().is_none());
     }
 
     #[test]

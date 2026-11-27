@@ -223,7 +223,6 @@ fn tick_inputs() -> TickInputs {
         unlatch_pull_m: 0.05,
         tearing: DOORS.get().tearing,
         world_scale: 1.0,
-        reaches: [None; 2],
         carrier_velocity: None,
         carrier_pose: None,
     }

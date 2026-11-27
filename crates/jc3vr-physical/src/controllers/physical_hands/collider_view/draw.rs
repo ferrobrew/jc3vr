@@ -1,12 +1,9 @@
-//! The collider view's primitives, pure: each body's box and shape at its frame between the last
-//! two reads, the mod's joints, the contact flashes, the player's ground, and the gazed body, within
-//! a primitive budget that keeps whole bodies, the nearest first.
+//! The collider view's primitives, pure: each body's box and shape at its collision pose, the
+//! mod's joints, the contact flashes, the player's ground, and the gazed body, within a primitive
+//! budget that keeps whole bodies, the nearest first.
 //!
-//! Every point is a world anchor. The live view passes its render-time body sample without a
-//! previous snapshot, so the collision geometry is not displaced to match an interpolated mesh; only
-//! the tests pass a previous snapshot.
-
-use std::collections::HashMap;
+//! Every point is a world anchor. The collision geometry is not displaced to match an interpolated
+//! mesh.
 
 use glam::{Affine3A, Vec3};
 use jc3vr_body::controllers::physics::scan::Aabb;
@@ -15,7 +12,7 @@ use jc3vr_view::controllers::overlay::primitive::{
 };
 
 use crate::controllers::physical_hands::{
-    collider_view::model::{Body, BodyKind, Geometry, JointKind, Snapshot, interpolate},
+    collider_view::model::{BodyKind, Geometry, JointKind, Snapshot},
     views::ColliderDrawTuning,
 };
 
@@ -35,9 +32,6 @@ pub struct Flash {
 /// What the view draws from.
 pub struct DrawInputs<'a> {
     pub current: &'a Snapshot,
-    pub previous: Option<&'a Snapshot>,
-    /// The frame's interpolation fraction between the two reads.
-    pub dtf: f32,
     /// The most primitives to submit, at most [`PRIMITIVE_CEILING`].
     pub budget: usize,
     pub flashes: &'a [Flash],
@@ -66,12 +60,14 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
     out.clear();
     let tuning = inputs.tuning;
     let budget = inputs.budget.min(PRIMITIVE_CEILING);
-    let frames = Frames::new(inputs);
     let mut drawn = Drawn::default();
     let mut scratch = Vec::new();
 
     for joint in &inputs.current.joints {
-        let (Some(a), Some(b)) = (frames.origin(joint.body_a), frames.origin(joint.body_b)) else {
+        let (Some(a), Some(b)) = (
+            origin(inputs.current, joint.body_a),
+            origin(inputs.current, joint.body_b),
+        ) else {
             continue;
         };
         let color = match joint.kind {
@@ -104,7 +100,7 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
             color: scale_alpha(CONTACT, fade),
             depth: DepthMode::Always,
         });
-        if let Some(aabb) = flash.body.and_then(|id| frames.aabb(id)) {
+        if let Some(aabb) = flash.body.and_then(|id| aabb(inputs.current, id)) {
             box_lines(
                 &aabb,
                 tuning.box_width_m * tuning.highlight_box_width,
@@ -116,7 +112,7 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
     }
     if let Some(ground) = inputs.current.ground {
         scratch.clear();
-        if let Some(aabb) = frames.aabb(ground.body) {
+        if let Some(aabb) = aabb(inputs.current, ground.body) {
             box_lines(
                 &aabb,
                 tuning.box_width_m * tuning.ground_box_width,
@@ -129,7 +125,7 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
             .bodies
             .iter()
             .find(|b| b.kind == BodyKind::PlayerCapsule)
-            .and_then(|b| frames.aabb(b.id));
+            .and_then(|b| aabb(inputs.current, b.id));
         if let Some(player) = player {
             let centre = player.centre();
             let foot = Vec3::new(centre.x, player.min.y, centre.z);
@@ -144,7 +140,7 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
         commit(out, &mut scratch, budget);
     }
 
-    if let Some(aabb) = inputs.gaze.and_then(|id| frames.aabb(id)) {
+    if let Some(aabb) = inputs.gaze.and_then(|id| aabb(inputs.current, id)) {
         scratch.clear();
         box_lines(
             &aabb,
@@ -157,11 +153,9 @@ pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {
 
     for body in &inputs.current.bodies {
         scratch.clear();
-        let transform = frames.transform(body);
+        let transform = body.transform;
         let color = kind_color(body.kind);
-        let aabb = body.aabb.translated(Vec3::from(
-            transform.translation - body.transform.translation,
-        ));
+        let aabb = body.aabb;
         box_lines(
             &aabb,
             tuning.box_width_m,
@@ -194,47 +188,12 @@ pub const fn kind_color(kind: BodyKind) -> Rgba {
     }
 }
 
-/// Each body's frame at the frame's interpolation fraction.
-struct Frames<'a> {
-    current: &'a Snapshot,
-    previous: HashMap<u32, &'a Body>,
-    dtf: f32,
+fn origin(snapshot: &Snapshot, id: u32) -> Option<Vec3> {
+    Some(Vec3::from(snapshot.body(id)?.transform.translation))
 }
 
-impl<'a> Frames<'a> {
-    fn new(inputs: &DrawInputs<'a>) -> Self {
-        Self {
-            current: inputs.current,
-            previous: inputs
-                .previous
-                .map(|p| p.bodies.iter().map(|b| (b.id, b)).collect())
-                .unwrap_or_default(),
-            dtf: inputs.dtf,
-        }
-    }
-
-    /// The body's frame between its last two reads; the last read's alone when the earlier read
-    /// did not have it, or had another body under its id.
-    fn transform(&self, body: &Body) -> Affine3A {
-        match self.previous.get(&body.id) {
-            Some(previous) if previous.shape_key == body.shape_key => {
-                interpolate(&previous.transform, &body.transform, self.dtf)
-            }
-            _ => body.transform,
-        }
-    }
-
-    fn origin(&self, id: u32) -> Option<Vec3> {
-        let body = self.current.body(id)?;
-        Some(Vec3::from(self.transform(body).translation))
-    }
-
-    /// The body's box carried with its interpolated frame.
-    fn aabb(&self, id: u32) -> Option<Aabb> {
-        let body = self.current.body(id)?;
-        let moved = self.transform(body).translation - body.transform.translation;
-        Some(body.aabb.translated(Vec3::from(moved)))
-    }
+fn aabb(snapshot: &Snapshot, id: u32) -> Option<Aabb> {
+    Some(snapshot.body(id)?.aabb)
 }
 
 /// Append `scratch` to `out` when all of it fits within `budget`; it is cleared either way.
@@ -354,7 +313,7 @@ mod tests {
 
     use super::*;
     use crate::controllers::physical_hands::{
-        collider_view::model::{Ground, Joint},
+        collider_view::model::{Body, Ground, Joint},
         views::VIEWS,
     };
 
@@ -380,11 +339,9 @@ mod tests {
         }
     }
 
-    fn inputs<'a>(current: &'a Snapshot, previous: Option<&'a Snapshot>) -> DrawInputs<'a> {
+    fn inputs(current: &Snapshot) -> DrawInputs<'_> {
         DrawInputs {
             current,
-            previous,
-            dtf: 0.5,
             budget: PRIMITIVE_CEILING,
             flashes: &[],
             gaze: None,
@@ -392,92 +349,11 @@ mod tests {
         }
     }
 
-    /// The anchors of the sprites among `out`: a sphere's ring, apart from its box's lines.
-    fn sprite_anchors(out: &[Primitive]) -> Vec<Anchor> {
-        out.iter()
-            .filter_map(|p| match p {
-                Primitive::Sprite { at, .. } => Some(*at),
-                _ => None,
-            })
-            .collect()
-    }
-
     fn sphere() -> Geometry {
         Geometry::Sphere {
             centre: Vec3::ZERO,
             radius: 0.5,
         }
-    }
-
-    #[test]
-    fn a_body_is_drawn_between_its_last_two_reads() {
-        let previous = Snapshot {
-            bodies: vec![body(1, BodyKind::Dynamic, Vec3::ZERO, sphere())],
-            ..Snapshot::default()
-        };
-        let current = Snapshot {
-            bodies: vec![body(
-                1,
-                BodyKind::Dynamic,
-                Vec3::new(2.0, 0.0, 0.0),
-                sphere(),
-            )],
-            ..Snapshot::default()
-        };
-        let mut out = Vec::new();
-        build(&inputs(&current, Some(&previous)), &mut out);
-        let [at] = sprite_anchors(&out)[..] else {
-            panic!("{out:?}");
-        };
-        assert_eq!(at, Anchor::World(Vec3::X));
-    }
-
-    #[test]
-    fn current_body_presentation_does_not_trail_the_render_fraction() {
-        let current = Snapshot {
-            bodies: vec![body(
-                1,
-                BodyKind::GunBody,
-                Vec3::new(2.0, 0.0, -1.0),
-                sphere(),
-            )],
-            ..Snapshot::default()
-        };
-        for dtf in [0.0, 0.25, 0.75, 1.0] {
-            let mut input = inputs(&current, None);
-            input.dtf = dtf;
-            let mut out = Vec::new();
-            build(&input, &mut out);
-            let [at] = sprite_anchors(&out)[..] else {
-                panic!("{out:?}");
-            };
-            assert_eq!(at, Anchor::World(Vec3::new(2.0, 0.0, -1.0)));
-        }
-    }
-
-    #[test]
-    fn a_reused_body_id_is_not_interpolated_from_the_body_it_was() {
-        let mut was = body(1, BodyKind::Dynamic, Vec3::ZERO, sphere());
-        was.shape_key = 7;
-        let previous = Snapshot {
-            bodies: vec![was],
-            ..Snapshot::default()
-        };
-        let current = Snapshot {
-            bodies: vec![body(
-                1,
-                BodyKind::Dynamic,
-                Vec3::new(2.0, 0.0, 0.0),
-                sphere(),
-            )],
-            ..Snapshot::default()
-        };
-        let mut out = Vec::new();
-        build(&inputs(&current, Some(&previous)), &mut out);
-        let [at] = sprite_anchors(&out)[..] else {
-            panic!("{out:?}");
-        };
-        assert_eq!(at, Anchor::World(Vec3::new(2.0, 0.0, 0.0)));
     }
 
     #[test]
@@ -493,7 +369,7 @@ mod tests {
         let drawn = build(
             &DrawInputs {
                 budget: 30,
-                ..inputs(&current, None)
+                ..inputs(&current)
             },
             &mut out,
         );
@@ -515,7 +391,7 @@ mod tests {
         build(
             &DrawInputs {
                 budget: usize::MAX,
-                ..inputs(&current, None)
+                ..inputs(&current)
             },
             &mut out,
         );
@@ -584,7 +460,7 @@ mod tests {
             &DrawInputs {
                 budget: 3 + 13 + 13,
                 flashes: &flashes,
-                ..inputs(&current, None)
+                ..inputs(&current)
             },
             &mut out,
         );

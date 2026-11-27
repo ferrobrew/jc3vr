@@ -84,7 +84,7 @@ pub(super) unsafe fn scan(
         let aabb = space.restore(slot, shift);
         candidates.push((aabb.distance(centre), id));
     }
-    let (kept, in_range) = nearest(candidates, radius, max_bodies);
+    let kept = nearest(candidates, radius, max_bodies);
 
     let bodies = kept
         .into_iter()
@@ -136,7 +136,6 @@ pub(super) unsafe fn scan(
         joints,
         ground,
         scanned: slots,
-        in_range,
     })
 }
 

@@ -97,7 +97,6 @@ fn inputs(join: bool) -> TickInputs {
         unlatch_pull_m: 0.1,
         tearing: DOORS.get().tearing,
         world_scale: 1.0,
-        reaches: [None; 2],
         carrier_velocity: None,
         carrier_pose: None,
     }

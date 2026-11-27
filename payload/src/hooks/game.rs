@@ -287,7 +287,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         #[cfg(feature = "profiler")]
         drop(engine_scope);
         // Compare current physics poses with the weapon matrices published by this render update.
-        physical_hands::collider_view::render_tick((*update_contexts).m_RenderContext.m_Dtf);
+        physical_hands::collider_view::render_tick();
         // After the engine's render update, whose camera update stores this frame's `dtf`: the
         // late hand readout is evaluated at it, and before it the readout would pair this frame's
         // hand snapshot with the previous frame's `dtf`.

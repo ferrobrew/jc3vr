@@ -73,8 +73,6 @@ pub(crate) struct TickInputs {
     pub tearing: doors::tuning::TearTuning,
     /// The VR world scale.
     pub world_scale: f32,
-    /// What each hand reaches this tick.
-    pub reaches: [Option<Reach>; 2],
     /// The player character's world velocity, metres per second, whose change a carried object
     /// takes on ([`PickupTuning::carrier_motion_share`]); none when it is not known.
     pub(crate) carrier_velocity: Option<Vec3>,
@@ -288,7 +286,6 @@ unsafe fn tick_with(
         unlatch_pull_m,
         tearing,
         world_scale,
-        reaches,
         carrier_velocity,
         carrier_pose,
     } = inputs;
@@ -586,17 +583,7 @@ unsafe fn tick_with(
             regrip.run_down(dt);
         }
         // SAFETY: forwarded from the caller.
-        unsafe {
-            keep_regrip(
-                state,
-                hand,
-                palms[i],
-                reaches[i],
-                &joints,
-                config,
-                &mut outcome,
-            )
-        };
+        unsafe { keep_regrip(state, hand, palms[i], &joints, config, &mut outcome) };
         // SAFETY: forwarded from the caller.
         unsafe { keep_seize(state, hand, palms[i], world_scale, &mut outcome) };
         // SAFETY: forwarded from the caller.

@@ -62,12 +62,8 @@ pub struct ColliderViewStatus {
     pub reads: u64,
     /// The body slots the last read went through.
     pub scanned: u32,
-    /// The bodies within the radius at the last read.
-    pub in_range: u32,
     /// What the last frame drew.
     pub drawn: Drawn,
-    /// The primitives the last frame submitted.
-    pub primitives: usize,
     /// How long the last read took, microseconds.
     pub read_us: u32,
     /// The body under the gaze at the last frame.
@@ -103,12 +99,11 @@ pub fn toggle() {
 }
 
 /// Discover geometry after a step and submit current collision poses after the mesh render updates.
-/// The render fraction identifies the mesh sample; collision geometry is not interpolated by it.
 ///
 /// # Safety
 ///
 /// The game thread, after the engine's render update and outside the physics step.
-pub unsafe fn render_tick(dtf: f32) {
+pub unsafe fn render_tick() {
     let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.collider_view.enabled);
     if !enabled || !jc3vr_core::hooks::in_gameplay() {
         if WAS_ACTIVE.swap(false, Ordering::Relaxed) {
@@ -158,9 +153,8 @@ pub unsafe fn render_tick(dtf: f32) {
         state.read_at = Some(steps);
         took = Some(elapsed);
         match scanned {
-            Ok(snapshot) => state.previous = state.current.replace(snapshot),
+            Ok(snapshot) => state.current = Some(snapshot),
             Err(e) => {
-                state.previous = None;
                 state.current = None;
                 error = Some(e.to_string());
             }
@@ -169,7 +163,6 @@ pub unsafe fn render_tick(dtf: f32) {
     if let Some(current) = state.current.as_mut() {
         // SAFETY: forwarded from the caller; only retained transforms and boxes are read here.
         if let Err(e) = unsafe { scan::refresh(current, head.position) } {
-            state.previous = None;
             state.current = None;
             error = Some(e.to_string());
         }
@@ -193,8 +186,6 @@ pub unsafe fn render_tick(dtf: f32) {
     let drawn = draw::build(
         &DrawInputs {
             current,
-            previous: None,
-            dtf,
             budget: tuning.max_primitives,
             tuning: &tuning.draw,
             flashes: &flashes,
@@ -202,7 +193,6 @@ pub unsafe fn render_tick(dtf: f32) {
         },
         &mut state.primitives,
     );
-    let primitives = state.primitives.len();
     let gaze = gaze.map(|b| GazeReadout {
         id: b.id,
         kind: b.kind,
@@ -212,16 +202,14 @@ pub unsafe fn render_tick(dtf: f32) {
         shape: b.geometry.label(),
         distance_m: b.distance_m,
     });
-    let (scanned, in_range) = (current.scanned, current.in_range);
+    let scanned = current.scanned;
     store::submit(Source::ColliderView, &mut state.primitives, tuning.ttl());
 
     let mut status = STATUS.lock();
     status.enabled = true;
     status.steps = steps;
     status.scanned = scanned;
-    status.in_range = in_range;
     status.drawn = drawn;
-    status.primitives = primitives;
     status.gaze = gaze;
     if let Some(took) = took {
         status.reads += 1;
@@ -265,8 +253,6 @@ pub(crate) fn note_contact(at: Vec3, other_body: u32, impulse_ns: f32) {
 struct State {
     /// The physics step count at the last read.
     read_at: Option<u64>,
-    /// The read before the last.
-    previous: Option<Snapshot>,
     /// The last read.
     current: Option<Snapshot>,
     /// The frame's primitives, reused across submissions.
@@ -276,7 +262,6 @@ struct State {
 impl State {
     const EMPTY: State = State {
         read_at: None,
-        previous: None,
         current: None,
         primitives: Vec::new(),
     };
@@ -289,13 +274,11 @@ static STATUS: Mutex<ColliderViewStatus> = Mutex::new(ColliderViewStatus {
     steps: 0,
     reads: 0,
     scanned: 0,
-    in_range: 0,
     drawn: Drawn {
         bodies: 0,
         dropped: 0,
         kinds: [0; BodyKind::COUNT],
     },
-    primitives: 0,
     read_us: 0,
     gaze: None,
     last_error: None,

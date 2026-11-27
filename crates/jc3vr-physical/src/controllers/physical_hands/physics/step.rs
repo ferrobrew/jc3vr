@@ -450,7 +450,7 @@ pub unsafe fn step() {
         *lost |= now_lost;
     }
     shared.world_offsets = offsets;
-    shared.offset_timeline.push(offsets, now);
+    shared.offset_timeline.push(offsets);
     shared.loads = loads;
     shared.body_poses = poses;
     shared.push = push;

@@ -66,7 +66,7 @@ fn every_missing_readiness_link_skips_native_dispatch_and_recovery_works_with_as
             ticked: None,
             status: crate::controllers::physical_hands::stunt::StuntStatus::default(),
         };
-        presentation.observe_read(read, false);
+        presentation.observe_position(read.and_then(|r| r.kind));
         if missing == "none" {
             assert!(!read.unwrap().owns_movement);
             assert_eq!(calls.get(), 1);

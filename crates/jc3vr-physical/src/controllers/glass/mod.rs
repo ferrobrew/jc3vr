@@ -28,9 +28,6 @@
 //! which applies the bullets' window damage from their worker threads. It acts in every mode, on
 //! foot and in a vehicle, under the controller scheme.
 
-#[cfg(test)]
-mod tests;
-
 pub mod bullets;
 pub mod config;
 mod engine;
@@ -44,7 +41,6 @@ use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
 use jc3vr_body::controllers::{
     aim::{
-        ray::Ray,
         raycast,
         raycast::{CastOptions, RaycastError},
     },
@@ -73,7 +69,7 @@ use crate::controllers::{
         tuning::{GLASS, GlassTuning, PanesTuning, StrikeTuning},
     },
     physical_hands,
-    physical_hands::{palm::PalmBox, sounds, sounds::MeleeImpact, tuning::PHYSICAL_HANDS},
+    physical_hands::{palm::PalmBox, query, sounds, sounds::MeleeImpact, tuning::PHYSICAL_HANDS},
 };
 
 /// Why breaking glass stands down this tick.
@@ -305,59 +301,24 @@ unsafe fn cast_for_glass(
         material: true,
         ..unsafe { CastOptions::ignoring_player(ignore) }.seeing_through()
     };
-    visible_hit(sweep, |ray, length| unsafe {
+    // A pane brought down keeps its shapes, so without stepping past its hits it would shield
+    // intact glass behind it.
+    let end = sweep.origin + sweep.direction * sweep.length;
+    let hit = query::continue_cast(sweep.origin, end, &options, |ray, length, options| unsafe {
         raycast::cast_on_with(
             ray,
             length,
-            &options,
+            options,
             PhysicsSystem::QUERY_LAYER,
             |hit, info| {
                 let glass = hit.material == Some(GameMaterialId::EGameMaterialId_Glass as u32);
                 let hidden = glass && bullets::names_hidden_pane(&mut info.base);
                 let panes = (glass && !hidden).then(|| engine::panes_hit(info, hit.position));
-                (hit.position, hidden, panes)
+                ((hit.position, panes), hidden)
             },
         )
-    })
-}
-
-/// Cast along `sweep` with `cast`, stepping past hits on panes already brought down, and return the
-/// first other hit's point and value. A pane brought down keeps its shapes, so without the steps
-/// it would shield intact glass behind it.
-fn visible_hit<T>(
-    sweep: &strike::Sweep,
-    mut cast: impl FnMut(&Ray, f32) -> Result<Option<(Vec3, bool, Option<T>)>, RaycastError>,
-) -> Result<Option<(Vec3, T)>, RaycastError> {
-    let Some(ray) = Ray::new(sweep.origin, sweep.direction) else {
-        return Ok(None);
-    };
-    if !sweep.length.is_finite() || sweep.length <= 0.0 {
-        return Err(RaycastError::InvalidDistance);
-    }
-    let mut travelled = 0.0;
-    for _ in 0..16 {
-        let remaining = sweep.length - travelled;
-        let current = Ray {
-            origin: ray.at(travelled),
-            ..ray
-        };
-        let Some((point, hidden, value)) = cast(&current, remaining)? else {
-            return Ok(None);
-        };
-        if !hidden {
-            return Ok(value.map(|value| (point, value)));
-        }
-        let along = (point - current.origin).dot(ray.direction);
-        if !point.is_finite() || !(0.0..remaining).contains(&along) {
-            return Err(RaycastError::InvalidDistance);
-        }
-        let next = travelled + along + 0.001;
-        if next >= sweep.length || next <= travelled || ray.at(next) == current.origin {
-            return Ok(None);
-        }
-        travelled = next;
-    }
-    Ok(None)
+    })?;
+    Ok(hit.and_then(|(point, panes)| panes.map(|panes| (point, panes))))
 }
 
 /// What a strike did to one pane.

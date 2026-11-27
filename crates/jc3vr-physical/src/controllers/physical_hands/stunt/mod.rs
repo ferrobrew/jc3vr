@@ -106,7 +106,7 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         .min(tuning.max_tick_s);
     state.ticked = Some(now);
     let read = engine::position(game);
-    state.observe_read(read, true);
+    state.observe_position(read.and_then(|r| r.kind));
     observation::publish(read, now);
     let Some(read) = read else {
         climb::native::reject_landing();
@@ -231,16 +231,6 @@ struct State {
 }
 
 impl State {
-    fn observe_read(&mut self, read: Option<engine::PositionRead>, assist: bool) {
-        self.observe_position(read.and_then(|r| r.kind));
-        if !assist {
-            self.tracker = Tracker::new();
-            self.status.armed = false;
-            self.status.holding = [false; 2];
-            self.status.on_helicopter = [false; 2];
-        }
-    }
-
     /// Log the position as it changes.
     fn observe_position(&mut self, position: Option<StuntKind>) {
         if position == self.status.position {
@@ -302,30 +292,6 @@ static STATE: Mutex<State> = Mutex::new(State {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn ownership_survives_assist_disable_and_a_traversal_without_a_presentation_kind() {
-        let mut state = State {
-            tracker: Tracker::new(),
-            ticked: None,
-            status: StuntStatus::default(),
-        };
-        for assist in [true, false] {
-            for kind in [Some(StuntKind::Standing), Some(StuntKind::Hanging), None] {
-                state.observe_read(
-                    Some(engine::PositionRead {
-                        kind,
-                        owns_movement: true,
-                        vehicle_speed_mps: 0.0,
-                    }),
-                    assist,
-                );
-                assert_eq!(state.status.position, kind);
-            }
-        }
-        state.observe_read(None, false);
-        assert_eq!(state.status.position, None);
-    }
 
     #[test]
     fn a_hang_counts_once_as_the_position_changes_to_it() {

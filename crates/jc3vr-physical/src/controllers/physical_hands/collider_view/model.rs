@@ -2,7 +2,7 @@
 //! like in its own frame, and the geometry that picks the bodies near the player and the one under
 //! the gaze. The engine side that fills it is [`crate::controllers::physical_hands::collider_view::scan`].
 
-use glam::{Affine3A, Quat, Vec3, Vec3A};
+use glam::{Affine3A, Vec3};
 use jc3vr_body::controllers::physics::scan::{Aabb, MotionKind};
 
 /// What a body is, for its colour and the readout.
@@ -251,8 +251,6 @@ pub struct Snapshot {
     pub ground: Option<Ground>,
     /// The body slots read.
     pub scanned: u32,
-    /// The bodies within the radius, kept or not.
-    pub in_range: u32,
 }
 
 impl Snapshot {
@@ -261,34 +259,12 @@ impl Snapshot {
     }
 }
 
-/// The ids of the `max` nearest candidates `(distance, id)` within `radius`, nearest first, and how
-/// many were within it.
-pub fn nearest(mut candidates: Vec<(f32, u32)>, radius: f32, max: usize) -> (Vec<(f32, u32)>, u32) {
+/// The `max` nearest candidates `(distance, id)` within `radius`, nearest first.
+pub fn nearest(mut candidates: Vec<(f32, u32)>, radius: f32, max: usize) -> Vec<(f32, u32)> {
     candidates.retain(|(d, _)| d.is_finite() && *d <= radius);
-    let in_range = u32::try_from(candidates.len()).unwrap_or(u32::MAX);
     candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
     candidates.truncate(max);
-    (candidates, in_range)
-}
-
-/// A body's frame between the last two reads, `t` of the way from `previous` to `current`.
-pub(crate) fn interpolate(previous: &Affine3A, current: &Affine3A, t: f32) -> Affine3A {
-    let t = if t.is_finite() {
-        t.clamp(0.0, 1.0)
-    } else {
-        1.0
-    };
-    let (_, r0, p0) = previous.to_scale_rotation_translation();
-    let (_, r1, p1) = current.to_scale_rotation_translation();
-    let rotation = if r0.is_finite() && r1.is_finite() {
-        r0.slerp(r1, t)
-    } else {
-        Quat::IDENTITY
-    };
-    Affine3A {
-        matrix3: glam::Mat3A::from_quat(rotation),
-        translation: Vec3A::from(p0.lerp(p1, t)),
-    }
+    candidates
 }
 
 /// The body whose box the gaze ray from `origin` along the unit `forward` enters within `max_m`:
@@ -407,28 +383,12 @@ mod tests {
 
     #[test]
     fn the_nearest_candidates_within_the_radius_are_kept() {
-        let (kept, in_range) = nearest(
+        let kept = nearest(
             vec![(5.0, 1), (1.0, 2), (7.0, 3), (f32::NAN, 4), (2.0, 5)],
             6.0,
             2,
         );
         assert_eq!(kept, vec![(1.0, 2), (2.0, 5)]);
-        assert_eq!(in_range, 3);
-    }
-
-    #[test]
-    fn a_frame_is_interpolated_between_the_reads() {
-        let a = Affine3A::from_translation(Vec3::ZERO);
-        let b = Affine3A::from_rotation_translation(
-            Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
-            Vec3::new(2.0, 0.0, 0.0),
-        );
-        let mid = interpolate(&a, &b, 0.5);
-        assert!((Vec3::from(mid.translation) - Vec3::X).length() < 1e-5);
-        let (_, rotation, _) = mid.to_scale_rotation_translation();
-        assert!(rotation.angle_between(Quat::from_rotation_y(std::f32::consts::FRAC_PI_4)) < 1e-4);
-        let end = interpolate(&a, &b, f32::NAN);
-        assert!((Vec3::from(end.translation) - Vec3::new(2.0, 0.0, 0.0)).length() < 1e-5);
     }
 
     fn body(id: u32, min: Vec3, max: Vec3) -> Body {

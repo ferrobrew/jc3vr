@@ -235,7 +235,6 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         unlatch_pull_m: DOORS.get().grip.unlatch_pull_m * active.world_scale,
         tearing: DOORS.get().tearing,
         world_scale: active.world_scale,
-        reaches: hand_status.map(|hand| hand.reach),
         carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
         carrier_pose: Some(Pose {
             position: xf.point_to_world(Vec3::ZERO),

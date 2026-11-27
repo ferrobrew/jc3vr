@@ -143,14 +143,32 @@ fn surface_owner(surface: Surface) -> Option<NonZeroUsize> {
     }
 }
 
+/// A cast's hit, for the continuation to step past.
+pub(crate) trait HitPoint {
+    /// Where the hit is, world space.
+    fn point(&self) -> Vec3;
+}
+
+impl HitPoint for SurfaceHit {
+    fn point(&self) -> Vec3 {
+        self.position
+    }
+}
+
+impl<T> HitPoint for (Vec3, T) {
+    fn point(&self) -> Vec3 {
+        self.0
+    }
+}
+
 /// The first hit of `cast` from `from` to `to` that it does not skip, recasting from just past
 /// each skipped hit, up to [`MAX_CASTS`] casts.
-fn continue_cast(
+pub(crate) fn continue_cast<H: HitPoint>(
     from: Vec3,
     to: Vec3,
     options: &CastOptions,
-    mut cast: impl FnMut(&Ray, f32, &CastOptions) -> Result<Option<(SurfaceHit, bool)>, RaycastError>,
-) -> Result<Option<SurfaceHit>, RaycastError> {
+    mut cast: impl FnMut(&Ray, f32, &CastOptions) -> Result<Option<(H, bool)>, RaycastError>,
+) -> Result<Option<H>, RaycastError> {
     let segment = to - from;
     let length = segment.length();
     let ray = Ray::new(from, segment).ok_or(RaycastError::InvalidDistance)?;
@@ -172,8 +190,9 @@ fn continue_cast(
         if !skip {
             return Ok(Some(hit));
         }
-        let along = (hit.position - origin).dot(ray.direction);
-        if !hit.position.is_finite() || !(0.0..remaining).contains(&along) {
+        let hit_position = hit.point();
+        let along = (hit_position - origin).dot(ray.direction);
+        if !hit_position.is_finite() || !(0.0..remaining).contains(&along) {
             return Err(RaycastError::InvalidDistance);
         }
         let next = travelled + along + FORWARD_STEP_M;
@@ -339,7 +358,7 @@ mod tests {
     #[test_case(Vec3::ZERO, Vec3::splat(f32::MIN_POSITIVE); "underflow")]
     fn invalid_segments_do_not_call_the_engine(from: Vec3, to: Vec3) {
         assert_eq!(
-            continue_cast(from, to, &CastOptions::default(), |_, _, _| {
+            continue_cast::<SurfaceHit>(from, to, &CastOptions::default(), |_, _, _| {
                 panic!("invalid segment reached the engine")
             }),
             Err(RaycastError::InvalidDistance),

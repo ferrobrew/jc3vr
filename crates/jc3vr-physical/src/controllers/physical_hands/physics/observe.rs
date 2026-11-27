@@ -231,7 +231,7 @@ pub unsafe fn sample_render_offsets() {
                 .map_or_else(headpose::xr::body_rotation, |rig| rig.rotation),
             shared.world_scale.max(1e-3),
             shared.shown,
-            shared.offset_timeline.at(now),
+            shared.offset_timeline.latest(),
         )
     };
     let physics = PHYSICS.get();

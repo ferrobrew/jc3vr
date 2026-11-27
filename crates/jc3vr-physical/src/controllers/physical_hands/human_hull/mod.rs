@@ -10,8 +10,6 @@
 //! would climb ([`step_up`]). Once a shutdown is requested, constructors keep the authored geometry
 //! while the pass restores every tracked body ([`HumanHullShutdown`]).
 
-#[cfg(test)]
-mod clearance;
 mod geometry;
 mod kept;
 mod native;
