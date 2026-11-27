@@ -25,9 +25,3 @@ macro_rules! draw_path_counter {
 }
 
 draw_path_counter!(AtomicU32, AtomicU64, AtomicUsize);
-
-/// Bump a [`DrawPathCounter`].
-#[inline]
-pub fn bump(counter: &impl DrawPathCounter) {
-    counter.bump();
-}

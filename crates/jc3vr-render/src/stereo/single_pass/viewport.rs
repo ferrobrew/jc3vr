@@ -10,12 +10,33 @@
 //! or a patched shader surviving into a shadow or reflection pass sends its odd instances into a half
 //! that pass never bound.
 
-use std::cell::Cell;
+use std::{
+    cell::Cell,
+    ffi::c_void,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
-use jc3vr_view::stereo::layout::collapse_active;
-use windows::Win32::Foundation::RECT;
+use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
+use jc3vr_view::stereo::{
+    config::SinglePassSwitch, engine_context::EngineContext, layout::collapse_active,
+};
+use windows::{
+    Win32::{
+        Foundation::RECT,
+        Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext},
+        System::Threading::{EnterCriticalSection, LeaveCriticalSection},
+    },
+    core::Interface,
+};
 
-use crate::stereo::single_pass::*;
+use crate::{
+    draw_path::DrawPathCounter,
+    stereo::single_pass::{
+        DetourSlot, VIEWPORT_BINDS_SKIPPED, VIEWPORT_DUP, VIEWPORT_SPLIT, VIEWPORT_UNIFIED, active,
+        config_flags, eye_camera, in_gbuffer_range, per_eye_reissue_eye,
+        per_eye_reissue_full_viewport, viewport_record,
+    },
+};
 
 thread_local! {
     static WAVE_SIMULATION: Cell<bool> = const { Cell::new(false) };
@@ -329,7 +350,7 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             // the bind: nothing reads it in between, the draw path being on this thread.
             viewport_record::record_engine_bind(vp, is_scene_sized(vp), [vp, vp]);
             eye_camera::viewport_changed();
-            bump(&VIEWPORT_DUP);
+            VIEWPORT_DUP.bump();
             set_viewport_slots_uniform(true);
             unsafe { detour.call(context, 2, [vp, vp].as_ptr()) };
             return;
@@ -395,11 +416,11 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     };
     let viewports = match target {
         CollapseViewport::Split => {
-            bump(&VIEWPORT_SPLIT);
+            VIEWPORT_SPLIT.bump();
             [eye_half_viewport(full, 0), eye_half_viewport(full, 1)]
         }
         CollapseViewport::Eye(eye) => {
-            bump(&VIEWPORT_SPLIT);
+            VIEWPORT_SPLIT.bump();
             let half = eye_half_viewport(full, eye);
             [half, half]
         }
@@ -411,7 +432,7 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     // what the slots already hold has nothing to bind. A pass's patched draws all want the same
     // split, so most of them skip.
     if flags.has(SinglePassSwitch::ViewportBindCache) && bound == Some(viewports) {
-        bump(&VIEWPORT_BINDS_SKIPPED);
+        VIEWPORT_BINDS_SKIPPED.bump();
         return;
     }
     // SAFETY: `context` is the live immediate context; `detour.call` invokes the original
@@ -421,28 +442,26 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
 }
 
 /// The full viewport of the target the collapse splits into eye halves: the live engine bind while
-/// the split follows the target, otherwise the scene's.
-fn collapse_base_viewport() -> Option<D3D11_VIEWPORT> {
+/// the split follows the target, otherwise the scene's. `None` until the scene's first viewport
+/// bind records one.
+pub(super) fn collapse_full_viewport() -> Option<D3D11_VIEWPORT> {
     viewport_record::base_viewport(
         config_flags().has(SinglePassSwitch::CollapseViewportFollowsTarget),
     )
 }
 
-/// The full viewport of the target the collapse splits into eye halves (see
-/// [`collapse_base_viewport`]). `None` until the scene's first viewport bind records one.
-pub(super) fn collapse_full_viewport() -> Option<D3D11_VIEWPORT> {
-    collapse_base_viewport()
-}
-
 /// The width of one eye's half of the target the collapse is splitting, from the same viewport
 /// [`ensure_collapse_viewport`] splits. `None` until the scene's first viewport bind records one.
 pub(super) fn collapse_eye_width() -> Option<f32> {
-    collapse_base_viewport().map(|full| eye_half_viewport(full, 0).Width)
+    collapse_full_viewport().map(|full| eye_half_viewport(full, 0).Width)
 }
 
 #[cfg(test)]
 mod tests {
+    use parking_lot::Mutex;
+
     use super::*;
+    use crate::stereo::single_pass::PerEyeReissue;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 

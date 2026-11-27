@@ -6,12 +6,29 @@
 //! question is answered here and read there, which is why the patched-shader set and the bound-shader
 //! flag live with the detours that maintain them rather than with the draws that consult them.
 
-use std::sync::LazyLock;
+use std::{
+    cell::Cell,
+    collections::BTreeMap,
+    ffi::c_void,
+    sync::{
+        LazyLock,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
+use dxbc_stereo::DxbcError;
+use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
-use windows::Win32::Graphics::Direct3D11::ID3D11DeviceChild;
+use windows::{Win32::Graphics::Direct3D11::ID3D11DeviceChild, core::Interface};
 
-use crate::stereo::single_pass::*;
+use crate::stereo::single_pass::{
+    BOUND_VS, BOUND_VS_PATCHED, CVS_DECIDED_PRISTINE, CVS_DECIDED_TRANSFORMED, CVS_PENDING,
+    CVS_REACQ_CB13, CVS_REACQ_ERR, CVS_REACQ_NOREFS, CVS_REACQ_PATCHED, DetourSlot, PATCH_PENDING,
+    PATCH_PENDING_NAME, PATCHED_VS, PATCHED_VS_NAMES, PIN_PENDING, VS_TRANSFORM_CACHE, VsTransform,
+    active, apply_vs_transform, cached_vs_transform, com_add_ref, com_release, deferred_count,
+    errored_count, no_refs_count, patched_count, remap_vertex_shader, report_malformed,
+    reset_instanced_exposure, tag_pinned_eye, vegetation_once,
+};
 
 /// `ID3D11Device::CreateVertexShader` (device vtable slot 12) and `ID3D11DeviceContext::VSSetShader`
 /// (context vtable slot 11), verified against the `windows` vtable structs.

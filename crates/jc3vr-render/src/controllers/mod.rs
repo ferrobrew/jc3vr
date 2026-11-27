@@ -6,4 +6,4 @@
 // The pipeline state the overlay and scope lens passes save and restore around their draws.
 mod draw_state;
 pub mod overlay;
-pub mod weapons;
+pub mod scope;

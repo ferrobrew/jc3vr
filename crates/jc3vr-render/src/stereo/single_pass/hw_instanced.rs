@@ -43,7 +43,7 @@ use jc3gi::graphics_engine::{
 use parking_lot::Mutex;
 use windows::{Win32::Graphics::Direct3D11::ID3D11InputLayout, core::Interface};
 
-use crate::draw_path::bump;
+use crate::draw_path::DrawPathCounter;
 
 /// Whether this thread is replaying the type's `Create` on the scratch copy, which the replay
 /// detours consult to suppress everything but the instanced declarations.
@@ -156,7 +156,7 @@ pub(super) fn note_untwinned(layout: &ID3D11InputLayout) {
 
 /// Count one draw issued once for both eyes through a twin.
 pub(super) fn note_drawn_once() {
-    bump(&DRAWN_ONCE);
+    DRAWN_ONCE.bump();
 }
 
 /// The draws issued once through a twin and those left on the re-issue for want of one since the

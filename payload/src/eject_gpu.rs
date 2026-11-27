@@ -13,7 +13,7 @@ use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 use jc3vr_core::lifecycle;
 use jc3vr_hud::hud;
 use jc3vr_render::{
-    controllers::{overlay, weapons::scope},
+    controllers::{overlay, scope},
     fsr,
 };
 use windows::{

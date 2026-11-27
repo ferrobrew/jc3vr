@@ -89,7 +89,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
             if collapse_active() {
                 ensure_collapse_viewport(context, CollapseViewport::Split);
             }
-            bump(&PATCHED_DRAWS);
+            PATCHED_DRAWS.bump();
             if let Some(instanced) = DRAW_INDEXED_INSTANCED.get() {
                 // Through the trampoline, not the detoured entry: the promotion is the mod's own
                 // draw, so it must not be counted as exposure by [`draw_indexed_instanced_detour`].
@@ -112,7 +112,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 return;
             }
         } else {
-            bump(&UNPATCHED_DRAWS);
+            UNPATCHED_DRAWS.bump();
             if collapse_active() {
                 // The shader was not rewritten, so it writes no `SV_ViewportArrayIndex` and always
                 // rasterises to slot 0. Left to the split binding it would appear in the left eye
@@ -192,7 +192,7 @@ pub(super) unsafe extern "system" fn draw_detour(
 
     if collapse_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let pass = current_pass_id();
-        bump(&SLOT13_BY_PASS[usize::from(pass)]);
+        SLOT13_BY_PASS[usize::from(pass)].bump();
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
         let flags = config_flags();
         if is_geometry_slot13_pass(pass) {
@@ -381,7 +381,7 @@ fn promote_non_indexed(
         return false;
     }
     ensure_collapse_viewport(context, CollapseViewport::Split);
-    bump(&PATCHED_DRAWS);
+    PATCHED_DRAWS.bump();
     probes::submit(
         probes,
         context,
@@ -684,7 +684,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         return;
     }
     if active() && per_eye_reissue_eye().is_none() {
-        bump(&INSTANCED_TOTAL);
+        INSTANCED_TOTAL.bump();
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
         let in_range = in_gbuffer_range();
         if patched {
@@ -693,7 +693,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
             } else {
                 &INSTANCED_RANGE_OUT_PATCHED
             };
-            bump(bucket);
+            bucket.bump();
         }
         if patched && in_range && collapse_active() {
             let flags = config_flags();

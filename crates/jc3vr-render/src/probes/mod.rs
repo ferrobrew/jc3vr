@@ -40,7 +40,7 @@ pub use crate::probes::{
     },
 };
 use crate::{
-    draw_path::bump,
+    draw_path::DrawPathCounter,
     probes::arming::{capture_armed, capture_or_benchmark_armed},
     screenshot::CaptureSource,
     stereo::single_pass::{current_pass_id, detour_timing, per_eye_reissue_eye},
@@ -330,7 +330,7 @@ static PROBES: OnceLock<&'static dyn CaptureProbes> = OnceLock::new();
 #[inline]
 fn count_submission(capture_armed: bool) {
     if capture_armed || capture_or_benchmark_armed() {
-        bump(&SUBMISSIONS);
+        SUBMISSIONS.bump();
     }
 }
 

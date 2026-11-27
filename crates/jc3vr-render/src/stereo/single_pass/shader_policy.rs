@@ -10,9 +10,13 @@
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
 use dxbc_stereo::{Applicable, DxbcError, DxbcErrorKind};
+use jc3vr_view::stereo::config::SinglePassSwitch;
 use parking_lot::Mutex;
 
-use crate::stereo::single_pass::*;
+use crate::stereo::single_pass::{
+    DEFERRED, ERRORED, NO_REFS, PATCHED, TERRAIN_DS_REPROJECTED, TERRAIN_HS_FORWARDED, active,
+    config_flags,
+};
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic

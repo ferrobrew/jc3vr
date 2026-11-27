@@ -31,7 +31,7 @@ use windows::Win32::{
 };
 
 use crate::{
-    controllers::{overlay::pass as overlay_pass, weapons::scope::pass as scope_pass},
+    controllers::{overlay::pass as overlay_pass, scope::pass as scope_pass},
     debug::trace::{TraceEvent, TraceState},
     probes,
     probes::scoped,

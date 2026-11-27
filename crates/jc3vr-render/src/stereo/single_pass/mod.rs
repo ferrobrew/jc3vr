@@ -24,7 +24,6 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize, Ordering},
 };
 
-use dxbc_stereo::DxbcError;
 use jc3gi::{
     graphics_engine::{
         draw::SetVertexProgramConstants,
@@ -82,31 +81,77 @@ pub(crate) mod viewport_record;
 mod water_fragment_state;
 pub(crate) mod water_pixel_variants;
 
-pub use cb13::*;
-pub use config_snapshot::*;
+pub use cb13::STEREO_CB_TOTAL_ROWS;
+use cb13::{CB13, pin_rows_to_eye, preserve_reprojection_depth, release_cb13, write_cb13_rows};
+pub(crate) use cb13::{cb13_buffer_ptr, mirror_and_bind_cb13, pinned_eye_rows};
+use config_snapshot::pin_dispatch_config_flags;
+pub use config_snapshot::refresh_config_flags;
+pub(crate) use config_snapshot::{config_flags, end_dispatch};
 use detour_lifecycle::{DETOUR_INSTALL, DetourSlot, PIXEL_SHADER_EVER_ENABLED};
 pub use detour_lifecycle::{com_detours_installed, ensure_viewport_detours};
 pub(crate) use detour_lifecycle::{ensure_pixel_shader_detour, vertex_identity_detour_ready};
-use draw_detours::*;
-pub use frame_diagnostics::*;
+use draw_detours::{
+    DRAW, DRAW_INDEXED, DRAW_INDEXED_INSTANCED, DRAW_INDEXED_INSTANCED_INDIRECT,
+    DRAW_INSTANCED_INDIRECT, INDIRECT_FORWARDED, INDIRECT_REISSUED, hw_instanced_once,
+    instanced_per_eye, is_geometry_slot13_pass,
+};
+use frame_diagnostics::LAST_FRAME_DIAG;
+pub(crate) use frame_diagnostics::last_frame_diagnostics;
+pub use frame_diagnostics::{EyeDiagnostics, FrameDiagnostics};
 pub(crate) use impostor_pixel_size::EyeDisplayWidth;
-pub use instanced_exposure::*;
+use instanced_exposure::{
+    INSTANCED_TOTAL, accumulate_instanced_exposure, log_instanced_exposure,
+    record_instanced_bystander, record_instanced_case, reset_instanced_exposure,
+};
+pub use instanced_exposure::{
+    InstancedExposure, InstancedExposureReport, InstancedOffenderReport, instanced_exposure,
+    instanced_offenders,
+};
 pub(crate) use jc3vr_view::stereo::engine_context::EngineContext;
 use jc3vr_view::stereo::{
     collapse_eye,
     config::SinglePassSwitch,
     layout::{Capability, capability, collapse_active},
 };
-pub(crate) use per_eye_reissue::*;
+#[cfg(test)]
+pub(crate) use per_eye_reissue::eye_half_screen_uv_rows;
+pub(crate) use per_eye_reissue::{
+    BoundVsGate, draw_per_eye_half, draw_per_eye_half_ignoring_bound_vs, per_eye_reissue_eye,
+    reproject_baked_cb_per_eye, reproject_baked_cb_per_eye_staged, screen_uv_cb_per_eye,
+    terrain_detail_per_eye,
+};
+use per_eye_reissue::{
+    PerEyeReissue, SET_VERTEX_PROGRAM_CONSTANTS, eye_split_state, per_eye_reissue_full_viewport,
+};
 pub(crate) use pinned_eye::tag_pinned_eye;
-pub use shader_detours::*;
-pub use shader_policy::*;
+use shader_detours::{CREATE_VERTEX_SHADER, VS_SET_SHADER};
+pub use shader_detours::{SubstitutionStats, VertexIdentity, substitution_stats};
+pub(crate) use shader_detours::{
+    has_patched_shaders, reset_patched_vs, vertex_identity_arm, vertex_identity_disarm,
+    vertex_identity_lookup, vertex_identity_reset, warn_if_shaders_hold_patched_bytecode,
+};
+use shader_policy::{VS_TRANSFORM_CACHE, cached_vs_transform};
+pub(crate) use shader_policy::{
+    VsTransform, applied, apply_vs_transform, decide_vs_transform, is_terrain_shadow_pass,
+    record_domain_reprojected, record_hull_forwarded, record_patch_outcome, remap_vertex_shader,
+    remember_vs_transform, report_malformed, reset_census, should_pin_terrain, terrain_active,
+};
+pub use shader_policy::{
+    deferred_count, errored_count, no_refs_count, patched_count, terrain_counts,
+};
 pub(crate) use static_lights::EyeLightWidth;
-pub(crate) use sun::*;
-pub(crate) use viewport::*;
+pub(crate) use sun::{consumed_far_bits, far_depth_corrected, is_sun_pass, reissue_sun_pass};
+use viewport::{
+    CollapseViewport, RS_SET_SCISSOR_RECTS, RS_SET_VIEWPORTS, bind_both_viewport_slots,
+    capture_viewport_slots, collapse_eye_width, collapse_full_viewport, ensure_collapse_viewport,
+    eye_half_viewport, restore_viewport_slots, set_viewport_slots_uniform, unify_viewport_slots,
+};
+pub(crate) use viewport::{
+    apply_eye_split_viewport, duplicate_current_viewport, with_wave_simulation_viewports,
+};
 pub(crate) use water_fragment_state::begin_water_surface;
 
-use crate::draw_path::bump;
+use crate::draw_path::DrawPathCounter;
 
 /// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
 /// are left out).

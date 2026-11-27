@@ -21,7 +21,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
-    draw_path::bump,
+    draw_path::DrawPathCounter,
     hooks::graphics_engine::{clustered_lighting, reconstruction},
     probes,
     probes::PipelinePoint,
@@ -62,20 +62,20 @@ static TOTAL_DRAWS: AtomicU64 = AtomicU64::new(0);
 static TOTAL_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 fn bump_draw() {
-    bump(&TOTAL_DRAWS);
-    bump(&DRAW_COUNTS.draw);
+    TOTAL_DRAWS.bump();
+    DRAW_COUNTS.draw.bump();
     PASS_DRAW.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_indexed() {
-    bump(&TOTAL_DRAWS);
-    bump(&DRAW_COUNTS.draw_indexed);
+    TOTAL_DRAWS.bump();
+    DRAW_COUNTS.draw_indexed.bump();
     PASS_INDEXED.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_dispatch() {
-    bump(&TOTAL_DISPATCHES);
-    bump(&DRAW_COUNTS.dispatch);
+    TOTAL_DISPATCHES.bump();
+    DRAW_COUNTS.dispatch.bump();
     PASS_DISPATCH.with(|c| c.set(c.get() + 1));
 }
 
@@ -185,7 +185,11 @@ fn draw_indexed_instanced_multi_indirect(
 
 #[detour(address = jc3gi::graphics_engine::draw::Dispatch_ADDRESS)]
 fn dispatch(ctx: *mut c_void, x: u32, y: u32, z: u32) {
-    if dispatch_suppressed() {
+    // A scissor rectangle clips rasterization and nothing else, so a block split per eye would redo
+    // its whole-texture compute on the second run; the split names one run to issue it on, and the
+    // other run's dispatches are dropped here. A dropped dispatch is not counted either: the tally is
+    // of work submitted.
+    if reconstruction::dispatch_suppressed() {
         return;
     }
     bump_dispatch();
@@ -201,7 +205,7 @@ fn dispatch_indirect(
     a5: *mut c_void,
     a6: *mut c_void,
 ) {
-    if dispatch_suppressed() {
+    if reconstruction::dispatch_suppressed() {
         return;
     }
     bump_dispatch();
@@ -209,18 +213,6 @@ fn dispatch_indirect(
         .get()
         .unwrap()
         .call(a1, a2, a3, a4, a5, a6);
-}
-
-/// Whether a per-eye fullscreen-reconstruction run is in flight on this thread that must not issue the
-/// compute work its block is asking for.
-///
-/// A scissor rectangle clips rasterization and nothing else, so a block split per eye would otherwise
-/// redo its whole-texture compute on the second run, over the first run's output. The split names one
-/// run to issue it on instead; this is where the other run's dispatches are dropped. A suppressed
-/// dispatch is not counted either -- the tally is of work submitted, and none was. Always `false`
-/// outside such a run, which is every dispatch in the engine that has nothing to do with a split.
-fn dispatch_suppressed() -> bool {
-    reconstruction::dispatch_suppressed()
 }
 
 #[detour(address = jc3gi::graphics_engine::draw::SetRenderSetup_ADDRESS)]
@@ -278,7 +270,7 @@ fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void)
         src: src as u64,
     });
     if crate::stereo::single_pass::skip_unread_effect_depth_copy() && is_effect_depth_slot(dst) {
-        bump(&EFFECT_DEPTH_COPIES_SKIPPED);
+        EFFECT_DEPTH_COPIES_SKIPPED.bump();
         return;
     }
     #[cfg(feature = "profiler")]

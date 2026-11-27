@@ -21,7 +21,7 @@ use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
 use crate::{
     controllers::{
         overlay::{view, view::EyeView},
-        weapons::scope::renderer::{EyeRegion, Renderer},
+        scope::renderer::{EyeRegion, Renderer},
     },
     tuning::RENDER,
 };

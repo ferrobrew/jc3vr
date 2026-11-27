@@ -62,7 +62,7 @@ impl Tuning for RenderTuning {
     }
 }
 
-/// The scope lens's source images (see [`crate::controllers::weapons::scope`]).
+/// The scope lens's source images (see [`crate::controllers::scope`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ScopeLensTuning {
