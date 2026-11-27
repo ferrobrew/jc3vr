@@ -17,7 +17,6 @@ use jc3vr_body::controllers::{
     intent::yank::Yank,
 };
 use jc3vr_gameplay::controllers::bindings;
-use jc3vr_grapple::controllers::snatch;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::{
     loadout::slot_label,
@@ -131,13 +130,10 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
             &weapons_status::RACKS,
             &weapons_status::ARMED,
             &weapons_status::RIGHT_GRIP,
-            &weapons_status::DOCKS,
-            &weapons_status::LAST_REFUSAL,
             &gun_status::RIGID_GRIP,
             &gun_status::CANONICAL_GRIP,
             &gun_status::FLIP_WATCH,
             &gun_status::ANIMATED_DEVIATION,
-            &gun_status::BONE_CHANGES,
         ],
     );
     if !status.active {
@@ -426,24 +422,6 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
         ),
         None => format!("Yanks: {yanks}"),
     });
-    let n = snatch::status();
-    ui.label(format!(
-        "Snatches failed: {} · tosses {}",
-        n.failed, n.tosses
-    ));
-    if let Some(mass) = n.aimed_mass_kg {
-        ui.label(format!("  Object under the aim: {mass:.0} kg"));
-    }
-    if let Some(swing) = n.swing {
-        ui.label(if swing.tethered {
-            "  Holding the line: release grip to throw"
-        } else {
-            "  Holding the line: release grip to throw · release B to snatch"
-        });
-        if swing.line_held {
-            ui.label("  The other hand holds the line ahead: pull to take line in, swing to whip");
-        }
-    }
 }
 
 fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {

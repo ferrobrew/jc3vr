@@ -435,7 +435,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     watch: None,
     status: SnatchStatus {
         live: false,
-        phase: "IDLE",
+        phase: "Idle",
         target: None,
         unoffered: None,
         last_refusal: None,
@@ -498,13 +498,13 @@ enum Phase {
 impl Phase {
     const fn label(&self) -> &'static str {
         match self {
-            Phase::Idle => "IDLE",
-            Phase::Armed { .. } => "ARMED",
-            Phase::Freeing { .. } => "FREEING",
-            Phase::HookOut { .. } => "HOOK OUT",
-            Phase::Pulling { rope: Some(_), .. } => "SWINGING",
-            Phase::Pulling { flight, .. } if flight.slack() => "INBOUND",
-            Phase::Pulling { .. } => "PULLING",
+            Phase::Idle => "Idle",
+            Phase::Armed { .. } => "Armed",
+            Phase::Freeing { .. } => "Freeing",
+            Phase::HookOut { .. } => "Hook out",
+            Phase::Pulling { rope: Some(_), .. } => "Swinging",
+            Phase::Pulling { flight, .. } if flight.slack() => "Inbound",
+            Phase::Pulling { .. } => "Pulling",
         }
     }
 

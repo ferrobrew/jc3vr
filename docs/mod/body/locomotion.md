@@ -17,7 +17,7 @@ The stick locomotion takes both away from the animation. The code is in `crates/
 
 The legs play the game's clips, at the clips' own speed and cadence, so they slide a little against the ground when the two speeds differ. The procedural torso leaves the legs to the animation in every case ([procedural-body.md](procedural-body.md)).
 
-The task's velocity, the target, the written velocity, and the proxy's velocity are logged once a second while moving (`locomotion: stick velocity`, debug level on the `controllers` target), and the readout is the On foot feature's live status, under its `STICK VELOCITY`, `ACT FILTER`, `ACT WATCHDOG`, `STEADY VIEW`, and `NEUTRAL HEAD` status rows ([status.md](../status.md)).
+The task's velocity, the target, the written velocity, and the proxy's velocity are logged once a second while moving (`locomotion: stick velocity`, debug level on the `controllers` target), and the readout is the On foot feature's live status, under its `Stick velocity`, `Act filter`, `Act watchdog`, `Steady view`, and `Neutral head` status rows ([status.md](../status.md)).
 
 The game's speeds are measured once each: for every target speed the stick holds for two and a half seconds, the root speed of the clips is averaged after the first second and logged at info level (`locomotion: the game's on-foot speed`, with `target_mps` and `root_mps`).
 
@@ -71,7 +71,7 @@ Because the camera's anchor does not contain the animation, everything that comp
 
 ## What needs confirming in the headset
 
-- Standing still after the measurement, the view does not move when the anchor switches on (the handover log line, and `STEADY VIEW` reading `Engaged`).
+- Standing still after the measurement, the view does not move when the anchor switches on (the handover log line, and `Steady view` reading `Engaged`).
 - Walking, jogging, and sprinting with the stick: no bob in the view, no surge, constant-rate starts and stops. The 10 November 17:07 take bobbed about 20 mm RMS vertically while jogging because the pose was composed from the animated head; with the neutral head composed in, the same take replayed offline gives about 2 mm. In the debug log, `commanded` follows `target` at the configured rate and `proxy` follows `commanded`; a proxy velocity that lags well behind means the proxy's own smoothing is adding to the ramp.
 - With the act filter on, the state machine still enters and leaves movement, starts, stops, and flicks look straight, and the watchdog's warning does not appear in normal play. Reversing the stick during a start, and aiming well to the side with a heavy weapon while standing, do not swing the view.
 - On a car's roof, holding the stick toward a side with no stunt area, for as long as it is held, does not turn the body or the view, and the stick still steps the player onto a neighbouring area. Rico does not get stuck mid-stop or mid-step after letting go of the stick; the readout's refused count shows how often the state machine would not take the return to the idle.

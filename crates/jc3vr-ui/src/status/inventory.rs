@@ -12,32 +12,29 @@ use jc3vr_weapons::controllers::{
         },
     },
 };
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::status::{Line, Row, Text, prose, text};
+use crate::status::{Line, Row};
 
-pub(crate) const TRACKED: Row = Row::new("TRACKED WEAPONS", "Tracked weapons", tracked);
-pub(crate) const CARRIED: Row = Row::new("CARRIED", "Carried", carried);
-pub(crate) const SEPARATE_PISTOLS: Row =
-    Row::new("SEPARATE PISTOLS", "Separate pistols", separate_pistols);
-pub(crate) const SIDECAR: Row = Row::new("SAVE SIDECAR", "Save sidecar", sidecar);
-pub(crate) const LAST_LOAD: Row = Row::new("LAST LOAD", "Last load", last_load);
-pub(crate) const PINNED: Row = Row::new("KEPT IN THE WORLD", "Kept in the world", pinned);
-pub(crate) const LOADOUT: Row = Row::new("LOADOUT TABLE", "Loadout table", loadout);
+pub(crate) const TRACKED: Row = Row::new("Tracked weapons", tracked);
+pub(crate) const CARRIED: Row = Row::new("Carried", carried);
+pub(crate) const SEPARATE_PISTOLS: Row = Row::new("Separate pistols", separate_pistols);
+pub(crate) const SIDECAR: Row = Row::new("Save sidecar", sidecar);
+pub(crate) const LAST_LOAD: Row = Row::new("Last load", last_load);
+pub(crate) const PINNED: Row = Row::new("Kept in the world", pinned);
+pub(crate) const LOADOUT: Row = Row::new("Loadout table", loadout);
 
 fn tracked() -> Line {
     let s = inventory::status();
     if !s.active {
-        return Line::waiting(prose("No player yet"));
+        return Line::waiting("No player yet");
     }
-    Line::ok(text!(
-        s.owned.to_string(),
-        " owned, ",
-        s.world.len().to_string(),
-        " in the world, ",
-        s.with_others.to_string(),
-        " with others, ",
-        s.resets.to_string(),
-        " resets"
+    Line::ok(format_smolstr!(
+        "{} owned, {} in the world, {} with others, {} resets",
+        s.owned,
+        s.world.len(),
+        s.with_others,
+        s.resets
     ))
 }
 
@@ -46,7 +43,7 @@ fn tracked() -> Line {
 fn loadout() -> Line {
     let s = live::status();
     let Some(snapshot) = &s.snapshot else {
-        return Line::waiting(prose("No player yet"));
+        return Line::waiting("No player yet");
     };
     let (mut hands, mut sockets, mut world) = (0_usize, 0_usize, 0_usize);
     for item in &snapshot.items {
@@ -56,15 +53,12 @@ fn loadout() -> Line {
             Place::World(_) => world += 1,
         }
     }
-    Line::ok(text!(
-        hands.to_string(),
-        " in hands, ",
-        sockets.to_string(),
-        " on sockets, ",
-        world.to_string(),
-        " in the world, ",
-        s.refusals.to_string(),
-        " refused"
+    Line::ok(format_smolstr!(
+        "{} in hands, {} on sockets, {} in the world, {} refused",
+        hands,
+        sockets,
+        world,
+        s.refusals
     ))
 }
 
@@ -73,25 +67,23 @@ fn loadout() -> Line {
 fn separate_pistols() -> Line {
     let s = single::status();
     if !s.active {
-        return Line::waiting(prose("No player yet"));
+        return Line::waiting("No player yet");
     }
-    let counts = text!(
-        s.singles.to_string(),
-        " single, ",
-        s.splits.to_string(),
-        " pairs split, ",
-        (s.picked + s.ones).to_string(),
-        " taken as one"
+    let counts = format_smolstr!(
+        "{} single, {} pairs split, {} taken as one",
+        s.singles,
+        s.splits,
+        (s.picked + s.ones)
     );
     let line = match (s.slot_single, s.twin) {
-        (true, _) => Line::ok(text!("The slot's pistol is single, ", counts)),
+        (true, _) => Line::ok(format_smolstr!("The slot's pistol is single, {}", counts)),
         (false, TwinState::Pending { .. }) => {
-            Line::waiting(text!("Second pistol coming, ", counts))
+            Line::waiting(format_smolstr!("Second pistol coming, {}", counts))
         }
         (false, TwinState::Pair { why, .. }) => {
-            Line::failed(text!("Pair kept: ", prose(why.label()), ", ", counts))
+            Line::failed(format_smolstr!("Pair kept: {}, {}", why.label(), counts))
         }
-        (false, _) => Line::ok(text!("No pistol in the slot, ", counts)),
+        (false, _) => Line::ok(format_smolstr!("No pistol in the slot, {}", counts)),
     };
     match s.last {
         Some(last) => line.with_note(last),
@@ -101,68 +93,60 @@ fn separate_pistols() -> Line {
 
 fn pinned() -> Line {
     let s = inventory::status();
-    Line::ok(text!(
-        s.pinned().to_string(),
-        " of ",
-        s.world.len().to_string(),
-        " kept, ",
-        s.pins.to_string(),
-        " pinned, ",
-        s.forgotten.to_string(),
-        " left to the game"
+    Line::ok(format_smolstr!(
+        "{} of {} kept, {} pinned, {} left to the game",
+        s.pinned(),
+        s.world.len(),
+        s.pins,
+        s.forgotten
     ))
 }
 
 fn sidecar() -> Line {
     let s = restore::status();
     if s.path.is_none() {
-        return Line::failed(prose("No configuration directory"));
+        return Line::failed("No configuration directory");
     }
     if let Some(error) = s.last_write_error {
-        return Line::failed(prose("Last write failed, see log")).with_note(error);
+        return Line::failed("Last write failed, see log").with_note(error);
     }
     if s.writes == 0 {
-        return Line::waiting(prose("Not written yet, waiting for a save"));
+        return Line::waiting("Not written yet, waiting for a save");
     }
-    Line::ok(text!(
-        s.writes.to_string(),
-        " writes, ",
-        s.last_written.to_string(),
-        " carried in the last"
+    Line::ok(format_smolstr!(
+        "{} writes, {} carried in the last",
+        s.writes,
+        s.last_written
     ))
 }
 
 fn last_load() -> Line {
     let s = restore::status();
     let load = match &s.last_load {
-        None => prose("No load yet"),
-        Some(LoadOutcome::Accepted { carried, unknown }) => text!(
-            "Sidecar matched, ",
-            carried.to_string(),
-            " to restore, ",
-            unknown.to_string(),
-            " unknown"
+        None => SmolStr::new_static("No load yet"),
+        Some(LoadOutcome::Accepted { carried, unknown }) => format_smolstr!(
+            "Sidecar matched, {} to restore, {} unknown",
+            carried,
+            unknown
         ),
-        Some(LoadOutcome::Missing) => prose("No sidecar"),
-        Some(LoadOutcome::Unreadable(_)) => prose("Sidecar unreadable"),
-        Some(LoadOutcome::Rejected(_)) => prose("Another save's sidecar"),
-        Some(LoadOutcome::NoCharacter) => prose("No character"),
+        Some(LoadOutcome::Missing) => SmolStr::new_static("No sidecar"),
+        Some(LoadOutcome::Unreadable(_)) => SmolStr::new_static("Sidecar unreadable"),
+        Some(LoadOutcome::Rejected(_)) => SmolStr::new_static("Another save's sidecar"),
+        Some(LoadOutcome::NoCharacter) => SmolStr::new_static("No character"),
     };
-    let respawn = s.last_respawn.map_or_else(Text::default, |r| {
-        text!(
-            "; respawned ",
-            r.restored.to_string(),
-            " of ",
-            r.requested.to_string(),
-            " from the ",
+    let respawn = s.last_respawn.map_or_else(SmolStr::default, |r| {
+        format_smolstr!(
+            "; respawned {} of {} from the {}{}",
+            r.restored,
+            r.requested,
             match r.origin {
-                Some(Origin::Load) => prose("load"),
-                _ => prose("reset"),
+                Some(Origin::Load) => SmolStr::new_static("load"),
+                _ => SmolStr::new_static("reset"),
             },
             if r.failed > 0 {
-                text!(", ", r.failed.to_string(), " failed")
+                format_smolstr!(", {} failed", r.failed)
             } else {
-                Text::default()
+                SmolStr::default()
             }
         )
     });
@@ -170,7 +154,7 @@ fn last_load() -> Line {
         Some(LoadOutcome::Unreadable(why) | LoadOutcome::Rejected(why)) => Some(why.clone()),
         _ => None,
     };
-    let detail = text!(load, respawn);
+    let detail = format_smolstr!("{}{}", load, respawn);
     let line = if matches!(s.last_load, Some(LoadOutcome::Unreadable(_))) {
         Line::failed(detail)
     } else {
@@ -184,25 +168,24 @@ fn last_load() -> Line {
 
 fn carried() -> Line {
     let s = inventory::status();
-    let carried: Vec<Text> = s
+    let carried: Vec<SmolStr> = s
         .carried
         .iter()
-        .map(|(slot, socket)| text!(prose(slot_label(*slot)), " on ", prose(socket.label())))
+        .map(|(slot, socket)| format_smolstr!("{} on {}", slot_label(*slot), socket.label()))
         .collect();
     let list = if carried.is_empty() {
-        prose("None")
+        SmolStr::new_static("None")
     } else {
-        Text::join(carried, ", ")
+        SmolStr::from(carried.join(", "))
     };
     let list = if s.stashed {
-        text!("Stashed for a mission: ", list)
+        format_smolstr!("Stashed for a mission: {}", list)
     } else {
         list
     };
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}; {} kept from pickups",
         list,
-        "; ",
-        s.carried_replaced.to_string(),
-        " kept from pickups"
+        s.carried_replaced
     ))
 }

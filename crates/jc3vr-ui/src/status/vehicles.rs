@@ -7,147 +7,146 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_vehicles::controllers::{
     vehicles,
-    vehicles::{VehicleSummary, mounted_recoil, passenger, passenger::PassengerStatus},
+    vehicles::{VehiclesStatus, mounted_recoil, passenger, passenger::PassengerStatus},
 };
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::status::{Health, Line, Row, Text, prose, text};
+use crate::status::{Line, Row};
 
-pub(crate) const FLIGHT_CONTROLS: Row =
-    Row::new("FLIGHT CONTROLS", "Flight controls", flight_controls);
-pub(crate) const COCKPIT_BUTTONS: Row =
-    Row::new("COCKPIT BUTTONS", "Cockpit buttons", cockpit_buttons);
-pub(crate) const PASSENGER_AIM: Row = Row::new("PASSENGER AIM", "Passenger aim", passenger_aim);
-pub(crate) const MOUNTED_GUN: Row = Row::new("MOUNTED GUN", "Mounted gun", mounted_gun);
+pub(crate) const FLIGHT_CONTROLS: Row = Row::new("Flight controls", flight_controls);
+pub(crate) const COCKPIT_BUTTONS: Row = Row::new("Cockpit buttons", cockpit_buttons);
+pub(crate) const PASSENGER_AIM: Row = Row::new("Passenger aim", passenger_aim);
+pub(crate) const MOUNTED_GUN: Row = Row::new("Mounted gun", mounted_gun);
 
 fn flight_controls() -> Line {
-    flight_controls_line(&vehicles::summary())
+    flight_controls_line(&vehicles::status())
 }
 
 fn mounted_gun() -> Line {
-    mounted_gun_line(&vehicles::summary(), mounted_recoil::shots())
+    let status = vehicles::status();
+    mounted_gun_line(status.mounted.is_some(), &status, mounted_recoil::shots())
 }
 
-fn mounted_gun_line(summary: &VehicleSummary, shots: u64) -> Line {
-    if !summary.mounted {
-        return Line::new(Health::Waiting, prose("Not on a mounted gun"));
+fn mounted_gun_line(manned: bool, summary: &VehiclesStatus, shots: u64) -> Line {
+    if !manned {
+        return Line::waiting("Not on a mounted gun");
     }
-    let hands = prose(match summary.mounted_holds {
-        [true, true] => "Both hands on",
-        [true, false] => "Left hand on",
-        [false, true] => "Right hand on",
-        [false, false] => "Hands off, gun held",
-    });
-    Line::ok(text!(
+    let hands = format_smolstr!(
+        "{}",
+        match summary.mounted_holds {
+            [true, true] => "Both hands on",
+            [true, false] => "Left hand on",
+            [false, true] => "Right hand on",
+            [false, false] => "Hands off, gun held",
+        }
+    );
+    Line::ok(format_smolstr!(
+        "{}, {} grabs and releases, {} kicks",
         hands,
-        ", ",
-        summary.mounted_grip_events.to_string(),
-        " grabs and releases, ",
-        shots.to_string(),
-        " kicks"
+        summary.mounted_grip_events,
+        shots
     ))
 }
 
 fn passenger_aim() -> Line {
-    let seat = vehicles::summary().seat;
+    let seat = vehicles::status().seat;
     passenger_aim_line(seat, passenger::status())
 }
 
 fn passenger_aim_line(seat: Option<VehicleSeat>, status: PassengerStatus) -> Line {
     match (seat.is_some_and(|s| !s.driver), status.aiming) {
-        (true, true) => Line::ok(text!(
-            "Following the hand, ",
-            status.starts.to_string(),
-            " starts"
+        (true, true) => Line::ok(format_smolstr!(
+            "Following the hand, {} starts",
+            status.starts
         )),
-        (true, false) => Line::new(Health::Waiting, prose("No gun hand aiming")),
-        (false, _) if status.starts > 0 => Line::ok(text!(
-            "Not a passenger, ",
-            status.starts.to_string(),
-            " starts"
-        )),
-        (false, _) => Line::new(Health::Waiting, prose("Not a passenger")),
+        (true, false) => Line::waiting("No gun hand aiming"),
+        (false, _) if status.starts > 0 => {
+            Line::ok(format_smolstr!("Not a passenger, {} starts", status.starts))
+        }
+        (false, _) => Line::waiting("Not a passenger"),
     }
 }
 
 fn cockpit_buttons() -> Line {
-    cockpit_buttons_line(&vehicles::summary())
+    cockpit_buttons_line(&vehicles::status())
 }
 
-fn cockpit_buttons_line(summary: &VehicleSummary) -> Line {
+fn cockpit_buttons_line(summary: &VehiclesStatus) -> Line {
     if !(summary.active && summary.seat.is_some_and(|s| s.driver)) {
-        return Line::new(Health::Waiting, prose("Not driving"));
+        return Line::waiting("Not driving");
     }
     let offers = |kind| summary.offered.contains(&kind);
     let mut here = Vec::new();
     if offers(ControlKind::Wheel) {
-        here.push(prose("horn"));
-        here.push(prose("nitrous button"));
+        here.push(SmolStr::new_static("horn"));
+        here.push(SmolStr::new_static("nitrous button"));
     }
     if offers(ControlKind::Collective) {
-        here.push(prose("twist grip"));
+        here.push(SmolStr::new_static("twist grip"));
     }
     if here.is_empty() {
-        return Line::new(Health::Waiting, prose("None in this seat"));
+        return Line::waiting("None in this seat");
     }
     let o = &summary.outputs;
-    let working = prose(match (o.horn, o.nitrous) {
-        (true, true) => ", horn and nitrous on",
-        (true, false) => ", horn on",
-        (false, true) => ", nitrous on",
-        (false, false) => "",
-    });
-    Line::ok(text!(
-        Text::join(here, ", "),
+    let working = format_smolstr!(
+        "{}",
+        match (o.horn, o.nitrous) {
+            (true, true) => ", horn and nitrous on",
+            (true, false) => ", horn on",
+            (false, true) => ", nitrous on",
+            (false, false) => "",
+        }
+    );
+    Line::ok(format_smolstr!(
+        "{}{}, {} presses",
+        SmolStr::from(here.join(", ")),
         working,
-        ", ",
-        summary.button_presses.to_string(),
-        " presses"
+        summary.button_presses
     ))
 }
 
-fn flight_controls_line(summary: &VehicleSummary) -> Line {
+fn flight_controls_line(summary: &VehiclesStatus) -> Line {
     let flying = summary.active
         && summary
             .seat
             .is_some_and(|s| s.driver && s.class == VehicleClass::Plane);
     if !flying {
-        return Line::new(Health::Waiting, prose("Not flying a plane"));
+        return Line::waiting("Not flying a plane");
     }
     let held = |kind| summary.holds.contains(&Some(kind));
     let o = &summary.outputs;
     let stick_held = held(ControlKind::FlightStick) || held(ControlKind::Yoke);
-    let stick = prose(match (stick_held, o.flight_stick) {
-        (true, _) => "Stick held",
-        (false, Some(_)) => "Stick returning",
-        (false, None) => "Stick free",
-    });
+    let stick = format_smolstr!(
+        "{}",
+        match (stick_held, o.flight_stick) {
+            (true, _) => "Stick held",
+            (false, Some(_)) => "Stick returning",
+            (false, None) => "Stick free",
+        }
+    );
     let rudder = o
         .rudder
-        .map_or_else(Text::default, |r| text!(", rudder ", format!("{r:+.2}")));
+        .map_or_else(SmolStr::default, |r| format_smolstr!(", rudder {r:+.2}"));
     let throttle = o.throttle.map_or_else(
-        || prose("throttle by trigger"),
+        || SmolStr::new_static("throttle by trigger"),
         |t| {
-            text!(
-                "throttle ",
-                format!("{t:+.2}"),
+            format_smolstr!(
+                "throttle {t:+.2}{}",
                 if o.afterburner {
-                    prose(" afterburner")
+                    SmolStr::new_static(" afterburner")
                 } else {
-                    Text::default()
+                    SmolStr::default()
                 }
             )
         },
     );
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}{}, {}, {} cues, {} burns",
         stick,
         rudder,
-        ", ",
         throttle,
-        ", ",
-        summary.cues.to_string(),
-        " cues, ",
-        summary.afterburner_lights.to_string(),
-        " burns"
+        summary.cues,
+        summary.afterburner_lights
     ))
 }
 
@@ -156,9 +155,10 @@ mod tests {
     use jc3vr_vehicles::controllers::vehicles::physical::Outputs;
 
     use super::*;
+    use crate::status::Health;
 
-    fn flying() -> VehicleSummary {
-        VehicleSummary {
+    fn flying() -> VehiclesStatus {
+        VehiclesStatus {
             active: true,
             seat: Some(VehicleSeat {
                 class: VehicleClass::Plane,
@@ -176,27 +176,24 @@ mod tests {
             cues: 3,
             afterburner_lights: 1,
             button_presses: 2,
-            mounted: false,
-            mounted_holds: [false; 2],
-            mounted_grip_events: 0,
+            ..VehiclesStatus::default()
         }
     }
 
     #[test]
     fn the_mounted_gun_names_the_hands_on_it() {
         assert_eq!(
-            mounted_gun_line(&flying(), 0).text(),
-            "WAITING, NOT ON A MOUNTED GUN"
+            mounted_gun_line(false, &flying(), 0).text(),
+            "Waiting, Not on a mounted gun"
         );
-        let manned = VehicleSummary {
-            mounted: true,
+        let manned = VehiclesStatus {
             mounted_holds: [true, false],
             mounted_grip_events: 3,
             ..flying()
         };
         assert_eq!(
-            mounted_gun_line(&manned, 12).text(),
-            "OK, LEFT HAND ON, 3 GRABS AND RELEASES, 12 KICKS"
+            mounted_gun_line(true, &manned, 12).text(),
+            "Ok, Left hand on, 3 grabs and releases, 12 kicks"
         );
     }
 
@@ -213,7 +210,7 @@ mod tests {
         };
         assert_eq!(
             passenger_aim_line(passenger, aiming).text(),
-            "OK, FOLLOWING THE HAND, 2 STARTS"
+            "Ok, Following the hand, 2 starts"
         );
         let idle = PassengerStatus {
             aiming: false,
@@ -222,7 +219,7 @@ mod tests {
         assert_eq!(passenger_aim_line(passenger, idle).health, Health::Waiting);
         assert_eq!(
             passenger_aim_line(None, PassengerStatus::default()).text(),
-            "WAITING, NOT A PASSENGER"
+            "Waiting, Not a passenger"
         );
     }
 
@@ -230,9 +227,9 @@ mod tests {
     fn the_cockpit_buttons_name_what_the_seat_has() {
         assert_eq!(
             cockpit_buttons_line(&flying()).text(),
-            "WAITING, NONE IN THIS SEAT"
+            "Waiting, None in this seat"
         );
-        let car = VehicleSummary {
+        let car = VehiclesStatus {
             seat: Some(VehicleSeat {
                 class: VehicleClass::Car,
                 driver: true,
@@ -246,9 +243,9 @@ mod tests {
         };
         assert_eq!(
             cockpit_buttons_line(&car).text(),
-            "OK, HORN, NITROUS BUTTON, HORN ON, 2 PRESSES"
+            "Ok, horn, nitrous button, horn on, 2 presses"
         );
-        let passenger = VehicleSummary {
+        let passenger = VehiclesStatus {
             seat: Some(VehicleSeat {
                 class: VehicleClass::Car,
                 driver: false,
@@ -260,7 +257,7 @@ mod tests {
 
     #[test]
     fn the_flight_controls_wait_for_a_plane_and_read_out_the_hands() {
-        let car = VehicleSummary {
+        let car = VehiclesStatus {
             seat: Some(VehicleSeat {
                 class: VehicleClass::Car,
                 driver: true,
@@ -270,16 +267,16 @@ mod tests {
         assert_eq!(flight_controls_line(&car).health, Health::Waiting);
         assert_eq!(
             flight_controls_line(&flying()).text(),
-            "OK, STICK HELD, RUDDER +0.25, THROTTLE +1.00 AFTERBURNER, 3 CUES, 1 BURNS"
+            "Ok, Stick held, rudder +0.25, throttle +1.00 afterburner, 3 cues, 1 burns"
         );
-        let parked = VehicleSummary {
+        let parked = VehiclesStatus {
             holds: [None; 2],
             outputs: Outputs::NONE,
             ..flying()
         };
         assert_eq!(
             flight_controls_line(&parked).text(),
-            "OK, STICK FREE, THROTTLE BY TRIGGER, 3 CUES, 1 BURNS"
+            "Ok, Stick free, throttle by trigger, 3 cues, 1 burns"
         );
     }
 }

@@ -55,7 +55,7 @@ The casts are bounded: `contact.fingers_per_tick` fingers per hand per tick, so 
 
 The grip poses have no settings: they apply whenever the finger curls do, and their tuning is the finger curls' `curls.grip` and `poses`. The debug UI's Grip and fingers feature opens with the two rows below, then shows per hand the curls' source and weight, and each finger's curl, splay, and hook.
 
-The debug UI's Status page has a `FINGERS` section with `LEFT GRIP POSE` and `RIGHT GRIP POSE`: the pose and its source, the share, the fitted fingers, and `LETTING GO` while a released pose opens; `HOLDS NOTHING`; `WAITING` while the controllers do not drive the hand; `FAILED` when the finger bones do not resolve. A change of a hand's source is logged at info (`fingers: the hand's grip source changed`, with the hand, the old and new source, and the pose), at most twice a second per hand; the source a hand settles on within that interval is logged when it passes, with the count of the changes in between.
+The debug UI's Status page has a `Fingers` section with `Left grip pose` and `Right grip pose`: the pose and its source, the share, the fitted fingers, and `LETTING GO` while a released pose opens; `HOLDS NOTHING`; `Waiting` while the controllers do not drive the hand; `Failed` when the finger bones do not resolve. A change of a hand's source is logged at info (`fingers: the hand's grip source changed`, with the hand, the old and new source, and the pose), at most twice a second per hand; the source a hand settles on within that interval is logged when it passes, with the count of the changes in between.
 
 ## Unverified in the headset
 
@@ -66,9 +66,9 @@ The debug UI's Status page has a `FINGERS` section with `LEFT GRIP POSE` and `RI
 
 ## Headset checklist
 
-1. Draw a pistol. The fingers wrap its grip and the thumb crosses over them; touching the trigger rests the index finger on it, pulling closes it a little, and lifting off points it. `LEFT GRIP POSE` or `RIGHT GRIP POSE` reads `PISTOL GRIP FROM GUN, 100%`, and the log has one `grip source changed` line for the draw.
+1. Draw a pistol. The fingers wrap its grip and the thumb crosses over them; touching the trigger rests the index finger on it, pulling closes it a little, and lifting off points it. `Left grip pose` or `Right grip pose` reads `PISTOL GRIP FROM GUN, 100%`, and the log has one `grip source changed` line for the draw.
 2. Take a rifle's foregrip with the off-hand: the off-hand wraps the handguard with the thumb along its side, blending in with the two-handed grip.
-   Brace the rifle on its barrel, magazine, action, and stock in turn: a tight wrap round the barrel, a cup under the magazine, a pinch on the action, and a looser wrap round the stock; `LEFT GRIP POSE` names each pose from `FOREGRIP`.
+   Brace the rifle on its barrel, magazine, action, and stock in turn: a tight wrap round the barrel, a cup under the magazine, a pinch on the action, and a looser wrap round the stock; `Left grip pose` names each pose from `FOREGRIP`.
 3. Take a round or a magazine from the pouch: a pinch between the thumb and the first fingers. A grenade stands upright in the fist, its fuse head past the thumb, the fingers wrapped round its body; a C4 charge lies flat on the palm, the fingers over its far edge and the thumb along its side.
 4. Pick up a small loose object and squeeze lightly, then hard: the fingers close onto it as the squeeze grows, and the row counts the fitted fingers within a few ticks. Fingers that sit in the air rather than on the object point at a wrong wrist or proportions.
 5. Grab a heavy crate one hand cannot lift: the palm lies flat on it. Press a palm into a wall with the hand empty: the palm flattens.

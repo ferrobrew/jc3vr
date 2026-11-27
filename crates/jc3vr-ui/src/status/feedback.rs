@@ -4,27 +4,23 @@
 use jc3vr_body::controllers::haptics;
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_physical::controllers::physical_hands::sounds;
+use smol_str::format_smolstr;
 
-use crate::{
-    controllers::menu::read,
-    status::{Line, Row, text},
-};
+use crate::status::{Line, Row};
 
-pub(crate) const HAPTIC_CUES: Row = Row::new("HAPTIC CUES", "Haptic cues", haptic_cues);
-pub(crate) const IMPACT_SOUNDS: Row = Row::new("IMPACT SOUNDS", "Impact sounds", impact_sounds);
+pub(crate) const HAPTIC_CUES: Row = Row::new("Haptic cues", haptic_cues);
+pub(crate) const IMPACT_SOUNDS: Row = Row::new("Impact sounds", impact_sounds);
 
 fn haptic_cues() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.haptics.enabled) {
+    if !CONTROLLERS_CONFIG.query(|c| c.haptics.enabled) {
         return Line::off("");
     }
     let status = haptics::status();
-    let detail = text!(
-        status.total_sent().to_string(),
-        " sent, ",
-        status.mix.masked.to_string(),
-        " masked, ",
-        status.mix.limited.to_string(),
-        " limited"
+    let detail = format_smolstr!(
+        "{} sent, {} masked, {} limited",
+        status.total_sent(),
+        status.mix.masked,
+        status.mix.limited
     );
     if status.total_sent() == 0 {
         Line::waiting(detail)
@@ -35,13 +31,11 @@ fn haptic_cues() -> Line {
 
 fn impact_sounds() -> Line {
     let status = sounds::status();
-    let detail = text!(
-        status.played.to_string(),
-        " played, ",
-        status.limited.to_string(),
-        " held back, ",
-        status.silent.to_string(),
-        " silent"
+    let detail = format_smolstr!(
+        "{} played, {} held back, {} silent",
+        status.played,
+        status.limited,
+        status.silent
     );
     if status.played == 0 {
         Line::waiting(detail)

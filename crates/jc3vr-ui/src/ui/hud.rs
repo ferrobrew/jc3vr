@@ -8,7 +8,7 @@ use jc3vr_hud::hud::{
 use jc3vr_view::hud::world_markers::stage_frame::StageFrame;
 
 use crate::{
-    status::system::{ATLAS, MARKER_DEPTH, WORLD_MARKERS},
+    status::system::{ATLAS, WORLD_MARKERS},
     ui::status_row::headlines,
 };
 
@@ -143,7 +143,7 @@ fn stage_safe_area_status_ui(ui: &mut egui::Ui) {
 }
 
 fn world_markers_status_ui(ui: &mut egui::Ui) {
-    headlines(ui, &[&WORLD_MARKERS, &MARKER_DEPTH]);
+    headlines(ui, &[&WORLD_MARKERS]);
     match jc3vr_hud::hud::world_markers::status() {
         None => {
             ui.label("Off, outside gameplay, or the panel is off.");

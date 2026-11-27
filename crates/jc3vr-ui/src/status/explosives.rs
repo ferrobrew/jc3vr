@@ -4,44 +4,37 @@
 
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_weapons::controllers::weapons::{ads, c4, collide, grenade, reload::loose};
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::{
-    controllers::menu::read,
-    status::{Line, Row, Text, prose, text},
-};
+use crate::status::{Line, Row};
 
-pub(crate) const LIVE_GRENADES: Row = Row::new("LIVE GRENADES", "Live grenades", live_grenades);
-pub(crate) const C4_BY_HAND: Row = Row::new("C4 BY HAND", "C4 by hand", c4_by_hand);
-pub(crate) const MAGAZINES: Row = Row::new("MAGAZINES", "Magazines", magazines);
-pub(crate) const DOWN_THE_SIGHTS: Row =
-    Row::new("DOWN THE SIGHTS", "Down the sights", down_the_sights);
-pub(crate) const GUN_AGAINST_WALLS: Row =
-    Row::new("GUN AGAINST WALLS", "Gun against walls", gun_against_walls);
+pub(crate) const LIVE_GRENADES: Row = Row::new("Live grenades", live_grenades);
+pub(crate) const C4_BY_HAND: Row = Row::new("C4 by hand", c4_by_hand);
+pub(crate) const MAGAZINES: Row = Row::new("Magazines", magazines);
+pub(crate) const DOWN_THE_SIGHTS: Row = Row::new("Down the sights", down_the_sights);
+pub(crate) const GUN_AGAINST_WALLS: Row = Row::new("Gun against walls", gun_against_walls);
 
 fn gun_against_walls() -> Line {
     let s = collide::status();
     if !s.weapon() {
-        return Line::waiting(prose("No long gun measured"));
+        return Line::waiting("No long gun measured");
     }
     let touching = s.hands.iter().find(|h| h.touching);
-    let turned = touching.map_or_else(Text::default, |h| {
-        text!(
-            ", turned ",
-            format!("{:.0}", h.turn_deg),
-            " deg, pulled back ",
-            format!("{:.0}", h.retract_m * 100.0),
-            " cm"
+    let turned = touching.map_or_else(SmolStr::default, |h| {
+        format_smolstr!(
+            ", turned {:.0} deg, pulled back {:.0} cm",
+            h.turn_deg,
+            h.retract_m * 100.0
         )
     });
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}, {} contacts{}",
         if touching.is_some() {
-            prose("Against a wall")
+            SmolStr::new_static("Against a wall")
         } else {
-            prose("Clear")
+            SmolStr::new_static("Clear")
         },
-        ", ",
-        s.contacts.to_string(),
-        " contacts",
+        s.contacts,
         turned
     ))
 }
@@ -49,73 +42,64 @@ fn gun_against_walls() -> Line {
 fn down_the_sights() -> Line {
     let s = ads::status();
     if !s.weapon {
-        return Line::waiting(prose("No long gun measured"));
+        return Line::waiting("No long gun measured");
     }
-    let raised = s.raised.map_or_else(Text::default, |h| {
-        text!(" in the ", prose(h.label()), " hand")
+    let raised = s.raised.map_or_else(SmolStr::default, |h| {
+        format_smolstr!(" in the {} hand", h.label())
     });
-    let eye = s.eye_offset_m.map_or_else(Text::default, |m| {
-        text!(", eye ", format!("{:.1}", m * 100.0), " cm off")
+    let eye = s.eye_offset_m.map_or_else(SmolStr::default, |m| {
+        format_smolstr!(", eye {:.1} cm off", m * 100.0)
     });
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}{}, sighted {}, shouldered {}, welded {}{}",
         if s.scoped {
-            prose("Scoped")
+            SmolStr::new_static("Scoped")
         } else {
-            prose("Iron sights")
+            SmolStr::new_static("Iron sights")
         },
         raised,
-        ", sighted ",
-        s.sighted.to_string(),
-        ", shouldered ",
-        s.shouldered.to_string(),
-        ", welded ",
-        s.welded.to_string(),
+        s.sighted,
+        s.shouldered,
+        s.welded,
         eye
     ))
 }
 
 fn magazines() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.reload.enabled) {
+    if !CONTROLLERS_CONFIG.query(|c| c.weapons.reload.enabled) {
         return Line::off("");
     }
     let c = loose::counts();
-    Line::ok(text!(
-        c.in_world.to_string(),
-        " in the world, ",
-        c.picked_up.to_string(),
-        " picked up, ",
-        c.seated.to_string(),
-        " seated"
+    Line::ok(format_smolstr!(
+        "{} in the world, {} picked up, {} seated",
+        c.in_world,
+        c.picked_up,
+        c.seated
     ))
 }
 
 fn c4_by_hand() -> Line {
     let status = c4::status();
-    Line::ok(text!(
-        (status.thrown - status.stuck.min(status.thrown)).to_string(),
-        " thrown, ",
-        status.stuck.to_string(),
-        " pressed on, ",
-        status.stuck_on_objects.to_string(),
-        " on objects"
+    Line::ok(format_smolstr!(
+        "{} thrown, {} pressed on, {} on objects",
+        (status.thrown - status.stuck.min(status.thrown)),
+        status.stuck,
+        status.stuck_on_objects
     ))
 }
 
 fn live_grenades() -> Line {
     let status = grenade::status();
     let c = status.catch;
-    let caught = status.caught_hand.map_or_else(Text::default, |h| {
-        text!(", one in the ", prose(h.label()), " hand")
+    let caught = status.caught_hand.map_or_else(SmolStr::default, |h| {
+        format_smolstr!(", one in the {} hand", h.label())
     });
-    Line::ok(text!(
-        c.tracked.to_string(),
-        " live, ",
-        c.in_reach.to_string(),
-        " in reach, ",
-        c.caught.to_string(),
-        " caught, ",
-        c.thrown.to_string(),
-        " thrown on",
+    Line::ok(format_smolstr!(
+        "{} live, {} in reach, {} caught, {} thrown on{}",
+        c.tracked,
+        c.in_reach,
+        c.caught,
+        c.thrown,
         caught
     ))
 }

@@ -1,34 +1,16 @@
-//! The Status feature: a read-only projection over the published subsystem snapshots, with the
-//! rows that need attention first.
+//! The Status feature: every status row (`crate::status`), with the rows that need attention
+//! first.
 
 #[cfg(test)]
 mod tests;
 
-#[cfg(feature = "profiler")]
-use std::path::PathBuf;
-
 use egui::{Response, RichText, Ui};
-#[cfg(feature = "profiler")]
-use jc3vr_core::profiler::capture;
 use jc3vr_core::session;
-use jc3vr_input::{
-    capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode, debug_ui_capture},
-    frame,
-};
-use jc3vr_render::controllers::overlay;
-use jc3vr_tooling::recorder;
-use jc3vr_view::{
-    recorder::{tracking, tracking::TrackingStatus},
-    vr::{input, input::InputStatus},
-};
 
 use crate::{
     status,
-    status::Health,
-    ui::{
-        catalog::FeatureId, director::host_line, navigation::NavigationState,
-        status_row::health_color,
-    },
+    status::{Health, Line},
+    ui::{catalog::FeatureId, navigation::NavigationState, status_row::health_color},
 };
 
 pub(crate) fn render(ui: &mut Ui, selection: &mut NavigationState) {
@@ -38,395 +20,61 @@ pub(crate) fn render(ui: &mut Ui, selection: &mut NavigationState) {
 
 #[derive(Debug)]
 struct Snapshot {
-    input: InputStatus,
-    controllers: Option<ControllerSummary>,
-    ownership: Option<OwnershipSnapshot>,
-    video: recorder::Status,
-    tracking: TrackingStatus,
-    #[cfg(feature = "profiler")]
-    profiler: ProfilerCapture,
-    overlay: overlay::pass::OverlayStatus,
-    sections: Vec<StatusSection>,
+    sections: Vec<(&'static str, Vec<(&'static str, Line)>)>,
     session: Option<session::Location>,
 }
 
 impl Snapshot {
     fn live() -> Self {
-        // Status producers may read configuration, so no configuration guard spans these reads.
+        // Status rows may read configuration, so no configuration guard spans these reads.
         Self {
-            input: input::status(),
-            controllers: frame::latest().map(|frame| ControllerSummary {
-                focused: frame.focused,
-                any_active: frame.any_active(),
-            }),
-            ownership: debug_ui_capture(),
-            video: recorder::status(),
-            tracking: tracking::status(),
-            #[cfg(feature = "profiler")]
-            profiler: ProfilerCapture {
-                recording: capture::is_recording(),
-                progress: capture::progress(),
-                last_result: capture::last_result(),
-            },
-            overlay: overlay::pass::status(),
             sections: status::read_all().collect(),
             session: session::location(),
         }
     }
 
-    fn rows(&self) -> Vec<Row> {
-        let mut rows = vec![
-            input_row(&self.input),
-            controller_row(self.controllers),
-            ownership_row(self.ownership),
-            video_row(&self.video),
-            tracking_row(&self.tracking),
-        ];
-        #[cfg(feature = "profiler")]
-        rows.push(profiler_row(&self.profiler));
-        rows.push(overlay_row(&self.overlay));
-        for (section, title, lines) in &self.sections {
-            rows.extend(lines.iter().map(|(label, line)| Row {
-                id: RowId::Feature { section, label },
-                group: title,
-                label,
-                state: RowState::Health(line.health),
-                active_capture: false,
-                detail: line.display_detail.to_string(),
-                note: line.display_note.as_ref().map(ToString::to_string),
-            }));
-        }
-        rows
+    fn rows(&self) -> Vec<Row<'_>> {
+        self.sections
+            .iter()
+            .flat_map(|(section, lines)| {
+                lines.iter().map(|(label, line)| Row {
+                    section,
+                    label,
+                    line,
+                })
+            })
+            .collect()
     }
 }
 
-type StatusSection = (
-    &'static str,
-    &'static str,
-    Vec<(&'static str, status::Line)>,
-);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ControllerSummary {
-    focused: bool,
-    any_active: bool,
-}
-
-#[cfg(feature = "profiler")]
-#[derive(Debug, Default)]
-struct ProfilerCapture {
-    recording: bool,
-    progress: Option<(f32, f32)>,
-    last_result: Option<Result<PathBuf, String>>,
-}
-
-/// A row's identity, which also keeps its widgets' ids stable as the ranking reorders the rows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum RowId {
-    Input,
-    Controllers,
-    Ownership,
-    Video,
-    Tracking,
-    #[cfg(feature = "profiler")]
-    Profiler,
-    Overlay,
-    Feature {
-        section: &'static str,
-        label: &'static str,
-    },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RowState {
-    Health(Health),
-    Unavailable,
-}
-
 #[derive(Debug)]
-struct Row {
-    id: RowId,
-    group: &'static str,
+struct Row<'a> {
+    section: &'static str,
     label: &'static str,
-    state: RowState,
-    active_capture: bool,
-    detail: String,
-    note: Option<String>,
+    line: &'a Line,
 }
 
-impl Row {
+impl Row<'_> {
     fn priority(&self) -> u8 {
-        match self.state {
-            RowState::Health(Health::Failed) => 0,
-            _ if self.active_capture => 1,
-            RowState::Health(Health::Waiting) | RowState::Unavailable => 2,
-            RowState::Health(Health::Ok) => 3,
-            RowState::Health(Health::Off) => 4,
+        match self.line.health {
+            Health::Failed => 0,
+            Health::Waiting => 1,
+            Health::Ok => 2,
+            Health::Off => 3,
         }
     }
 
     fn needs_attention(&self) -> bool {
-        self.active_capture
-            || matches!(
-                self.state,
-                RowState::Health(Health::Failed | Health::Waiting) | RowState::Unavailable
-            )
+        matches!(self.line.health, Health::Failed | Health::Waiting)
     }
 }
 
-/// Every row, failures first, then active captures, waiting and unavailable states, healthy rows,
-/// and intentionally off rows, each group in publication order.
-fn ranked(rows: &[Row]) -> Vec<&Row> {
+/// Every row, failures first, then waiting rows, healthy rows, and intentionally off rows, each
+/// group in section order.
+fn ranked<'a>(rows: &'a [Row<'a>]) -> Vec<&'a Row<'a>> {
     let mut visible: Vec<_> = rows.iter().collect();
     visible.sort_by_key(|row| row.priority());
     visible
-}
-
-/// The rows that need attention, ranked.
-fn attention(rows: &[Row]) -> Vec<&Row> {
-    ranked(rows)
-        .into_iter()
-        .filter(|row| row.needs_attention())
-        .collect()
-}
-
-fn input_row(input: &InputStatus) -> Row {
-    Row {
-        id: RowId::Input,
-        group: "Session",
-        label: "OpenXR input",
-        state: RowState::Health(if input.error.is_some() || input.restart.is_some() {
-            Health::Failed
-        } else if input.attached {
-            Health::Ok
-        } else {
-            Health::Waiting
-        }),
-        active_capture: false,
-        detail: if input.attached {
-            "Actions attached to a session; attachment does not establish focus.".to_owned()
-        } else {
-            "No attached input session.".to_owned()
-        },
-        note: input.error.clone().or_else(|| {
-            input
-                .restart
-                .as_ref()
-                .map(|reason| format!("Restart required: {reason:?}"))
-        }),
-    }
-}
-
-fn controller_row(controllers: Option<ControllerSummary>) -> Row {
-    let (state, detail) = match controllers {
-        Some(frame) => (
-            RowState::Health(if frame.focused {
-                Health::Ok
-            } else {
-                Health::Waiting
-            }),
-            format!(
-                "Session focus: {}; any controller active: {}.",
-                if frame.focused {
-                    "focused"
-                } else {
-                    "unfocused"
-                },
-                yes_no(frame.any_active),
-            ),
-        ),
-        None => (
-            RowState::Unavailable,
-            "No fresh controller frame; session focus and controller activity are unavailable."
-                .to_owned(),
-        ),
-    };
-    Row {
-        id: RowId::Controllers,
-        group: "Session",
-        label: "Session focus and controllers",
-        state,
-        active_capture: false,
-        detail,
-        note: None,
-    }
-}
-
-fn ownership_row(ownership: Option<OwnershipSnapshot>) -> Row {
-    let (state, detail) = match ownership {
-        Some(snapshot) => {
-            let capture = snapshot.edit_capture;
-            let state = if snapshot.gameplay_requested && !snapshot.gameplay_effective {
-                Health::Waiting
-            } else if snapshot.mode == PanelMode::Hidden {
-                Health::Off
-            } else {
-                Health::Ok
-            };
-            (
-                RowState::Health(state),
-                format!(
-                    "{}; editing requested: {}; gameplay requested/effective: {}/{}; edit capture (pointer/grip/keyboard/text/scroll): {}/{}/{}/{}/{}; focused: {}; tracking ready: {}; awaiting neutral: {}; restore pending: {}; blocker: {}.",
-                    match snapshot.mode {
-                        PanelMode::Hidden => "Hidden",
-                        PanelMode::Editing => "Editing",
-                        PanelMode::ReadOnly => "Read-only",
-                    },
-                    yes_no(snapshot.editing_requested),
-                    yes_no(snapshot.gameplay_requested),
-                    yes_no(snapshot.gameplay_effective),
-                    yes_no(capture.pointer),
-                    yes_no(capture.grip_drag),
-                    yes_no(capture.keyboard),
-                    yes_no(capture.text),
-                    yes_no(capture.scroll),
-                    yes_no(snapshot.focused),
-                    yes_no(snapshot.tracking_ready),
-                    yes_no(snapshot.awaiting_neutral),
-                    yes_no(snapshot.device_restore_pending),
-                    blocker_label(snapshot.blocker),
-                ),
-            )
-        }
-        None => (
-            RowState::Unavailable,
-            "No published panel ownership snapshot.".to_owned(),
-        ),
-    };
-    Row {
-        id: RowId::Ownership,
-        group: "Session",
-        label: "Debug panel ownership",
-        state,
-        active_capture: false,
-        detail,
-        note: None,
-    }
-}
-
-fn video_row(video: &recorder::Status) -> Row {
-    let capturing = matches!(video.host, Some(recorder::HostState::Capturing(_)));
-    let state = capture_health(video.recording, video.error.is_some(), capturing);
-    Row {
-        id: RowId::Video,
-        group: "Capture and tools",
-        label: "Video recording",
-        state: RowState::Health(state),
-        active_capture: video.recording,
-        detail: format!("{}; sidecar lines: {}.", host_line(video), video.lines),
-        note: video
-            .error
-            .as_ref()
-            .map(|error| format!("Last error: {error}")),
-    }
-}
-
-fn tracking_row(tracking: &TrackingStatus) -> Row {
-    Row {
-        id: RowId::Tracking,
-        group: "Capture and tools",
-        label: "Tracking capture",
-        state: RowState::Health(capture_health(
-            tracking.recording,
-            tracking.error.is_some(),
-            true,
-        )),
-        active_capture: tracking.recording,
-        detail: format!(
-            "{}; frames: {}; dropped: {}; stored bytes: {}; duration: {:.1} s.",
-            if tracking.recording {
-                "Recording"
-            } else {
-                "Not recording"
-            },
-            tracking.frames,
-            tracking.dropped,
-            tracking.bytes,
-            tracking.duration.as_secs_f64(),
-        ),
-        note: tracking
-            .error
-            .as_ref()
-            .map(|error| format!("Last capture error: {error}")),
-    }
-}
-
-fn capture_health(recording: bool, has_error: bool, ready: bool) -> Health {
-    if has_error {
-        Health::Failed
-    } else if recording && !ready {
-        Health::Waiting
-    } else if recording {
-        Health::Ok
-    } else {
-        Health::Off
-    }
-}
-
-#[cfg(feature = "profiler")]
-fn profiler_row(profiler: &ProfilerCapture) -> Row {
-    let has_error = matches!(profiler.last_result.as_ref(), Some(Err(_)));
-    let activity = if profiler.recording {
-        "Recording"
-    } else {
-        "Not recording"
-    };
-    let progress = profiler.progress.map_or_else(
-        || "Capture progress unavailable".to_owned(),
-        |(elapsed, total)| format!("Reported capture progress: {elapsed:.1} / {total:.1} s"),
-    );
-    let note = profiler.last_result.as_ref().map(|result| match result {
-        Ok(path) => format!("Last trace written: {}", path.display()),
-        Err(error) => format!("Last trace error: {error}"),
-    });
-    Row {
-        id: RowId::Profiler,
-        group: "Capture and tools",
-        label: "Profiler trace capture",
-        state: RowState::Health(capture_health(profiler.recording, has_error, true)),
-        active_capture: profiler.recording,
-        detail: format!("{activity}; {progress}."),
-        note,
-    }
-}
-
-fn overlay_row(overlay: &overlay::pass::OverlayStatus) -> Row {
-    Row {
-        id: RowId::Overlay,
-        group: "Capture and tools",
-        label: "World overlay visualization",
-        state: RowState::Health(if overlay.error.is_some() {
-            Health::Failed
-        } else if overlay.frames == 0 {
-            Health::Waiting
-        } else {
-            Health::Ok
-        }),
-        active_capture: false,
-        detail: format!(
-            "Last reported primitives per eye: {}; frames with drawing since load: {}. No freshness signal or current active-visualization count is available.",
-            overlay.drawn, overlay.frames,
-        ),
-        note: overlay
-            .error
-            .as_ref()
-            .map(|error| format!("Last overlay error: {error}")),
-    }
-}
-
-fn yes_no(value: bool) -> &'static str {
-    if value { "yes" } else { "no" }
-}
-
-fn blocker_label(blocker: Option<OwnershipBlocker>) -> &'static str {
-    match blocker {
-        None => "none",
-        Some(OwnershipBlocker::Editing) => "editing",
-        Some(OwnershipBlocker::TrackingRecovery) => "tracking recovery",
-        Some(OwnershipBlocker::AwaitingNeutral) => "awaiting neutral input",
-        Some(OwnershipBlocker::DeviceCapturePending) => "device capture pending",
-        Some(OwnershipBlocker::GameDeviceDisabled) => "game device disabled",
-    }
 }
 
 fn render_snapshot(ui: &mut Ui, selection: &mut NavigationState, snapshot: &Snapshot) {
@@ -434,8 +82,10 @@ fn render_snapshot(ui: &mut Ui, selection: &mut NavigationState, snapshot: &Snap
     ui.heading("Needs attention");
     render_rows(
         ui,
-        attention(&rows),
-        "No failures, active captures, waiting states, or unavailable snapshots are reported.",
+        ranked(&rows)
+            .into_iter()
+            .filter(|row| row.needs_attention()),
+        "No failures or waiting rows.",
     );
     egui::CollapsingHeader::new("Everything else")
         .default_open(true)
@@ -448,11 +98,6 @@ fn render_snapshot(ui: &mut Ui, selection: &mut NavigationState, snapshot: &Snap
                 "Every row needs attention.",
             );
         });
-    ui.label(
-        "Waiting and unavailable states remain distinct; Off is intentional or unused in this \
-         setup. A configured visualization switch does not establish that a view is currently \
-         drawing.",
-    );
     ui.separator();
     session_location(ui, snapshot.session);
     ui.separator();
@@ -496,26 +141,20 @@ fn session_location(ui: &mut Ui, location: Option<session::Location>) {
     }
 }
 
-fn render_rows<'a>(ui: &mut Ui, rows: impl IntoIterator<Item = &'a Row>, empty: &str) {
+fn render_rows<'a>(ui: &mut Ui, rows: impl IntoIterator<Item = &'a Row<'a>>, empty: &str) {
     let mut shown = false;
     for row in rows {
         shown = true;
-        ui.push_id(row.id, |ui| {
+        ui.push_id((row.section, row.label), |ui| {
             ui.group(|ui| {
-                ui.label(format!("{} / {}", row.group, row.label));
-                let (word, color) = match row.state {
-                    RowState::Health(health) => (health.display_word(), health_color(ui, health)),
-                    RowState::Unavailable => ("Unavailable", ui.visuals().warn_fg_color),
-                };
+                ui.label(format!("{} / {}", row.section, row.label));
+                let health = row.line.health;
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(word).color(color));
-                    if row.active_capture {
-                        ui.label("Active capture");
-                    }
+                    ui.label(RichText::new(health.word()).color(health_color(ui, health)));
+                    ui.label(row.line.detail.as_str());
                 });
-                ui.label(&row.detail);
-                if let Some(note) = &row.note {
-                    ui.label(note);
+                if let Some(note) = &row.line.note {
+                    ui.label(note.as_str());
                 }
             });
         });

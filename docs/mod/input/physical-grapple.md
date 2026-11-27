@@ -67,22 +67,22 @@ The fire, the attach (the snap as the hook takes hold), and the yank play their 
 
 ## Threading
 
-The input tick's game stage (the game thread, before the world update; [controllers.md](controllers.md#bindings-and-injection)) reads the hook, steps the pull, publishes the drive, and sends the pulses after releasing its own lock. The reel's detour runs in the character's update on the game thread and reads the drive from a leaf lock. The readout is published to its own leaf lock, so the `GRAPPLE` status rows never wait on the input tick ([threading.md](../threading.md)).
+The input tick's game stage (the game thread, before the world update; [controllers.md](controllers.md#bindings-and-injection)) reads the hook, steps the pull, publishes the drive, and sends the pulses after releasing its own lock. The reel's detour runs in the character's update on the game thread and reads the drive from a leaf lock. The readout is published to its own leaf lock, so the `Grapple` status rows never wait on the input tick ([threading.md](../threading.md)).
 
 ## Settings and readouts
 
-The reel and tether pull, the pump, the lock ([grapple-lock.md](grapple-lock.md)), and the seat grapple ([seat-grapple.md](seat-grapple.md)) have no switches: they act whenever the controller scheme is in effect. Yank to zip has no switch either; the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). The tuning is the `physical` section of the grapple's tuning file (`crates/jc3vr-grapple/tuning/grapple.toml`, `PhysicalGrappleTuning`) and the yank's is the controls tuning's `grapple_yank`, and the Grapple feature's live status opens with the `GRAPPLE` section's rows, then adds the attach point, the hang's hand motion, impulse, and pump, the hand's pull speed and depth, the yanks, and the snatches failed and the tosses.
+The reel and tether pull, the pump, the lock ([grapple-lock.md](grapple-lock.md)), and the seat grapple ([seat-grapple.md](seat-grapple.md)) have no switches: they act whenever the controller scheme is in effect. Yank to zip has no switch either; the line's vibration is behind the haptics' master switch ([haptics.md](haptics.md)). The tuning is the `physical` section of the grapple's tuning file (`crates/jc3vr-grapple/tuning/grapple.toml`, `PhysicalGrappleTuning`) and the yank's is the controls tuning's `grapple_yank`, and the Grapple feature's live status opens with the `Grapple` section's rows, then adds the attach point, the hang's hand motion, impulse, and pump, the hand's pull speed and depth, the yanks, and the snatches failed and the tosses.
 
-The debug UI's Status page has a `GRAPPLE` section:
+The debug UI's Status page has a `Grapple` section:
 
-- `GRAPPLE STATE`: `INACTIVE`, `FIRING`, `IN FLIGHT`, `ATTACHED`, `REELING IN`, `HANGING`, `REELED IN`, or `SCRIPTED WIRE` (a wire fired outside the reel flow, as the vehicle grapple does), or `WAITING, NO HAND INPUT` while the input tick does not run.
-- `ATTACHED TARGET`: `OBJECT` or `SURFACE` with the distance from the head to the attach point, or `NONE`.
-- `REEL FROM HAND`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
-- `TETHERS`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.
-- `LINE LOCK`: the lock on the reel's line ([grapple-lock.md](grapple-lock.md#settings-and-readouts)).
-- `SEAT GRAPPLE`: the seat grapple's fires, tethers, and misses, whether its hook is flying, and why the last press was refused ([seat-grapple.md](seat-grapple.md#settings-and-readouts)).
-- `HANG SWING`: the hang ticks that swung, and how many the pump added to.
-- `LINE HAPTICS`: the grapple hand's line level, the stronger of the tension's and the reel's.
+- `Grapple state`: `INACTIVE`, `FIRING`, `IN FLIGHT`, `ATTACHED`, `REELING IN`, `HANGING`, `REELED IN`, or `SCRIPTED WIRE` (a wire fired outside the reel flow, as the vehicle grapple does), or `Waiting, No hand input` while the input tick does not run.
+- `Attached target`: `OBJECT` or `SURFACE` with the distance from the head to the attach point, or `NONE`.
+- `Reel from hand`: the scale while the hand drives a reel, `BOOSTED` during a boost, and the counts of reels and boosts.
+- `Tethers`: how many are attached, the retract value while the pull drives it, the tension while the game squeezes, and the count of pulls.
+- `Line lock`: the lock on the reel's line ([grapple-lock.md](grapple-lock.md#settings-and-readouts)).
+- `Seat grapple`: the seat grapple's fires, tethers, and misses, whether its hook is flying, and why the last press was refused ([seat-grapple.md](seat-grapple.md#settings-and-readouts)).
+- `Hang swing`: the hang ticks that swung, and how many the pump added to.
+- `Line haptics`: the grapple hand's line level, the stronger of the tension's and the reel's.
 
 The log has, at info level under the `grapple` target, `physical grapple: the line attaches` with the target kind and distance, `the hand drives the reel` with the scale and the pull, `a yank boosts the reel`, `the reel ends` with the peak scale, `the hand retracts the tethers` with the count and value, `the tether retract ends` with the peak value, and `the tether count changes`.
 
@@ -90,13 +90,13 @@ The log has, at info level under the `grapple` target, `physical grapple: the li
 
 With the physical grapple's switches on (the defaults):
 
-1. Grapple to a wall and let the line hang without pulling: `ATTACHED TARGET` reads `SURFACE` with a plausible distance, `the line attaches` is logged, and the attach pulse is felt.
-2. Hold the grapple button and yank to zip, then keep the hand still: `the hand drives the reel` with a scale near the yank's speed, and the reel is at least as fast as the gamepad's zip. `REEL FROM HAND` shows the scale during the reel and the count after; `the reel ends` follows.
+1. Grapple to a wall and let the line hang without pulling: `Attached target` reads `SURFACE` with a plausible distance, `the line attaches` is logged, and the attach pulse is felt.
+2. Hold the grapple button and yank to zip, then keep the hand still: `the hand drives the reel` with a scale near the yank's speed, and the reel is at least as fast as the gamepad's zip. `Reel from hand` shows the scale during the reel and the count after; `the reel ends` follows.
 3. Zip again and pull hard and steadily through the reel: a higher peak scale in `the reel ends`, a faster zip, and a stronger hum in the grapple hand.
 4. With the retract boost upgrade bought, yank again during a long reel: `a yank boosts the reel`, `BOOSTED` in the row, and a visible speed-up. Without the upgrade, nothing changes speed and the row does not say `BOOSTED`.
-5. Tether two objects (point and hold the grapple button at the first, then at the second, and let go): `the tether count changes` to one and `TETHERS` reads `1 ATTACHED`. Aim at nothing and hold the button: the tethers tighten, harder over a second. Still holding, reach out and pull back slowly: `the hand retracts the tethers`, the objects draw together faster, the retract pulse and then a hum that grows with the tension. Let go of the button: the tightening stops. The L trigger still retracts on its own. Double tap the button: the tethers release, and nothing fires.
+5. Tether two objects (point and hold the grapple button at the first, then at the second, and let go): `the tether count changes` to one and `Tethers` reads `1 ATTACHED`. Aim at nothing and hold the button: the tethers tighten, harder over a second. Still holding, reach out and pull back slowly: `the hand retracts the tethers`, the objects draw together faster, the retract pulse and then a hum that grows with the tension. Let go of the button: the tightening stops. The L trigger still retracts on its own. Double tap the button: the tethers release, and nothing fires.
 6. With tethers attached and the button up, walk around and pull the hands back sharply: no retract and no zip (watch for `the hand retracts the tethers`).
-7. Grapple onto a ledge into a hang and swing the arm forward and back in rhythm: the body swings and builds up, `HANG SWING` counts pumped ticks. Then move the hand wildly: the swing stays bounded.
+7. Grapple onto a ledge into a hang and swing the arm forward and back in rhythm: the body swings and builds up, `Hang swing` counts pumped ticks. Then move the hand wildly: the swing stays bounded.
 8. During a long reel with the grapple grip still squeezed, spread both arms out to the sides as for the wingsuit: no `a yank boosts the reel`, and the reel keeps its speed. A sharp pull back toward the body still boosts.
 9. Turn each switch off in turn and repeat its step: the behaviour returns to the buttons alone.
 

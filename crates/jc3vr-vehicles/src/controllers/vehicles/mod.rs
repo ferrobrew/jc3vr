@@ -98,9 +98,9 @@ pub use self::{
     speed::seat_vehicle_speed_mps,
     state::{
         apply, is_mounted_weapon, mounted_aim_point, mounted_target, parachute_holds, stand_down,
-        status, summary, wrist_tilt_now_deg,
+        status, wrist_tilt_now_deg,
     },
-    types::{HandlesReadout, TickVolumes, VehicleSummary, VehiclesStatus},
+    types::{HandlesReadout, TickVolumes, VehiclesStatus},
 };
 
 /// The vehicles' hooks, aggregated by the gameplay crate's `controllers::hook_library`.

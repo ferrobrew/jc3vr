@@ -13,22 +13,19 @@ use jc3vr_grapple::{
         seat::SeatStatus,
     },
 };
-use smol_str::format_smolstr;
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::{
-    controllers::menu::read,
-    status::{Line, Row, Text, prose, text},
-};
+use crate::status::{Line, Row};
 
-pub(crate) const STATE: Row = Row::new("GRAPPLE STATE", "Grapple state", state);
-pub(crate) const TARGET: Row = Row::new("ATTACHED TARGET", "Attached target", target);
-pub(crate) const REEL: Row = Row::new("REEL FROM HAND", "Reel from hand", reel);
-pub(crate) const TETHERS: Row = Row::new("TETHERS", "Tethers", tethers);
-pub(crate) const LOCK: Row = Row::new("LINE LOCK", "Line lock", lock);
-pub(crate) const SEAT: Row = Row::new("SEAT GRAPPLE", "Seat grapple", seat_row);
-pub(crate) const SWING: Row = Row::new("HANG SWING", "Hang swing", swing);
-pub(crate) const SNATCH: Row = Row::new("SNATCH", "Snatch", snatch);
-pub(crate) const HAPTICS: Row = Row::new("LINE HAPTICS", "Line haptics", haptics);
+pub(crate) const STATE: Row = Row::new("Grapple state", state);
+pub(crate) const TARGET: Row = Row::new("Attached target", target);
+pub(crate) const REEL: Row = Row::new("Reel from hand", reel);
+pub(crate) const TETHERS: Row = Row::new("Tethers", tethers);
+pub(crate) const LOCK: Row = Row::new("Line lock", lock);
+pub(crate) const SEAT: Row = Row::new("Seat grapple", seat_row);
+pub(crate) const SWING: Row = Row::new("Hang swing", swing);
+pub(crate) const SNATCH: Row = Row::new("Snatch", snatch);
+pub(crate) const HAPTICS: Row = Row::new("Line haptics", haptics);
 
 fn state() -> Line {
     state_line(&physical::status())
@@ -56,12 +53,7 @@ fn seat_row() -> Line {
 
 fn swing() -> Line {
     let status = anchor::status();
-    let detail = text!(
-        status.swings.to_string(),
-        " swings, ",
-        status.pumps.to_string(),
-        " pumped"
-    );
+    let detail = format_smolstr!("{} swings, {} pumped", status.swings, status.pumps);
     if status.swings == 0 {
         Line::waiting(detail)
     } else {
@@ -74,7 +66,7 @@ fn snatch() -> Line {
 }
 
 fn haptics() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.haptics.enabled) {
+    if !CONTROLLERS_CONFIG.query(|c| c.haptics.enabled) {
         return Line::off("");
     }
     let status = physical::status();
@@ -83,259 +75,181 @@ fn haptics() -> Line {
 
 fn snatch_line(status: &SnatchStatus) -> Line {
     if !status.live {
-        return Line::waiting(prose("No hand input"));
+        return Line::waiting("No hand input");
     }
     let target = match (status.swing, status.target, status.unoffered) {
-        (Some(swing), _, _) => text!(
-            format!("{:.0}", swing.mass_kg),
-            " kg, ",
+        (Some(swing), _, _) => format_smolstr!(
+            "{:.0} kg, {}, {}{}",
+            swing.mass_kg,
             held_length(swing.length_m),
-            ", ",
             line_tension(swing.tension_n, swing.max_tension_n),
             if swing.braced {
-                prose(", braced")
+                SmolStr::new_static(", braced")
             } else {
-                Text::default()
+                SmolStr::default()
             }
         ),
         (None, Some(target), _) => match target.mass_kg {
-            Some(mass) => text!(
-                snatch_kind(target.kind),
-                ", ",
-                format!("{mass:.0}"),
-                " kg, ",
-                format!("{:.1}", target.distance_m),
-                " m"
-            ),
-            None => text!(
-                snatch_kind(target.kind),
-                ", ",
-                format!("{:.1}", target.distance_m),
-                " m"
-            ),
+            Some(mass) => {
+                format_smolstr!("{}, {mass:.0} kg, {:.1} m", target.kind, target.distance_m)
+            }
+            None => format_smolstr!("{}, {:.1} m", target.kind, target.distance_m),
         },
-        (None, None, Some(why)) => snatch_reason(why),
-        (None, None, None) => prose("No target"),
+        (None, None, Some(why)) => why.into(),
+        (None, None, None) => SmolStr::new_static("No target"),
     };
-    let line = Line::ok(text!(
-        snatch_phase(status.phase),
-        ", ",
+    let line = Line::ok(format_smolstr!(
+        "{}, {}, {} taken of {}",
+        status.phase,
         target,
-        ", ",
-        status.taken.to_string(),
-        " taken of ",
-        status.fired.to_string()
+        status.taken,
+        status.fired
     ));
-    match &status.last_refusal {
-        Some(refusal) => line.with_note(format!("last: {refusal}")),
-        None => line,
+    let mut note = format!("{} failed, {} tossed", status.failed, status.tosses);
+    if let Some(mass) = status.aimed_mass_kg {
+        note += &format!(", {mass:.0} kg under the aim");
     }
+    if let Some(refusal) = &status.last_refusal {
+        note += &format!(", last refusal: {refusal}");
+    }
+    line.with_note(note)
 }
 
 fn state_line(status: &GrappleStatus) -> Line {
     if !status.live {
-        return Line::waiting(prose("No hand input"));
+        return Line::waiting("No hand input");
     }
-    let display = match status.phase {
-        GrapplePhase::Inactive => "Inactive",
-        GrapplePhase::Firing => "Firing",
-        GrapplePhase::InFlight => "In flight",
-        GrapplePhase::Attached => "Attached",
-        GrapplePhase::ReelingIn => "Reeling in",
-        GrapplePhase::Hanging => "Hanging",
-        GrapplePhase::ReeledIn => "Reeled in",
-        GrapplePhase::ScriptedWire => "Scripted wire",
-    };
-    Line::ok(Text::pair(status.phase.label(), display))
+    Line::ok(status.phase.label())
 }
 
 fn target_line(status: &GrappleStatus) -> Line {
     match status.target {
-        Some(target) => Line::ok(text!(
+        Some(target) => Line::ok(format_smolstr!(
+            "{}, {:.1} m",
             if target.object {
-                prose("Object")
+                SmolStr::new_static("Object")
             } else {
-                prose("Surface")
+                SmolStr::new_static("Surface")
             },
-            ", ",
-            format!("{:.1}", target.distance_m),
-            " m"
+            target.distance_m
         )),
-        None if status.phase == GrapplePhase::InFlight => Line::waiting(prose("In flight")),
-        None => Line::ok(prose("None")),
+        None if status.phase == GrapplePhase::InFlight => Line::waiting("In flight"),
+        None => Line::ok("None"),
     }
 }
 
 fn reel_line(status: &GrappleStatus) -> Line {
-    let counts = text!(
-        status.reels.to_string(),
-        " reels, ",
-        status.boosts.to_string(),
-        " boosts"
+    let counts = format_smolstr!(
+        "{} reels, {} boosts",
+        status.counts.reels,
+        status.counts.boosts
     );
     match status.reel_scale {
-        Some(scale) => Line::ok(text!(
-            format!("{scale:.2}"),
-            "x",
+        Some(scale) => Line::ok(format_smolstr!(
+            "{scale:.2}x{}, {}",
             if status.boosted {
-                prose(" boosted")
+                SmolStr::new_static(" boosted")
             } else {
-                Text::default()
+                SmolStr::default()
             },
-            ", ",
             counts
         )),
-        None if status.reels == 0 => Line::waiting(counts),
+        None if status.counts.reels == 0 => Line::waiting(counts),
         None => Line::ok(counts),
     }
 }
 
 fn lock_line(status: &LockStatus) -> Line {
-    let counts = text!(
-        status.locks.to_string(),
-        " locks, ",
-        status.breaks.to_string(),
-        " broke"
-    );
+    let counts = format_smolstr!("{} locks, {} broke", status.locks, status.breaks);
     if !status.locked {
-        let last = status
-            .last_end
-            .map_or_else(Text::default, |end| text!(", last ", prose(end.label())));
+        let last = status.last_end.map_or_else(SmolStr::default, |end| {
+            format_smolstr!(", last {}", end.label())
+        });
         return if status.locks == 0 {
             Line::waiting(counts)
         } else {
-            Line::ok(text!(counts, last))
+            Line::ok(format_smolstr!("{}{}", counts, last))
         };
     }
     let target = status
         .target
-        .map_or_else(Text::default, |target| match target.mass_kg {
-            Some(mass) => text!(prose(target.kind), " ", format!("{mass:.0}"), " kg, "),
-            None => text!(prose(target.kind), ", "),
+        .map_or_else(SmolStr::default, |target| match target.mass_kg {
+            Some(mass) => format_smolstr!("{} {mass:.0} kg, ", target.kind),
+            None => format_smolstr!("{}, ", target.kind),
         });
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}{}{}{}, stretch {:+.2} m, {}, hook {:.1} m/s, {}",
         if status.hanging {
-            prose("hanging, ")
+            SmolStr::new_static("hanging, ")
         } else {
-            Text::default()
+            SmolStr::default()
         },
         if status.braking {
-            prose("coasting in, ")
+            SmolStr::new_static("coasting in, ")
         } else {
-            Text::default()
+            SmolStr::default()
         },
         target,
         held_length(status.length_m),
-        ", stretch ",
-        format!("{:+.2}", status.stretch_m),
-        " m, ",
+        status.stretch_m,
         line_tension(status.tension_n, status.max_tension_n),
-        ", hook ",
-        format!("{:.1}", status.hook_speed_mps),
-        " m/s, ",
+        status.hook_speed_mps,
         counts
     ))
 }
 
 fn seat_line(status: &SeatStatus) -> Line {
-    let counts = text!(
-        status.fires.to_string(),
-        " fired, ",
-        status.tethers.to_string(),
-        " tethered, ",
-        status.misses.to_string(),
-        " missed"
+    let counts = format_smolstr!(
+        "{} fired, {} tethered, {} missed",
+        status.fires,
+        status.tethers,
+        status.misses
     );
-    let refused = status.refused.map_or_else(Text::default, |why| {
-        text!(", refused: ", prose(why.label()))
+    let refused = status.refused.map_or_else(SmolStr::default, |why| {
+        format_smolstr!(", refused: {}", why.label())
     });
     if status.flying {
-        Line::ok(text!(prose("flying, "), counts))
+        Line::ok(format_smolstr!("flying, {}", counts))
     } else if status.fires == 0 {
-        Line::waiting(text!(counts, refused))
+        Line::waiting(format_smolstr!("{}{}", counts, refused))
     } else {
-        Line::ok(text!(counts, refused))
+        Line::ok(format_smolstr!("{}{}", counts, refused))
     }
 }
 
 /// A held line's length, for the snatch's and the lock's rows.
-fn held_length(length_m: f32) -> Text {
-    text!("held ", format!("{length_m:.1}"), " m")
+fn held_length(length_m: f32) -> SmolStr {
+    format_smolstr!("held {length_m:.1} m")
 }
 
 /// A held line's tension of its strength, for the snatch's and the lock's rows.
-fn line_tension(tension_n: f32, max_tension_n: f32) -> Text {
-    text!(
-        format!("{tension_n:.0}"),
-        " of ",
-        format!("{max_tension_n:.0}"),
-        " N"
-    )
+fn line_tension(tension_n: f32, max_tension_n: f32) -> SmolStr {
+    format_smolstr!("{tension_n:.0} of {max_tension_n:.0} N")
 }
 
 fn tethers_line(status: &GrappleStatus) -> Line {
-    let count = text!(status.tethers.to_string(), " attached");
-    let pull = status.retract.map_or_else(Text::default, |value| {
-        text!(", pull ", format!("{value:.2}"))
+    let count = format_smolstr!("{} attached", status.tethers);
+    let pull = status.retract.map_or_else(SmolStr::default, |value| {
+        format_smolstr!(", pull {value:.2}")
     });
     let squeeze = if status.squeezing {
-        text!(", tension ", format!("{:.2}", status.tension))
+        format_smolstr!(", tension {:.2}", status.tension)
     } else {
-        Text::default()
+        SmolStr::default()
     };
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}{}{}, {} pulls",
         count,
         pull,
         squeeze,
-        ", ",
-        status.retracts.to_string(),
-        " pulls"
+        status.counts.retracts
     ))
-}
-
-fn snatch_phase(phase: &str) -> Text {
-    let display = match phase {
-        "IDLE" => "Idle",
-        "ARMED" => "Armed",
-        "FREEING" => "Freeing",
-        "HOOK OUT" => "Hook out",
-        "PULLING" => "Pulling",
-        "SWINGING" => "Swinging",
-        other => other,
-    };
-    Text::pair(phase, display)
-}
-
-fn snatch_kind(kind: &str) -> Text {
-    let display = match kind {
-        "WEAPON ON THE GROUND" => "weapon on the ground",
-        "WEAPON IN HANDS" => "weapon in hands",
-        "HOLSTERED WEAPON" => "holstered weapon",
-        "OBJECT" => "object",
-        "HEAVY OBJECT" => "heavy object",
-        "CAR DOOR" => "car door",
-        other => other,
-    };
-    Text::pair(kind, display)
-}
-
-fn snatch_reason(reason: &str) -> Text {
-    let display = match reason {
-        "NOT ON FOOT" => "not on foot",
-        "HAND NOT EMPTY" => "hand not empty",
-        "GRAPPLE BUTTON HELD" => "grapple button held",
-        "NO HOOK" => "no hook",
-        "LINE OUT" => "line out",
-        "HOOK BUSY" => "hook busy",
-        other => other,
-    };
-    Text::pair(reason, display)
 }
 
 #[cfg(test)]
 mod tests {
     use glam::Vec3;
-    use jc3vr_grapple::grapple::physical::TargetReadout;
+    use jc3vr_grapple::grapple::physical::{GrappleCounts, TargetReadout};
 
     use super::*;
 
@@ -347,7 +261,7 @@ mod tests {
         };
         assert_eq!(
             seat_line(&refused).text(),
-            "WAITING, 0 FIRED, 0 TETHERED, 0 MISSED, REFUSED: NOTHING IN RANGE"
+            "Waiting, 0 fired, 0 tethered, 0 missed, refused: nothing in range"
         );
         let flying = SeatStatus {
             flying: true,
@@ -356,7 +270,7 @@ mod tests {
         };
         assert_eq!(
             seat_line(&flying).text(),
-            "OK, FLYING, 1 FIRED, 0 TETHERED, 0 MISSED"
+            "Ok, flying, 1 fired, 0 tethered, 0 missed"
         );
     }
 
@@ -364,7 +278,7 @@ mod tests {
     fn the_lock_row_reads_the_lock() {
         assert_eq!(
             lock_line(&LockStatus::default()).text(),
-            "WAITING, 0 LOCKS, 0 BROKE"
+            "Waiting, 0 locks, 0 broke"
         );
         let held = LockStatus {
             locked: true,
@@ -382,7 +296,7 @@ mod tests {
         };
         assert_eq!(
             lock_line(&held).text(),
-            "OK, VEHICLE 1500 KG, HELD 8.2 M, STRETCH +0.12 M, 900 OF 3924 N, HOOK 12.0 M/S, 1 LOCKS, 0 BROKE"
+            "Ok, vehicle 1500 kg, held 8.2 m, stretch +0.12 m, 900 of 3924 N, hook 12.0 m/s, 1 locks, 0 broke"
         );
         let hanging = LockStatus {
             hanging: true,
@@ -395,7 +309,7 @@ mod tests {
         assert!(
             lock_line(&hanging)
                 .text()
-                .starts_with("OK, HANGING, STATIC, HELD 8.2 M")
+                .starts_with("Ok, hanging, static, held 8.2 m")
         );
         let ended = LockStatus {
             locked: false,
@@ -405,14 +319,14 @@ mod tests {
         };
         assert_eq!(
             lock_line(&ended).text(),
-            "OK, 1 LOCKS, 1 BROKE, LAST BROKE: OVERSTRETCHED"
+            "Ok, 1 locks, 1 broke, last broke: overstretched"
         );
     }
 
     #[test]
     fn the_rows_read_the_readout() {
         let idle = GrappleStatus::default();
-        assert_eq!(state_line(&idle).text(), "WAITING, NO HAND INPUT");
+        assert_eq!(state_line(&idle).text(), "Waiting, No hand input");
         let live = GrappleStatus {
             live: true,
             phase: GrapplePhase::ReelingIn,
@@ -422,32 +336,34 @@ mod tests {
             }),
             reel_scale: Some(1.25),
             boosted: true,
-            reels: 2,
-            boosts: 1,
+            counts: GrappleCounts {
+                reels: 2,
+                boosts: 1,
+                retracts: 3,
+            },
             tethers: 2,
             retract: Some(0.5),
-            retracts: 3,
             squeezing: true,
             tension: 0.75,
             ..GrappleStatus::default()
         };
-        assert_eq!(state_line(&live).text(), "OK, REELING IN");
-        assert_eq!(target_line(&live).text(), "OK, OBJECT, 12.3 M");
+        assert_eq!(state_line(&live).text(), "Ok, Reeling in");
+        assert_eq!(target_line(&live).text(), "Ok, Object, 12.3 m");
         assert_eq!(
             reel_line(&live).text(),
-            "OK, 1.25X BOOSTED, 2 REELS, 1 BOOSTS"
+            "Ok, 1.25x boosted, 2 reels, 1 boosts"
         );
-        assert_eq!(reel_line(&idle).text(), "WAITING, 0 REELS, 0 BOOSTS");
+        assert_eq!(reel_line(&idle).text(), "Waiting, 0 reels, 0 boosts");
         assert_eq!(
             tethers_line(&live).text(),
-            "OK, 2 ATTACHED, PULL 0.50, TENSION 0.75, 3 PULLS"
+            "Ok, 2 attached, pull 0.50, tension 0.75, 3 pulls"
         );
     }
 
     #[test]
     fn the_snatch_row_reads_the_readout() {
         let idle = SnatchStatus::default();
-        assert_eq!(snatch_line(&idle).text(), "WAITING, NO HAND INPUT");
+        assert_eq!(snatch_line(&idle).text(), "Waiting, No hand input");
         let aimed = SnatchStatus {
             live: true,
             phase: "ARMED",
@@ -464,11 +380,11 @@ mod tests {
         let line = snatch_line(&aimed);
         assert_eq!(
             line.text(),
-            "OK, ARMED, WEAPON ON THE GROUND, 10.0 M, 2 TAKEN OF 3"
+            "Ok, ARMED, WEAPON ON THE GROUND, 10.0 m, 2 taken of 3"
         );
         assert_eq!(
             line.note.as_deref(),
-            Some("last: snatch: the weapon snagged")
+            Some("0 failed, 0 tossed, last refusal: snatch: the weapon snagged")
         );
         let swinging = SnatchStatus {
             live: true,
@@ -488,7 +404,7 @@ mod tests {
         };
         assert_eq!(
             snatch_line(&swinging).text(),
-            "OK, SWINGING, 150 KG, HELD 3.0 M, 1200 OF 5810 N, BRACED, 0 TAKEN OF 0"
+            "Ok, SWINGING, 150 kg, held 3.0 m, 1200 of 5810 N, braced, 0 taken of 0"
         );
         let busy = SnatchStatus {
             live: true,
@@ -498,7 +414,7 @@ mod tests {
         };
         assert_eq!(
             snatch_line(&busy).text(),
-            "OK, IDLE, HAND NOT EMPTY, 0 TAKEN OF 0"
+            "Ok, IDLE, HAND NOT EMPTY, 0 taken of 0"
         );
     }
 }

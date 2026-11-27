@@ -12,15 +12,13 @@ pub(crate) fn headlines(ui: &mut Ui, rows: &[&Row]) {
     for row in rows {
         let line = row.read();
         ui.horizontal_wrapped(|ui| {
-            ui.strong(row.display_label());
-            ui.label(
-                RichText::new(line.health.display_word()).color(health_color(ui, line.health)),
-            );
-            if !line.display_detail.is_empty() {
-                ui.label(line.display_detail.as_str());
+            ui.strong(row.label());
+            ui.label(RichText::new(line.health.word()).color(health_color(ui, line.health)));
+            if !line.detail.is_empty() {
+                ui.label(line.detail.as_str());
             }
         });
-        if let Some(note) = &line.display_note {
+        if let Some(note) = &line.note {
             ui.small(note.as_str());
         }
     }

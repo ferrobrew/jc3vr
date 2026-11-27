@@ -346,7 +346,7 @@ fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer(
         ] {
             assert!(position(control) < position("Live status"), "{control}");
         }
-        for readout in ["Runtime:", "Per-eye resolution:", "Headpose source:"] {
+        for readout in ["Runtime:", "Headpose source:"] {
             assert!(position(readout) > position("Live status"), "{readout}");
         }
         assert_eq!(selection, expected);

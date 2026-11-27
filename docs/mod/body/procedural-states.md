@@ -26,7 +26,7 @@ The legs stay the seat's: the clip puts the feet on the pedals or the footrests 
 
 The body IK's torso lean, which posed the torso in a seat before, stands down once the procedural torso has its full weight, as on foot.
 
-The `SEATED TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head; it is `OK` at full weight, and `NOT SEATED` outside a seat.
+The `Seated torso` status row shows the torso's weight and the neck's distance from the point under the player's head; it is `Ok` at full weight, and `NOT SEATED` outside a seat.
 
 ## Standing on a roof
 
@@ -34,7 +34,7 @@ Standing in a vehicle's stunt area (a car's roof, a boat's deck, a plane's wing;
 
 The animation set's `STUNT_COMBAT_MODIFIER` and `STUNT_NONCOMBAT_MODIFIER` select the stunt idle, movement, turn, and stop clip variants inside the on-foot states (see [idle-stance.md](../../engine/character/idle-stance.md)). For the local player standing in a stunt area, `hooks::character::modifiers` drops those two modifiers on their way to the rule systems, so the on-foot state selects its normal clips; the engine clears frame-bound modifiers and re-sets them every tick, so nothing is left behind. This is the replacement of the stunt clips the previous reference-pose body was standing in for.
 
-The `ROOF TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT ON A ROOF` otherwise.
+The `Roof torso` status row shows the torso's weight and the neck's distance from the point under the player's head, `Ok` at full weight and `NOT ON A ROOF` otherwise.
 
 ## The firm ragdoll
 
@@ -54,7 +54,7 @@ The targets are placed at the solve gate from the pose the animation wrote this 
 
 The wingsuit's membrane is skinned between the arms and the body, so arms held far from the wing pose (by the sides, overhead) fold or stretch it as they would in the game's own arm animation; the arms spread as wings keep it as the flight pose has it.
 
-The `WINGSUIT ARMS` status row shows the arms' weight and the hands queued, `OK` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The Body page's Body fit live status shows the row, and beneath it the arm targets placed.
+The `Wingsuit arms` status row shows the arms' weight and the hands queued, `Ok` with both at full weight and `NOT IN THE WINGSUIT` otherwise. The Body page's Body fit live status shows the row, and beneath it the arm targets placed.
 
 ## The parachute
 
@@ -64,7 +64,7 @@ The canopy and its lines are a separate model with its own skeleton; whether the
 
 Coming from a jump the torso stays procedural through the change of case; coming from a fall past the grace the torso's weight blends it in from the animation. Landing hands back to the torso on foot, with the legs the game's landing.
 
-The `PARACHUTE BODY` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight, `NOT UNDER THE CANOPY` otherwise.
+The `Parachute body` status row shows the torso's weight and the neck's distance from the point under the player's head, `Ok` at full weight, `NOT UNDER THE CANOPY` otherwise.
 
 ## The grapple's wall attach
 
@@ -78,7 +78,7 @@ The swimming hand tier is free (`HandTierTable::PLAN`), so the arms follow the c
 
 Walking into the water keeps the torso procedural throughout, on the hips of whatever clip plays, and the legs go to the kick as the game's animation blends them. Walking back out does the same the other way.
 
-The `SWIM TORSO` status row shows the torso's weight and the neck's distance from the point under the player's head, `OK` at full weight and `NOT SWIMMING` otherwise.
+The `Swim torso` status row shows the torso's weight and the neck's distance from the point under the player's head, `Ok` at full weight and `NOT SWIMMING` otherwise.
 
 ## The body mirror
 
@@ -88,17 +88,17 @@ It does not render the scene a second time. A second camera would be a third ren
 
 The primitives are submitted from the pass's thread each tick into the overlay's `body mirror` slot, which expires a few ticks after the last submission, and are anchored to the head at an offset, so the figure rides with a player moving fast (a vehicle, the wingsuit) rather than trailing at the tick's rate. It costs a handful of joint reads and some forty primitives a tick while on, and nothing while off. The first pass on a skeleton logs `body mirror: found the figure's bones` at info level with any bone it did not find.
 
-The `BODY MIRROR` status row says how to switch it on while it is off, and how many of the figure's bones it found while it is on; `NO BONES FOUND` fails it.
+The `Body mirror` status row says how to switch it on while it is off, and how many of the figure's bones it found while it is on; `NO BONES FOUND` fails it.
 
 ## What needs confirming in the headset
 
-1. Seated in a car: the log says the case changes to `seated in a vehicle` after the entry's clip, then `procedural body: the torso follows the head on the animation's hips`, and `SEATED TORSO` reads `OK` with the neck within a few centimetres. Lean forward, back, and to each side: Rico's back bends with you and his hips stay on the seat; the view does not dip into the chest. Turn your torso (both hands off the wheel): the chest turns, within its limit. Look down at the lap: the chest leans a little over it. The hands stay on the wheel while you lean.
+1. Seated in a car: the log says the case changes to `seated in a vehicle` after the entry's clip, then `procedural body: the torso follows the head on the animation's hips`, and `Seated torso` reads `Ok` with the neck within a few centimetres. Lean forward, back, and to each side: Rico's back bends with you and his hips stay on the seat; the view does not dip into the chest. Turn your torso (both hands off the wheel): the chest turns, within its limit. Look down at the lap: the chest leans a little over it. The hands stay on the wheel while you lean.
 2. On a motorcycle, ride through turns: Rico's lean with the bike stays, the feet stay on the footrests, and leaning your head adds to it rather than fighting it. Report a jerk at the start or end of a turn.
 3. Enter and leave vehicles, switch seats, and take a mounted gun: each logs the case `vehicle` while it plays, and the torso blends without a pop. A stunt position on the roof is the case `standing on a vehicle` ([input/stunt-positions.md](../input/stunt-positions.md), checklist item 7), and the hang from a helicopter stays the animation's. In a helicopter and a plane, the torso follows the head the same way.
 4. Get shot or thrown out of a seat: the ragdoll hands over at once, as on foot.
-5. The wingsuit, watching the shadow: open it and spread your arms. The log says `procedural body: Rico's arms follow the player's in the wingsuit`, and `WINGSUIT ARMS` reads `OK, 100%, BOTH HANDS`. Rico's arms spread with yours; lowering the left hand lowers his left arm toward the ground as the wingsuit banks; sweeping both hands forward brings his ahead of his head, and back brings them toward the hips; tilting both wrists down tilts his. The membrane stays whole with the arms spread; report how it looks with the arms at the sides. Turn in the room while flying: his arms follow your heading, not the room's. With the arms spread, look at one hand and then the other: neither arm bends at the elbow. With the arms tucked in, a glance to the side changes nothing, and a turn of the whole body held for a couple of seconds brings the arms round. Open the parachute: the arms hand back to the animation without a pop. The wings now scale your arm by its shoulder-to-wrist length rather than the saved upper arm and forearm, which for the generic dimensions is about a sixth shorter: with your arms fully out, Rico's should be fully out too, not short of it or bent at the elbow.
-6. The parachute, watching the shadow: open it from a fall and from a jump. The case changes to `parachute`, the log says `procedural body: the torso follows the head on the animation's hips`, and `PARACHUTE BODY` reads `OK` at 100% with the neck within a few centimetres. Leaning and looking around bends Rico's back over the harness; the legs are the harness clip's. Report whether the canopy's lines stay on the shoulders while leaning. Landing hands the torso back without a pop.
-7. Swimming, watching the shadow or the body mirror (item 8): walk into the sea. The case changes to `swimming` without a pop, `SWIM TORSO` reads `OK`, and the legs keep kicking. Hold still and reach both hands forward and sweep them back: Rico's arms follow yours rather than the clip's stroke, and the hand tier readout in the Body page's Hand presentation live status says `free` for swimming. Turn your head and lean: the neck and the upper back follow without twisting the lying body. Swim with the stick: the arms stay where you hold them. Report how the arms look against the water's surface and whether the elbows bend sensibly without the hints. Walk back out: the torso stays on Rico's hips without a pop.
-8. The body mirror: switch on `Body mirror` in the debug UI. The log says `body mirror: found the figure's bones` with nothing missing, `BODY MIRROR` reads `OK, 21 BONES`, and a stick figure stands in a frame a little over a metre ahead, facing you. Raise your right hand: the figure's hand on your right rises, and its orange ring sits on the hand. Lean, crouch, and turn: the figure follows, and the green head ring stays on its head. Check it in a seat, in the wingsuit, under the parachute, and swimming, using the items above. With the vehicle or the wingsuit at speed, the figure stays steady in front of you. Switching it off clears it within a moment.
+5. The wingsuit, watching the shadow: open it and spread your arms. The log says `procedural body: Rico's arms follow the player's in the wingsuit`, and `Wingsuit arms` reads `OK, 100%, BOTH HANDS`. Rico's arms spread with yours; lowering the left hand lowers his left arm toward the ground as the wingsuit banks; sweeping both hands forward brings his ahead of his head, and back brings them toward the hips; tilting both wrists down tilts his. The membrane stays whole with the arms spread; report how it looks with the arms at the sides. Turn in the room while flying: his arms follow your heading, not the room's. With the arms spread, look at one hand and then the other: neither arm bends at the elbow. With the arms tucked in, a glance to the side changes nothing, and a turn of the whole body held for a couple of seconds brings the arms round. Open the parachute: the arms hand back to the animation without a pop. The wings now scale your arm by its shoulder-to-wrist length rather than the saved upper arm and forearm, which for the generic dimensions is about a sixth shorter: with your arms fully out, Rico's should be fully out too, not short of it or bent at the elbow.
+6. The parachute, watching the shadow: open it from a fall and from a jump. The case changes to `parachute`, the log says `procedural body: the torso follows the head on the animation's hips`, and `Parachute body` reads `Ok` at 100% with the neck within a few centimetres. Leaning and looking around bends Rico's back over the harness; the legs are the harness clip's. Report whether the canopy's lines stay on the shoulders while leaning. Landing hands the torso back without a pop.
+7. Swimming, watching the shadow or the body mirror (item 8): walk into the sea. The case changes to `swimming` without a pop, `Swim torso` reads `Ok`, and the legs keep kicking. Hold still and reach both hands forward and sweep them back: Rico's arms follow yours rather than the clip's stroke, and the hand tier readout in the Body page's Hand presentation live status says `free` for swimming. Turn your head and lean: the neck and the upper back follow without twisting the lying body. Swim with the stick: the arms stay where you hold them. Report how the arms look against the water's surface and whether the elbows bend sensibly without the hints. Walk back out: the torso stays on Rico's hips without a pop.
+8. The body mirror: switch on `Body mirror` in the debug UI. The log says `body mirror: found the figure's bones` with nothing missing, `Body mirror` reads `Ok, 21 bones`, and a stick figure stands in a frame a little over a metre ahead, facing you. Raise your right hand: the figure's hand on your right rises, and its orange ring sits on the hand. Lean, crouch, and turn: the figure follows, and the green head ring stays on its head. Check it in a seat, in the wingsuit, under the parachute, and swimming, using the items above. With the vehicle or the wingsuit at speed, the figure stays steady in front of you. Switching it off clears it within a moment.
 9. Grapple to a wall and stay attached: the log says the case changes to `grapple wall attach`, Rico's back straightens toward your head as far as the reclining pose allows, and the view is in front of his face rather than inside his torso; release, and the torso hands back without a pop.
 10. Under the parachute and falling, with the hands drawn: look at one hand and then the other, and glance about. Neither drawn hand nor the ripcord's ring on the hip moves with the glance; a turn of the whole body held for a couple of seconds brings them round.

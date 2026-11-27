@@ -337,7 +337,7 @@ fn egui_debug_window_body(ui: &mut egui::Ui, renderer: &mut egui_directx11::Rend
         let verb = if state.drawer { "Hide" } else { "Show" };
         ui.toggle_value(
             &mut state.drawer,
-            format!("{verb} visualizations ({})", visualizations.summary().label()),
+            format!("{verb} visualizations ({} on)", visualizations.requested()),
         );
         if ui.button("Detach this view").clicked() { state.detach(state.selection); }
         ui.menu_button("Layout", |ui| {

@@ -6,14 +6,12 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::{
-    controllers::menu::read,
-    status::{Line, Row, Text, prose, text},
-};
+use crate::status::{Line, Row};
 
-pub(crate) const LEFT_GRIP: Row = Row::new("LEFT GRIP POSE", "Left grip pose", left_grip);
-pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT GRIP POSE", "Right grip pose", right_grip);
+pub(crate) const LEFT_GRIP: Row = Row::new("Left grip pose", left_grip);
+pub(crate) const RIGHT_GRIP: Row = Row::new("Right grip pose", right_grip);
 
 fn left_grip() -> Line {
     grip(Hand::Left)
@@ -24,42 +22,42 @@ fn right_grip() -> Line {
 }
 
 fn grip(hand: Hand) -> Line {
-    let curls = read(&CONTROLLERS_CONFIG, |c| c.enabled);
+    let curls = CONTROLLERS_CONFIG.query(|c| c.enabled);
     grip_line(curls, &fingers::status()[hand.index()])
 }
 
 fn grip_line(curls: bool, status: &HandFingersStatus) -> Line {
     if !curls {
-        return Line::off(prose("Controllers off"));
+        return Line::off("Controllers off");
     }
     if status.unresolved {
-        return Line::failed(prose("Finger bones not found"));
+        return Line::failed("Finger bones not found");
     }
     if status.source.is_none() {
-        return Line::waiting(prose("Hand not driven"));
+        return Line::waiting("Hand not driven");
     }
     let Some(grip) = status.grip else {
-        return Line::ok(prose("Holds nothing"));
+        return Line::ok("Holds nothing");
     };
     let source = match grip.source {
-        GripSource::C4 => prose("C4"),
-        source => prose(source.label()),
+        GripSource::C4 => SmolStr::new_static("C4"),
+        source => format_smolstr!("{}", source.label()),
     };
-    let what = text!(prose(grip.pose.label()), " from ", source);
+    let what = format_smolstr!("{} from {}", grip.pose.label(), source);
     let fitted = if grip.fitted > 0 {
-        text!(", ", grip.fitted.to_string(), " fitted")
+        format_smolstr!(", {} fitted", grip.fitted)
     } else {
-        Text::default()
+        SmolStr::default()
     };
     let releasing = if grip.mode == GripMode::Releasing {
-        prose(", letting go")
+        SmolStr::new_static(", letting go")
     } else {
-        Text::default()
+        SmolStr::default()
     };
-    Line::ok(text!(
+    Line::ok(format_smolstr!(
+        "{}, {:.0}%{}{}",
         what,
-        ", ",
-        format!("{:.0}%", grip.share * 100.0),
+        grip.share * 100.0,
         fitted,
         releasing
     ))
@@ -83,7 +81,7 @@ mod tests {
     #[test]
     fn the_row_names_the_pose_and_its_source() {
         let mut status = driven();
-        assert_eq!(grip_line(true, &status).text(), "OK, HOLDS NOTHING");
+        assert_eq!(grip_line(true, &status).text(), "Ok, Holds nothing");
         status.grip = Some(GripReport {
             source: GripSource::Pickup,
             pose: GripPose::Wrap,
@@ -93,7 +91,7 @@ mod tests {
         });
         assert_eq!(
             grip_line(true, &status).text(),
-            "OK, WRAP FROM LOOSE OBJECT, 80%, 4 FITTED"
+            "Ok, wrap from loose object, 80%, 4 fitted"
         );
     }
 
@@ -110,23 +108,23 @@ mod tests {
             ..driven()
         };
         let line = grip_line(true, &status);
-        assert_eq!(line.text(), "OK, CHARGE PALM FROM C4, 50%, LETTING GO");
-        assert_eq!(line.display_detail, "charge palm from C4, 50%, letting go");
+        assert_eq!(line.text(), "Ok, charge palm from C4, 50%, letting go");
+        assert_eq!(line.detail, "charge palm from C4, 50%, letting go");
     }
 
     #[test]
     fn the_row_says_why_nothing_is_posed() {
         let status = driven();
-        assert_eq!(grip_line(false, &status).text(), "OFF, CONTROLLERS OFF");
+        assert_eq!(grip_line(false, &status).text(), "Off, Controllers off");
         let idle = HandFingersStatus::default();
-        assert_eq!(grip_line(true, &idle).text(), "WAITING, HAND NOT DRIVEN");
+        assert_eq!(grip_line(true, &idle).text(), "Waiting, Hand not driven");
         let broken = HandFingersStatus {
             unresolved: true,
             ..driven()
         };
         assert_eq!(
             grip_line(true, &broken).text(),
-            "FAILED, FINGER BONES NOT FOUND"
+            "Failed, Finger bones not found"
         );
     }
 }

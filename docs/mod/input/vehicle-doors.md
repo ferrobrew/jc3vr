@@ -86,7 +86,7 @@ The hinge registry runs on the game thread before the hand-mode gate, including 
 
 ## Settings and readouts
 
-The doors have no settings: they are always on under the controller scheme. The reach, the handle reach, the pull that unlatches, the hinges, the pressure, and the tearing are tuning, in `crates/jc3vr-physical/tuning/doors.toml`. The debug UI's Characters and doors feature opens with the `VEHICLE DOORS` status row (under `HANDS IN THE WORLD`): the latched grips and unlatches, the last door's slot, and whether a hand is on a latch. Beneath it, the readout says which door a hand reaches (its slot and whether it is latched) and whether a hand grips a latch, and counts the tears and refused tears.
+The doors have no settings: they are always on under the controller scheme. The reach, the handle reach, the pull that unlatches, the hinges, the pressure, and the tearing are tuning, in `crates/jc3vr-physical/tuning/doors.toml`. The debug UI's Characters and doors feature opens with the `Vehicle doors` status row (under `Hands in the world`): the latched grips and unlatches, the last door's slot, and whether a hand is on a latch. Beneath it, the readout says which door a hand reaches (its slot and whether it is latched) and whether a hand grips a latch, and counts the tears and refused tears.
 
 The pressure readout lists each hand's current door slot, outward displacement, required displacement, and result. Results distinguish no contact, rejected glass, no panel, an exterior or inward-facing contact, insufficient movement, contact loss, an open panel, a successful opening, an invalid sample, and native failure. Successful pressure openings log `door pressure: opened`. Native failures log `door pressure: native failure` with the underlying body error when available; an unchanged failure for the same target is logged only once.
 
@@ -114,7 +114,7 @@ The generic attached-sound parameter dispatch and world-ambience mixing remain u
 With `GRIP MARKERS` on:
 
 1. Walk up to a parked, empty modern saloon and reach toward the driver's door handle: a green marker on it, and the log's `door handles:` line for `modernsaloon` says its front doors come from the table (clip). Near the hinge: the door is taken there too, and a pull outward swings it little, the force acting near the hinge.
-2. Grip: `a hand gripped a latched door`, a pulse, and the rendered hand stays on the door while the controller moves. The `VEHICLE DOORS` row says `ON A LATCH`.
+2. Grip: `a hand gripped a latched door`, a pulse, and the rendered hand stays on the door while the controller moves. The `Vehicle doors` row says `ON A LATCH`.
 3. Pull outward a few centimetres: the latch gives with a strong pulse, `the latch gave, and the hand holds the door`, and the door comes open with the hand.
 4. Swing the door wide and back: it turns about its hinge only. Let go while swinging: it swings on, slows, and settles without bouncing shut off its stop. Stand in its swing: it does not latch against you.
 5. Shove the door shut hard: it latches (`a free door latched: it swung shut hard`), and the hold ends if the hand was still on it. Ease it shut: it rests against the frame, then latches after a second (`it came to rest shut`). Hold it near shut and wiggle it: it never latches while held.

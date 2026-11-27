@@ -167,7 +167,7 @@ The part is drawn where the travel has it:
 
 While the pump is back, the foregrip moves back along the barrel with it (`foregrip::set_pump_slide`), so the drawn off-hand rides the pump. With the hand bodies on, the off-hand on the foregrip is drawn at its body, joined to the gun body where it took the foregrip, so the drawn hand stays at the brace while the pump moves.
 
-The log has, at info level, `reload: the action cycled` with the action, the gun hand, and whether a round was chambered; `reload: the last shot locked the slide back`; `reload: the slide caught at the rear on an empty magazine`; and `reload: took the slide off its catch`. At debug level, `reload: took the action's handle`. The debug UI's Status page shows `LEFT ACTION` and `RIGHT ACTION` under `WEAPONS IN HAND`: the action and where its part is (`HOME`, `BACK 40%`, `UP 100%, BACK 30%`, or `LOCKED BACK`), `HELD` while a hand holds it, the chamber, and the actions worked.
+The log has, at info level, `reload: the action cycled` with the action, the gun hand, and whether a round was chambered; `reload: the last shot locked the slide back`; `reload: the slide caught at the rear on an empty magazine`; and `reload: took the slide off its catch`. At debug level, `reload: took the action's handle`. The debug UI's Status page shows `LEFT ACTION` and `RIGHT ACTION` under `Weapons in hand`: the action and where its part is (`HOME`, `BACK 40%`, `UP 100%, BACK 30%`, or `LOCKED BACK`), `HELD` while a hand holds it, the chamber, and the actions worked.
 
 ## Each hand's gun
 
@@ -204,13 +204,13 @@ Each sound played or missing logs `reload: played the gun's sound` (or `hold: pl
 
 ## The readout
 
-The Weapons > Reload and gun action live status opens with the `MAGAZINES` status row ([status.md](../status.md)), then shows each reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve (the pair's once), each gun hand's chamber, belt push, and fire hold (with its reason), the round in hand and its distance from the mouth, whether a gun hand's physical action has racked, the recent reload events, and the counters (ejects, knocks, seats, belt reloads, slides locked back, empty pouch grabs, and the game's reload starts refused).
+The Weapons > Reload and gun action live status opens with the `Magazines` status row ([status.md](../status.md)), then shows each reloaded weapon's name hash, its load and action, whether its well came from the table, the magazine and the reserve (the pair's once), each gun hand's chamber, belt push, and fire hold (with its reason), the round in hand and its distance from the mouth, whether a gun hand's physical action has racked, the recent reload events, and the counters (ejects, knocks, seats, belt reloads, slides locked back, empty pouch grabs, and the game's reload starts refused).
 
 The session log carries what a take needs to follow a reload step by step, all under `reload:` at info level: every reload event the readout lists (a round taken from the pouch, with the gun's count and reserve, an empty pouch, the well's catch, a refusal at an occupied well with the round's distance from the mouth, a seat, a round that went home but loaded nothing, an eject, a knock, a belt reload, a belt push that could not drop its magazine or loaded nothing, a reload button that found nothing to eject, a dropped round), each change of what holds a hand's gun from firing (`what holds the gun from firing changed`, with the old and new reasons), each change of a gun's magazine that is not a shot (`the gun's magazine changed`: the count rising, the magazine going out or in, or the reserve moving, old and new values and the weapon's name hash), so that a change with no reload event before it is the game's own, a reload start of the game's let through for the local player (`the game's own reload starts for the local player`, at most once a second), and a held magazine meeting the inserted one too slowly to knock it out, with its closing speed and the threshold.
 
 ## In the headset: magazines in the world
 
-1. With a rifle drawn and a few rounds fired, tap the reload button: the magazine drops, the HUD retains the live chamber's count, and `MAGAZINES` counts one in the world. The absent magazine cannot feed another round. Take a fresh magazine from the pouch, seat it, then fire the rifle dry and eject that one too.
+1. With a rifle drawn and a few rounds fired, tap the reload button: the magazine drops, the HUD retains the live chamber's count, and `Magazines` counts one in the world. The absent magazine cannot feed another round. Take a fresh magazine from the pouch, seat it, then fire the rifle dry and eject that one too.
 2. Reach down to the first magazine on the ground with the free hand: `reload: picked a magazine up from the world` with the rounds it held. The magazine rises into the hand, top out, and stays there as the hand moves. Seat it: `reload: seated a magazine from the world`, the magazine on the ground is gone, and the HUD shows its rounds plus any live chamber already on the weapon. Check that only replaced magazine-owned rounds return to reserve.
 3. With an empty chamber, pick the empty magazine up and seat it: the gun reads zero, and working the action cannot feed a round. A live chamber already on the weapon remains counted and can fire once.
 4. Pick one up and open the hand away from the gun: it falls and can be picked up again.
@@ -283,7 +283,7 @@ With the director's unlimited ammunition on:
 
 1. Fire a rifle for a whole magazine and more: the count stays full, the gun never runs dry, and no reload is needed. Fire a pistol the same way: the slide never locks back.
 2. Snatch a rifle from a character and fire it at once: it fires without a reload or a rack.
-3. Eject or pull the magazine: the gun reads its chamber alone, the pouch offers a magazine, and the seated magazine is full. Pick the dropped magazine up and seat it: full as well. Without ejecting, take a magazine from the pouch and knock the old one out with it: the old one drops, `MAGAZINES` lists it with no rounds, and the fresh one seats full.
+3. Eject or pull the magazine: the gun reads its chamber alone, the pouch offers a magazine, and the seated magazine is full. Pick the dropped magazine up and seat it: full as well. Without ejecting, take a magazine from the pouch and knock the old one out with it: the old one drops, `Magazines` lists it with no rounds, and the fresh one seats full.
 4. Hold a gun in each hand, then the game's pistol pair, then separate pistols, and fire each well past a magazine; repeat with the UPU-210 and a rocket launcher, which load again after every shot.
 5. Fire the bolt rifle and the pump shotgun: each still needs its bolt or pump worked after every shot.
 6. Turn the unlimited ammunition off: the magazines run down again and the pouch draws on the reserve.
@@ -303,7 +303,7 @@ With the grab view's zones on:
 5. Strike while swinging the rifle toward the hand, then swing the rifle and hand together without a strike: only the first knocks. Note the speeds that knock and the ones that do not, against `knock.min_speed_mps`, and whether it is too eager or too stiff.
 6. Repeat with a pistol and an SMG, whose zone is a ball at the bottom of the grip, and check that the revolver offers no magazine zone.
 7. Turn the magazines in the world off: the knocked magazine drops with the gun's velocity alone.
-8. With unlimited ammunition on, knock a magazine out: `MAGAZINES` lists it with no rounds.
+8. With unlimited ammunition on, knock a magazine out: `Magazines` lists it with no rounds.
 9. Bring a fresh magazine slowly to the mouth of the rifle's occupied well: the red ring, the click, and the refusal buzz, and nothing leaves. Pull back and push it into the mouth briskly, as if to seat it: the old magazine drops out of the well, both hands thud, `reload: the held magazine was pushed into the occupied well fast enough to knock` logs the speed, and the fresh one then seats. Note whether `push_knock_mps` catches the pushes meant to knock without knocking on a careful load.
 
 ## In the headset: the magazine in the hand

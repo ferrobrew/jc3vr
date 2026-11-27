@@ -14,17 +14,17 @@ use jc3vr_physical::controllers::{
         vault::VaultStatus,
     },
 };
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::status::{Health, Line, Row, Text, prose, text};
+use crate::status::{Health, Line, Row};
 
-pub(crate) const PALMS: Row = Row::new("PALMS", "Palms", palms);
-pub(crate) const DOORS: Row = Row::new("VEHICLE DOORS", "Vehicle doors", doors);
-pub(crate) const CHARACTERS: Row = Row::new("CHARACTERS", "Characters", characters);
-pub(crate) const MOVING_CLIMBS: Row = Row::new("MOVING CLIMBS", "Moving climbs", moving_climbs);
-pub(crate) const STUNT_POSITIONS: Row =
-    Row::new("STUNT POSITIONS", "Stunt positions", stunt_positions);
-pub(crate) const PUSH_UP: Row = Row::new("PUSH UP", "Push up", push_up);
-pub(crate) const ARTICULATED: Row = Row::new("HINGED THINGS", "Hinged things", articulated);
+pub(crate) const PALMS: Row = Row::new("Palms", palms);
+pub(crate) const DOORS: Row = Row::new("Vehicle doors", doors);
+pub(crate) const CHARACTERS: Row = Row::new("Characters", characters);
+pub(crate) const MOVING_CLIMBS: Row = Row::new("Moving climbs", moving_climbs);
+pub(crate) const STUNT_POSITIONS: Row = Row::new("Stunt positions", stunt_positions);
+pub(crate) const PUSH_UP: Row = Row::new("Push up", push_up);
+pub(crate) const ARTICULATED: Row = Row::new("Hinged things", articulated);
 
 fn palms() -> Line {
     let status = physical_hands::status();
@@ -74,26 +74,25 @@ fn articulated() -> Line {
 
 fn articulated_line(grips: u64, reaching: bool) -> Line {
     match (grips, reaching) {
-        (_, true) => Line::ok(text!(grips.to_string(), " grips, one in reach")),
-        (0, false) => Line::new(Health::Waiting, prose("None taken yet")),
-        _ => Line::ok(text!(grips.to_string(), " grips")),
+        (_, true) => Line::ok(format_smolstr!("{} grips, one in reach", grips)),
+        (0, false) => Line::waiting("None taken yet"),
+        _ => Line::ok(format_smolstr!("{} grips", grips)),
     }
 }
 
 fn push_up_line(status: VaultStatus) -> Line {
     let rise = status
         .last_rise_m
-        .map_or_else(Text::default, |r| text!(", last ", format!("{r:.2}"), " m"));
+        .map_or_else(SmolStr::default, |r| format_smolstr!(", last {r:.2} m"));
     let line = match (status.pushes, status.lifting) {
-        (_, true) => Line::ok(text!(
-            status.pushes.to_string(),
-            " pushes, lifting ",
-            format!("{:.1}", status.lift_mps),
-            " m/s",
+        (_, true) => Line::ok(format_smolstr!(
+            "{} pushes, lifting {:.1} m/s{}",
+            status.pushes,
+            status.lift_mps,
             rise
         )),
-        (0, false) => Line::new(Health::Waiting, prose("No push yet")),
-        (pushes, false) => Line::ok(text!(pushes.to_string(), " pushes", rise)),
+        (0, false) => Line::waiting("No push yet"),
+        (pushes, false) => Line::ok(format_smolstr!("{} pushes{}", pushes, rise)),
     };
     line.with_note(format!(
         "{} presses at the feet ignored, {} refused off the ground or moving down",
@@ -103,34 +102,34 @@ fn push_up_line(status: VaultStatus) -> Line {
 
 fn moving_climbs_line(grips: u64, on_moving: bool) -> Line {
     match (grips, on_moving) {
-        (_, true) => Line::ok(text!(grips.to_string(), " grips, holding on")),
-        (0, false) => Line::new(Health::Waiting, prose("No moving grip yet")),
-        _ => Line::ok(text!(grips.to_string(), " grips")),
+        (_, true) => Line::ok(format_smolstr!("{} grips, holding on", grips)),
+        (0, false) => Line::waiting("No moving grip yet"),
+        _ => Line::ok(format_smolstr!("{} grips", grips)),
     }
 }
 
 /// The stunt positions: the one the game holds the player in, whether the grips hold the hang,
 /// and the entries and let-gos counted.
 fn stunt_line(status: &StuntStatus) -> Line {
-    let counts = text!(
-        status.hang_entries.to_string(),
-        " hangs, ",
-        status.roof_entries.to_string(),
-        " roofs, ",
-        status.releases.to_string(),
-        " let go"
+    let counts = format_smolstr!(
+        "{} hangs, {} roofs, {} let go",
+        status.hang_entries,
+        status.roof_entries,
+        status.releases
     );
     let line = match status.position {
         Some(StuntKind::Hanging) if status.holding.iter().any(|&h| h) => {
-            Line::ok(text!("Hanging, holding on, ", counts))
+            Line::ok(format_smolstr!("Hanging, holding on, {}", counts))
         }
         Some(StuntKind::Hanging) if status.armed => {
-            Line::ok(text!("Hanging, letting go, ", counts))
+            Line::ok(format_smolstr!("Hanging, letting go, {}", counts))
         }
-        Some(StuntKind::Hanging) => Line::waiting(text!("Hanging, take hold, ", counts)),
-        Some(StuntKind::Standing) => Line::ok(text!("On a roof, ", counts)),
+        Some(StuntKind::Hanging) => {
+            Line::waiting(format_smolstr!("Hanging, take hold, {}", counts))
+        }
+        Some(StuntKind::Standing) => Line::ok(format_smolstr!("On a roof, {}", counts)),
         None if status.hang_entries + status.roof_entries + status.releases == 0 => {
-            Line::waiting(prose("No stunt position yet"))
+            Line::waiting("No stunt position yet")
         }
         None => Line::ok(counts),
     };
@@ -143,20 +142,19 @@ fn stunt_line(status: &StuntStatus) -> Line {
 }
 
 fn characters_line(pickup: &PickupStatus, knockdowns: u64) -> Line {
-    let detail = text!(
-        pickup.character_grips.to_string(),
-        " grips, ",
-        pickup.yanks.to_string(),
-        " thrown, ",
-        knockdowns.to_string(),
-        " down, ",
-        pickup.regrips.to_string(),
-        " dragged, ",
-        pickup.hijacks.to_string(),
-        " pulled out"
+    let detail = format_smolstr!(
+        "{} grips, {} thrown, {} down, {} dragged, {} pulled out",
+        pickup.character_grips,
+        pickup.yanks,
+        knockdowns,
+        pickup.regrips,
+        pickup.hijacks
     );
     if pickup.character_grips == 0 {
-        Line::new(Health::Waiting, prose("No character taken yet"))
+        Line::new(
+            Health::Waiting,
+            SmolStr::new_static("No character taken yet"),
+        )
     } else {
         Line::ok(detail)
     }
@@ -166,36 +164,30 @@ fn characters_line(pickup: &PickupStatus, knockdowns: u64) -> Line {
 /// the palms' tick, so a tick that stands down silently takes all of it away.
 fn palms_line(idle: Option<Idle>, casts: u32, off_thread: u64) -> Line {
     let off_thread_note =
-        (off_thread > 0).then(|| text!(off_thread.to_string(), " ticks ran off the game thread"));
+        (off_thread > 0).then(|| format_smolstr!("{} ticks ran off the game thread", off_thread));
     match (idle, off_thread_note) {
-        (Some(Idle::OffThread), _) => Line::failed(text!(
-            "Idle, off the game thread (",
-            off_thread.to_string(),
-            " ticks)"
+        (Some(Idle::OffThread), _) => Line::failed(format_smolstr!(
+            "Idle, off the game thread ({} ticks)",
+            off_thread
         )),
         (_, Some(note)) => Line::failed(note),
-        (Some(Idle::Disabled), None) => Line::off(prose("Not under the controller scheme")),
-        (Some(Idle::Mode), None) => Line::waiting(prose("Not on foot or falling")),
-        (Some(Idle::NoHands), None) => Line::waiting(prose("No tracked hands")),
-        (None, None) => Line::ok(text!("Acting, ", casts.to_string(), " casts")),
+        (Some(Idle::Disabled), None) => Line::off("Not under the controller scheme"),
+        (Some(Idle::Mode), None) => Line::waiting("Not on foot or falling"),
+        (Some(Idle::NoHands), None) => Line::waiting("No tracked hands"),
+        (None, None) => Line::ok(format_smolstr!("Acting, {} casts", casts)),
     }
 }
 
 fn doors_line(pickup: &PickupStatus, latched: [bool; 2]) -> Line {
-    let mut detail = text!(
-        pickup.door_grips.to_string(),
-        " grips, ",
-        pickup.unlatches.to_string(),
-        " opened"
-    );
+    let mut detail = format!("{} grips, {} opened", pickup.door_grips, pickup.unlatches);
     if let Some(slot) = pickup.last_door {
-        detail.push(text!(", last ", prose(doors::slot_label(slot))));
+        detail += &format!(", last {}", doors::slot_label(slot));
     }
     if latched.contains(&true) {
-        detail.push(prose(", on a latch"));
+        detail += ", on a latch";
     }
     if pickup.door_grips == 0 && pickup.unlatches == 0 {
-        Line::new(Health::Waiting, prose("No door taken yet"))
+        Line::waiting("No door taken yet")
     } else {
         Line::ok(detail)
     }
@@ -210,17 +202,17 @@ mod tests {
     #[test]
     fn the_palms_row_fails_when_a_tick_ran_off_the_game_thread() {
         let acting = palms_line(None, 4, 0);
-        assert_eq!(acting.text(), "OK, ACTING, 4 CASTS");
-        assert_eq!(acting.display_detail, "Acting, 4 casts");
+        assert_eq!(acting.text(), "Ok, Acting, 4 casts");
+        assert_eq!(acting.detail, "Acting, 4 casts");
         assert_eq!(palms_line(Some(Idle::Mode), 0, 0).health, Health::Waiting);
         assert_eq!(
             palms_line(Some(Idle::OffThread), 0, 12).text(),
-            "FAILED, IDLE, OFF THE GAME THREAD (12 TICKS)"
+            "Failed, Idle, off the game thread (12 ticks)"
         );
         // Acting now, but a tick ran off the game thread since the payload loaded.
         assert_eq!(
             palms_line(None, 4, 3).text(),
-            "FAILED, 3 TICKS RAN OFF THE GAME THREAD"
+            "Failed, 3 ticks ran off the game thread"
         );
     }
 
@@ -232,23 +224,23 @@ mod tests {
         status.hang_entries = 1;
         assert_eq!(
             stunt_line(&status).text(),
-            "WAITING, HANGING, TAKE HOLD, 1 HANGS, 0 ROOFS, 0 LET GO"
+            "Waiting, Hanging, take hold, 1 hangs, 0 roofs, 0 let go"
         );
         status.holding = [false, true];
         status.armed = true;
         assert_eq!(
             stunt_line(&status).text(),
-            "OK, HANGING, HOLDING ON, 1 HANGS, 0 ROOFS, 0 LET GO"
+            "Ok, Hanging, holding on, 1 hangs, 0 roofs, 0 let go"
         );
         status.position = Some(StuntKind::Standing);
         status.roof_entries = 2;
         assert_eq!(
             stunt_line(&status).text(),
-            "OK, ON A ROOF, 1 HANGS, 2 ROOFS, 0 LET GO"
+            "Ok, On a roof, 1 hangs, 2 roofs, 0 let go"
         );
         status.position = None;
         status.releases = 1;
-        assert_eq!(stunt_line(&status).text(), "OK, 1 HANGS, 2 ROOFS, 1 LET GO");
+        assert_eq!(stunt_line(&status).text(), "Ok, 1 hangs, 2 roofs, 1 let go");
     }
 
     #[test]
@@ -256,9 +248,9 @@ mod tests {
         assert_eq!(articulated_line(0, false).health, Health::Waiting);
         assert_eq!(
             articulated_line(2, true).text(),
-            "OK, 2 GRIPS, ONE IN REACH"
+            "Ok, 2 grips, one in reach"
         );
-        assert_eq!(articulated_line(2, false).text(), "OK, 2 GRIPS");
+        assert_eq!(articulated_line(2, false).text(), "Ok, 2 grips");
     }
 
     #[test]
@@ -271,10 +263,10 @@ mod tests {
         status.last_rise_m = Some(0.4);
         assert_eq!(
             push_up_line(status).text(),
-            "OK, 2 PUSHES, LIFTING 1.2 M/S, LAST 0.40 M"
+            "Ok, 2 pushes, lifting 1.2 m/s, last 0.40 m"
         );
         status.lifting = false;
-        assert_eq!(push_up_line(status).text(), "OK, 2 PUSHES, LAST 0.40 M");
+        assert_eq!(push_up_line(status).text(), "Ok, 2 pushes, last 0.40 m");
     }
 
     #[test]
@@ -282,9 +274,9 @@ mod tests {
         assert_eq!(moving_climbs_line(0, false).health, Health::Waiting);
         assert_eq!(
             moving_climbs_line(2, true).text(),
-            "OK, 2 GRIPS, HOLDING ON"
+            "Ok, 2 grips, holding on"
         );
-        assert_eq!(moving_climbs_line(2, false).text(), "OK, 2 GRIPS");
+        assert_eq!(moving_climbs_line(2, false).text(), "Ok, 2 grips");
     }
 
     #[test]
@@ -297,7 +289,7 @@ mod tests {
         pickup.hijacks = 1;
         assert_eq!(
             characters_line(&pickup, 2).text(),
-            "OK, 3 GRIPS, 2 THROWN, 2 DOWN, 1 DRAGGED, 1 PULLED OUT"
+            "Ok, 3 grips, 2 thrown, 2 down, 1 dragged, 1 pulled out"
         );
     }
 
@@ -306,14 +298,14 @@ mod tests {
         let mut pickup = PickupStatus::default();
         assert_eq!(
             doors_line(&pickup, [false; 2]).text(),
-            "WAITING, NO DOOR TAKEN YET"
+            "Waiting, No door taken yet"
         );
         pickup.door_grips = 2;
         pickup.unlatches = 1;
         pickup.last_door = Some(DoorSlot::FRONT_LEFT);
         assert_eq!(
             doors_line(&pickup, [false, true]).text(),
-            "OK, 2 GRIPS, 1 OPENED, LAST FRONT LEFT, ON A LATCH"
+            "Ok, 2 grips, 1 opened, last front left, on a latch"
         );
     }
 }

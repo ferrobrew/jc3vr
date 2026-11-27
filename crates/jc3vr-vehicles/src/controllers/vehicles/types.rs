@@ -6,6 +6,7 @@ use jc3vr_body::controllers::{
     grab::{GrabVolume, GripTarget, cockpit::ControlKind},
     mode::VehicleSeat,
 };
+use jc3vr_core::published::EventLog;
 
 use crate::controllers::vehicles::{
     arm_steering::{ArmPose, PitchInput},
@@ -84,8 +85,8 @@ pub struct VehiclesStatus {
     pub controls: ControlState,
     /// The values the held controls wrote on the last tick.
     pub outputs: Outputs,
-    /// The most recent grabs and releases, newest last.
-    pub events: Vec<ControlEvent>,
+    /// The most recent grabs and releases.
+    pub events: EventLog<ControlEvent, 6>,
     pub mounted: Option<MountedReadout>,
     pub arms: Option<ArmReadout>,
     /// The parachute handles, while they act.
@@ -107,20 +108,4 @@ pub struct VehiclesStatus {
     pub mounted_grip_events: u64,
     /// Whether each hand holds its mounted gun's handle, indexed by [`Hand::index`].
     pub mounted_holds: [bool; 2],
-}
-/// What the status rows show of the vehicles: [`status`] without its event list.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct VehicleSummary {
-    pub active: bool,
-    pub seat: Option<VehicleSeat>,
-    pub offered: &'static [ControlKind],
-    pub holds: [Option<ControlKind>; 2],
-    pub outputs: Outputs,
-    pub cues: u64,
-    pub afterburner_lights: u64,
-    pub button_presses: u64,
-    /// Whether a mounted gun is manned, and whether each hand holds its handle.
-    pub mounted: bool,
-    pub mounted_holds: [bool; 2],
-    pub mounted_grip_events: u64,
 }

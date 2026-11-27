@@ -8,8 +8,7 @@ use jc3vr_physical::controllers::physical_hands::physics::{BodyPhase, HandBodies
 
 use crate::{
     status::controllers::{
-        BLOWS, BODY_ERRORS, CALLBACK, CALLBACK_FIRES, CONTACT_EVENTS, JOINTS, LEFT_BODY,
-        LEFT_GUN_BODY, RIGHT_BODY, RIGHT_GUN_BODY,
+        BODY_ERRORS, CALLBACK, CONTACT_EVENTS, LEFT_BODY, LEFT_GUN_BODY, RIGHT_BODY, RIGHT_GUN_BODY,
     },
     ui::status_row::headlines,
 };
@@ -19,13 +18,10 @@ pub(super) fn hand_bodies_readout(ui: &mut Ui, status: &HandBodiesStatus) {
         ui,
         &[
             &CALLBACK,
-            &CALLBACK_FIRES,
             &LEFT_BODY,
             &RIGHT_BODY,
             &BODY_ERRORS,
             &CONTACT_EVENTS,
-            &BLOWS,
-            &JOINTS,
             &LEFT_GUN_BODY,
             &RIGHT_GUN_BODY,
         ],

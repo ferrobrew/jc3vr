@@ -373,22 +373,22 @@ impl OfferKind {
 
     pub(super) const fn label(&self) -> &'static str {
         match self {
-            OfferKind::Ground { .. } => "WEAPON ON THE GROUND",
-            OfferKind::Held(_) => "WEAPON IN HANDS",
-            OfferKind::Holstered(_) => "HOLSTERED WEAPON",
-            OfferKind::Rack { .. } => "WEAPON ON A RACK",
+            OfferKind::Ground { .. } => "weapon on the ground",
+            OfferKind::Held(_) => "weapon in hands",
+            OfferKind::Holstered(_) => "holstered weapon",
+            OfferKind::Rack { .. } => "weapon on a rack",
             OfferKind::Prop {
                 handling: PropHandling::Carry,
                 ..
-            } => "OBJECT",
+            } => "object",
             OfferKind::Prop {
                 handling: PropHandling::Swing,
                 ..
-            } => "HEAVY OBJECT",
-            OfferKind::Ragdoll { .. } => "BODY",
-            OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => "GRENADE",
-            OfferKind::PlacedCharge { .. } => "C4 CHARGE",
-            OfferKind::Door { .. } => "CAR DOOR",
+            } => "heavy object",
+            OfferKind::Ragdoll { .. } => "body",
+            OfferKind::Grenade { .. } | OfferKind::WorldGrenade { .. } => "grenade",
+            OfferKind::PlacedCharge { .. } => "C4 charge",
+            OfferKind::Door { .. } => "car door",
         }
     }
 }
@@ -396,19 +396,19 @@ impl OfferKind {
 /// Why the grapple hand cannot snatch now, if it cannot.
 pub(super) fn offerable(game: &GameTick<'_>, input: &OfferInput) -> Result<(), &'static str> {
     if !crate::controllers::snatch::available_in(game, input.detection) {
-        return Err("SNATCH UNAVAILABLE");
+        return Err("snatch unavailable");
     }
     let i = input.hand.index();
     if !physical_hands::free_hands()[i] || physical_hands::held_props()[i].is_some() {
-        return Err("HAND NOT EMPTY");
+        return Err("hand not empty");
     }
     if input.button_held {
-        return Err("GRAPPLE BUTTON HELD");
+        return Err("grapple button held");
     }
-    let hook = unsafe { local_hook() }.ok_or("NO HOOK")?;
+    let hook = unsafe { local_hook() }.ok_or("no hook")?;
     match engine::busy(hook) {
-        Some(Refusal::LineOut) => Err("LINE OUT"),
-        Some(_) => Err("HOOK BUSY"),
+        Some(Refusal::LineOut) => Err("line out"),
+        Some(_) => Err("hook busy"),
         None => Ok(()),
     }
 }

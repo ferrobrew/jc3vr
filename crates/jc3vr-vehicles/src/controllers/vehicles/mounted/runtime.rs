@@ -48,7 +48,7 @@ use crate::controllers::vehicles::{
         pivot_and_barrel,
         vehicle_hold::VehicleHold,
     },
-    summary as vehicles_summary,
+    state::mounted_holds,
     tuning::VEHICLES,
 };
 
@@ -102,8 +102,7 @@ pub unsafe fn tick(game: &GameTick<'_>, inputs: &FinishInputs, desired: &mut Vec
     // The virtual mounted handles are the grip the player takes on a gun without the use prompt.
     // The native mounted state places the same handles, so its hands are kept when the runtime
     // stops that use, and the gun does not fall out of the hands on the same tick.
-    let summary = vehicles_summary();
-    let handle_holds = summary.mounted_holds;
+    let handle_holds = mounted_holds();
     let active = hands::active_hands_raw();
     let xf = active
         .as_ref()

@@ -71,10 +71,6 @@ pub(crate) fn status(ui: &mut egui::Ui) {
         Some(name) => format!("Runtime: {name}"),
         None => "Runtime: (none)".to_string(),
     });
-    ui.label(match status.eye_resolution {
-        Some((w, h)) => format!("Per-eye resolution: {w} × {h}"),
-        None => "Per-eye resolution: (no session)".to_string(),
-    });
     ui.label(format!("Headpose source: {:?}", headpose::source()));
     visibility_mask(ui);
 }

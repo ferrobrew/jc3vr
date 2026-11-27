@@ -1,4 +1,4 @@
-//! The collider view: its status row, its switch, what it read, and the body under the gaze.
+//! The collider view: its switch, what it read, and the body under the gaze.
 
 use egui::Ui;
 use jc3gi::physics::CustomGroupCollisionFilter;
@@ -8,10 +8,7 @@ use jc3vr_physical::controllers::physical_hands::{
 };
 use jc3vr_tooling::director::{keymap, keymap::Action};
 
-use crate::{status::controllers::COLLIDER_VIEW, ui::status_row::headlines};
-
 pub(super) fn collider_view_readout(ui: &mut Ui, status: &ColliderViewStatus) {
-    headlines(ui, &[&COLLIDER_VIEW]);
     let label = if status.enabled {
         "Hide the colliders".to_owned()
     } else {

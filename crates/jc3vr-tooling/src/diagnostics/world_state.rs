@@ -101,19 +101,19 @@ pub(super) fn grapple_state(character: &Character) -> Option<GrappleState> {
 
 /// The vehicle the local player rides, while in one.
 pub(super) fn vehicle_state(character: &Character) -> Option<VehicleState> {
-    let summary = vehicles::summary();
+    let status = vehicles::status();
     // SAFETY: the game thread after the render update; the local player's vehicle is alive while
     // he is attached to it.
     let vehicle: Option<&Vehicle> = unsafe { character.GetVehiclePtr().as_ref() };
-    if vehicle.is_none() && summary.seat.is_none() {
+    if vehicle.is_none() && status.seat.is_none() {
         return None;
     }
     let transform = vehicle.map(|v| pose_of(Mat4::from(v.m_WorldMatrixT1)));
     Some(VehicleState {
-        class: summary
+        class: status
             .seat
             .map_or(Label::Borrowed("unknown"), |seat| debug_label(&seat.class)),
-        driver: summary.seat.is_some_and(|seat| seat.driver),
+        driver: status.seat.is_some_and(|seat| seat.driver),
         object: vehicle.map(|v| std::ptr::from_ref(v) as u64),
         transform,
         rendered: vehicle.map(|v| pose_of(Mat4::from(v.m_InterpolatedWorldMatrix))),
@@ -128,13 +128,15 @@ pub(super) fn vehicle_state(character: &Character) -> Option<VehicleState> {
                 v.m_SteeringTurn,
             )
         }),
-        handling: summary.active,
-        holds: summary
-            .holds
-            .map(|hold| hold.map(|kind| debug_label(&kind))),
-        mounted: summary.mounted,
-        mounted_holds: summary.mounted_holds,
-        mounted_aim: summary.mounted.then(vehicles::mounted_aim_point).flatten(),
+        handling: status.active,
+        holds: status.holds.map(|hold| hold.map(|kind| debug_label(&kind))),
+        mounted: status.mounted.is_some(),
+        mounted_holds: status.mounted_holds,
+        mounted_aim: status
+            .mounted
+            .is_some()
+            .then(vehicles::mounted_aim_point)
+            .flatten(),
     })
 }
 

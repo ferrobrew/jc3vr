@@ -10,7 +10,7 @@ use jc3vr_body::controllers::{
     mode::VehicleSeat,
     physics::refs::Strong,
 };
-use jc3vr_core::published::{Published, Stage};
+use jc3vr_core::published::{EventLog, Published, Stage};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::overlay::{primitive::Source, store};
 use parking_lot::Mutex;
@@ -26,7 +26,7 @@ use crate::controllers::vehicles::{
     physical,
     physical::{ControlEvent, ControlState, Hold, Outputs, Placement},
     tuning::VEHICLES,
-    types::{VehicleSummary, VehiclesStatus},
+    types::VehiclesStatus,
     wheel_render,
     wheel_render::RenderWheel,
 };
@@ -46,6 +46,11 @@ pub fn status() -> VehiclesStatus {
     STATE.lock().status.clone()
 }
 
+/// Whether each hand holds its mounted gun's handle, as the last input tick left it.
+pub(super) fn mounted_holds() -> [bool; 2] {
+    STATE.lock().status.mounted_holds
+}
+
 /// Copy current handle owners without reconstructing them from diagnostic booleans.
 #[inline]
 pub fn parachute_holds() -> [Option<HandleHold>; 2] {
@@ -54,24 +59,6 @@ pub fn parachute_holds() -> [Option<HandleHold>; 2] {
         state.handles.holds
     } else {
         [None; 2]
-    }
-}
-
-pub fn summary() -> VehicleSummary {
-    let state = STATE.lock();
-    let s = &state.status;
-    VehicleSummary {
-        active: s.active,
-        seat: s.seat,
-        offered: s.offered,
-        holds: s.holds,
-        outputs: s.outputs,
-        cues: s.cues,
-        afterburner_lights: s.afterburner_lights,
-        button_presses: s.button_presses,
-        mounted: s.mounted.is_some(),
-        mounted_holds: s.mounted_holds,
-        mounted_grip_events: s.mounted_grip_events,
     }
 }
 
@@ -242,9 +229,6 @@ pub(super) fn mounted_hand_weight(inputs: MountedHandWeight) -> f32 {
     }
 }
 
-/// How many grabs and releases the readout keeps.
-const MAX_EVENTS: usize = 6;
-
 pub(super) struct State {
     pub(super) status: VehiclesStatus,
     pub(super) entry: Option<VehicleEntryIdentity>,
@@ -329,7 +313,7 @@ impl State {
                 holds: [None; 2],
                 controls: ControlState::new(),
                 outputs: Outputs::NONE,
-                events: Vec::new(),
+                events: EventLog::new(),
                 mounted: None,
                 arms: None,
                 handles: None,
@@ -439,8 +423,6 @@ pub(super) fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>
         }
     }
     status.events.extend(events);
-    let excess = status.events.len().saturating_sub(MAX_EVENTS);
-    status.events.drain(..excess);
 }
 
 #[cfg(test)]

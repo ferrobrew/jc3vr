@@ -33,7 +33,7 @@ The tether plays `Event::LineLock` on the grapple hand.
 
 ## Settings and readouts
 
-The seat grapple has no switch: it acts whenever the controller scheme is in effect. The Status page's `GRAPPLE` section has a `SEAT GRAPPLE` row: whether the hook is flying, the counts of fires, tethers, and misses, and why the last press was refused. The debug UI's aim readout names where the grapple's point comes from: `game`, `seat`, or `stale`.
+The seat grapple has no switch: it acts whenever the controller scheme is in effect. The Status page's `Grapple` section has a `Seat grapple` row: whether the hook is flying, the counts of fires, tethers, and misses, and why the last press was refused. The debug UI's aim readout names where the grapple's point comes from: `game`, `seat`, or `stale`.
 
 The log has, at info level under the `grapple` target, `seat grapple: fired` with the point, `seat grapple: tethered to the vehicle`, `seat grapple: missed`, `seat grapple: the hook was called back` (and `... on leaving the controllers`), `seat grapple: the tether was refused`, and `seat grapple: refused` with why.
 

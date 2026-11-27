@@ -18,21 +18,20 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use smol_str::format_smolstr;
 
 use crate::{
-    controllers::menu::read,
-    status::{Line, Row, prose, text},
+    status::{Line, Row},
     tuning::UI,
 };
 
-pub(crate) const RENDER_RATE_BODY: Row =
-    Row::new("RENDER-RATE BODY", "Render-rate body", render_rate_body);
-pub(crate) const SEATED_TORSO: Row = Row::new("SEATED TORSO", "Seated torso", seated_torso);
-pub(crate) const WINGSUIT_ARMS: Row = Row::new("WINGSUIT ARMS", "Wingsuit arms", wingsuit_arms);
-pub(crate) const PARACHUTE_BODY: Row = Row::new("PARACHUTE BODY", "Parachute body", parachute_body);
-pub(crate) const SWIM_TORSO: Row = Row::new("SWIM TORSO", "Swim torso", swim_torso);
-pub(crate) const ROOF_TORSO: Row = Row::new("ROOF TORSO", "Roof torso", roof_torso);
-pub(crate) const BODY_MIRROR: Row = Row::new("BODY MIRROR", "Body mirror", body_mirror);
+pub(crate) const RENDER_RATE_BODY: Row = Row::new("Render-rate body", render_rate_body);
+pub(crate) const SEATED_TORSO: Row = Row::new("Seated torso", seated_torso);
+pub(crate) const WINGSUIT_ARMS: Row = Row::new("Wingsuit arms", wingsuit_arms);
+pub(crate) const PARACHUTE_BODY: Row = Row::new("Parachute body", parachute_body);
+pub(crate) const SWIM_TORSO: Row = Row::new("Swim torso", swim_torso);
+pub(crate) const ROOF_TORSO: Row = Row::new("Roof torso", roof_torso);
+pub(crate) const BODY_MIRROR: Row = Row::new("Body mirror", body_mirror);
 
 fn seated_torso() -> Line {
     seated_line(&procedural::published_status())
@@ -42,7 +41,7 @@ fn seated_torso() -> Line {
 /// the player's head.
 fn seated_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Seated {
-        return Line::waiting(prose("Not seated")).with_note(status.case.label());
+        return Line::waiting("Not seated").with_note(status.case.label());
     }
     torso_on_hips_line(status)
 }
@@ -50,11 +49,10 @@ fn seated_line(status: &ProceduralStatus) -> Line {
 /// The torso on the animation's hips: its weight and the neck's error, at full weight and posed on
 /// the hips once the hand-over has finished.
 fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
-    let detail = text!(
-        format!("{:.0}%", status.weight * 100.0),
-        ", neck ",
-        format!("{:.0}", status.neck_error_m * 100.0),
-        " cm"
+    let detail = format_smolstr!(
+        "{:.0}%, neck {:.0} cm",
+        status.weight * 100.0,
+        status.neck_error_m * 100.0
     );
     if status.weight >= 1.0 {
         Line::ok(detail)
@@ -70,15 +68,18 @@ fn wingsuit_arms() -> Line {
 /// The wingsuit's arms: their weight and the hands they queued targets for.
 fn wings_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Wingsuit {
-        return Line::waiting(prose("Not in the wingsuit")).with_note(status.case.label());
+        return Line::waiting("Not in the wingsuit").with_note(status.case.label());
     }
-    let hands = prose(match status.wing_queued {
-        [true, true] => "both hands",
-        [true, false] => "left hand",
-        [false, true] => "right hand",
-        [false, false] => "no hands",
-    });
-    let detail = text!(format!("{:.0}%", status.wing_weight * 100.0), ", ", hands);
+    let hands = format_smolstr!(
+        "{}",
+        match status.wing_queued {
+            [true, true] => "both hands",
+            [true, false] => "left hand",
+            [false, true] => "right hand",
+            [false, false] => "no hands",
+        }
+    );
+    let detail = format_smolstr!("{:.0}%, {}", status.wing_weight * 100.0, hands);
     if status.wing_queued == [true, true] && status.wing_weight >= 1.0 {
         Line::ok(detail)
     } else {
@@ -93,7 +94,7 @@ fn parachute_body() -> Line {
 /// The torso under the parachute, on the harness's hips.
 fn parachute_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::Parachute {
-        return Line::waiting(prose("Not under the canopy")).with_note(status.case.label());
+        return Line::waiting("Not under the canopy").with_note(status.case.label());
     }
     torso_on_hips_line(status)
 }
@@ -101,7 +102,7 @@ fn parachute_line(status: &ProceduralStatus) -> Line {
 fn swim_torso() -> Line {
     let status = procedural::published_status();
     if status.case != Case::Swimming {
-        return Line::waiting(prose("Not swimming")).with_note(status.case.label());
+        return Line::waiting("Not swimming").with_note(status.case.label());
     }
     torso_on_hips_line(&status)
 }
@@ -113,14 +114,14 @@ fn roof_torso() -> Line {
 /// The torso standing in a vehicle's stunt area, on the on-foot animation's hips.
 fn roof_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::StuntStanding {
-        return Line::waiting(prose("Not on a roof")).with_note(status.case.label());
+        return Line::waiting("Not on a roof").with_note(status.case.label());
     }
     torso_on_hips_line(status)
 }
 
 fn body_mirror() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.overlay.body_mirror) {
-        return Line::off(prose("Switch on in debug UI"))
+    if !CONTROLLERS_CONFIG.query(|c| c.overlay.body_mirror) {
+        return Line::off("Switch on in debug UI")
             .with_note("the visualization drawer's Body mirror");
     }
     mirror_line(&mirror::status(), Stamp::now())
@@ -130,9 +131,9 @@ fn body_mirror() -> Line {
 /// a mirror that drew before the menu opened still reads as drawing.
 fn mirror_line(status: &MirrorStatus, now: Stamp) -> Line {
     match (status.bones, status.at) {
-        (Some(0), _) => Line::failed(prose("No bones found")),
+        (Some(0), _) => Line::failed("No bones found"),
         (Some(bones), Some(at)) => {
-            let detail = text!(bones.to_string(), " bones");
+            let detail = format_smolstr!("{} bones", bones);
             if now.saturating_duration_since(at)
                 < Duration::from_secs_f32(UI.get().readouts.mirror_stale_s)
             {
@@ -141,7 +142,7 @@ fn mirror_line(status: &MirrorStatus, now: Stamp) -> Line {
                 Line::waiting(detail).with_note("not drawn since the menu opened or the pass ran")
             }
         }
-        _ => Line::waiting(prose("Not drawn yet")),
+        _ => Line::waiting("Not drawn yet"),
     }
 }
 
@@ -154,16 +155,15 @@ fn render_rate_body() -> Line {
 /// were.
 fn presentation_line(status: &PresentationStatus) -> Line {
     if let Some(error) = &status.rig_error {
-        return Line::failed(prose("No rig")).with_note(error.to_string());
+        return Line::failed("No rig").with_note(error.to_string());
     }
     if !status.measured {
-        return Line::waiting(prose(status.idle.label()));
+        return Line::waiting(format_smolstr!("{}", status.idle.label()));
     }
-    Line::ok(text!(
-        status.draws.to_string(),
-        " draws, ",
-        format!("{:.3}", status.mean_cost_us / 1000.0),
-        " ms"
+    Line::ok(format_smolstr!(
+        "{} draws, {:.3} ms",
+        status.draws,
+        status.mean_cost_us / 1000.0
     ))
     .with_note(format!(
         "now {}, last frame {:.3} ms, peak {:.3} ms, {} ticks; elbow pole {}",
@@ -208,15 +208,15 @@ mod tests {
     fn the_seated_torso_reads_its_weight_and_the_necks_error() {
         assert_eq!(
             seated_line(&status(Case::OnFoot, 1.0)).text(),
-            "WAITING, NOT SEATED"
+            "Waiting, Not seated"
         );
         assert_eq!(
             seated_line(&status(Case::Seated, 0.5)).text(),
-            "WAITING, 50%, NECK 3 CM"
+            "Waiting, 50%, neck 3 cm"
         );
         assert_eq!(
             seated_line(&status(Case::Seated, 1.0)).text(),
-            "OK, 100%, NECK 3 CM"
+            "Ok, 100%, neck 3 cm"
         );
     }
 
@@ -224,15 +224,15 @@ mod tests {
     fn the_parachute_reads_the_torsos_weight() {
         assert_eq!(
             parachute_line(&status(Case::Parachute, 1.0)).text(),
-            "OK, 100%, NECK 3 CM"
+            "Ok, 100%, neck 3 cm"
         );
         assert_eq!(
             parachute_line(&status(Case::Parachute, 0.4)).text(),
-            "WAITING, 40%, NECK 3 CM"
+            "Waiting, 40%, neck 3 cm"
         );
         assert_eq!(
             parachute_line(&status(Case::Flight, 0.0)).text(),
-            "WAITING, NOT UNDER THE CANOPY"
+            "Waiting, Not under the canopy"
         );
     }
 
@@ -240,11 +240,11 @@ mod tests {
     fn the_roof_torso_reads_its_weight_on_a_roof_only() {
         assert_eq!(
             roof_line(&status(Case::Vehicle, 0.0)).text(),
-            "WAITING, NOT ON A ROOF"
+            "Waiting, Not on a roof"
         );
         assert_eq!(
             roof_line(&status(Case::StuntStanding, 1.0)).text(),
-            "OK, 100%, NECK 3 CM"
+            "Ok, 100%, neck 3 cm"
         );
     }
 
@@ -256,7 +256,7 @@ mod tests {
             bones: Some(21),
             primitives: 30,
         };
-        assert_eq!(mirror_line(&drawn, now).text(), "OK, 21 BONES");
+        assert_eq!(mirror_line(&drawn, now).text(), "Ok, 21 bones");
         assert_eq!(
             mirror_line(
                 &MirrorStatus {
@@ -266,11 +266,11 @@ mod tests {
                 now
             )
             .text(),
-            "FAILED, NO BONES FOUND"
+            "Failed, No bones found"
         );
         assert_eq!(
             mirror_line(&MirrorStatus::default(), now).text(),
-            "WAITING, NOT DRAWN YET"
+            "Waiting, Not drawn yet"
         );
     }
 
@@ -282,7 +282,7 @@ mod tests {
         };
         assert_eq!(
             presentation_line(&waiting).text(),
-            "WAITING, NOT IN THE HEADSET"
+            "Waiting, not in the headset"
         );
         let active = PresentationStatus {
             measured: true,
@@ -290,12 +290,12 @@ mod tests {
             mean_cost_us: 21.0,
             ..PresentationStatus::default()
         };
-        assert_eq!(presentation_line(&active).text(), "OK, 6 DRAWS, 0.021 MS");
+        assert_eq!(presentation_line(&active).text(), "Ok, 6 draws, 0.021 ms");
         let unrigged = PresentationStatus {
             rig_error: Some("presentation rig: the skeleton has no bone named Neck".into()),
             ..active
         };
-        assert_eq!(presentation_line(&unrigged).text(), "FAILED, NO RIG");
+        assert_eq!(presentation_line(&unrigged).text(), "Failed, No rig");
     }
 
     #[test]
@@ -323,15 +323,15 @@ mod tests {
         };
         assert_eq!(
             wings_line(&flying(1.0, [true, true])).text(),
-            "OK, 100%, BOTH HANDS"
+            "Ok, 100%, both hands"
         );
         assert_eq!(
             wings_line(&flying(1.0, [false, true])).text(),
-            "WAITING, 100%, RIGHT HAND"
+            "Waiting, 100%, right hand"
         );
         assert_eq!(
             wings_line(&status(Case::Parachute, 0.0)).text(),
-            "WAITING, NOT IN THE WINGSUIT"
+            "Waiting, Not in the wingsuit"
         );
     }
 }

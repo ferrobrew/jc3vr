@@ -64,9 +64,9 @@ The layer's work is timed in the `presentation` slot of the frame breakdown (`pe
 
 ## Settings and readouts
 
-The layer has no settings. Its tuning, the elbow pole's and the re-solve's, is `crates/jc3vr-body/tuning/presentation.toml`. The debug UI's Body/tracking > Hand presentation feature opens with the `RENDER-RATE BODY` status row: the layer's state, the draws it re-posed, and its cost. The hand bodies' blended offset always applies.
+The layer has no settings. Its tuning, the elbow pole's and the re-solve's, is `crates/jc3vr-body/tuning/presentation.toml`. The debug UI's Body/tracking > Hand presentation feature opens with the `Render-rate body` status row: the layer's state, the draws it re-posed, and its cost. The hand bodies' blended offset always applies.
 
-The `RENDER-RATE BODY` status row (under `RENDERING` on the debug UI's Status page) reads `OK` with the number of the player's body draws the layer re-posed in its last active frame and its smoothed cost per frame in milliseconds, with each arm's elbow pole in its note (how much of the pole the arm bent toward and how far it turned the elbow from HumanIK's, or `off` for an arm bent toward HumanIK's elbow); `WAITING` with why it is idle before it has run (not in the headset, no recent tick); and `FAILED, NO RIG` for a skeleton without the bones. The skeleton's rig is logged once (`presentation: rigged the player's skeleton for the render-rate body`).
+The `Render-rate body` status row (under `Rendering` on the debug UI's Status page) reads `Ok` with the number of the player's body draws the layer re-posed in its last active frame and its smoothed cost per frame in milliseconds, with each arm's elbow pole in its note (how much of the pole the arm bent toward and how far it turned the elbow from HumanIK's, or `off` for an arm bent toward HumanIK's elbow); `Waiting` with why it is idle before it has run (not in the headset, no recent tick); and `Failed, No rig` for a skeleton without the bones. The skeleton's rig is logged once (`presentation: rigged the player's skeleton for the render-rate body`).
 
 ## Limits
 
@@ -77,7 +77,7 @@ The `RENDER-RATE BODY` status row (under `RENDERING` on the debug UI's Status pa
 
 ## What to check in the headset
 
-1. The `RENDER-RATE BODY` row reads `OK` with a few draws and well under a tenth of a millisecond, and the log has the rig line once.
+1. The `Render-rate body` row reads `Ok` with a few draws and well under a tenth of a millisecond, and the log has the rig line once.
 2. Look down at your chest and move your head quickly forward, back, and sideways: the chest and shoulders follow without trailing, and the body's shadow matches.
 3. Swing the arms quickly and punch: the elbows and upper arms move with the hands rather than catching up with them, and the forearms stay attached at both ends. Throw something heavy while jumping or falling: the hands may lag the controllers for a frame, but the forearms never part from them.
 4. Press a hand flat on a wall and push into it, then slide it along the wall: the hand stays on the wall without stuttering in and out. Move it off the wall: it follows the controller again with no lag.

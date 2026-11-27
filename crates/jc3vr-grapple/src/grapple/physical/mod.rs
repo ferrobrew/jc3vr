@@ -121,14 +121,14 @@ pub enum GrapplePhase {
 impl GrapplePhase {
     pub const fn label(self) -> &'static str {
         match self {
-            GrapplePhase::Inactive => "INACTIVE",
-            GrapplePhase::Firing => "FIRING",
-            GrapplePhase::InFlight => "IN FLIGHT",
-            GrapplePhase::Attached => "ATTACHED",
-            GrapplePhase::ReelingIn => "REELING IN",
-            GrapplePhase::Hanging => "HANGING",
-            GrapplePhase::ReeledIn => "REELED IN",
-            GrapplePhase::ScriptedWire => "SCRIPTED WIRE",
+            GrapplePhase::Inactive => "Inactive",
+            GrapplePhase::Firing => "Firing",
+            GrapplePhase::InFlight => "In flight",
+            GrapplePhase::Attached => "Attached",
+            GrapplePhase::ReelingIn => "Reeling in",
+            GrapplePhase::Hanging => "Hanging",
+            GrapplePhase::ReeledIn => "Reeled in",
+            GrapplePhase::ScriptedWire => "Scripted wire",
         }
     }
 }
@@ -155,15 +155,12 @@ pub struct GrappleStatus {
     pub reel_scale: Option<f32>,
     /// Whether a yank's boost applies to the reel.
     pub boosted: bool,
-    /// Reels the hand drove, and boosts given, since the payload loaded.
-    pub reels: u64,
-    pub boosts: u64,
+    /// The reels, boosts, and retracts since the payload loaded.
+    pub counts: GrappleCounts,
     /// The dual tethers the hook holds.
     pub tethers: u32,
     /// The retract value the pull drives, while it retracts.
     pub retract: Option<f32>,
-    /// Retracts the pull started, since the payload loaded.
-    pub retracts: u64,
     /// Whether the game squeezes the tethers, from the hand or the trigger.
     pub squeezing: bool,
     /// The highest tether tension fraction.
@@ -173,6 +170,20 @@ pub struct GrappleStatus {
     pub haptic: f32,
 }
 
+jc3vr_core::counters! {
+    /// The physical grapple's counts since the payload loaded.
+    pub struct GrappleCounters => GrappleCounts {
+        /// Reels the hand drove.
+        reels,
+        /// Boosts a yank gave the reel.
+        boosts,
+        /// Tether retracts the pull started.
+        retracts,
+    }
+}
+
+static COUNTS: GrappleCounters = GrappleCounters::new();
+
 /// The latest readout. Safe from any thread: it takes only a leaf lock.
 pub fn status() -> GrappleStatus {
     let window = Window::from_millis(GRAPPLE.get().physical.status_max_age_ms);
@@ -180,6 +191,7 @@ pub fn status() -> GrappleStatus {
         .latest()
         .map_or_else(GrappleStatus::default, |status| GrappleStatus {
             live: window.holds(status.at, Stamp::now()),
+            counts: COUNTS.snapshot(),
             ..status.value
         })
 }
@@ -225,7 +237,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     let lock_yank = locked && boost.is_some();
     if let Some(yank) = boost {
         state.boost_left_s = Some(config.reel.boost_s.max(0.0));
-        state.status.boosts += 1;
+        COUNTS.boosts.bump();
         tracing::info!(
             target: "grapple",
             pull_m = yank.distance_m,
@@ -244,7 +256,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     match (drive, state.reel_peak) {
         (Some(drive), None) => {
             state.reel_peak = Some(drive.scale);
-            state.status.reels += 1;
+            COUNTS.reels.bump();
             tracing::info!(
                 target: "grapple",
                 scale = drive.scale,
@@ -259,7 +271,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
             tracing::info!(
                 target: "grapple",
                 peak_scale = peak,
-                boosts = state.status.boosts,
+                boosts = COUNTS.boosts.get(),
                 "physical grapple: the reel ends"
             );
         }
@@ -282,7 +294,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     match (retract, state.retract_peak) {
         (Some(value), None) => {
             state.retract_peak = Some(value);
-            state.status.retracts += 1;
+            COUNTS.retracts.bump();
             tracing::info!(
                 target: "grapple",
                 tethers,
@@ -302,10 +314,10 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         }
         (None, None) => {}
     }
-    if tethers != state.status.tethers {
+    if tethers != state.tethers {
         tracing::info!(
             target: "grapple",
-            from = state.status.tethers,
+            from = state.tethers,
             to = tethers,
             "physical grapple: the tether count changes"
         );
@@ -316,7 +328,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         object: hook.is_some_and(|h| h.object_target),
         distance_m: point.distance(head),
     });
-    if let (Some(target), false) = (target, state.status.target.is_some()) {
+    if let (Some(target), false) = (target, state.attached) {
         tracing::info!(
             target: "grapple",
             object = target.object,
@@ -340,7 +352,9 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
     ];
     let haptic = line[0].max(line[1]);
 
-    state.status = GrappleStatus {
+    state.tethers = tethers;
+    state.attached = target.is_some();
+    let status = GrappleStatus {
         live: true,
         phase: hook.map_or(GrapplePhase::Inactive, |h| {
             phase(
@@ -360,9 +374,9 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         squeezing,
         tension,
         haptic,
-        ..state.status
+        counts: GrappleCounts::default(),
     };
-    STATUS.publish_at(state.status, now);
+    STATUS.publish_at(status, now);
     drop(state);
 
     for event in pulses {
@@ -409,7 +423,9 @@ struct State {
     tether_armed: bool,
     /// The highest retract value of the retract the pull drives, while it does.
     retract_peak: Option<f32>,
-    status: GrappleStatus,
+    /// The tethers on the last tick, and whether the line was attached, for the log's edges.
+    tethers: u32,
+    attached: bool,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -419,25 +435,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     reel_peak: None,
     tether_armed: false,
     retract_peak: None,
-    status: GrappleStatus {
-        live: false,
-        phase: GrapplePhase::Inactive,
-        target: None,
-        pull: PullReading {
-            speed_mps: 0.0,
-            depth_m: 0.0,
-        },
-        reel_scale: None,
-        boosted: false,
-        reels: 0,
-        boosts: 0,
-        tethers: 0,
-        retract: None,
-        retracts: 0,
-        squeezing: false,
-        tension: 0.0,
-        haptic: 0.0,
-    },
+    tethers: 0,
+    attached: false,
 });
 
 /// The published readout, apart from [`STATE`], so that the readout's readers on other threads

@@ -9,21 +9,18 @@ use jc3vr_weapons::controllers::{
     weapons,
     weapons::{hold, hold::armed, regions},
 };
+use smol_str::{SmolStr, format_smolstr};
 
-use crate::status::{Line, Row, Text, prose, text};
+use crate::status::{Line, Row};
 
-pub(crate) const LEFT_HAND: Row = Row::new("LEFT HAND", "Left hand", left_hand);
-pub(crate) const RIGHT_HAND: Row = Row::new("RIGHT HAND", "Right hand", right_hand);
-pub(crate) const LEFT_HAND_ON_GUN: Row =
-    Row::new("LEFT HAND ON GUN", "Left hand on gun", left_hand_on_gun);
-pub(crate) const RIGHT_HAND_ON_GUN: Row =
-    Row::new("RIGHT HAND ON GUN", "Right hand on gun", right_hand_on_gun);
-pub(crate) const TAKES: Row = Row::new("TAKE FROM HANDS", "Take from hands", takes);
-pub(crate) const RACKS: Row = Row::new("TAKE FROM RACKS", "Take from racks", racks);
-pub(crate) const ARMED: Row = Row::new("ARMED BESIDE", "Armed beside", armed);
-pub(crate) const RIGHT_GRIP: Row = Row::new("RIGHT HAND GRIP", "Right hand grip", right_grip);
-pub(crate) const DOCKS: Row = Row::new("SOCKETS", "Sockets", docks);
-pub(crate) const LAST_REFUSAL: Row = Row::new("LAST REFUSAL", "Last refusal", last_refusal);
+pub(crate) const LEFT_HAND: Row = Row::new("Left hand", left_hand);
+pub(crate) const RIGHT_HAND: Row = Row::new("Right hand", right_hand);
+pub(crate) const LEFT_HAND_ON_GUN: Row = Row::new("Left hand on gun", left_hand_on_gun);
+pub(crate) const RIGHT_HAND_ON_GUN: Row = Row::new("Right hand on gun", right_hand_on_gun);
+pub(crate) const TAKES: Row = Row::new("Take from hands", takes);
+pub(crate) const RACKS: Row = Row::new("Take from racks", racks);
+pub(crate) const ARMED: Row = Row::new("Armed beside", armed);
+pub(crate) const RIGHT_GRIP: Row = Row::new("Right hand grip", right_grip);
 
 fn left_hand() -> Line {
     hand(Hand::Left)
@@ -56,19 +53,16 @@ fn hand_on_gun(hand: Hand) -> Line {
     });
     let Some(on) = status.hands[hand.index()] else {
         if status.unread {
-            return Line::failed(prose("Gun's shape not read"));
+            return Line::failed("Gun's shape not read");
         }
-        return Line::waiting(prose("Not on a gun"));
+        return Line::waiting("Not on a gun");
     };
-    let line = Line::ok(text!(
-        prose(on.region.label()),
-        ", ",
-        prose(on.role.label()),
-        ", ",
-        status.braces.to_string(),
-        " braces, ",
-        status.let_go.to_string(),
-        " passed to the brace"
+    let line = Line::ok(format_smolstr!(
+        "{}, {}, {} braces, {} passed to the brace",
+        on.region.label(),
+        on.role.label(),
+        status.braces,
+        status.let_go
     ));
     match shape {
         Some(shape) => line.with_note(shape),
@@ -78,77 +72,58 @@ fn hand_on_gun(hand: Hand) -> Line {
 
 fn armed() -> Line {
     let armed = armed::status();
-    let held: Vec<Text> = Hand::BOTH
+    let held: Vec<SmolStr> = Hand::BOTH
         .into_iter()
         .filter_map(|hand| {
             let a = armed[hand.index()]?;
-            Some(text!(
-                prose(slot_label(a.slot)),
-                " in ",
-                prose(hand.label()),
-                ", ",
-                format!("{}/{}", a.magazine.0, a.magazine.1)
+            Some(format_smolstr!(
+                "{} in {}, {}/{}",
+                slot_label(a.slot),
+                hand.label(),
+                a.magazine.0,
+                a.magazine.1
             ))
         })
         .collect();
     if held.is_empty() {
-        Line::ok(prose("None"))
+        Line::ok("None")
     } else {
-        Line::ok(Text::join(held, "; "))
+        Line::ok(SmolStr::from(held.join("; ")))
     }
-}
-
-fn docks() -> Line {
-    Line::ok(text!(
-        weapons::status().docks_followed.to_string(),
-        " on their weapons"
-    ))
 }
 
 fn right_grip() -> Line {
     match grip::right_grip_read() {
-        None => Line::waiting(prose("No gun in the right hand yet")),
-        Some(read) => Line::ok(text!(
+        None => Line::waiting("No gun in the right hand yet"),
+        Some(read) => Line::ok(format_smolstr!(
+            "{}, own {:.0} deg from mirrored",
             if read.mirrored {
-                prose("Mirrored")
+                SmolStr::new_static("Mirrored")
             } else {
-                prose("Own")
+                SmolStr::new_static("Own")
             },
-            ", own ",
-            format!("{:.0}", read.angle_deg),
-            " deg from mirrored"
+            read.angle_deg
         )),
-    }
-}
-
-fn last_refusal() -> Line {
-    match hold::last_refusal() {
-        Some(refusal) => Line::ok(Text::pair(refusal.to_uppercase(), refusal)),
-        None => Line::ok(prose("None")),
     }
 }
 
 fn takes() -> Line {
     let take = hold::status().take;
-    Line::ok(text!(
-        take.held_targets.to_string(),
-        " in hands near, ",
-        take.holstered_targets.to_string(),
-        " holstered near, ",
-        take.steals.to_string(),
-        " taken"
+    Line::ok(format_smolstr!(
+        "{} in hands near, {} holstered near, {} taken",
+        take.held_targets,
+        take.holstered_targets,
+        take.steals
     ))
 }
 
 fn racks() -> Line {
     let take = hold::status().take;
-    Line::ok(text!(
-        take.rack_targets.to_string(),
-        " near, ",
-        take.rack_takes.to_string(),
-        " taken, ",
-        take.rack_copies.to_string(),
-        " copies"
+    Line::ok(format_smolstr!(
+        "{} near, {} taken, {} copies",
+        take.rack_targets,
+        take.rack_takes,
+        take.rack_copies
     ))
 }
 
@@ -159,8 +134,8 @@ fn hand(hand: Hand) -> Line {
     let origin = hold::status().origin;
     let beside = armed::status()[hand.index()].map(|a| (hand, a.slot));
     match in_hand(hand, wielded, origin, beside) {
-        Some((slot, how)) => Line::ok(text!(prose(slot_label(slot)), ", ", prose(how.label()))),
-        None => Line::ok(prose("Empty")),
+        Some((slot, how)) => Line::ok(format_smolstr!("{}, {}", slot_label(slot), how.label())),
+        None => Line::ok("Empty"),
     }
 }
 

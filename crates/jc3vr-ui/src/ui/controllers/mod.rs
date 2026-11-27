@@ -18,7 +18,6 @@ mod inventory;
 mod locomotion;
 mod map;
 mod mode;
-mod overlay;
 mod physical_hands;
 mod pouch_models;
 mod presets;
@@ -56,7 +55,6 @@ use jc3vr_input::{frame as controller_frame, frame::InteractionProfile};
 use jc3vr_physical::controllers::{
     glass as controller_glass, physical_hands as controller_physical_hands,
 };
-use jc3vr_render::controllers::overlay::pass as overlay_pass;
 use jc3vr_view::vr::input as vr_input;
 
 use crate::{
@@ -180,7 +178,14 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
             physical_hands::physical_hands_readout(ui, &controller_physical_hands::status());
             glass::glass_readout(ui, &controller_glass::status());
             ui.collapsing("Diagnostics", |ui| {
-                hand_bodies::hand_bodies_readout(ui, &controller_physical_hands::physics::status())
+                hand_bodies::hand_bodies_readout(ui, &controller_physical_hands::physics::status());
+                ui.separator();
+                grab_view::grab_view_readout(ui, &controller_physical_hands::grab_view::status());
+                ui.separator();
+                collider_view::collider_view_readout(
+                    ui,
+                    &controller_physical_hands::collider_view::status(),
+                );
             });
         },
         FeatureId::CharactersDoors => |ui, _| {
@@ -252,14 +257,6 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         _ => return None,
     };
     Some(body)
-}
-
-/// The world-space overlay, grab view, and collider view readouts, shown in the global
-/// visualization drawer.
-pub(crate) fn view_readouts(ui: &mut Ui) {
-    overlay::overlay_readout(ui, &overlay_pass::status());
-    grab_view::grab_view_readout(ui, &controller_physical_hands::grab_view::status());
-    collider_view::collider_view_readout(ui, &controller_physical_hands::collider_view::status());
 }
 
 fn vec3_drag(ui: &mut Ui, label: &str, v: &mut Vec3, speed: f64) {
