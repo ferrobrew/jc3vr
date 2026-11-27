@@ -22,6 +22,7 @@ pub(crate) use tracking_format::DecodeError;
 #[cfg(test)]
 use tracking_format::{DecodeErrorKind, VERSION};
 
+pub use crate::recorder::format::convert::hand_to_file;
 use crate::vr::{RecenterCause, RecenterKind, input::semantic::frame::SetState, stage::StageInfo};
 
 /// A whole recording, as read back. Only the tests read a recording back, to check what the
@@ -174,12 +175,6 @@ pub(crate) fn encode_frame(frame: &Frame) -> Vec<u8> {
 #[cfg(test)]
 pub(crate) fn encode_legacy_frame(frame: &Frame) -> Vec<u8> {
     tracking_format::encode_legacy_frame(&convert::frame_to_file(frame))
-}
-
-/// A hand in the file's own type, for the producers of events, which build the file's types
-/// directly.
-pub fn hand_to_file(hand: Hand) -> tracking_format::model::Hand {
-    convert::hand_to_file(hand)
 }
 
 /// A runtime value's `Debug` text as the file's label, for the producers of events that record a
