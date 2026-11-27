@@ -11,7 +11,7 @@
 //! Havok world holds are about its moving origin; they are moved to game space here with
 //! [`PhysicsSystem::m_AccumulatedShift`].
 
-use std::{fmt, num::NonZeroUsize, ptr};
+use std::{num::NonZeroUsize, ptr};
 
 use glam::{Quat, Vec3};
 use jc3gi::{
@@ -26,45 +26,16 @@ use jc3vr_core::hash::hashlittle;
 
 use crate::controllers::{
     physics::{
-        havok::vector as havok_vector,
+        error::PhysicsError,
         rigid::{BodyPose, RigidBody, Velocities},
         world::World,
     },
     telemetry::{Applied, BodyBefore, note_force},
 };
 
-/// Why a body could not be read or driven.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum BodyError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
-    /// The body id has no slot, or its slot was freed.
-    NoBody,
-    /// The body is not dynamic: static, fixed, or keyframed.
-    NotDynamic,
-    /// The body no longer belongs to the object it was taken from.
-    Reowned,
-    /// The body's motion holds a value that is not finite.
-    BadMotion,
-    /// A fixed gameplay fixture is not activated or carried.
-    Fixture,
-}
-
-impl fmt::Display for BodyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let what = match self {
-            BodyError::NoPhysicsWorld => "the physics world does not exist",
-            BodyError::NoBody => "the body has been freed",
-            BodyError::NotDynamic => "the body is not dynamic",
-            BodyError::Reowned => "the body belongs to another object",
-            BodyError::BadMotion => "the body's motion is not finite",
-            BodyError::Fixture => "the object is a fixed gameplay fixture",
-        };
-        write!(f, "physical hands: pickup: {what}")
-    }
-}
-
-impl std::error::Error for BodyError {}
+/// The substrate's error under the name the physical hands and the weapons still match on: a shim
+/// until they name [`PhysicsError`].
+pub type BodyError = PhysicsError;
 
 /// A body's state, game space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -129,22 +100,22 @@ pub unsafe fn placed_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
 ///
 /// Main thread, outside the physics step; `object` and `body` must come from a cast this tick or be
 /// held alive.
-pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<bool, BodyError> {
+pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<bool, PhysicsError> {
     if unsafe { owner_of(body) } != Some(object) {
-        return Err(BodyError::Reowned);
+        return Err(PhysicsError::Reowned);
     }
     if unsafe { fixed_fixture(object) } {
-        return Err(BodyError::Fixture);
+        return Err(PhysicsError::Fixture);
     }
     {
-        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-        let slot = unsafe { slot(world.world(), body) }.ok_or(BodyError::NoBody)?;
+        let world = unsafe { World::require() }?;
+        let slot = unsafe { slot(world.world(), body) }.ok_or(PhysicsError::NoBody)?;
         if slot.m_flags & hknpBody::IS_DYNAMIC != 0 {
             return Ok(false);
         }
     }
     if unsafe { placed_mass(object, body) }.is_none() {
-        return Err(BodyError::NotDynamic);
+        return Err(PhysicsError::NotDynamic);
     }
     let rigid = object.get() as *mut RigidObject;
     // SAFETY: checked a live rigid object above. Every call the game makes passes false, which
@@ -160,17 +131,17 @@ pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<bool, BodyError>
 /// # Safety
 ///
 /// Main thread, outside the physics step.
-pub unsafe fn position(body: u32, owner: NonZeroUsize) -> Result<Vec3, BodyError> {
+pub unsafe fn position(body: u32, owner: NonZeroUsize) -> Result<Vec3, PhysicsError> {
     match unsafe { read(body, owner) } {
         Ok(state) => Ok(state.pose.centre),
-        Err(BodyError::NotDynamic) if unsafe { placed_motion(owner, body) }.is_some() => {
-            let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-            let slot = unsafe { slot(world.world(), body) }.ok_or(BodyError::NoBody)?;
+        Err(PhysicsError::NotDynamic) if unsafe { placed_motion(owner, body) }.is_some() => {
+            let world = unsafe { World::require() }?;
+            let slot = unsafe { slot(world.world(), body) }.ok_or(PhysicsError::NoBody)?;
             let at = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
             if at.is_finite() {
                 Ok(at)
             } else {
-                Err(BodyError::BadMotion)
+                Err(PhysicsError::BadMotion)
             }
         }
         Err(e) => Err(e),
@@ -182,8 +153,8 @@ pub unsafe fn position(body: u32, owner: NonZeroUsize) -> Result<Vec3, BodyError
 /// # Safety
 ///
 /// Main thread, outside the physics step.
-pub unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, BodyError> {
-    let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+pub unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, PhysicsError> {
+    let world = unsafe { World::require() }?;
     let motion = unsafe { owned_motion(world.world(), body, owner) }?;
     let centre = Vec3::from_array(motion.m_centerOfMass.data) + world.shift;
     let orientation = Quat::from_array(motion.m_orientation.data);
@@ -194,13 +165,13 @@ pub unsafe fn read(body: u32, owner: NonZeroUsize) -> Result<BodyState, BodyErro
         && linear.is_finite()
         && local_angular.is_finite())
     {
-        return Err(BodyError::BadMotion);
+        return Err(PhysicsError::BadMotion);
     }
     let orientation = orientation.normalize();
     let [ix, iy, iz, inverse_mass] = motion.m_inverseInertia.map(half_to_f32);
     let inverse_inertia = Vec3::new(ix, iy, iz);
     if !inverse_inertia.is_finite() {
-        return Err(BodyError::BadMotion);
+        return Err(PhysicsError::BadMotion);
     }
     Ok(BodyState {
         pose: BodyPose {
@@ -226,11 +197,11 @@ pub unsafe fn drive(
     body: u32,
     owner: NonZeroUsize,
     velocities: Velocities,
-) -> Result<(), BodyError> {
+) -> Result<(), PhysicsError> {
     if !(velocities.linear.is_finite() && velocities.angular.is_finite()) {
-        return Err(BodyError::BadMotion);
+        return Err(PhysicsError::BadMotion);
     }
-    let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+    let mut world = unsafe { World::require() }?;
     let motion = unsafe { owned_motion(world.world(), body, owner) }?;
     note_force(
         body,
@@ -240,9 +211,7 @@ pub unsafe fn drive(
         },
         Some(before(motion, owner)),
     );
-    let linear = havok_vector(velocities.linear);
-    let angular = havok_vector(velocities.angular);
-    unsafe { world.world_mut().setBodyVelocity(body, &linear, &angular) };
+    unsafe { world.set_velocities(body, velocities.linear, velocities.angular) };
     Ok(())
 }
 
@@ -258,24 +227,40 @@ pub unsafe fn shove(
     owner: NonZeroUsize,
     impulse: Vec3,
     at: Vec3,
-) -> Result<(), BodyError> {
+) -> Result<(), PhysicsError> {
     if !(impulse.is_finite() && at.is_finite()) {
-        return Err(BodyError::BadMotion);
+        return Err(PhysicsError::BadMotion);
     }
-    let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+    let mut world = unsafe { World::require() }?;
     let motion = unsafe { owned_motion(world.world(), body, owner) }?;
     note_force(
         body,
         Applied::Impulse { impulse, at },
         Some(before(motion, owner)),
     );
-    let impulse = havok_vector(impulse);
-    let position = havok_vector(at - world.shift);
-    unsafe {
-        world
-            .world_mut()
-            .applyBodyImpulseAt(body, &impulse, &position)
-    };
+    unsafe { world.apply_impulse(body, impulse, at) };
+    Ok(())
+}
+
+/// Apply the linear impulse `impulse` to the body `body` at the game-space point `at`, whoever
+/// owns it: a body a ray hit this tick, which the engine leaves alone when it is static or
+/// keyframed. Fails for the invalid body id ([`PhysicsError::NoBody`]) or a value that is not
+/// finite ([`PhysicsError::BadMotion`]) before anything is recorded, and without a world.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step; `body` must come from a cast this tick.
+#[track_caller]
+pub unsafe fn push(body: u32, impulse: Vec3, at: Vec3) -> Result<(), PhysicsError> {
+    if body == PfxCharacterInstance::INVALID_BODY_ID {
+        return Err(PhysicsError::NoBody);
+    }
+    if !(impulse.is_finite() && at.is_finite()) {
+        return Err(PhysicsError::BadMotion);
+    }
+    note_force(body, Applied::Impulse { impulse, at }, None);
+    let mut world = unsafe { World::require() }?;
+    unsafe { world.apply_impulse(body, impulse, at) };
     Ok(())
 }
 
@@ -434,16 +419,16 @@ unsafe fn owned_motion(
     world: &hknpWorld,
     body: u32,
     owner: NonZeroUsize,
-) -> Result<&hknpMotion, BodyError> {
-    let slot = unsafe { slot(world, body) }.ok_or(BodyError::NoBody)?;
+) -> Result<&hknpMotion, PhysicsError> {
+    let slot = unsafe { slot(world, body) }.ok_or(PhysicsError::NoBody)?;
     if world.m_motions.is_null() {
-        return Err(BodyError::NoBody);
+        return Err(PhysicsError::NoBody);
     }
     if slot.m_flags & hknpBody::IS_DYNAMIC == 0 {
-        return Err(BodyError::NotDynamic);
+        return Err(PhysicsError::NotDynamic);
     }
     if unsafe { body_owner(world, body) } != Some(owner) {
-        return Err(BodyError::Reowned);
+        return Err(PhysicsError::Reowned);
     }
     Ok(unsafe { &*world.m_motions.add(slot.m_motionId as usize) })
 }

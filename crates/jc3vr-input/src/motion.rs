@@ -1,6 +1,7 @@
 //! The hands' recent motion: a short history of each controller's grip pose and velocities, sampled
 //! at every published frame, and the pure estimates built on it (a throw's release velocity and a
-//! strike's peak speed).
+//! strike's peak speed), and the one shaping of a release's velocity every release uses
+//! ([`shaped_release`]).
 //!
 //! The sim tick runs at roughly 30 Hz while the controllers are sampled at the display rate, so a
 //! consumer on the input tick that read only the latest frame would see one sample of a motion that
@@ -137,6 +138,34 @@ pub fn release_angular_velocity(
     (count > 0).then(|| sum / count as f32)
 }
 
+/// How a release's velocity is shaped from the hand's: the hand's own share of its velocity, scaled
+/// and capped, on top of the velocity it inherits from what carries it.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ReleaseShape {
+    /// The factor on the hand's own share; a negative factor counts as zero.
+    pub scale: f32,
+    /// The cap on the scaled share, metres per second; a negative cap counts as zero.
+    pub max_speed_mps: f32,
+}
+
+/// The velocity a release leaves with: `carry`, what the hand inherits from what carries it, plus
+/// the hand's own share (`hand` less `carry`) scaled and capped by `shape`. A release with nothing
+/// carrying it passes a zero `carry`. Zero when `hand` or `carry` is not finite, and `carry` alone
+/// when the share or the scale is not.
+///
+/// The estimate of `hand` is the caller's: a hand's history ([`release_velocity`]) or the palm's
+/// velocity on the release's tick.
+pub fn shaped_release(hand: Vec3, carry: Vec3, shape: ReleaseShape) -> Vec3 {
+    if !(hand.is_finite() && carry.is_finite()) {
+        return Vec3::ZERO;
+    }
+    let share = hand - carry;
+    if !share.is_finite() || !shape.scale.is_finite() {
+        return carry;
+    }
+    carry + (share * shape.scale.max(0.0)).clamp_length_max(shape.max_speed_mps.max(0.0))
+}
+
 /// The fastest velocity of the grip among the samples after `since_s`, or `None` without one.
 ///
 /// `samples` must be in time order.
@@ -244,6 +273,53 @@ fn velocities(samples: &[MotionSample], offset: Vec3) -> impl Iterator<Item = (f
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SHAPE: ReleaseShape = ReleaseShape {
+        scale: 2.0,
+        max_speed_mps: 8.0,
+    };
+
+    #[test]
+    fn a_release_scales_and_caps_only_the_hands_own_share() {
+        let carry = Vec3::new(30.0, 0.0, 0.0);
+        assert_eq!(
+            shaped_release(carry + Vec3::Y * 20.0, carry, SHAPE),
+            carry + Vec3::Y * 8.0
+        );
+        assert_eq!(
+            shaped_release(carry + Vec3::Y, carry, SHAPE),
+            carry + Vec3::Y * 2.0
+        );
+        assert_eq!(shaped_release(carry, carry, SHAPE), carry);
+    }
+
+    #[test]
+    fn a_release_with_nothing_carrying_it_is_the_hand_scaled_and_capped() {
+        assert_eq!(
+            shaped_release(Vec3::new(1.0, 2.0, 0.0), Vec3::ZERO, SHAPE),
+            Vec3::new(2.0, 4.0, 0.0)
+        );
+        assert!(
+            (shaped_release(Vec3::new(0.0, 0.0, 9.0), Vec3::ZERO, SHAPE).length() - 8.0).abs()
+                < 1e-5
+        );
+    }
+
+    #[test]
+    fn a_release_that_is_not_finite_leaves_with_nothing_or_its_carry() {
+        assert_eq!(shaped_release(Vec3::NAN, Vec3::ZERO, SHAPE), Vec3::ZERO);
+        assert_eq!(shaped_release(Vec3::ONE, Vec3::INFINITY, SHAPE), Vec3::ZERO);
+        let unscaled = ReleaseShape {
+            scale: f32::NAN,
+            ..SHAPE
+        };
+        assert_eq!(shaped_release(Vec3::ONE, Vec3::X, unscaled), Vec3::X);
+        let negative = ReleaseShape {
+            scale: -1.0,
+            max_speed_mps: -1.0,
+        };
+        assert_eq!(shaped_release(Vec3::ONE, Vec3::X, negative), Vec3::X);
+    }
 
     const DT: f64 = 1.0 / 90.0;
 

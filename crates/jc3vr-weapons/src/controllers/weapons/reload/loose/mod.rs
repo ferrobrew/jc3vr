@@ -88,7 +88,8 @@ fn body_status(result: Result<(), bodies::BodyError>) -> Maintenance {
             bodies::BodyError::NoPhysicsWorld
             | bodies::BodyError::NotDynamic
             | bodies::BodyError::BadMotion
-            | bodies::BodyError::Fixture,
+            | bodies::BodyError::Fixture
+            | bodies::BodyError::NoPlayer,
         ) => Maintenance::Unavailable {
             identity_lost: false,
         },
