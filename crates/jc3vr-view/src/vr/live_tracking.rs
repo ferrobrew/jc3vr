@@ -11,7 +11,7 @@ use jc3vr_input::frame::{ControllerFrame, Pose, TrackedPose};
 use openxr as xr;
 use parking_lot::Mutex;
 
-use crate::{controllers::origin_provenance::OriginEvidence, vr::convert};
+use crate::{controllers::origin_provenance::OriginEvidence, tuning::VIEW, vr::convert};
 
 /// The located head, with the exact transform used to rebase grips.
 /// `cockpit_from_local` is a transform value, not a complete origin-generation identity.
@@ -81,9 +81,6 @@ impl RawObservation {
     }
 }
 
-/// How old a publication may be and still count for current diagnostic inspection.
-pub(crate) const DIAGNOSTIC_MAX_AGE: Duration = Duration::from_millis(500);
-
 /// Publish only the sampler-owned controller frame returned with its real publication receipt.
 /// No latest-value global controller is paired with the located live head.
 pub(crate) fn publish_tracking(
@@ -105,7 +102,11 @@ pub fn publication() -> Result<RawPacket, Unavailable> {
 
 /// The latest publication's current availability, read without engine pointers.
 pub(crate) fn status() -> RawObservation {
-    observe(publication(), Instant::now(), DIAGNOSTIC_MAX_AGE)
+    observe(
+        publication(),
+        Instant::now(),
+        Duration::from_millis(VIEW.get().runtime.diagnostic_max_age_ms),
+    )
 }
 
 /// The availability of `publication` at `now`: unavailable past `max_age` or before it was

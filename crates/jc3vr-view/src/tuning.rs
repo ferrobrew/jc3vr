@@ -225,6 +225,9 @@ pub struct RuntimeTuning {
     /// How often OpenXR bring-up is retried after a failure while VR is on, whole seconds. The mod
     /// runs in flatscreen stereo between attempts.
     pub(crate) retry_interval_s: u64,
+    /// How old the live tracking publication may be and still count as available to the diagnostic
+    /// readouts, milliseconds ([`crate::vr::live_tracking`]).
+    pub(crate) diagnostic_max_age_ms: u64,
 }
 
 /// The analog thresholds of the derived presses ([`crate::vr::input::config`]).
@@ -389,6 +392,11 @@ impl Tuning for ViewTuning {
             "runtime.retry_interval_s",
             self.runtime.retry_interval_s as f32,
             600.0,
+        )?;
+
+        millis(
+            "runtime.diagnostic_max_age_ms",
+            self.runtime.diagnostic_max_age_ms,
         )?;
 
         let press = &self.press;

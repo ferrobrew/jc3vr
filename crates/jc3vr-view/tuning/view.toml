@@ -58,6 +58,7 @@ max_head_step_m = 0.08
 
 [runtime]
 retry_interval_s = 10
+diagnostic_max_age_ms = 500
 
 [press]
 trackpad_half_margin = 0.2
