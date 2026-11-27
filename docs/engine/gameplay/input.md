@@ -63,14 +63,14 @@ Extracted from `settings/keymap_gamepad.bin`, in Xbox button names. Where one bu
 
 | Context | Bindings |
 |---|---|
-| On foot | move L stick; look R stick; fire (`FIRE_RIGHT`) RT; fire grapple LB; retract tethers (`RETRACT_GRAPPLE`, overloaded with `FIRE_LEFT`) LT; release and push tethers B; throw grenade, and plant and detonate explosives in context, RB; reload X; holster hold X; jump, stunt, open parachute A; use item, enter vehicle, open wingsuit Y; melee (`MAPPING_HAMMER`) B in context; precision aim and sniper zoom R3; in the reel-in context, cancel B, boost hold LT, hang jump A, slingshot A |
-| Land vehicles | steer, and motorcycle lean and tilt, L stick; accelerate and reverse RT and LT; handbrake X; nitrous and turbo jump (`USE_VEHICLE_MOD`) hold B and tap B; vehicle weapons primary and secondary RB and LB; motorcycle personal weapon (`MC_FIRE`) RB; gunner seat hold Y; roof stunt A; exit Y; horn L3; look back, vehicle camera, and recenter R3 |
+| On foot | move L stick; look R stick; fire (`FIRE_RIGHT`) RT; fire grapple LB; retract tethers (overloaded with `FIRE_LEFT`) LT; release and push tethers B; throw grenade, and plant and detonate explosives in context, RB; reload X; holster hold X; jump, stunt, open parachute A; use item, enter vehicle, open wingsuit Y; melee B in context; precision aim and sniper zoom R3; in the reel-in context, cancel B, boost hold LT, hang jump A, slingshot A |
+| Land vehicles | steer, and motorcycle lean and tilt, L stick; accelerate and reverse RT and LT; handbrake X; nitrous and turbo jump hold B and tap B; vehicle weapons primary and secondary RB and LB; motorcycle personal weapon RB; gunner seat hold Y; roof stunt A; exit Y; horn L3; look back, vehicle camera, and recenter R3 |
 | Helicopter | collective RT and LT; cyclic (forward, back, roll) L stick; yaw R stick X; weapons RB and LB; exit Y, stunt A, nitrous hold B |
 | Plane | pitch and roll L stick; rudder X and B; thrust RT and LT; weapons RB and LB; exit Y, stunt A |
 | Boats and jetskis | steer L stick; accelerate and reverse RT and LT; fire and the jetski personal weapon RB; nitrous and turbo jump hold B and tap B; exit Y |
-| Wingsuit and parachute | steer L stick; air brake (`CANCEL`, upgrade-gated) hold B; open or close the parachute A; grapple (slingshot boost) LB; weaponized: boost (`WINGSUIT_BOOST`) RT, brake (`WINGSUIT_AIRBRAKE`) LT, weapons RB and X, evade (`WINGSUIT_EVADE` with a stick flick) and take off (`WINGSUIT_TAKEOFF` held) Y |
-| Mech | move L stick; punch (`MECH_PUNCH`) LB; jump (`MECH_JUMP`) B; gravity gun attract on hold and throw on release (`MECH_FIRE_GRAVITY_WEAPON_PRIMARY`) LT; gravity gun drop (`MECH_FIRE_GRAVITY_WEAPON_SECONDARY`) RB; right-hand weapon (`MECH_FIRE_RIGHT_HAND_WEAPON`) RT |
-| Everywhere | skip cutscene (`SKIP_CUTSCENE`, from the UI map) hold B; look at the objective (`LOOK_AT`) hold R3; release a tether fired from a vehicle (`VEHICLE_RELEASE_GRAPPLE`) d-pad down |
+| Wingsuit and parachute | steer L stick; air brake (`CANCEL`, upgrade-gated) hold B; open or close the parachute A; grapple (slingshot boost) LB; weaponized: boost RT, brake LT, weapons RB and X, evade (with a stick flick) and take off (held) Y |
+| Mech | move L stick; punch LB; jump B; gravity gun attract on hold and throw on release LT; gravity gun drop RB; right-hand weapon RT |
+| Everywhere | skip cutscene (from the UI map) hold B; look at the objective hold R3; release a tether fired from a vehicle d-pad down |
 
 `MOVE_TO_DRIVERS_SEAT` has no binding in either keymap and no gameplay reader passes it to a steering as an immediate, so a passenger reaches the driver's seat only by leaving and entering again.
 
