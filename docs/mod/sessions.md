@@ -23,7 +23,7 @@ What lands where is fixed per kind of output, in `crates/jc3vr-core/src/session/
 | `session.log` | the tracing log | |
 | `crash.log` | the crash handler, appended through a raw handle so a record survives a broken logging path | |
 | `markers.jsonl` | take markers made while no video recording runs, one JSON object per line ([capture.md](capture.md)) | |
-| `profiles/<stamp>.json` | an F9 profiler capture ([profiler.md](performance/profiler.md)) | `tools/analysis/analyze_profile.py`, ui.perfetto.dev |
+| `profiles/<stamp>.json` | an F9 profiler capture ([performance.md](performance/performance.md#the-profiler)) | `tools/analysis/analyze_profile.py`, ui.perfetto.dev |
 | `screenshots/<stamp>.png` and `<stamp>.json` | an F12 screenshot and its single-pass sidecar | |
 | `grapple-logs/<stamp>.csv` | a grapple telemetry capture ([grapple-comfort.md](body/grapple-comfort.md)) | |
 | `recordings/<stamp>/` | a recording, holding whichever halves it has (below) | |

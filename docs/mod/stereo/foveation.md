@@ -45,7 +45,7 @@ A pixel shader runs per 2x2 quad, and a quad with one live pixel runs all four l
 
 ### Cost and image differences
 
-At the town, foveation saves about 0.1 ms of GPU time per frame against none, and 0.33 ms against the models-only, per-pixel version. "The foveation's net value" in [frame-budget.md](../performance/frame-budget.md) has the per-pass figures.
+At the town, foveation saves about 0.1 ms of GPU time per frame against none, and 0.33 ms against the models-only, per-pixel version.
 
 The kept pixels were compared in single-pass with the shipped settings, the G-buffer and lighting switches on against off (quads in both, so the two drop the same pixels), inside the kept set read from the stencil mask bit (run 333, saved planes). The scene colour at the start of the post chain differed by more than 2% at 7,400 and 14,800 kept pixels per eye at the town, against 10,200 and 15,100 for the repeat; at 45 and 33 at the capital at night; at 116 and 118 in the tunnel (14 for the repeat); and at 3,400 in the meadow, against 52,000 for its repeat, whose trees move between snapshots. The final image differs at more kept pixels than the scene colour (11,300 and 6,700 at the town against 4,300 and 3,700), because the dropped pixels hold a different reconstruction and the post effects that read neighbours (the glare and the engine's anti-aliasing) carry it into kept pixels next to them. The G-buffer's depth at the dropped pixels is unchanged.
 

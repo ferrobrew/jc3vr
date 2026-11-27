@@ -82,8 +82,8 @@ The settings are `vr.*` (`VrConfig`), all on by default except where noted:
 - `loader_path`: an explicit OpenXR loader, which then has no fallback.
 - `native_resolution`: render each eye at the recommended size.
 - `own_back_buffer`: render into a mod-owned back buffer so the swapchain stays at the window size ([swapchain-ownership.md](stereo/swapchain-ownership.md)).
-- `overlap_render_update`: run the next frame's wait, view location, and render update alongside the previous frame's draw task and tail ([threading.md](threading.md#who-holds-what-across-a-frame), [frame-budget.md](performance/frame-budget.md#overlapping-the-render-update)).
-- `large_cache_cores`: keep the game's threads on the cores of the largest L3 on a processor whose L3 caches differ (`jc3vr_core::cpu_placement`, [frame-budget.md](performance/frame-budget.md#where-the-draw-tasks-threads-run)).
+- `overlap_render_update`: run the next frame's wait, view location, and render update alongside the previous frame's draw task and tail ([threading.md](threading.md#who-holds-what-across-a-frame), [performance.md](performance/performance.md#what-limits-the-frame)).
+- `large_cache_cores`: keep the game's threads on the cores of the largest L3 on a processor whose L3 caches differ (`jc3vr_core::cpu_placement`, [performance.md](performance/performance.md#what-limits-the-frame)).
 - `mirror` and `mirror_view`: the desktop mirror and what it shows, `Left` by default.
 - `freeze_mode`: a diagnostic that holds the cockpit pose or the whole render camera still, off and never saved (the debug UI's Camera feature, `vr::pose_control`).
 

@@ -45,7 +45,7 @@ Beside the frames, the recording carries events, each stamped on the frames' clo
 | `diagnostic` | a refusal or another moment a playtest needs explained | Written by `controllers::telemetry::report`, which logs the same text under `controllers`, so the log and the recording agree. |
 | `haptic` | each one-off cue the mixer takes | The hand, source, primitive, amplitude, length, and frequency. |
 | `settings` | at the start, at the head of a lookback save, and on each saved change | Every setting as TOML, so a take says what it ran with. |
-| `frame_timing` | each second | The frame-time breakdown ([frame-timing.md](../performance/frame-timing.md)); the recorder's own sampling is the `recorder` slot. |
+| `frame_timing` | each second | The frame-time breakdown ([performance.md](../performance/performance.md#the-frame-breakdown)); the recorder's own sampling is the `recorder` slot. |
 
 An ordinary take writes about 12 MB a minute before compression, most of it the poses, the controller state, and the hand joints; the reads and the encoding cost tens of microseconds a frame on the game thread.
 

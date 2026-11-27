@@ -1,6 +1,6 @@
 # Single-pass stereo
 
-Multipass stereo renders the scene twice per frame, one full CPU walk of the render-pass list per eye. The frame is bound by draw-call submission rather than by the GPU (about 20,000 draw calls per frame, half per eye, with the GPU far from saturated; [profiler.md](../performance/profiler.md) has the measurement). Single-pass collapses the two geometry walks into one, so the GPU is fed from a single submission.
+Multipass stereo renders the scene twice per frame, one full CPU walk of the render-pass list per eye. The frame is bound by draw-call submission rather than by the GPU (about 20,000 draw calls per frame, half per eye, with the GPU far from saturated; [performance.md](../performance/performance.md#what-limits-the-frame) has the measurement). Single-pass collapses the two geometry walks into one, so the GPU is fed from a single submission.
 
 The single-pass material is split across five pages:
 

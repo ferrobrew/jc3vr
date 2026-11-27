@@ -1,6 +1,6 @@
 # Single-pass draw calls
 
-Single-pass stereo ([single-pass-stereo.md](single-pass-stereo.md)) exists to cut the submissions multipass makes. A patched geometry draw is one instance-doubled submission for both eyes, but several kinds of draw are still submitted once per eye: render blocks that bake their own transform, GPU-indirect draws, unpatched draws, already-instanced draws, and the second masked run of a split fullscreen pass. The draw census counts the submissions, and the conversions below draw several of these kinds once for both eyes. [frame-budget.md](../performance/frame-budget.md) has what the remaining per-eye submissions cost.
+Single-pass stereo ([single-pass-stereo.md](single-pass-stereo.md)) exists to cut the submissions multipass makes. A patched geometry draw is one instance-doubled submission for both eyes, but several kinds of draw are still submitted once per eye: render blocks that bake their own transform, GPU-indirect draws, unpatched draws, already-instanced draws, and the second masked run of a split fullscreen pass. The draw census counts the submissions, and the conversions below draw several of these kinds once for both eyes. [performance.md](../performance/performance.md#what-limits-the-frame) has what the remaining per-eye submissions cost.
 
 ## Naming the draws in a pass range
 

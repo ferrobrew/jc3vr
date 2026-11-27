@@ -115,10 +115,7 @@
 
 ### performance/
 
-- [performance.md](mod/performance/performance.md): which performance tool answers which question, what limits the frame, and how to measure.
-- [profiler.md](mod/performance/profiler.md): the in-game CPU and GPU profiler.
-- [frame-budget.md](mod/performance/frame-budget.md): the frame-time benchmark's results at the headset's resolution.
-- [frame-timing.md](mod/performance/frame-timing.md): the always-on frame breakdown.
+- [performance.md](mod/performance/performance.md): what limits the frame at the headset's size, how to measure, the always-on frame breakdown, and the in-game CPU and GPU profiler.
 
 ### body/
 
