@@ -57,7 +57,8 @@ impl EyeView {
         }
     }
 
-    /// The projection's z row `(A, B)`, for [`linear_depth`].
+    /// The projection's z row `(A, B)`, from which the overlay's pixel shader recovers the scene's
+    /// view distance (see the module documentation).
     pub(crate) fn z_row(&self) -> (f32, f32) {
         (self.projection.z_axis.z, self.projection.w_axis.z)
     }

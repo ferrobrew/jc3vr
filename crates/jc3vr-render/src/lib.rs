@@ -10,7 +10,7 @@
 //! - [`hooks`]: the engine-pipeline detours (the graphics engine and its passes, the clock, the
 //!   draw counts, and, with the `profiler` feature, the engine-phase scopes).
 //! - [`controllers`]: the render-side pieces of the layers above: the overlay and scope renderers
-//!   and passes, and their registration in the post-draw.
+//!   and passes, which the post-draw runs directly.
 //! - [`debug`], [`screenshot`], [`readback`], [`image_writer`], and [`profiler`]: the render
 //!   diagnostics, the F12 screenshot, the staging readbacks it and the capture harness read GPU
 //!   resources through, the image writer, the GPU dispatch records, and, with the `profiler`
@@ -20,8 +20,8 @@
 //! - [`probes`]: the capture probes, the one table the capture crate above fills at install, read
 //!   with one relaxed load while nothing has asked for a capture or a benchmark.
 //! - [`register`]: what the crate registers with the layers below it (its steps at hook removal,
-//!   the debug tools' taps, and the VR teardown's flip release), which the payload's composition
-//!   calls once.
+//!   the debug tools' taps, the texture census's resize observer, and the VR teardown's flip
+//!   release), which the payload's composition calls once.
 //!
 //! The layers above reach these modules by path.
 

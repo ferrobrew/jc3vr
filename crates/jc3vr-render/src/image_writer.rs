@@ -1,5 +1,5 @@
-//! The one image writer: every PNG the mod writes (the F12 screenshot and the render trace's per-eye
-//! frames) is converted, named, encoded, and written here, on one background thread.
+//! The one image writer: every PNG the mod writes (the F12 screenshot and the capture harness's
+//! images) is converted, named, encoded, and written here, on one background thread.
 //!
 //! Callers read their pixels back on whichever thread owns the immediate context and hand over an
 //! owned [`Image`] with an [`ImageTarget`] saying what it is. The writer thread does everything that

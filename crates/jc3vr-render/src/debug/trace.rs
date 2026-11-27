@@ -135,13 +135,13 @@ pub enum TraceEvent {
         /// The cascade transform's translation row, straight from the parity slot (pre-correction).
         translation: [f32; 4],
         /// All six cascades' scale + blend band (`m_ScaleBlend`). Cascade 0 refreshes every frame;
-        /// the higher cascades are round-robined, so a per-parity vintage mismatch (the freeze
-        /// diagnostic's artifact class) shows here as values alternating between consecutive frames.
+        /// the higher cascades are round-robined, so a per-parity vintage mismatch shows here as
+        /// values alternating between consecutive frames.
         scale_blend: [[f32; 4]; 6],
         /// All six cascades' offset + texture-array slice (`m_OffsetRadius`).
         offset_radius: [[f32; 4]; 6],
         active_cascades: u32,
-        /// The anchor-fix delta about to be applied (zero when disparity is off).
+        /// The anchor-fix delta about to be applied (zero when the eye sits at the centre camera).
         anchor_delta: [f32; 3],
         /// The global sun-shadow fade scalar (`ShadowManager::GetShadowFade`) staged this dispatch --
         /// the whole-terrain shadow-strength knob. A value that flickers frame to frame in eye 0 while

@@ -1,5 +1,5 @@
 //! The overlay's D3D11 pipeline: one instanced draw per eye over a structured buffer of
-//! primitives ([`overlay_vs`](../../shaders/overlay_vs.hlsl) and `overlay_ps`), alpha-blended onto
+//! primitives (`shaders/overlay_vs.hlsl` and `shaders/overlay_ps.hlsl`), alpha-blended onto
 //! the eye's final back buffer, with the scene depth read in the pixel shader.
 //!
 //! No depth target is bound: the pixel shader tests against the main depth texture by hand, with a

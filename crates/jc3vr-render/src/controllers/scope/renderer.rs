@@ -1,6 +1,6 @@
 //! The lens's D3D11 pipeline: each eye's image copied before the overlay draws, and the lens disc
-//! drawn over the sighting eye's final back buffer by [`scope_lens_vs`](../../../shaders/scope_lens_vs.hlsl)
-//! and `scope_lens_ps`, sampling one of the copies.
+//! drawn over the sighting eye's final back buffer by `shaders/scope_lens_vs.hlsl` and
+//! `shaders/scope_lens_ps.hlsl`, sampling one of the copies.
 //!
 //! No depth target is bound, and the rasterizer does not clip against the near plane: the lens sits
 //! a few centimetres from the eye, nearer than the engine's near plane, and is drawn over everything.

@@ -51,7 +51,7 @@ use crate::{
 /// A scope method runs `body` exactly once, at the point its doc names, and brackets it with the
 /// probe's own work.
 pub trait CaptureProbes: Sync {
-    /// Brackets one draw-thread task (`CGraphicsEngine::HandleDrawThreadTask`). Called while a
+    /// Brackets one draw-thread task (`GraphicsEngine::HandleDrawThreadTask`). Called while a
     /// capture or a benchmark is armed.
     fn draw_task_scope(&self, body: &mut dyn FnMut()) {
         body();
