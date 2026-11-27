@@ -557,9 +557,6 @@ fn incompatible(existing: &BodySpec, wanted: &BodySpec, tolerance: f32) -> Optio
     if existing.system_group != wanted.system_group {
         return Some("the player's collision group changed");
     }
-    if existing.contact_events != wanted.contact_events {
-        return Some("the hits were switched on or off");
-    }
     let close = |a: f32, b: f32| (a - b).abs() <= tolerance * a.abs().max(b.abs());
     let same_shape = match (existing.shape, wanted.shape) {
         (BodyShape::Capsule(a), BodyShape::Capsule(b)) => {

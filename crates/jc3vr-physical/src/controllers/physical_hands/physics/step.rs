@@ -379,7 +379,6 @@ pub unsafe fn step() {
                 holds: gun_holds,
                 config: &b.guns,
                 placed_mute_steps: physics.lifecycle.placed_mute_steps,
-                contact_events: true,
                 group,
                 palms: targets.map(|target| {
                     target.filter(|_| fresh).map(|t| Pose {

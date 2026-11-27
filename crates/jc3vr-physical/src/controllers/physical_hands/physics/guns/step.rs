@@ -68,8 +68,6 @@ pub(crate) struct GunStep<'a> {
     pub config: &'a HeldGunsTuning,
     /// How many steps a body put somewhere, rather than moved there, ignores its contacts.
     pub(crate) placed_mute_steps: u64,
-    /// Whether the gun bodies' contacts are listened for.
-    pub contact_events: bool,
     /// The player's collision system group.
     pub group: Option<u32>,
     /// Where each controller's palm is, which its hand's body is driven to, game space; `None`
@@ -115,8 +113,6 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
                 Some("the gun left the hand")
             } else if Some(slot.body.spec().system_group) != input.group {
                 Some("the player's collision group changed")
-            } else if slot.body.spec().contact_events != input.contact_events {
-                Some("the hits were switched on or off")
             } else {
                 None
             };
@@ -266,7 +262,7 @@ unsafe fn make(
         shape: BodyShape::Shared(source.shape),
         mass_kg,
         system_group: group,
-        contact_events: input.contact_events,
+        contact_events: true,
         gravity: true,
     };
     // SAFETY: forwarded from the caller; the shape is the live gun's own body's, read just now.
@@ -323,7 +319,6 @@ unsafe fn make(
         seat_m = seat.position.length(),
         seat_error_m = made_seat.position.distance(seat.position),
         hand_off_palm_m = hand_pose.position.distance(palm.position),
-        listens = input.contact_events,
         "held guns: made a gun body and joined it to its hand"
     );
     Ok(GunSlot {
