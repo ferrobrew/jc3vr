@@ -26,7 +26,7 @@ The file goes to `recordings/<stamp>/tracking.jc3trk` in the session folder ([se
 
 ### Lookback
 
-While motion controllers and the runtime are up, the recorder keeps the last batches, encoded once as a recording writes them, over the view tuning's `recorder.lookback_window_s` and a byte bound. "Save the last N s" in Tracking capture, or F2 while no recording runs, writes it to `recordings/<stamp>/lookback.jc3trk`. Its times start where the window started, and when earlier batches were evicted the file opens with an input discontinuity.
+While motion controllers and the runtime are up, the recorder keeps the last batches, encoded once as a recording writes them, over the view tuning's `recorder.lookback_window_s` and a byte bound. "Save the last N s" in Tracking capture, or a take marker while no recording runs, writes it to `recordings/<stamp>/lookback.jc3trk`. Its times start where the window started, and when earlier batches were evicted the file opens with an input discontinuity.
 
 ### Input observations
 

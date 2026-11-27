@@ -10,7 +10,7 @@ F1 (or Numpad / through the director's keymap, or the Video feature's button) st
 
 The two halves line up by the OpenXR predicted display time, which the sidecar's `predicted_display_time_ns` and the tracking frames' `display_time_ns` share; `tracking-synth dump --from xr:<ns>` prints the tracking around a sidecar frame.
 
-F2 drops a take marker into whatever records, and with no tracking recording running it also saves the tracking lookback to `recordings/<stamp>/lookback.jc3trk`, so a moment is kept even when nothing records. The headset chord ([input/bindings.md](input/bindings.md#chords)) does the same. A marker goes into the take's sidecar while a video take runs and into the session's `markers.jsonl` otherwise, and into the tracking timeline as a `take_marker` event while tracking collects, so the copies join by `index` and `stamp`.
+Every route to a take marker (F2, the headset chord, the director's Numpad 3 and Mark buttons) drops it into whatever records, and with no tracking recording running also saves the tracking lookback to `recordings/<stamp>/lookback.jc3trk`, so a moment is kept even when nothing records. The headset chord is described in [input/bindings.md](input/bindings.md#chords). A marker goes into the take's sidecar while a video take runs and into the session's `markers.jsonl` otherwise, and into the tracking timeline as a `take_marker` event while tracking collects, so the copies join by `index` and `stamp`.
 
 ## What the video shows
 

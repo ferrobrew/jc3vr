@@ -7,13 +7,14 @@
 //! appended to `markers.jsonl` in the session folder, one JSON object per line, where the wall
 //! clock is what lines it up against a host-side recording. Either way, while a tracking recording or the
 //! lookback collects, the same marker is also noted as a `take_marker` event on the tracking
-//! timeline, joinable to the other copy by its index and stamp.
+//! timeline, joinable to the other copy by its index and stamp. With no tracking recording running,
+//! a marker also saves the lookback to carry it, so a moment is kept whichever route takes it.
 
 use std::io::Write as _;
 
 use jc3gi::clock::Clock;
 use jc3vr_core::session::SessionFile;
-use jc3vr_view::recorder::{events, events::EventKind};
+use jc3vr_view::recorder::{self as tracking, events, events::EventKind, lookback};
 use parking_lot::Mutex;
 use serde::Serialize;
 use tracking_format::event::{Label, TakeMarker};
@@ -32,7 +33,8 @@ pub struct Marker {
     pub label: String,
 }
 
-/// Record a marker with `label` (empty for an unlabelled take marker).
+/// Record a marker with `label` (empty for an unlabelled take marker), and save the lookback when no
+/// tracking recording runs to carry it.
 pub fn mark(label: &str) {
     let mut state = STATE.lock();
     state.count += 1;
@@ -70,6 +72,9 @@ pub fn mark(label: &str) {
     })));
     if let Err(marker) = crate::recorder::mark(marker) {
         write_line(&marker);
+    }
+    if !tracking::is_recording() {
+        lookback::request_save();
     }
 }
 

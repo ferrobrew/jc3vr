@@ -114,7 +114,7 @@ const HOTKEYS: &[Hotkey] = &[
         key: VK_F1,
         press: recorder::session_recording::toggle,
     },
-    // A take marker into whatever records; saves the lookback when no tracking recording runs.
+    // A take marker into whatever records.
     Hotkey {
         key: VK_F2,
         press: recorder::session_recording::mark,

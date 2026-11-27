@@ -4,12 +4,12 @@
 //! what lines them up afterwards.
 //!
 //! The take-marker action ([`mark`]) belongs with it: a marker lands in both recordings while they
-//! run, and with no tracking recording running it also saves the lookback, so a moment is kept
-//! whether or not a session recording was started.
+//! run, and every marker, whichever route takes it, also saves the lookback when no tracking
+//! recording runs ([`markers::mark`]).
 
 use std::time::{Duration, Instant};
 
-use jc3vr_view::{recorder as tracking, recorder::lookback};
+use jc3vr_view::recorder as tracking;
 use parking_lot::Mutex;
 
 use crate::{
@@ -49,13 +49,9 @@ pub fn toggle() {
     }
 }
 
-/// Drop an unlabelled take marker, and save the lookback when no tracking recording runs to carry
-/// the marker. Any thread.
+/// Drop an unlabelled take marker. Any thread.
 pub fn mark() {
     markers::mark("");
-    if !tracking::is_recording() {
-        lookback::request_save();
-    }
 }
 
 /// The pair's state, without collecting completed writers.
