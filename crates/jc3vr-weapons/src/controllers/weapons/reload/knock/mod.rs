@@ -1,13 +1,13 @@
-//! Magazine knocks use swept tip geometry and the serial detach path.
-//! Pouch magazines strike with their held tip; inserted magazines strike with their exposed base.
-//! The publication of the zone supports the grab view.
+//! Magazine knocks use swept tip geometry and the serial detach path. A pouch magazine strikes
+//! with its held tip, and a magazine inserted in the other hand's gun strikes with its exposed
+//! base. The zone is published for the grab view ([`view`]).
 //!
 //! The pouch magazine in the hand has no body in the physics world (it is drawn from the gun's own
 //! magazine part, or not at all), so the strike is a test of the held magazine's tip against the
 //! inserted magazine: a capsule down the well's axis over the magazine's visible length, in the
 //! well's moving frame, so that the gun's own motion does not count. The tip must come into the
 //! capsule from outside, between two input ticks or along the line between them, closing on it
-//! faster than the tuning's `knock.min_speed_mps` ([`KnockTuning::min_speed_mps`]) relative to the gun. A tip that rests against the
+//! faster than [`KnockTuning::min_speed_mps`] relative to the gun. A tip that rests against the
 //! magazine or slides along it does nothing.
 //!
 //! The knocked magazine leaves through the eject's own drop, with the eject's round accounting and

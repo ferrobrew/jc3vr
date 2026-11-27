@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct ReloadConfig {
     /// Reload by hand: the game's own reloads of the weapons the mod reloads are stopped, and a
-    /// magazine is ejected, taken from the belt pouch, seated in the well, and chambered by hand.
+    /// magazine is ejected, taken from the belt pouch, and seated in the well by hand, which
+    /// chambers its first round.
     /// Off, the game's timed reload plays from the reload button as it does on a gamepad.
     pub enabled: bool,
 }

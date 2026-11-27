@@ -1,8 +1,8 @@
 //! The magazine executor's part in shutdown: its lifecycle participant, and the admission it opens
 //! once the native serial callback's detour is live and closes once every hook is removed.
 //!
-//! Shutdown preparation stops magazine extraction and drains the serial executor's queue. It is
-//! ready only once no native magazine callback is running in payload code
+//! Shutdown preparation stops magazine extraction and pending ejects, and drains the serial
+//! executor's queue. It is ready only once no native magazine callback is running in payload code
 //! ([`jc3vr_body::hooks::character::magazine::active_entries`]).
 
 use std::sync::Arc;
@@ -47,7 +47,8 @@ impl ShutdownParticipant for MagazineShutdown {
                 cause: "preparation runs only on the game thread",
             });
         }
-        // This cancels only extraction. It must not stand down other gameplay during a retry.
+        // Only the magazine work is canceled: preparation can be retried, and the rest of the
+        // weapon handling must not stand down meanwhile.
         cancel_extraction_on_standdown();
         match magazine_preparation(serial::stop_and_drain(), magazine::active_entries() != 0) {
             PrepareOutcome::Ready(()) => {

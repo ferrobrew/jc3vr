@@ -243,7 +243,7 @@ fn state_waits_for_actual_result_and_no_throw_keeps_readiness_and_ownership_unch
     assert_eq!(state.status.insert_hands, None);
     assert!(engine.held.is_none());
     assert_eq!(*state.records.get(key), record);
-    // Neutral then a new direct claim is required for a retry.
+    // A retry needs a neutral grip, then a new direct claim.
     state.extract_with(&tick(0.0, 17), &inputs(false, false), &config, &mut engine);
     state.extract_with(&tick(0.0, 17), &inputs(true, true), &config, &mut engine);
     assert_eq!(state.extraction_hand(), Some(Hand::Left));
@@ -260,7 +260,8 @@ fn state_mode_cancellation_cannot_resume_a_held_claim() {
     state.extract_with(&tick(0.0, 17), &inputs(true, true), &config, &mut engine);
     state.extract_with(&tick(0.04, 17), &inputs(false, true), &config, &mut engine);
     state.cancel_extraction();
-    // UI skips begin/finish; the resumed frame can contain a stale routed claim.
+    // A UI frame skips the begin and finish halves, so the resumed frame can carry a stale routed
+    // claim.
     state.extract_with(&tick(0.2, 17), &inputs(true, true), &config, &mut engine);
     assert!(engine.submitted.is_empty());
     assert_eq!(state.extraction_hand(), None);

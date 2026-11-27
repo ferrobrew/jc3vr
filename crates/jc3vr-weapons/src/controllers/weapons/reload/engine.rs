@@ -5,7 +5,10 @@
 //! Detach calls keep no owner borrow across reentrant engine calls.
 //!
 //! - [`Character::StartReloadingWieldingWeapon`]: every animated reload start, refused while the
-//!   weapon is reloaded by hand.
+//!   local player's weapon is reloaded by hand ([`gate`]) or while the empty-gun check refuses it
+//!   ([`empty::refuses_check_request`]).
+//! - [`WeaponBase::UpdateWeapon_Parallel`]: each gun's update, run with its fire inputs zeroed and
+//!   its fire released while the reload holds the local player's gun from firing.
 //! - [`SniperWeapon::UpdateFromUserPostSim_Parallel`]: the bolt rifle's update, run with its
 //!   bolt-action setting cleared so it never queues the bolt act, and the rifle's own bolt lock
 //!   ([`SniperWeapon::m_HasFiredThisInput`]) cleared once the trigger is let go
@@ -818,7 +821,8 @@ pub(super) unsafe fn dump_cylinder(address: usize) -> Option<i32> {
     Some(rounds)
 }
 
-/// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
+/// A character's reload start, refused while the empty-gun check refuses it or while the local
+/// player's weapon is reloaded by hand (see [`gate`]).
 #[detour(address = jc3gi::character::character::Character::StartReloadingWieldingWeapon_ADDRESS)]
 fn start_reloading_wielding_weapon(character: *mut Character) {
     let local = ik::local_character();
@@ -836,6 +840,8 @@ fn start_reloading_wielding_weapon(character: *mut Character) {
         .call(character);
 }
 
+/// A gun's update, with its fire inputs zeroed for the call while the reload holds the local
+/// player's gun from firing.
 #[detour(address = WeaponBase::UpdateWeapon_Parallel_ADDRESS)]
 fn update_weapon_parallel(
     weapon: *mut WeaponBase,

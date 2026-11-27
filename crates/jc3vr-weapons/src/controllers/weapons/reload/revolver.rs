@@ -32,8 +32,8 @@ pub(super) struct Crane {
 }
 
 /// The revolvers' crane, from the Peacekeeper's skeleton and its reload clips (decoded with
-/// `tools/door_handles/havok.py`): the crane bone sits 78 mm up and 84 mm back in the model, and
-/// both clips turn it a quarter turn about Z, with about 5 mm of slide along X, held open.
+/// `tools/door_handles/havok.py`): the crane bone's pivot, and the quarter turn about Z with a
+/// small slide along X that both clips turn it through and hold it open at.
 pub(super) const CRANE: Crane = Crane {
     pivot: Vec3::new(0.0, 0.0782, -0.0838),
     open_rad: FRAC_PI_2,

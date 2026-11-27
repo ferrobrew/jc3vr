@@ -400,7 +400,7 @@ pub(crate) fn protected_rounds(weapon: usize) -> i32 {
         .map_or(0, |entry| entry.runtime.ammo.chamber_rounds())
 }
 
-/// Standdown relinquishes gating, not ammo. Every owned round is already native.
+/// A stand-down relinquishes gating, not ammo: every owned round is already native.
 pub(super) fn suspend() {
     for entry in &mut LEDGER.lock().entries {
         entry.runtime.suspend();

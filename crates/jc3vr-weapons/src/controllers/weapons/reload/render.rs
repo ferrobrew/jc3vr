@@ -3,7 +3,8 @@
 //! The input tick publishes what to draw ([`publish`]), each part with the weapon it belongs to.
 //! The late update of the held gun's parts ([`jc3vr_body::controllers::hands::parts`]) asks for each
 //! separate part's matrix ([`adjust`]) on the render thread, and the gun's own skeleton takes the
-//! pump or the bolt bone from [`bone_part`] ([`crate::controllers::weapons::reload::bones`]).
+//! pump or the bolt bone from [`bone_part`] and a revolver's crane and cylinder from
+//! [`cylinder_part`] ([`crate::controllers::weapons::reload::bones`]).
 //!
 //! A magazine in the hand is an instance of the gun's spare magazine model
 //! ([`crate::controllers::weapons::pouch_models::hand_tick`]), placed each frame at the matrix

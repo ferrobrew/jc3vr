@@ -54,7 +54,7 @@ pub(super) struct FireFacts {
     /// The gun's plan chambers a round, so its chamber decides whether it fires.
     pub(crate) chambering: bool,
     pub(crate) chamber_empty: bool,
-    /// The physical action is on and the gun's action is out of battery.
+    /// The gun's action is out of battery.
     pub(crate) out_of_battery: bool,
     /// The game's magazine-out flag.
     pub(crate) magazine_out: bool,

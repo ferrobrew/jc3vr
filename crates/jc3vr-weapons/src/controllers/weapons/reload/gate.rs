@@ -9,12 +9,12 @@
 //!   animation's request, and the launchers' and the sniper rifles' own reloads. For the local
 //!   player, while the input tick reloads either hand's weapon by hand and has done so recently, the
 //!   start is refused, so no reload act is ever queued and the game's reload state machine is
-//!   never entered. With the reload button left to the game, a start while the button is held goes
-//!   through.
+//!   never entered.
 //! - The fire hold ([`holds_fire`], from the ammunition check in
-//!   [`crate::controllers::weapons::empty`]): a gun whose chamber is empty, whose magazine is out,
-//!   or that sits in the belt pouch after a push reloaded it cannot fire. The input tick already keeps its trigger from the
-//!   game; the check clears the gun's shot as well, so that a buffered shot cannot slip through.
+//!   [`crate::controllers::weapons::empty`] and the gun update detour in the reload's `engine`): a
+//!   gun whose chamber is empty, whose magazine is out, or that sits in the belt pouch after a push
+//!   reloaded it cannot fire. The input tick already keeps its trigger from the game; the check
+//!   clears the gun's shot as well, so that a buffered shot cannot slip through.
 //! - The shots ([`on_shot`], from the per-shot seam in [`crate::controllers::weapons::fire`]): each
 //!   shot of a weapon reloaded by hand, the hand it came from, and the rounds left, which the input
 //!   tick folds into that weapon's chambers and split magazines.

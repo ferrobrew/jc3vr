@@ -1,6 +1,8 @@
 //! The action's part on a gun's own skeleton: the pump-action shotgun's pump bone
 //! ([`WeaponData::PUMP_BONE_HASH`]) and the bolt-action rifles' bolt bone
-//! ([`WeaponData::SLIDER_BONE_HASH`]), moved where the action's travel has them.
+//! ([`WeaponData::SLIDER_BONE_HASH`]), moved where the action's travel has them, and a revolver's
+//! crane and cylinder ([`WeaponData::CHAMBER_BONE_HASH`], [`WeaponData::CHAMBER_SPIN_BONE_HASH`]),
+//! turned where its cylinder has them.
 //!
 //! A gun with an animated model computes its pose in its pre-simulation update
 //! ([`WeaponData::UpdatePreSim`]), and the render phase skins that pose. A post-call detour on the
@@ -10,7 +12,7 @@
 //! clips.
 //!
 //! The update runs on the simulation's workers for every character's guns; the published weapon is
-//! checked before anything else ([`render::bone_part`]).
+//! checked before anything else ([`render::cylinder_part`], [`render::bone_part`]).
 
 use std::ffi::c_void;
 
@@ -40,7 +42,8 @@ fn gun_update_pre_sim(gun: *mut WeaponData, context: *mut c_void) -> bool {
     updated
 }
 
-/// Move `gun`'s action bone when the published weapon's gun has its action out.
+/// Move `gun`'s action bone, or a revolver's crane and cylinder, when the published weapon's gun
+/// has them out.
 ///
 /// # Safety
 ///

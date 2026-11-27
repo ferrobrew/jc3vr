@@ -7,9 +7,8 @@
 //! each shot is put back at once ([`after_shot`]), and each input tick tops up a magazine that
 //! came in short, such as a gun taken from a character ([`top_up`]). Reloading becomes optional:
 //! the magazine can still be ejected or pulled, the pouch still gives one while the magazine is
-//! out, and a seated magazine, from the pouch or the world, is full from then on. The chamber is
-//! left to the reload: a bolt or a pump is still worked after each shot, and a gun that ran dry
-//! before the ammunition became unlimited still has its action worked.
+//! out, and a seated magazine, from the pouch or the world, is full from then on. The chamber's
+//! rounds ride on top of the full magazine ([`full_total`]).
 //!
 //! Whether the rounds are unlimited is [`engine::unlimited`], the game's rule read for the local
 //! player, so that it follows the game's unlimited-ammunition option for every gun in either hand,

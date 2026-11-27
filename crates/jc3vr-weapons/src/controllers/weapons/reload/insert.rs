@@ -6,11 +6,12 @@
 //! held round catches the well when it is within the capture radius of the mouth, turned no more
 //! than the capture angle from the axis, and moving into the gun. A caught round slides only along
 //! the axis; once its top is the seat depth past the mouth it seats. Pulled back out of the capture
-//! it is held again. Letting go of the grip seats a round already more than half seated. A round
-//! let go of near the mouth and pointing roughly into the well floats in
-//! ([`FloatTuning`](crate::controllers::weapons::reload::tuning::FloatTuning)): its top
-//! travels from where the hand left it onto the axis and down to the seat depth, turning onto the
-//! axis as it goes, and seats when it arrives. Anything else let go of drops.
+//! it is held again. Letting go of the grip seats a caught round within the tuning's release
+//! window of the seat depth (`release_seat_shares`). A round let go of near the mouth and pointing
+//! roughly into the well floats in
+//! ([`FloatTuning`](crate::controllers::weapons::reload::tuning::FloatTuning)): its top travels
+//! from where the hand left it onto the axis and down to the seat depth, turning onto the axis as
+//! it goes, and seats when it arrives. Anything else let go of drops.
 
 use body_rig::math::smooth::smoothstep;
 use glam::{Quat, Vec3};

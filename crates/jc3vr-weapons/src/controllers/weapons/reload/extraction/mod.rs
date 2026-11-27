@@ -122,7 +122,7 @@ impl Pull {
 pub(super) enum DetachKind {
     /// The free hand pulls the magazine out of the well.
     Pull,
-    /// The reload button or a flick drops the magazine.
+    /// A tap (the reload button, or the fire press's double tap) drops the magazine.
     Eject,
     /// A push onto the belt pouch drops the magazine, and a fresh one loads once it is out.
     Belt,

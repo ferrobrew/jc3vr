@@ -307,7 +307,7 @@ impl Runtime {
     }
 
     /// The inserted magazine knocked out by a held pouch magazine, which then seats: the old one
-    /// drops as an eject does, and the fresh one loads only once the drop was thrown. Returns the
+    /// drops as an eject does, and the fresh one loads only once the drop is thrown. Returns the
     /// drop's outcome and the rounds the dropped magazine carries into the world.
     fn knock_and_seat(
         &mut self,

@@ -7,13 +7,16 @@
 //! Removing the magazine leaves a chambered round with the weapon, able to fire once without a
 //! magazine. A dry gun, or a manually cycled bolt or pump after a shot, needs the action worked.
 //!
-//! With the physical action on, the action is a part that follows the hand through its travel
-//! ([`crate::controllers::weapons::reload::travel`]). Off, working the action ([`ActionWork`]) is a
-//! gesture: a grab of its handle followed by a pull back along the gun's axis to the pull share of
-//! its travel. A slide or a charging handle closes when it is let
-//! go or pushed back home; a bolt or a pump has to be pushed back home. The pump is worked by the
-//! hand on the foregrip, which holds it already, so its work starts from the hand's place when the
-//! chamber empties rather than from a grab.
+//! The action worked by hand is a part that follows the hand through its travel
+//! ([`crate::controllers::weapons::reload::travel`]). [`ActionWork`] is the same work as a gesture:
+//! a grab of its handle followed by a pull back along the gun's axis to the pull share of its
+//! travel. A slide or a charging handle closes when it is let go or pushed back home; a bolt or a
+//! pump has to be pushed back home. The pump is worked by the hand on the foregrip, which holds it
+//! already, so its work starts from the hand's place when the chamber empties rather than from a
+//! grab. Only its tests step [`ActionWork`]; the reload's tick resets it and the readout shows it.
+//! Every plan the reload makes is cocked
+//! ([`ReloadPlan::cocked`](crate::controllers::weapons::reload::plan::ReloadPlan::cocked)), so no
+//! live gun's action is worked by hand.
 
 use glam::Vec3;
 use jc3vr_body::controllers::grab::{GrabVolume, GripTarget, target::TargetReach};
@@ -63,7 +66,7 @@ impl ActionKind {
         )
     }
 
-    /// Whether the action cycles by hand after every shot, with the manual action on.
+    /// Whether the action cycles by hand after every shot.
     pub const fn manual(self) -> bool {
         matches!(self, ActionKind::Bolt | ActionKind::Pump)
     }
@@ -301,8 +304,8 @@ mod tests {
 
     #[test]
     fn the_handle_of_a_gun_waiting_on_its_action_comes_first_within_its_reach() {
-        // A closed hand 9 cm from the handle, nearer the other parts: a reach the old 7 cm radius
-        // missed, after which the hand took the foregrip.
+        // A closed hand 9 cm from the handle, nearer the other parts, which takes the foregrip
+        // unless the handle's reach covers it.
         assert!(config().grab_radius_m >= 0.1);
         let mut waiting = gun_parts();
         prefer_waiting_action(&mut waiting, [Some(Vec3::ZERO), None], [true, false]);

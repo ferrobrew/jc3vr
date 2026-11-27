@@ -1,4 +1,5 @@
-//! Input-side completion of button, flick, belt, and knock magazine requests.
+//! Input-side completion of the magazine drops requested by the reload button, the fire press's
+//! double tap, the belt push, and the knock.
 //!
 //! A belt push while the gun's magazine is in drops the old magazine first, through the same
 //! request as an eject, and loads the fresh one only once the drop's result returns. A knock drops

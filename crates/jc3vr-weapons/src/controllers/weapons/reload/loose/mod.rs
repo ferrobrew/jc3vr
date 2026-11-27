@@ -13,13 +13,13 @@
 //! retirement is guessed. Unavailable physics preserves accounting. Losing body ownership
 //! quarantines a record; reused body ids cannot restore its authority without lifetime proof.
 //!
-//! While the reload
-//! wants a magazine for the held gun (its magazine is out), each noted magazine of the gun's tag
-//! within reach is a grab volume for the hand without a gun. A grip press there takes it as the
-//! round in hand, from where it lay ([`take`]): its body is carried to the hand each tick
-//! ([`carry`]), so the magazine the player sees in the hand is the one that was on the ground.
-//! Seated, it loads its own rounds and the prop is disabled ([`seat`]); let go of, it falls from
-//! the hand with the motion the carry gave it and stays in the world.
+//! While the reload wants a magazine for the held gun (its magazine is out), each noted magazine
+//! of the gun's tag ([`WeaponData::m_MagazineUniqueTag`]) within reach is a grab volume for the
+//! hand without a gun. A grip press there takes it as the round in hand, from where it lay
+//! ([`take`]): its body is carried to the hand each tick ([`carry`]), so the magazine the player
+//! sees in the hand is the one that was on the ground. Seated, it loads its own rounds and the prop
+//! is disabled ([`seat`]); let go of, it falls from the hand with the motion the carry gave it and
+//! stays in the world.
 //!
 //! [`WeaponData::ThrowAwayMagazineObject`]: jc3gi::equipment::weapon::WeaponData::ThrowAwayMagazineObject
 //! [`WeaponData::m_MagazineUniqueTag`]: jc3gi::equipment::weapon::WeaponData::m_MagazineUniqueTag
@@ -495,8 +495,8 @@ fn throw_away_magazine_object(
     };
     let expected = EJECT_ROUNDS.get();
     let admitted = if expected.is_none_or(|e| e.key.gun != gun as usize) {
-        // The original detour imported NPC rounds without removing them from native accounting.
-        // Only a local automatic drop or an already empty NPC magazine is proved import-safe.
+        // A nonempty NPC magazine's rounds stay in native accounting, so importing them would
+        // duplicate them. Only a local automatic drop or an already empty NPC magazine is safe.
         unsafe { gun.as_ref() }.and_then(|g| {
             let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
             let rounds = unsafe { g.m_Owner.as_ref() }.map(|w| w.m_MagazineAmmo.max(0));

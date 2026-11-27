@@ -1,5 +1,7 @@
-//! The reload's input-tick steps over the hands' guns, each with its own weapon: the shots folded
-//! in, the ejects, the two-handed load, the belt pushes, the action's work, and the fire hold.
+//! The reload's input tick over the hands' guns, each with its own weapon: the tick's read, and
+//! the step that runs the tick's stages in order. The shots folded in, the ejects, the two-handed
+//! load, the belt pushes, and the fire hold are here; the knocks, the extraction, the deferred
+//! drops, the cylinders, and the action's work are their sibling modules'.
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::WeaponBase;
@@ -128,7 +130,7 @@ impl State {
     ///
     /// # Safety
     ///
-    /// Game thread, before the world update, with `weapons` read this tick.
+    /// The game thread, before the world update, with `weapons` read this tick.
     pub(super) unsafe fn read_tick(
         &mut self,
         weapons: [Option<&HeldWeapon>; 2],
@@ -850,8 +852,8 @@ impl State {
             // its rounds.
             if weapon.occupied() && weapon.plan.load.ejects() {
                 if !self.queue_eject(weapon, gun, hand, DetachKind::Belt) {
-                    // A refused drop must not leave the gun held as reloaded: on the 14 November
-                    // take it read as a dead trigger until the gun left the pouch.
+                    // A refused drop must not leave the gun held as reloaded, which reads as a
+                    // dead trigger until the gun leaves the pouch.
                     self.belts[i].refuse();
                     self.event(format!(
                         "the {hand:?} gun's belt push could not drop its magazine"

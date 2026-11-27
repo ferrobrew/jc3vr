@@ -1,7 +1,6 @@
-//! The action's work by hand, on the reload's input tick: the physical action, each gun's part on
-//! its travel ([`crate::controllers::weapons::reload::travel`]), or the gesture
-//! ([`crate::controllers::weapons::reload::chamber::ActionWork`]); the chamber a worked action
-//! loads; and the parts published for drawing.
+//! The action's work by hand, on the reload's input tick: each gun's part on its travel
+//! ([`crate::controllers::weapons::reload::travel`]), the chamber a worked action loads, and the
+//! parts published for drawing.
 
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{grab::GrabVolume, haptics};

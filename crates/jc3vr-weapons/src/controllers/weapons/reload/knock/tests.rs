@@ -53,7 +53,7 @@ fn the_threshold_is_on_the_closing_speed() {
     // 2 m/s closing.
     assert!(hit(&zone, from, to, 0.02, 1.99).is_some());
     assert!(hit(&zone, from, to, 0.02, 2.01).is_none());
-    // The same strike at a higher threshold from the debug UI.
+    // A faster strike clears a higher tuned threshold.
     assert!(hit(&zone, from, to, 0.01, 3.9).is_some());
 }
 
