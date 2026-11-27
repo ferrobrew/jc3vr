@@ -66,7 +66,7 @@ use jc3gi::{
 use jc3vr_core::{hash::StateSet, published::Stamp};
 use jc3vr_view::{
     controllers::cockpit::CockpitTransform,
-    headpose::{body_relative_rotation, xr},
+    headpose::{body_relative_rotation, body_rotation},
     vr::VR_CONFIG,
 };
 use parking_lot::Mutex;
@@ -287,9 +287,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let visual_hips = {
         let world = Mat4::from(character.m_WorldMatrixT1);
         let (_, rotation, _) = world.to_scale_rotation_translation();
-        grounded::body_yaw().and_then(|yaw| {
-            relative_heading(Quat::from_rotation_y(yaw), xr::body_rotation(), rotation)
-        })
+        grounded::body_yaw()
+            .and_then(|yaw| relative_heading(Quat::from_rotation_y(yaw), body_rotation(), rotation))
     };
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
@@ -534,7 +533,7 @@ unsafe fn pose_torso(
             Mat4::from(gate.character.m_WorldMatrixT1).to_scale_rotation_translation();
         input.torso_yaw = gate
             .visual_heading
-            .and_then(|heading| relative_heading(heading, xr::body_rotation(), character_rotation));
+            .and_then(|heading| relative_heading(heading, body_rotation(), character_rotation));
     }
     // On the ground the gait clips lean the whole torso 20 to 27 degrees forward; taken out before
     // the swing, the chest stays square over the pelvis rather than tipped back toward the eyes.

@@ -18,7 +18,7 @@
 //! - its turn about the head, the hands' offsets crossed with their pushes, is smoothed over about
 //!   half a second, so the alternate arms of a crawl cancel while a stroke on one side alone turns
 //!   the body away from it, and the turn is added to the heading the right stick owns
-//!   ([`jc3vr_view::headpose::xr::add_swim_turn`]).
+//!   ([`jc3vr_view::headpose::add_swim_turn`]).
 //!
 //! A hand is in the water when it is below the head by
 //! [`StrokeTuning::water_below_eyes_m`](model::StrokeTuning::water_below_eyes_m), or anywhere underwater. A hand holding a gun strokes
@@ -129,7 +129,7 @@ pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], dt: f32) {
         dt,
     });
     if step.turn_right != 0.0 {
-        headpose::xr::add_swim_turn(step.turn_right);
+        headpose::add_swim_turn(step.turn_right);
     }
     for hand in Hand::BOTH {
         if let Some(strength) = step.caught[hand.index()] {

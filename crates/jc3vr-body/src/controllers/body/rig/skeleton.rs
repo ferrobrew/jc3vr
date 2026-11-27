@@ -121,7 +121,7 @@ pub unsafe fn after_solve(character: *mut Character) {
     let skeleton = unsafe { read_skeleton(character) };
     let world = Mat4::from(character.m_WorldMatrixT1);
     let now = Stamp::now();
-    let measured = match (skeleton, rig::estimate(), headpose::xr::cockpit_pose()) {
+    let measured = match (skeleton, rig::estimate(), headpose::cockpit_pose()) {
         (Some(skeleton), Some(estimate), Some(cockpit)) => {
             let frames = Frames {
                 cockpit: CockpitTransform::current(

@@ -47,6 +47,13 @@ pub use participants::{
     BodyFrameFilter, FrameTelemetry, HeadParticipants, body_frame_filter_registered,
     register_body_frame_filter, register_head_participants,
 };
+/// The body-bound subsystems' reads of the two sources, named here so a consumer reaches the head
+/// pose through this module rather than through either source's internals.
+pub use sim::{HeadMode, LatchState, latch_state, mode as head_mode};
+pub use xr::{
+    CockpitPose, FollowSettings, add_swim_turn, body_rotation, body_rotation_prev,
+    body_rotation_raw, cockpit_pose, follow_offset, follow_status, follow_turn,
+};
 
 /// Which source currently owns the published headpose. The flatscreen [`sim`] and the VR [`xr`]
 /// source are mutually exclusive publishers; the arbiter is a plain atomic so the sim's per-tick

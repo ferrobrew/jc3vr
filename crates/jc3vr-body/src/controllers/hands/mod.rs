@@ -157,7 +157,7 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
     {
         return None;
     }
-    let cockpit = headpose::xr::cockpit_pose()?;
+    let cockpit = headpose::cockpit_pose()?;
     let head = Pose {
         position: cockpit.position,
         orientation: cockpit.orientation,
@@ -218,7 +218,7 @@ pub(crate) fn ik_owned() -> [bool; 2] {
         || headpose::source() != headpose::Source::Vr
         || !headpose::is_active()
         || !jc3vr_core::hooks::in_gameplay()
-        || headpose::xr::cockpit_pose().is_none()
+        || headpose::cockpit_pose().is_none()
     {
         return [false; 2];
     }

@@ -78,7 +78,7 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
     if !scheme::enabled() || !scheme::is_controllers() || headpose::source() != Source::Vr {
         return None;
     }
-    let cockpit = headpose::xr::cockpit_pose()?;
+    let cockpit = headpose::cockpit_pose()?;
     let head = Pose {
         position: cockpit.position,
         orientation: cockpit.orientation,

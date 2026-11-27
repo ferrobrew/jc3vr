@@ -48,7 +48,7 @@ pub fn log_tick(look_x: f32) {
     }
     let now = Stamp::now();
     let counters = SWIM_COUNTS.snapshot();
-    let body = headpose::xr::body_rotation_raw();
+    let body = headpose::body_rotation_raw();
     let body_forward = body * Vec3::NEG_Z;
     let body_yaw = heading(body);
     let target = headpose::body_yaw_target().and_then(yaw_of);

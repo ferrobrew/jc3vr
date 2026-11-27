@@ -50,7 +50,7 @@ pub fn arms() -> [Option<MeasuredArm>; 2] {
     }
     STATE
         .lock()
-        .arms_with(Stamp::now(), headpose::xr::body_rotation)
+        .arms_with(Stamp::now(), headpose::body_rotation)
 }
 
 /// Check the current native identity before composing any hand targets from retained measurements.

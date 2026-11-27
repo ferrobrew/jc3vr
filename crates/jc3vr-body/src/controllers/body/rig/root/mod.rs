@@ -155,11 +155,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         world_scale: inputs.world_scale,
     };
     // Read before the frame's lock: the follow's turn takes the headpose's.
-    let slip = eye_rig_slip(
-        slip_arm(),
-        headpose::xr::follow_turn(true),
-        inputs.world_scale,
-    );
+    let slip = eye_rig_slip(slip_arm(), headpose::follow_turn(true), inputs.world_scale);
     let mut frame = FRAME.lock();
     if epoch != frame.seen_epoch {
         frame.seen_epoch = epoch;
@@ -272,7 +268,7 @@ fn slip_arm() -> Vec3 {
 
 /// How far the camera's eye rig carries Rico from under the eyes, cockpit `(x, z)` in room metres,
 /// for the body-frame neck-to-eyes arm `arm` (world metres), the turn `view_turn` from the body's
-/// frame to the view's ([`headpose::xr::follow_turn`]), and the world scale `world_scale`.
+/// frame to the view's ([`headpose::follow_turn`]), and the world scale `world_scale`.
 ///
 /// The tracked neck model holds the arm in the view's frame (`hooks::camera`), and the cockpit
 /// frame is the view's, so the eyes the cockpit stands over the root sit the arm as the view turns

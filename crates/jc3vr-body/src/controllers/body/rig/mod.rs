@@ -24,7 +24,7 @@ pub(crate) mod visual;
 use body_rig::math::angle::{direction, wrap, yaw_of};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
-use jc3vr_view::{headpose, headpose::xr::FollowSettings};
+use jc3vr_view::{headpose, headpose::FollowSettings};
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::config::RigConfig;
@@ -69,7 +69,7 @@ pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
         return None;
     }
     let estimate = estimate()?;
-    let view = headpose::xr::body_rotation();
+    let view = headpose::body_rotation();
     yaw_of(character_rotation.inverse() * (view * direction(estimate.yaw)))
 }
 
@@ -110,12 +110,12 @@ pub struct TorsoStatus {
 }
 
 pub fn torso_status() -> TorsoStatus {
-    let (following, follow_target) = headpose::xr::follow_status();
+    let (following, follow_target) = headpose::follow_status();
     TorsoStatus {
         estimate: estimate(),
         following,
         follow_target,
-        follow_offset: headpose::xr::follow_offset(true),
+        follow_offset: headpose::follow_offset(true),
         chest_turn: *CHEST_TURN.lock(),
     }
 }

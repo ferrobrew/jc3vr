@@ -101,7 +101,7 @@ pub fn tick(active: bool) {
         config.body_rig || config.body_estimate,
         FRESHNESS.get().overlay.frame_ms.duration(),
         |out| {
-            let view = headpose::xr::body_rotation();
+            let view = headpose::body_rotation();
             if config.body_rig
                 && let Some(d) = grounded::diagnostics()
             {

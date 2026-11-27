@@ -300,7 +300,7 @@ unsafe fn swing(character: &mut Character) {
             let offset = grip - active.head.position;
             Some(Vec2::new(offset.x, offset.z) * active.world_scale)
         });
-    let body_rotation = headpose::xr::body_rotation();
+    let body_rotation = headpose::body_rotation();
 
     let mut state = STATE.lock();
     let dt = state

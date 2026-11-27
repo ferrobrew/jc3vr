@@ -48,7 +48,7 @@ pub struct BodyIkStatus {
     /// The body-IK response differs sharply between the two — on foot the character turns to follow
     /// the head, leaving the torso little to do — so a report of "nothing moved" means different
     /// things in each.
-    pub mode: headpose::sim::HeadMode,
+    pub mode: headpose::HeadMode,
     /// The character's active animation rule-state id (`hashlittle(state_name)`), or `0` if the rule
     /// system is not readable. The game keeps only the hash, so this identifies the state
     /// without naming it: compare two captures, or hash a candidate name to confirm a guess.
@@ -94,7 +94,7 @@ impl BodyIkStatus {
     fn skipped(skip: BodyIkSkip) -> Self {
         Self {
             skip: Some(skip),
-            mode: headpose::sim::mode(),
+            mode: headpose::head_mode(),
             ..Self::default()
         }
     }
@@ -801,7 +801,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         let (lean_axis, lean_angle) = lean.to_axis_angle();
         let status = BodyIkStatus {
             skip: None,
-            mode: headpose::sim::mode(),
+            mode: headpose::head_mode(),
             state_id: active_state_type_id(character).unwrap_or(0),
             head_effector: effector,
             chest_effector,

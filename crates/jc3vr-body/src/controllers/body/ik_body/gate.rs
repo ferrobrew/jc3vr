@@ -23,7 +23,7 @@ use body_rig::{
 };
 use glam::{Mat4, Vec2, Vec3};
 use jc3vr_core::published::Stamp;
-use jc3vr_view::headpose::{teleport, xr};
+use jc3vr_view::headpose::{body_rotation, teleport};
 
 use crate::controllers::{
     body::{
@@ -781,7 +781,7 @@ struct Geometry {
 impl Geometry {
     fn of(input: &GateInput<'_>, fk: &FkPose) -> Self {
         let (_, rotation, _) = input.world.to_scale_rotation_translation();
-        let model_from_room = (rotation.inverse() * xr::body_rotation()).normalize();
+        let model_from_room = (rotation.inverse() * body_rotation()).normalize();
         let rico = RicoMeasures::of(input.rig);
         let ratio = |rico: f32, player: f32| {
             let r = rico / player;

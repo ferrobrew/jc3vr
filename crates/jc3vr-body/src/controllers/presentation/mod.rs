@@ -268,11 +268,8 @@ pub fn begin_frame() {
                 orientation: pose.orientation,
             };
             let frame = Frame {
-                up: [
-                    headpose::xr::body_rotation_prev(),
-                    headpose::xr::body_rotation(),
-                ]
-                .map(|body| body * Vec3::Y),
+                up: [headpose::body_rotation_prev(), headpose::body_rotation()]
+                    .map(|body| body * Vec3::Y),
                 poles: PoleContext {
                     teleport: teleport::epoch(),
                     mode: mode::current().mode,

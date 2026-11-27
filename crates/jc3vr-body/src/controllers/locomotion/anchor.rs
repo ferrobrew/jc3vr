@@ -8,11 +8,7 @@ use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AimState, Character};
 use jc3vr_core::{hooks::in_gameplay, published::Stamp};
 use jc3vr_view::{
-    headpose::{
-        Anchors, Source,
-        sim::{HeadMode, mode as head_mode},
-        source,
-    },
+    headpose::{Anchors, HeadMode, Source, head_mode, source},
     vr::VR_CONFIG,
 };
 use parking_lot::Mutex;

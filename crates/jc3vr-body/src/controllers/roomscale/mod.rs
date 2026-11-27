@@ -107,7 +107,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let player = body::player();
     let now = Stamp::now();
     let in_gameplay = jc3vr_core::hooks::in_gameplay();
-    let on_foot = headpose::sim::mode() == headpose::sim::HeadMode::OnFoot;
+    let on_foot = headpose::head_mode() == headpose::HeadMode::OnFoot;
     let moving = {
         let stick = body_frame::locomotion();
         stick.fresh(now) && stick.stick.length() > tuning.moving_stick

@@ -22,7 +22,7 @@ use jc3gi::{
     state::StateContext,
     types::math::{Matrix4, Vector3},
 };
-use jc3vr_view::headpose::sim::{HeadMode, LatchState};
+use jc3vr_view::headpose::{HeadMode, LatchState};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -350,10 +350,10 @@ pub fn head_decoupled(character: &Character) -> bool {
     if jc3vr_view::headpose::source() == jc3vr_view::headpose::Source::Vr {
         return true;
     }
-    if jc3vr_view::headpose::sim::mode() != HeadMode::OnFoot {
+    if jc3vr_view::headpose::head_mode() != HeadMode::OnFoot {
         return false;
     }
-    jc3vr_view::headpose::sim::latch_state() == LatchState::Decoupled
+    jc3vr_view::headpose::latch_state() == LatchState::Decoupled
         && !character
             .m_AimFlags
             .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple)
