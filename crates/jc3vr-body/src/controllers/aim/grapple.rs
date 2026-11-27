@@ -3,11 +3,12 @@
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! Every grapple consumer reads the grapple slot ([`TargetType::TARGET_GRAPPLE`]) of the player's
-//! aim control, and every part of the aim control that fills that slot takes its ray from one of two
-//! getters: the adjusted camera matrix ([`PlayerAimControl::GetAdjustedCameraMatrix`]) and the
+//! aim control, and every part of the aim control that fills that slot takes its ray from one of
+//! two getters: the adjusted camera matrix ([`PlayerAimControl::GetAdjustedCameraMatrix`]) and the
 //! camera matrix (`GameCameraManager::GetCameraMatrix`). So rather than writing the slot by hand,
 //! the engine fills it from the grapple ray: while a thread-local view override is set, both
-//! getters return a camera matrix built from the grapple ray ([`ray::view_matrix`]).
+//! getters return a camera matrix built from the grapple ray
+//! ([`view_matrix`](crate::controllers::aim::ray::view_matrix)).
 //!
 //! - The direct-aim raycast ([`update_direct_aim`]) runs twice. The first pass, under the override,
 //!   fills every slot from the grapple ray with the engine's own filter, range, holey-geometry, and

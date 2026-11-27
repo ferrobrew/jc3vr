@@ -3,8 +3,8 @@
 //!
 //! The game stage runs at the top of the world's pre-simulation queue, after the update-queue
 //! commit, whenever the queue runs, and elsewhere (a paused update, or an inline stage) with
-//! spawning refused. The reasons are with the stage (`controllers::bindings::stage`); the acts that
-//! spawn such objects check [`spawn`].
+//! spawning refused. The reasons are with the stage (the gameplay crate's
+//! `controllers::bindings::stage`); the acts that spawn such objects check [`spawn`].
 
 use std::cell::Cell;
 

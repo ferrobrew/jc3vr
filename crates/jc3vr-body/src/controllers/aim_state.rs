@@ -27,7 +27,8 @@
 //!   handling ([`PreWeaponHookFn`]), registered at install
 //!   ([`crate::contributions::BodyContributions::pre_weapon_hooks`]), in the table's order.
 //!
-//! Every part acts only under the controller scheme, so the game behaves as before otherwise.
+//! Every part acts only under the controller scheme; under the gamepad scheme the game's own
+//! behaviour stands.
 
 use std::{
     cell::Cell,

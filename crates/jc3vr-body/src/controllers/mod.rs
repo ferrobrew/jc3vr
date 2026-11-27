@@ -9,8 +9,9 @@
 //! - [`clock`]: the game's clock, which its slow motion slows, against the player's real one;
 //! - [`grab`]: the grip model: what each hand's grip would take among the targets every subsystem
 //!   provides, when it takes it, and the markers that show it;
-//! - [`body`]: the player's body dimensions, their calibration in the headset, and the remap onto
-//!   the character's proportions;
+//! - [`body`]: the player's body: its dimensions, their calibration in the headset, and the remap
+//!   onto the character's proportions, the grounded rig, the procedural body, the body IK, the firm
+//!   ragdoll, the body estimator, the mirror, and the weapon-agnostic body;
 //! - [`gamepad_setting`]: the game's active-input-device setting held at the gamepad under the
 //!   controller scheme;
 //! - [`aim_state`]: the aim-state pin, the mental-state cuts, and skipping the player's aim IK;

@@ -20,9 +20,9 @@
 //! rather than being named from here: [`contributions::BodyContributions`] holds the hands' stage
 //! table and late observers, the aim's weapon hooks, the climb's readers, the palms' push, the body
 //! mirror's attachment sampler, and the character hooks' refusals and consumers. The composition
-//! fills it at install and registers it once ([`contributions::register`]). The crate's own tests register a configuration root of
-//! their own (`test_config`) holding the groups the body-bound subsystems read, and share the
-//! fixtures in `test_support`.
+//! fills it at install and registers it once ([`contributions::register`]). The crate's own tests
+//! register a configuration root of their own (`test_config`) holding the groups the body-bound
+//! subsystems read, and share the fixtures in `test_support`.
 
 pub mod contributions;
 pub mod controllers;

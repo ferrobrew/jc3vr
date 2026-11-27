@@ -6,10 +6,11 @@
 //! palm in the rig at once without the hands moving. The mod makes each of them, so each is an
 //! event: the view counts the one-tick turns of the body frame ([`headpose::xr::rig_turn_count`])
 //! and the re-bases of the cockpit frame ([`rebase_count`]), and a reader whose count changed since
-//! its last tick starts its motion afresh, on that tick and the next. A turn the game makes in one tick (a respawn, a
-//! cutscene, a teleport) has no event; past the tuning's `rig.unannounced_turn_rad` between two of
-//! a reader's ticks, it counts as a jump too. That angle is wider than any smooth turn makes in a
-//! tick, so a fast stick or mouse turn is the body turning, never a jump.
+//! its last tick starts its motion afresh, on that tick and the next. A turn the game makes in one
+//! tick (a respawn, a cutscene, a teleport) has no event; past the tuning's
+//! `rig.unannounced_turn_rad` between two of a reader's ticks, it counts as a jump too. That angle
+//! is wider than any smooth turn makes in a tick, so a fast stick or mouse turn is the body
+//! turning, never a jump.
 
 use glam::Quat;
 use jc3vr_view::{headpose, vr::rebase_count};

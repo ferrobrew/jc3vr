@@ -1,7 +1,7 @@
-//! Fixtures the body-bound subsystems' tests share, which move with them to the body crate.
+//! Fixtures the body-bound subsystems' tests share.
 //!
-//! The head pose's participants ([`HeadParticipants`]) are registered at install by the crate's
-//! composition. A test that drives the head composition without that install registers
+//! The head pose's participants ([`HeadParticipants`]) are registered at install by the gameplay
+//! crate's head-pose registration. A test that drives the head composition without that install registers
 //! [`register_head_participants`]'s table instead. No body frame filter is registered, so the head
 //! pose passes the body frame through as it does while no grapple runs, which no body test starts.
 

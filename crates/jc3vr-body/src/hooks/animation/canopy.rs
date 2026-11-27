@@ -12,12 +12,12 @@
 //! Two places catch the opening. The ordinary act transitions (`ACT_TRIGGER_PARACHUTE` here) run
 //! through the machine's event handling, which sets the state without calling
 //! [`StateMachineInstance::SetStateInternal`], so the local controller's animation update checks
-//! the body machine's current state before it evaluates the pose ([`skip_before_evaluation`]).
-//! The queued acts' event handling runs in the character's serial state-machine pass, before the
-//! pass that updates the animation controller in the same tick, so the check sees an opening entered
+//! the body machine's current state before it evaluates the pose ([`skip_before_evaluation`]). The
+//! queued acts' event handling runs in the character's serial state-machine pass, before the pass
+//! that updates the animation controller in the same tick, so the check sees an opening entered
 //! that tick before any of its pose is evaluated. The controller's update runs as a parallel job,
-//! so the check may run on a worker thread. The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
-//! external actions) are caught as they happen.
+//! so the check may run on a worker thread. The transitions that do call `SetStateInternal`
+//! (`AnimationRuleSystem::SetStateById` and external actions) are caught as they happen.
 
 use std::sync::LazyLock;
 

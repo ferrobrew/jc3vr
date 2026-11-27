@@ -107,8 +107,9 @@ fn get_parachute_steering_values(
 }
 
 /// Whether the canopy's turn of the yaw toward the velocity is held off this call: for the first
-/// [`ALIGN_HOLD_S`] of the canopy, while the horizontal speed is below [`ALIGN_MIN_MPS`], and while
-/// the velocity points more than [`ALIGN_REVERSED_RAD`] from the facing. The game's alignment runs
+/// input tuning's `parachute.align_hold_s` of the canopy, while the horizontal speed is below
+/// `parachute.align_min_mps`, and while the velocity points more than
+/// `parachute.align_reversed_rad` from the facing. The game's alignment runs
 /// at full strength from the canopy's first update out of a reel, unlike an opening out of a fall,
 /// and the reel's speed falls through zero and overshoots backward as the canopy opens, which reads
 /// as a heading error of half a turn: on the 14 November take the canopy turned Rico 39 degrees

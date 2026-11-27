@@ -3,9 +3,9 @@
 //! The swim family is a separate locomotion pipeline that never touches the on-foot orientation
 //! machinery, so nothing in [`crate::hooks::input::locomotion`] applies here. It turns the body two
 //! ways the player does not own: the movement cores rotate toward the *camera*-relative stick, and
-//! past a 65-degree threshold the input tasks dispatch 120-degree turn clips whose animated slerp
-//! replaces the rotation outright. In VR the view rides the body frame, so both rotate the world
-//! under the player. See `docs/engine/gameplay/swim-locomotion.md` for the engine side and
+//! past a threshold angle the input tasks dispatch turn clips whose animated slerp replaces the
+//! rotation outright. In VR the view rides the body frame, so both rotate the world under the
+//! player. See `docs/engine/gameplay/swim-locomotion.md` for the engine side and
 //! `docs/mod/body/swim-yaw.md` for the design.
 //!
 //! Four detours put the right stick in charge, all scoped to the local player:
@@ -25,10 +25,10 @@
 //! After each core runs, [`propel_strokes`] joins the arm strokes' swim speed
 //! ([`strokes::propulsion`]) to the velocity the core wrote, along the way the swimmer faces. The
 //! cores take their speed from the animation's root motion and only the direction from the stick,
-//! so a stick written smaller than full does not swim slower; the strokes set the velocity
-//! instead. `CPfxCharacterInstance::SetOrientation` is deliberately not
-//! hooked: it receives the orientation composed with the frame's swimming capsule offset, which for
-//! the surface crawl pose is a quarter turn about X, so a yaw rewrite there is at gimbal lock.
+//! so a stick written smaller than full does not swim slower; the strokes set the velocity instead.
+//! `CPfxCharacterInstance::SetOrientation` is deliberately not hooked: it receives the orientation
+//! composed with the frame's swimming capsule offset, which for the surface crawl pose is a quarter
+//! turn about X, so a yaw rewrite there is at gimbal lock.
 
 use std::cell::Cell;
 

@@ -64,6 +64,7 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // plus the facial bones, so every vertex weighted anywhere on the head (face, eyes, ears,
         // and the hair riding HEAD) collapses. Invalid lookups are filtered by the publish (a
         // missing name must not collapse the root).
+        //
         // The instance-info pointers for exact draw ownership: each model instance's embedded
         // CRBIInfo is the `info` every one of its block draws receives.
         let rbi_infos: [usize; AnimatedModel::MODEL_INSTANCE_SLOTS as usize] =
@@ -95,11 +96,12 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             bone(b"fRightEar"),
         ]);
 
-        // HEAD: the full headpose pose, in a single SetJoint. The head/neck/eye anchors are captured PRE-IK in
-        // `character_update_pass_finalize_pose_parallel`: this hook runs last, after the HumanIK
-        // solve *and* after CalculateModelSpacePose, so a capture here would read the IK-solved head
-        // and chase the very target HIK pulls it toward (the feedback loop). This hook only consumes
-        // the published anchors and applies the head override on top of the solved pose.
+        // HEAD: the full headpose pose, in a single SetJoint. The head, neck, and eye anchors are
+        // captured before the solve in `character_update_pass_finalize_pose_parallel`: this hook
+        // runs last, after the HumanIK solve *and* after CalculateModelSpacePose, so a capture here
+        // would read the IK-solved head and chase the very target HIK pulls it toward (the feedback
+        // loop). This hook only consumes the published anchors and applies the head override on top
+        // of the solved pose.
         let character_world = glam::Mat4::from(character.m_WorldMatrixT1);
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
         let joint_translation = |joint: &Joint| {

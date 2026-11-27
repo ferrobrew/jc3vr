@@ -9,9 +9,9 @@
 //! again in it, and one written after is overwritten by the next tick's.
 //!
 //! So when a reel or the grapple lock lets the local player go in the air with a speed above the
-//! fall's, the cap itself is raised to that speed and eased back to the game's over
-//! [`CARRY_S`]: the fall and the suit then keep the reel's speed and lose it as smoothly as the
-//! drag and the cap allow. Gravity, drag, lift, and steering stay the game's.
+//! fall's, the cap itself is raised to that speed and eased back to the game's over the input
+//! tuning's `air.carry_s`: the fall and the suit then keep the reel's speed and lose it as smoothly
+//! as the drag and the cap allow. Gravity, drag, lift, and steering stay the game's.
 //!
 //! [`NAirMovement_UpdateAirPhysics`]: jc3gi::input::parachute::NAirMovement_UpdateAirPhysics
 

@@ -412,10 +412,11 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             return;
         }
 
-        // Respect the same gates the engine checks before the HasTargets gate (docs/engine/character/humanik.md):
-        // the global HIK enable and the per-character reduced-LOD bit. Queuing while gated off would
-        // leave targets unconsumed (neither the solve nor ClearTargets runs), so skip cleanly and
-        // log the transition once rather than per frame.
+        // Respect the same gates the engine checks before the HasTargets gate
+        // (docs/engine/character/humanik.md): the global HIK enable and the per-character
+        // reduced-LOD bit. Queuing while gated off would leave targets unconsumed (neither the
+        // solve nor ClearTargets runs), so skip cleanly and log the transition once rather than per
+        // frame.
         let hik_globally_enabled = *get_Character_EnableHIK();
         let reduced_lod = character
             .m_LodFlags
@@ -431,7 +432,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         }
         GATE_SKIP_LOGGED.store(false, Ordering::Relaxed);
 
-        // The head bone index maps to a HumanIK effector (expected 15); -1 means unmapped — skip.
+        // The head bone index maps to a HumanIK effector; -1 means unmapped, and nothing is queued.
         let effector = character.m_HIK.GetEffectorIdFromBoneIndex(head_index);
         if !(0..HumanIK::EFFECTOR_SLOTS as i32).contains(&effector) {
             log_unmapped_effector(effector);
@@ -443,9 +444,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
 
         // The head world target is the head bone's place under the headpose, the same point the
         // procedural torso swings the neck toward: the camera's neck pivot, so a look down turns
-        // the head on the neck instead of sinking it below the shoulders. It is transformed into character-model space — the space
-        // AddEffectorTargetPosition expects (docs/engine/character/humanik.md) — plus the optional
-        // tuning offset.
+        // the head on the neck instead of sinking it below the shoulders. It is transformed into
+        // character-model space, the space AddEffectorTargetPosition expects
+        // (docs/engine/character/humanik.md), plus the optional tuning offset.
         let scale = VR_CONFIG.lock().world_scale;
         let target_world = head_bone_world(character_rotation, scale);
         let target_model =
@@ -510,8 +511,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // leaning *forward* is mostly a hip hinge, and rotating about a point up in the back tips the
         // chest without carrying the torso forward the way a hinge would. Pivoting lower trades angle
         // for travel — the same head displacement resolves to a smaller rotation about a longer arm,
-        // so the shoulders move further. `pivot_drop` picks the blend; the anisotropic version, with
-        // the pivot chosen per axis, is the follow-up if this confirms the theory.
+        // so the shoulders move further. `pivot_drop` picks the blend.
         let joint_position = |bone: u32| pose.read(bone).map(|joint| joint_translation(&joint));
         let Some(spine_pivot) = pose
             .safe_index(character.GetSafeIndex(SafeBoneIndex::SPINE))
@@ -567,8 +567,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
 
         // While aiming, the torso targets and hand pins stand down wholesale (the head target
         // remains). The aim IK claims only the one arm effector it rotates but needs the whole
-        // chain free to swing — per-effector deferral left the other pins clamping aim to the
-        // authored sweep cone (~±30°).
+        // chain free to swing: a per-effector deferral would leave the other pins clamping the aim
+        // to the authored sweep cone.
         let defer_to_aim = character
             .m_AimFlags
             .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
@@ -586,8 +586,8 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // rest-frame knowledge is involved, and the same reach-plus-pull recipe the engine's own foot
         // and hip IK uses for a bone it wants placed.
         // Resolved before the neutral-torso guard so the debug readout can tell "this rig has no
-        // shoulder nodes" apart from "there was nothing to do this frame" — the two look identical
-        // from a count of targets queued, and the first masqueraded as the second for a while.
+        // shoulder nodes" apart from "there was nothing to do this frame": the two look identical
+        // from a count of targets queued.
         let shoulder_bones = [
             (Hand::Left, Effector::LEFT_SHOULDER as i32),
             (Hand::Right, Effector::RIGHT_SHOULDER as i32),

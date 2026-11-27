@@ -12,17 +12,16 @@
 //! physics has them.
 //!
 //! The patch is a byte in the game's code, so it acts for every character in a wingsuit; only the
-//! player flies one. It is applied while the head pose comes from the headset,
-//! and reverted otherwise, through the hooks' patcher, which also reverts it on unload.
+//! player flies one. It is applied while the head pose comes from the headset, and reverted
+//! otherwise, through the hooks' patcher, which also reverts it on unload.
 //!
 //! The evade is a barrel roll ([`ACT_BOOST_WINGSUIT_BARREL_ROLL`]): the clip rolls the body a full
-//! turn and carries it sideways. The arms throw it
-//! (`vehicles::wingsuit_evade`), and the view rolls with the body. With the
-//! evade switched off, it is a roll the player never asked for: the air physics queues it straight
-//! on the animated model, so the `Character::QueueAct` filters never see it, and the animated
-//! model's act queue asks [`drops_act`] instead, which drops it for the local player's model while
-//! the head pose comes from the headset. The roll's directions and recovery are segments of its
-//! clip, so the one act covers every evade.
+//! turn and carries it sideways. The arms throw it (`vehicles::wingsuit_evade`), and the view rolls
+//! with the body. With the evade switched off, it is a roll the player never asked for: the air
+//! physics queues it straight on the animated model, so the `Character::QueueAct` filters never see
+//! it, and the animated model's act queue asks [`drops_act`] instead, which drops it for the local
+//! player's model while the head pose comes from the headset. The roll's directions and recovery
+//! are segments of its clip, so the one act covers every evade.
 //!
 //! [`WingsuitBlendState_StallFlagSet`]: jc3gi::input::parachute::get_WingsuitBlendState_StallFlagSet
 //! [`ACT_BOOST_WINGSUIT_BARREL_ROLL`]: jc3gi::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL

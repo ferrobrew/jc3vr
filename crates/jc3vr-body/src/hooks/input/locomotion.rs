@@ -98,8 +98,8 @@ fn movement_jump_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c
     let character = unsafe { character_from_context(ctx) }
         .filter(|c| c.m_IsLocalCharacter && head_decoupled(c));
     // Clear the weapon-aim bit around the update so its aim-target-facing branch takes the
-    // non-aiming fallback. This covers only the aim-target facing path; the stick-gated air-steer is handled separately in
-    // `update_fall_steering`.
+    // non-aiming fallback. This covers only the aim-target facing path; the stick-gated air-steer
+    // is handled separately in `update_fall_steering`.
     match character {
         Some(character) => {
             let saved = character.m_AimFlags;
@@ -343,10 +343,10 @@ pub fn head_decoupled(character: &Character) -> bool {
     // Under the VR source the HMD owns the head and the stick owns the body in *every* mode -- on
     // foot, airborne (a jump), hanging from a tether under a helicopter, or in a vehicle -- so the
     // body must never turn toward the head. Gating this on `OnFoot` (as the flatscreen branch below
-    // must, since there the head *is* the mouse-look that should turn the body) let the native
-    // aim-turn drag the body around whenever the mode detector fell out of `OnFoot`: the yaw kick on
-    // jumping and the head-driven body spin while dangling from a helicopter both land in `Other`,
-    // where the suppression used to switch off.
+    // must, since there the head *is* the mouse-look that should turn the body) would let the
+    // native aim-turn drag the body around whenever the mode detector falls out of `OnFoot`: the
+    // yaw kick on jumping and the head-driven body spin while dangling from a helicopter both land
+    // in `Other`.
     if jc3vr_view::headpose::source() == jc3vr_view::headpose::Source::Vr {
         return true;
     }
@@ -426,7 +426,7 @@ fn move_input_magnitude() -> Option<f32> {
     }
 }
 
-/// The source-level fix for the animation war the slide used to fight downstream: while sliding,
+/// The source-level fix for the animation war a downstream slide would fight: while sliding,
 /// overwrite the freshly written blackboard move direction with camera-forward, so every consumer
 /// in the input-task layer -- act selection, starts, stops, plant-and-turns, rotate-on-spot --
 /// natively behaves as if the player were moving forward: calm forward locomotion, no turn acts to
@@ -583,9 +583,7 @@ fn evaluate_character_displacement(
     // The direction is consumed in the *character's* frame, not world space (established in-game:
     // a world-space write slid in facing-dependent directions, correct at exactly one body yaw),
     // so bring the world move direction into the frame of the orientation matrix the game passed
-    // in. If the slide still tracks the facing after this (error doubling with yaw instead of
-    // cancelling), the rotation convention of `Matrix4` -> glam is inverted here and the
-    // `inverse()` should be dropped.
+    // in.
     if let Some(move_dir) = slide_move_dir(character)
         && let Some(out_direction) = unsafe { out_direction.as_mut() }
         && let Some(character) = unsafe { character.as_mut() }

@@ -9,7 +9,7 @@
 //! motion, the body is dynamic, and the body's engine instance
 //! ([`hknpWorld::BODY_PROPERTY_PFX_INSTANCE`]) is still owned by the object. The positions the
 //! Havok world holds are about its moving origin; they are moved to game space here with
-//! [`PhysicsSystem::m_AccumulatedShift`].
+//! [`PhysicsSystem::m_AccumulatedShift`](jc3gi::physics::PhysicsSystem::m_AccumulatedShift).
 
 use std::{num::NonZeroUsize, ptr};
 
