@@ -1,84 +1,73 @@
 # Grapple comfort
 
-The grapple is JC3's most-used traversal mechanic, and unfiltered in VR it is the most uncomfortable one: firing at anything off-axis swings the view violently, with rotation the inner ear never feels. This doc describes the filter that fixes it (issue #36). The implementation lives in `crates/jc3vr-grapple/src/grapple/`; the engine-side grapple machinery it reads is documented in `docs/engine/gameplay/grapple-pipeline.md`.
+The grapple is JC3's most-used traversal mechanic, and unfiltered in VR it is the most uncomfortable one: firing at anything off-axis swings the view violently, with rotation the inner ear never feels. The grapple's comfort filter removes that rotation. The implementation is in `crates/jc3vr-grapple/src/grapple/`; the engine-side grapple machinery it reads is in [grapple-pipeline.md](../../engine/gameplay/grapple-pipeline.md).
 
-## The problem: rotation applied twice
+## Rotation applied twice
 
-You aim the grapple by looking at the target, so the head pose already carries the rotation toward it. The engine then rotates the character's root toward the same target — first the fire act's directional alignment, a fast turn through a large angle before the wire even spawns, then `NReeledInController::RotateToGrappleTarget` during the reel. The alignment's angle and rate limits have no code constant and are not yet confirmed; they are most likely authored in the fire act's animation data. The headpose composes the view as `body × head`, so that rotation lands twice and the view sweeps *past* the thing you're looking at.
+The player aims the grapple by looking at the target, so the head pose already carries the rotation toward it. The engine then rotates the character's root toward the same target: first the fire act's directional alignment, a fast turn through a large angle before the wire spawns, then `NReeledInController::RotateToGrappleTarget` during the reel. The alignment's angle and rate limits have no code constant and are unverified; they are most likely authored in the fire act's animation data. The head pose composes the view as `body × head`, so that rotation lands twice and the view sweeps past the thing the player is looking at.
 
-The fix filters the body-driven inputs to that composition while the grapple owns the character. The HMD's own tracking passes through untouched in both rotation and position, per the "no smoothing on the HMD→camera path" rule in `head-and-body.md`. Three pieces cooperate: the body-frame hold, the yaw handoff, and the landing-snap absorber. The grapple registers them with the head pose as its body frame filter (`headpose::BodyFrameFilter`, from the grapple crate's `register`), so the head pose names no grapple.
+The filter acts on the body-driven inputs to that composition while the grapple owns the character. The headset's own tracking passes through untouched in both rotation and position, per the rule against smoothing the headset-to-camera path in [head-and-body.md](head-and-body.md). Three pieces cooperate: the body-frame hold, the yaw handoff, and the landing-snap absorber. The grapple registers them with the head pose as its body frame filter (`headpose::BodyFrameFilter`, from the grapple crate's `register`), so the head pose names no grapple.
 
 ## The body-frame hold
 
-While the grapple is active, `filter_body_rotation` blends the body rotation the head composes onto toward a filtered frame, per `headpose.grapple.mode`:
+While the grapple is active, `filter_body_rotation` blends the body rotation the head composes onto toward a filtered frame, per the setting `headpose.grapple.mode`:
 
-- **Hold view** (default): the frame the previous render composed with, held from fire to landing. The view stays world-stable — what you're looking at stays looked-at — and only the HMD moves it. This cancels exactly the rotation the grapple *adds*, in both pitch and yaw, while preserving whatever frame you entered with (a banked wingsuit stays banked).
-- **Level pitch**: the live frame flattened to its yaw. The view stays level but still turns with the body's heading. Kept for players who prefer the view to follow the reel's direction; it leaves the yaw half of the double-count in place.
-- **Off**: no filtering.
+- `HoldView` (the default): the frame the previous render composed with, held from fire to landing. The view stays world-stable, so what the player looks at stays looked at, and only the headset moves it. This cancels exactly the rotation the grapple adds, in both pitch and yaw, while keeping whatever frame the player entered with (a banked wingsuit stays banked).
+- `LevelPitch`: the live frame flattened to its yaw. The view stays level but still turns with the body's heading, for players who prefer the view to follow the reel's direction; it leaves the yaw half of the double count in place.
+- `Off`: no filtering.
+
+The pause menu's `VR: COMFORT` page offers the setting as `VIEW ON THE GRAPPLE` (`HOLD STEADY`, `KEEP LEVEL`, and `SWING WITH THE BODY`).
 
 ### When the hold is active
 
-The grapple's own state field is not a reliable activity signal, so the filter reads three hook fields together (`GrapplingHook` in the pyxis defs):
+The grapple's own state field is not a reliable activity signal, so the filter reads three fields of [`GrapplingHook`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook) together:
 
 | Phase | Signal |
 |---|---|
-| Fire committed (act aligning the body) | `m_WaitingForGrappleFire` / `m_WaitingForTetherFire` |
+| Fire committed (the act aligning the body) | `m_WaitingForGrappleFire` or `m_WaitingForTetherFire` |
 | Hook in flight | `GHS_INACTIVE` with a live `m_ActiveWire` |
 | Zipping | `GHS_REELING_IN` |
-| Attached (wall perch, hang) | `GHS_REELED_*` with a live `m_ActiveWire` |
+| Attached (a wall perch, a hang) | a `GHS_REELED_` state with a live `m_ActiveWire` |
 
-Two of these gates exist because the obvious signal lies. The fire flags matter because the body starts whipping toward the target before any wire exists — engaging on `GHS_REELING_IN` alone leaves that whole alignment in the view. And the `GHS_REELED_*` states need the wire check because the engine treats `m_State` as "last reel outcome" as much as "current state": telemetry caught it parked at `GHS_REELED_ATTACHED` for six minutes of ordinary play, which without the gate kept the filter engaged through normal locomotion.
+The fire flags matter because the body starts turning toward the target before any wire exists, so engaging on `GHS_REELING_IN` alone would leave the whole alignment in the view. The reeled states need the wire check because the engine treats `m_State` as the last reel's outcome as much as the current state: it can sit at `GHS_REELED_ATTACHED` through minutes of ordinary play, which without the check would keep the filter engaged through normal locomotion.
 
 ### Engage and release
 
-Engagement is instant and seamless by construction: on the engage edge, the filter holds the frame the view *last composed* — the previous advance's body under the current blend. The previous advance's body, because the fire snap lands in the same step the state flips (capturing the current body bakes 5–27° of it into the hold). Under the current blend, because a re-grapple during a release tail must hold the partially blended frame you're already looking through.
+On the engage edge the filter holds the frame the view last composed: the previous advance's body under the current blend. It takes the previous advance's body because the fire's turn lands in the same step the state flips, so the current body already carries some of it. It applies the current blend because a second grapple during a release tail must hold the partially blended frame the player is already looking through. The engage's time constant, `comfort.engage_s`, is zero: an instant engage is seamless by construction, and a ramp would only leak the opening rotation.
 
-Release blends the accumulated rotation back over 0.4 s (the grapple tuning's `comfort.release_s`, [tuning.md](../tuning.md)), and the release tail snaps to fully disarmed below 0.1% blend — the decay is exponential and would otherwise linger near-zero for many seconds, leaving stale state for the next engage.
+Release blends the accumulated rotation back with the time constant `comfort.release_s`, and the release tail snaps to fully disarmed below the blend `comfort.disarm_factor`, since the exponential decay would otherwise linger near zero and leave stale state for the next engage.
 
 ## The yaw handoff
 
-An on-foot landing leaves the body heading 10–25° off the held view, and returning that through the release blend is 34–61° of rotation path at sustained vection. Under hold view, for a VR player on foot, the view never sweeps through it: at reel end the held heading is posted for the VR body-turn accumulator (`grapple::take_body_yaw_retarget`, consumed on its next on-foot tick), the *character* turns to face where you're looking via the game's own rate-limited turn machinery, and the hold stays engaged until the heading converges within 3° — leaving only a small pitch/roll residual for the blend. This is the design doc's body-follows-head scheme applied at the landing.
+An on-foot landing leaves the body heading well off the held view, and returning that through the release blend would sweep the view through it. Under `HoldView`, for a VR player on foot, the view does not sweep: at the reel's end the held heading is posted for the VR body-turn accumulator (`grapple::take_body_yaw_retarget`, taken on its next on-foot tick within `comfort.retarget_fresh_s`), the character turns to face where the player looks through the game's own rate-limited turn machinery, and the hold stays engaged until the body's heading converges within `comfort.handoff_converged_deg`, leaving only a small pitch and roll residual for the blend. This is the body-follows-head scheme of [head-and-body.md](head-and-body.md) applied at the landing.
 
-The handoff falls back to the plain blend release on a timeout (`comfort.handoff_timeout_s`, since the body can be blocked from turning) and skips entirely for airborne releases: the body-yaw accumulator only steers on foot, so holding the view while flying away would pin it against a moving world.
+The handoff falls back to the plain release on a timeout (`comfort.handoff_timeout_s`, since the body can be blocked from turning), and ends when the character leaves its feet or a new reel starts. It is skipped for airborne releases: the body-yaw accumulator only steers on foot, so holding the view while flying away would pin it against a moving world.
 
 Because the held frame's yaw stops tracking the real body, everything that steers the actual character reads the raw rotation (`headpose::xr::body_rotation_raw`); only the view composition reads the filtered one.
 
 ## The landing-snap absorber
 
-The attach/landing animation moves the head anchor half a metre to a metre and a half against Rico's root in a single sim tick. `filter_anchor` absorbs that jump into an offset that decays out of the view over `comfort.anchor_snap_ease_s`, leaving the root's own motion, at any speed, untouched.
+The attach or landing animation moves the head anchor a large distance against Rico's root in a single sim tick. `filter_anchor` absorbs that jump into an offset that decays out of the view over `comfort.anchor_snap_ease_s`, leaving the root's own motion, at any speed, untouched.
 
-The detection watches the anchor's offset from the root (the anchor less the translation of the root it was captured with), which the frame's anchor pair carries, and absorbs a change of more than `comfort.anchor_snap_m` between consecutive advances. The offset changes only when a new tick's anchors are published, so the advances between ticks see no step. A clip moves the head against the root by a few centimetres a tick, and a canopy's opening by up to about a quarter of a metre. The absorber is armed only from the landing onward: the zip passes through bit-exact, `GHS_REELING_IN` disarms the absorber, and the only snap the grapple produces is at the attach.
+The detection watches the anchor's offset from the root (the anchor less the translation of the root it was captured with), which the frame's anchor pair carries, and absorbs a change of more than `comfort.anchor_snap_m` between consecutive advances. The offset changes only when a new tick's anchors are published, so the advances between ticks see no step. A clip moves the head against the root by a few centimetres a tick, and a canopy's opening by more but still under the threshold. Watching the world-space anchor's velocity instead fails in a fast flight: the sim's ticks are of uneven length and are timed on the render cadence, so ordinary steps read as velocity changes and the absorber pulls the camera behind Rico's head. The absorber is armed only from the landing onward: `GHS_REELING_IN` disarms it, so the zip passes through unchanged, and the only snap the grapple produces is at the attach.
 
-The detection used to compare each world-space anchor step against a smoothed velocity estimate. In a fast flight the sim's ticks are of uneven length and their changes were timed on the render cadence, so ordinary steps read as velocity changes: after each reel the absorber pulled the view 0.2 to 0.4 m behind the head for a second or more, putting the camera inside or behind Rico's back, which the player saw as flashes of the harness and backpack. The 10 November 17:07 take's camera matches a replay of that detection to the centimetre at t 1357.6 to 1358.2, and replayed with the root-relative detection the same flights never reach the threshold.
-
-The filtered anchor is always `raw + offset`, so pose-pair deltas built from it keep exact tick spacing and the engine's sub-frame interpolation is undisturbed. The offset is hard-capped at 1 m (a mis-detection degrades into a bounded, decaying lag), and steps of the root-relative offset beyond 5 m are no animation — passed through with the absorber reset.
+The filtered anchor is always `raw + offset`, so pose-pair deltas built from it keep exact tick spacing and the engine's sub-frame interpolation is undisturbed. The offset is capped at `comfort.anchor_offset_max_m`, so a mis-detection degrades into a bounded, decaying lag, and a step of the root-relative offset beyond `comfort.anchor_teleport_m` is no animation: it passes through and resets the absorber.
 
 ## Cadence and locking
 
-The filter advances on the engine's input tick *and* on every rendered VR frame. The frame-cadence advance is load-bearing: the body starts rotating the instant the grapple acts, and a tick-only (~33 Hz) read leaves up to a tick of that rotation in the view before the filter can engage.
+The filter advances on the engine's input tick and on every rendered VR frame. The frame-cadence advance is needed because the body starts rotating the instant the grapple acts, and a tick-only read would leave up to a tick of that rotation in the view before the filter could engage.
 
-Both advances share one mutex, and it is the innermost lock in the headpose's SIM → BODY_YAW → FILTER order: the input-tick caller holds the sim lock when it calls `advance`, so nothing under the filter's lock may call back into a locking `headpose` accessor — `on_foot` arrives as a parameter for exactly this reason. Violating this deadlocked the game on injection once; see the lock-order note in `crates/jc3vr-grapple/src/grapple/mod.rs`.
+Both advances share one mutex, and it is the innermost lock in the head pose's SIM, BODY_YAW, FILTER order: the input-tick caller holds the sim lock when it calls `advance`, so nothing under the filter's lock may call back into a locking `headpose` accessor, which is why `on_foot` arrives as a parameter. A violation deadlocks the game; the lock-order note is in `crates/jc3vr-grapple/src/grapple/mod.rs`.
+
+## Tuning
+
+The timing is the `comfort` section of the grapple's tuning file (`crates/jc3vr-grapple/tuning/grapple.toml`, [tuning.md](../tuning.md)), whose keys this page names. The debug UI's Grapple feature shows the live blend in its live status.
 
 ## Telemetry
 
-`crates/jc3vr-grapple/src/grapple/telemetry.rs` captures the filter's inputs and outputs — hook phase, blend, raw/filtered/held body frames, HMD cockpit pose, composed head pose, anchor — to `grapple-logs/<stamp>.csv` in the session folder ([sessions.md](../sessions.md)), one row per input tick and per rendered VR frame. Toggle it from the debug UI's Grapple feature, in its live status ("Log reel telemetry"; off by default); each enable starts a fresh file. Every behaviour above was diagnosed and verified against these captures, and they remain the tool of choice when a comfort report is hard to reproduce by feel.
-
-## Configuration
-
-`headpose.grapple.mode` (default `HoldView`) selects the body-frame filter mode; the pause menu's `VR: COMFORT` page offers it as `VIEW ON THE GRAPPLE` (`HOLD STEADY` for `HoldView`, `KEEP LEVEL` for `LevelPitch`, and `SWING WITH THE BODY` for `Off`). The engage is instant in code (`ENGAGE_S` in `crate::grapple`): instant is seamless, and a ramp only leaks the opening rotation. The rest of the timing is the `comfort` section of the grapple's tuning file (`crates/jc3vr-grapple/tuning/grapple.toml`, root `GrappleTuning`), and the debug UI's Grapple feature shows the live blend in its live status:
-
-| Tuning | Meaning |
-|---|---|
-| `comfort.release_s` | Blend-out time constant for the accumulated rotation. |
-| `comfort.handoff_timeout_s` | Fallback to the blend release if the body cannot converge. |
-| `comfort.handoff_converged_deg` | The heading convergence that completes the handoff. |
-| `comfort.retarget_fresh_s` | How long a posted heading waits for an on-foot tick. |
-| `comfort.anchor_snap_m` | One tick's change in the anchor's offset from the root treated as a landing snap. |
-| `comfort.anchor_snap_ease_s` | How long an absorbed snap takes to ease back out. |
-| `comfort.anchor_teleport_m` | A step of the offset beyond which it is no animation and the absorber resets. |
-| `comfort.anchor_offset_max_m` | The cap on the absorbed offset. |
+`crates/jc3vr-grapple/src/grapple/telemetry.rs` captures the filter's inputs and outputs (the hook's phase, the blend, the raw, filtered, and held body frames, the headset's cockpit pose, the composed head pose, and the anchor) to `grapple-logs/<stamp>.csv` in the session folder ([sessions.md](../sessions.md)), one row per input tick and per rendered VR frame. The debug UI's Grapple feature toggles it in its live status (`Log reel telemetry`, off by default); each enable starts a fresh file. These captures are the tool for a comfort report that is hard to reproduce by feel.
 
 ## What needs confirming in the headset
 
 - After a grapple pull under the canopy or a reel into a fall, at speed, the view stays at Rico's head: no flashes of the harness, the backpack, or the back of the body for the few seconds after the reel.
-- A grapple's landing on a ledge or a wall still eases the attach's jump out of the view rather than snapping it.
+- A grapple's landing on a ledge or a wall eases the attach's jump out of the view rather than snapping it.
