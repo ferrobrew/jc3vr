@@ -16,7 +16,7 @@ use jc3gi::{
     types::math::Vector3,
     vehicle::vehicle::{Seat, Vehicle},
 };
-use jc3vr_body::controllers::{aim, scheme};
+use jc3vr_body::controllers::{body_frame, scheme};
 use re_utilities::hook_library::HookLibrary;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -59,11 +59,11 @@ fn hand_point() -> Option<Vec3> {
     if !(enabled && scheme::is_controllers()) {
         return None;
     }
-    let status = aim::status();
-    if status.idle.is_some() {
+    let aim = body_frame::aim();
+    if aim.idle.is_some() {
         return None;
     }
-    status.hands[dominant.index()].map(|h| h.target)
+    aim.hands[dominant.index()].map(|h| h.target)
 }
 
 static SUBSTITUTIONS: AtomicU64 = AtomicU64::new(0);

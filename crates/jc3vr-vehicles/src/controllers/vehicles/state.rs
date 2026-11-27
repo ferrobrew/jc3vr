@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    facts, hands,
+    body_frame, facts, hands,
     hands::{CockpitHand, tiers},
     mode::VehicleSeat,
     physics::refs::Strong,
@@ -154,7 +154,7 @@ pub fn stand_down() {
 /// them, keeping the controllers' rotation. `hands` are the cockpit-frame hands indexed by
 /// [`Hand::index`], as the controllers hold them.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
-    let tier_status = tiers::status();
+    let tier_status = body_frame::tiers();
     // The grapple states' anchor weights are the line's
     // ([`jc3vr_body::controllers::hands::anchor`]), not the handles'.
     let grapple = matches!(

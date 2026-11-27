@@ -6,6 +6,7 @@ use jc3gi::input::input_action_map::Action::{
     HELI_TURN_LEFT, HELI_TURN_RIGHT, TURN_LEFT, TURN_RIGHT,
 };
 use jc3vr_body::controllers::{
+    body_frame,
     grab::{GrabVolume, cockpit::ControlKind},
     hands,
     hands::{tiers, tuning::HANDS},
@@ -86,7 +87,7 @@ pub fn finish_tick(
     publish_mounted_holds(state.mounted_grip.holds);
     if !mounted_events.is_empty() {
         state.status.mounted_grip_events += mounted_events.len() as u64;
-        let manned = tiers::status().state == Some(tiers::TierState::MountedGun);
+        let manned = body_frame::tiers().state == Some(tiers::TierState::MountedGun);
         log_mounted_events(&mounted_events, manned);
     }
     let Some(placement) = state.placement else {

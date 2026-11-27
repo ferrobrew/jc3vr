@@ -9,6 +9,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     body,
     body::BodyDimensions,
+    body_frame,
     fingers::{
         grip,
         grip::{Grip, GripSource},
@@ -442,7 +443,7 @@ const NITROUS_LABEL: &str = "Nitrous";
 /// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share
 /// times the hand's hold on its handle, `shares`.
 fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2]) {
-    let tiers = tiers::status();
+    let tiers = body_frame::tiers();
     let Some(handles) = handles else {
         return;
     };

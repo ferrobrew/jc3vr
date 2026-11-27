@@ -77,8 +77,8 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
-    aim,
     aim::grapple_weapons,
+    body_frame,
     facts::{line, seat},
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics,
@@ -264,7 +264,7 @@ pub fn targets(game: &GameTick<'_>, input: &OfferInput) -> Provided {
     }
     state.status.unoffered = None;
     state.status.aimed_mass_kg = unsafe { target::aimed_mass() };
-    let grapple = aim::status().grapple;
+    let grapple = body_frame::aim().grapple;
     let current = grapple
         .as_ref()
         .and_then(|grapple| unsafe { target::choose(&grapple.ray) });

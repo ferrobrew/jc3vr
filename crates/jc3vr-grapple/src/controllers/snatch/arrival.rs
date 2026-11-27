@@ -17,6 +17,7 @@ use glam::{Quat, Vec3};
 use jc3gi::{equipment::weapon::WeaponBase, graphics_engine::model_instance::ModelInstanceFlags};
 use jc3vr_body::controllers::{
     aim::gun,
+    body_frame,
     hands::{grip, ik},
     physics::{local_player::LocalPlayer, rigid::BodyPose},
 };
@@ -222,7 +223,7 @@ impl ArrivalWatch {
             unsafe { first.m_BaseModelInstance.as_ref() }
                 .is_some_and(|model| model.m_Flags.contains(ModelInstanceFlags::VISIBLE))
         });
-        let placed = grip::status().hands[self.hand.index()]
+        let placed = body_frame::grip().hands[self.hand.index()]
             .filter(|g| g.weapon == self.weapon)
             .map(|g| g.pinned);
         let slide = act::snap_view(self.weapon, self.hand).map(|s| s.toward_hand);

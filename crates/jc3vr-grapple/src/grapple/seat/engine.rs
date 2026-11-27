@@ -15,13 +15,12 @@ use jc3gi::{
     },
 };
 use jc3vr_body::controllers::{
-    aim,
     aim::{
         ray::Ray,
         raycast,
         raycast::{CastOptions, RayHit},
     },
-    hands, physics,
+    body_frame, hands, physics,
     physics::{
         bodies::game_object_of,
         grapple_hook as hook,
@@ -63,7 +62,7 @@ impl Target {
         }
         let local_player = LocalPlayer::get(game)?;
         let character = local_player.character();
-        let aim = aim::status().grapple?;
+        let aim = body_frame::aim().grapple?;
         let ray = Ray::new(aim.ray.origin, at - aim.ray.origin)?;
         let options = unsafe { CastOptions::ignoring_rider(character) }.seeing_through();
         let seat = &GRAPPLE.get().seat;
