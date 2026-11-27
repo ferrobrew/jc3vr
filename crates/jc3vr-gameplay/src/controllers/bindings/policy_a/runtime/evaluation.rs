@@ -11,11 +11,12 @@ use tracking_format::input::{GroupOrder, InputGroup, InputStamp};
 use crate::controllers::bindings::policy_a::InputEvidence;
 use crate::controllers::bindings::policy_a::{
     Arbitration, BindingGeneration, CONTROLS, ClockEpoch, Control, Disposition, GameplayContext,
-    Observation, ObservationStamp, ObservationStatus, PolicyA, ResetReason, SingleEvent,
-    SystemCommand,
+    Observation, ObservationStamp, ObservationStatus, ResetReason, SingleEvent, SystemCommand,
     attribution::{SourceIdentity, raw_location},
     recording,
-    runtime::{Delivery, Runtime, Tick, complete_inventory, group_neutral, raw_evidence},
+    runtime::{
+        Delivery, Runtime, Tick, arbitration, complete_inventory, group_neutral, raw_evidence,
+    },
 };
 
 pub(super) struct EvaluationInput<'a> {
@@ -57,9 +58,7 @@ impl Runtime {
                 return;
             }
             self.epoch = group.stamp.epoch;
-            self.policy = self
-                .config
-                .and_then(|config| PolicyA::new(config, ClockEpoch(self.epoch)).ok());
+            self.policy = arbitration(self.config, ClockEpoch(self.epoch));
             self.reset(ResetReason::ClockDiscontinuity);
         }
         if !ordered_after(self.watermark, group) {

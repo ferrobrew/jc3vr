@@ -421,7 +421,15 @@ fn commit_input(
             }
             desired.extend(inputs);
         }
-        Err(_) => state.reset(),
+        Err(rejection) => {
+            tracing::info!(
+                target: "controllers",
+                ?rejection,
+                ?stage,
+                "wingsuit gestures: the commands were rejected; the gestures start over"
+            );
+            state.reset();
+        }
     }
 }
 

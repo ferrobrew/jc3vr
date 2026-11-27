@@ -108,8 +108,7 @@ impl Runtime {
             self.config = config;
             self.invalidate();
             self.watermark = watermark;
-            self.policy =
-                config.and_then(|config| PolicyA::new(config, ClockEpoch(self.epoch.max(1))).ok());
+            self.policy = arbitration(config, ClockEpoch(self.epoch.max(1)));
             self.epoch = self.epoch.max(1);
         }
         if self.consumer_context != Some((input.context, input.gameplay)) {
@@ -423,6 +422,16 @@ impl Runtime {
         self.claims = claims;
         (direct, self.claims)
     }
+}
+
+/// The arbitration for `config` from `epoch` on, or `None`, logged, when `config` is invalid: the
+/// system chords then stay unresolved.
+fn arbitration(config: Option<PolicyAConfig>, epoch: ClockEpoch) -> Option<PolicyA> {
+    PolicyA::new(config?, epoch)
+        .inspect_err(|error| {
+            tracing::warn!(target: "controllers", %error, "the system chords stay unresolved");
+        })
+        .ok()
 }
 
 impl Tick {
