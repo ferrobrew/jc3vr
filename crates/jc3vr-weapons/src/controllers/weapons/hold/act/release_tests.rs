@@ -1,10 +1,10 @@
 use super::*;
 use crate::controllers::weapons::{
-    pause,
     reload::{
         chamber::ActionKind,
         travel::{ActionTravel, TravelGrip},
     },
+    state::pause,
 };
 
 fn grips(hand: Hand, gun: bool, off: bool) -> [bool; 2] {

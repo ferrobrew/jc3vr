@@ -50,7 +50,7 @@ use crate::controllers::{
         pouch_return, regions,
         regions::{GunRegion, GunShape, Observed, engine as region_engine, engine::DockedLongGun},
         reload, scope,
-        state::{OffTouch, STATE},
+        state::{OffTouch, STATE, StandDown},
         types::{TickStart, WieldedReadout},
         volumes,
         volumes::{BodyFrame, ChestGrabbers, StrideFilter},
@@ -67,7 +67,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let config = WeaponSettings::read();
     docks::publish_targets(None);
     let Some(active) = hands::active_hands_raw() else {
-        crate::controllers::weapons::stand_down(game);
+        crate::controllers::weapons::stand_down(game, StandDown::HandsInactive);
         hand_ammo::clear();
         hint::clear();
         return TickStart::default();

@@ -119,7 +119,7 @@ use jc3vr_view::{
         semantic::{frame as semantic_frame, history},
     },
 };
-use jc3vr_weapons::controllers::{loadout::contents, weapons};
+use jc3vr_weapons::controllers::{loadout::contents, weapons, weapons::StandDown};
 use parking_lot::Mutex;
 
 pub use crate::controllers::bindings::{
@@ -253,7 +253,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     let cancellation = capture_update.and_then(|update| capture_cancellation(&update, poll));
     let mut capture_cancelled = cancellation.is_some();
     if let Some(poll_after) = cancellation {
-        cancel_capture_routes(poll_after, sink);
+        cancel_capture_routes(game, poll_after, sink);
     }
     if !config.enabled {
         clear_controller();
@@ -274,8 +274,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             config: &config.bindings,
             dominant: config.acting_hand(),
         });
-        weapons::stand_down(game);
-        weapons::inventory::stand_down(game);
+        weapons::stand_down(game, StandDown::Disabled);
         vehicles::stand_down();
         // SAFETY: the bindings tick runs on the game thread, before the world update.
         unsafe { vehicles::mounted::stand_down() };
@@ -334,7 +333,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             .and_then(|update| capture_cancellation(&update, poll));
             if let Some(poll_after) = cancellation {
                 capture_cancelled = true;
-                cancel_capture_routes(poll_after, sink);
+                cancel_capture_routes(game, poll_after, sink);
             }
             detection = mode::tick(game);
             if debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
@@ -386,20 +385,22 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         state.recovery.suspend();
         state.publish_recovery();
         // The debug panel pauses the weapons, as a game menu does: what the hands hold stays held.
-        if matches!(idle, Some(Idle::ModPanel | Idle::PollDisabled)) {
-            weapons::pause();
-        } else {
-            weapons::stand_down(game);
-        }
-        if idle != Some(Idle::GamepadScheme) {
-            weapons::inventory::maintenance_tick(game, config.acting_hand());
-        }
         // Leaving the controllers puts the loadout table back into the game's slots; a pause of
         // the controllers (the debug panel, a lost frame) keeps it.
+        weapons::stand_down(
+            game,
+            match idle {
+                Some(Idle::ModPanel) => StandDown::ModPanel,
+                Some(Idle::PollDisabled) => StandDown::PollDisabled,
+                Some(Idle::GamepadScheme) => StandDown::GamepadScheme,
+                Some(Idle::NoControllers) | None => StandDown::NoControllers,
+            },
+        );
         if idle == Some(Idle::GamepadScheme) {
-            weapons::inventory::stand_down(game);
             // A hook flying from the seat is kept through a pause, for the next tick to tether.
             grapple::seat::stand_down(game);
+        } else {
+            weapons::inventory::maintenance_tick(game, config.acting_hand());
         }
         vehicles::stand_down();
         // SAFETY: the bindings tick runs on the game thread, before the world update.
@@ -471,7 +472,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     // when gameplay resumes.
     let in_menu = detection.mode == Mode::Ui;
     let (start, vehicle) = if in_menu {
-        weapons::pause();
+        weapons::stand_down(game, StandDown::Menu);
         (
             weapons::TickStart::default(),
             vehicles::TickVolumes::default(),
@@ -1206,7 +1207,7 @@ fn log_capture_wait(
 
 static CAPTURE_WAIT: Mutex<CaptureWait> = Mutex::new(CaptureWait::new());
 
-fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
+fn cancel_capture_routes(game: &GameTick<'_>, poll: DevicePoll, sink: &mut Vec<Segment>) {
     let publications = history::take_gameplay();
     INPUT_POLICY.lock().cancel_publications(publications);
     PANEL_RECOVERY.lock().suspend();
@@ -1224,7 +1225,7 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     drop(state);
     // The panel opening pauses the weapons rather than standing them down: what the hands hold
     // stays held.
-    weapons::pause();
+    weapons::stand_down(game, StandDown::CaptureCancel);
     vehicles::stand_down();
     // SAFETY: the bindings tick runs this on the game thread, before the world update.
     unsafe { vehicles::mounted::stand_down() };

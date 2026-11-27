@@ -23,6 +23,7 @@ use crate::controllers::{
         foregrip::GripGeometry,
         grenade, grip_watch, heft, hold,
         hold::armed,
+        inventory,
         opening::OpenWatch,
         pouch_models, pouch_return, recoil, regions,
         regions::{GunRegion, RegionHit},
@@ -47,19 +48,76 @@ pub(crate) fn last_wielded() -> (Option<HeldWeapon>, bool) {
     )
 }
 
+/// Why the weapon handling stands down, which decides how much of it stops.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum StandDown {
+    /// The controllers are disabled in the settings.
+    Disabled,
+    /// The gamepad scheme is in effect.
+    GamepadScheme,
+    /// No controller frame, or no active controller.
+    NoControllers,
+    /// The hands are not active (no tracked hands to act with).
+    HandsInactive,
+    /// The game's device manager is disabled, so its device poll does not run.
+    PollDisabled,
+    /// The mod's debug UI owns the controls.
+    ModPanel,
+    /// The debug UI's capture of the controls cancelled the tick's routes.
+    CaptureCancel,
+    /// A game menu or the map is open.
+    Menu,
+}
+
+/// How much of the weapon handling a [`StandDown`] stops.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum StandDownScope {
+    /// Skip the tick halves but keep what the hands hold.
+    Pause,
+    /// Stop acting and forget the tick's weapons, keeping the loadout table.
+    Hands,
+    /// Stop acting, and put the loadout table back into the game's slots.
+    Loadout,
+}
+
+impl StandDown {
+    /// How much of the weapon handling this reason stops.
+    pub fn scope(self) -> StandDownScope {
+        match self {
+            Self::Disabled | Self::GamepadScheme => StandDownScope::Loadout,
+            Self::NoControllers | Self::HandsInactive => StandDownScope::Hands,
+            Self::PollDisabled | Self::ModPanel | Self::CaptureCancel | Self::Menu => {
+                StandDownScope::Pause
+            }
+        }
+    }
+}
+
+/// Stand the weapon handling down for `reason`, as far as its [`StandDown::scope`] says. Called on
+/// every input tick the weapon handling's tick halves do not run.
+pub fn stand_down(game: &GameTick<'_>, reason: StandDown) {
+    match reason.scope() {
+        StandDownScope::Pause => pause(),
+        StandDownScope::Hands => stand_down_hands(game),
+        StandDownScope::Loadout => {
+            stand_down_hands(game);
+            inventory::stand_down(game);
+        }
+    }
+}
+
 /// Pause for a game menu, the map, or the debug panel, which skips the weapon handling's tick
 /// halves but keeps what the hands hold: physical magazine work is cancelled, and the grip release
 /// stands down, so that the first tick back ends a gun's hold with the grip as it is then. The
 /// debug panel stood the weapons down instead, which took the left hand's SMG out of it the moment
 /// the panel opened on the 14 November take.
-pub fn pause() {
+pub(crate) fn pause() {
     reload::cancel_extraction_on_standdown();
     hold::act::cancel_releases();
 }
 
-/// Stop acting: drop the foregrip hold and forget the tick's weapon. Called whenever the bindings
-/// do not inject.
-pub fn stand_down(game: &GameTick<'_>) {
+/// Stop acting: drop the foregrip hold and forget the tick's weapon.
+fn stand_down_hands(game: &GameTick<'_>) {
     foregrip::clear();
     contents::clear();
     jc3vr_body::controllers::held::guns::publish(

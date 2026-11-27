@@ -113,7 +113,7 @@ pub use begin::begin_tick;
 use begin::{gameplay, weighted_hands};
 pub use finish::finish_tick;
 use re_utilities::hook_library::HookLibrary;
-pub use state::{pause, stand_down, status};
+pub use state::{StandDown, StandDownScope, stand_down, status};
 pub use types::{TickStart, WeaponsStatus};
 
 /// The weapon handling's hooks, aggregated by `controllers::hook_library`.
@@ -151,6 +151,7 @@ mod tests {
     use crate::controllers::{
         loadout::{Socket, grab::SocketRefusal},
         weapons::{
+            StandDown, StandDownScope,
             begin::{entered_body_volumes, gameplay},
             engine::{HeldWeapon, Wielded},
             finish::{cues_grab, hold_fire_back, primary_trigger_idle},
@@ -158,6 +159,23 @@ mod tests {
             types::{GrabOutcome, SocketOutcome},
         },
     };
+
+    #[test]
+    fn only_leaving_the_controllers_puts_the_loadout_back_and_only_a_pause_keeps_the_hands() {
+        let scopes = [
+            (StandDown::Disabled, StandDownScope::Loadout),
+            (StandDown::GamepadScheme, StandDownScope::Loadout),
+            (StandDown::NoControllers, StandDownScope::Hands),
+            (StandDown::HandsInactive, StandDownScope::Hands),
+            (StandDown::PollDisabled, StandDownScope::Pause),
+            (StandDown::ModPanel, StandDownScope::Pause),
+            (StandDown::CaptureCancel, StandDownScope::Pause),
+            (StandDown::Menu, StandDownScope::Pause),
+        ];
+        for (reason, scope) in scopes {
+            assert_eq!(reason.scope(), scope, "{reason:?}");
+        }
+    }
 
     #[test]
     fn explosive_pouches_and_world_pickup_keep_their_existing_modes() {

@@ -434,9 +434,9 @@ pub fn maintenance_tick(game: &GameTick<'_>, dominant: Hand) {
     publish_status();
 }
 
-/// Stop the table for the scheme leaving the controllers. Called on every input tick the bindings
-/// do not inject; it does nothing once stopped.
-pub fn stand_down(game: &GameTick<'_>) {
+/// Stop the table for the scheme leaving the controllers
+/// ([`crate::controllers::weapons::StandDownScope::Loadout`]); it does nothing once stopped.
+pub(crate) fn stand_down(game: &GameTick<'_>) {
     let Some(mut local_player) = LocalPlayer::get(game) else {
         return;
     };
