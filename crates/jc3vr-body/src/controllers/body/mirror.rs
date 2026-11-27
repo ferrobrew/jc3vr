@@ -53,71 +53,12 @@ pub struct MirrorStatus {
     pub primitives: usize,
 }
 
-/// Whether the mirror has current copied attachment observations on its last pass.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct AttachmentStatus {
-    pub at: Option<Stamp>,
-    pub sockets_current: bool,
-    /// Socket observations without a pose, counted once per socket.
-    pub sockets_missing: usize,
-    pub socket_markers: usize,
-    pub socket_offers: usize,
-    pub occupied_sockets: usize,
-    /// Availability from the separate render publication, not this solve pass.
-    pub pouches_current: bool,
-    /// Offered pouches whose model is missing or hidden.
-    pub pouches_missing: usize,
-}
-
-pub fn attachment_status() -> AttachmentStatus {
-    let mut status = *ATTACHMENT_STATUS.lock();
-    let render = pouch_render_status();
-    status.pouches_current = render.render.is_some();
-    status.pouches_missing = render.missing;
-    status
-}
-
 /// A producer-local identity, not an engine frame number or a host-time join.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct SampleId {
     pub owner: usize,
     pub epoch: u64,
     pub sequence: u64,
-}
-
-/// Identities for the last render-time comparison, separate from the skeleton's solve pass.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct PouchRenderStatus {
-    pub render: Option<SampleId>,
-    pub input: Option<SampleId>,
-    pub displayed: usize,
-    pub targets: usize,
-    pub missing: usize,
-}
-
-pub fn pouch_render_status() -> PouchRenderStatus {
-    let (at, status) = *POUCH_RENDER_STATUS.lock();
-    if FRESHNESS
-        .get()
-        .body
-        .mirror_ms
-        .window()
-        .holds(at, Stamp::now())
-    {
-        status
-    } else {
-        PouchRenderStatus::default()
-    }
-}
-
-/// What a sampler drew of the attachments on the body, for the mirror's status.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct AttachmentCounts {
-    /// Socket observations without a pose, counted once per socket.
-    pub missing: usize,
-    pub markers: usize,
-    pub offers: usize,
-    pub occupied: usize,
 }
 
 /// What the mirror draws the attachments with: the character's owner, its world transform, and the
@@ -132,11 +73,11 @@ pub struct AttachmentPass {
 }
 
 /// A sampler of the attachments on the body ([`register_attachment_sampler`]).
-pub type AttachmentSampler = fn(&AttachmentPass, &mut Vec<Primitive>) -> Option<AttachmentCounts>;
+pub type AttachmentSampler = fn(&AttachmentPass, &mut Vec<Primitive>);
 
 /// Register the sampler of the attachments on the body: called on each mirror pass, it adds the
-/// reflected attachments' primitives to `out` and returns what it drew, or `None` without a current
-/// sample. One sampler: a second registration is refused and logged.
+/// reflected attachments' primitives to `out`, or nothing without a current sample. One sampler: a
+/// second registration is refused and logged.
 ///
 /// The sampler runs on the thread running the local player's pose finalization, and reads only
 /// copied observations.
@@ -152,20 +93,18 @@ pub fn attachment_sampler_registered() -> bool {
 }
 
 /// Submit the reflected pouches of a render publication, drawn by the weapon handling from the
-/// matrices it applied, with what was drawn.
-pub fn submit_pouch_render(primitives: &mut Vec<Primitive>, status: PouchRenderStatus) {
+/// matrices it applied.
+pub fn submit_pouch_render(primitives: &mut Vec<Primitive>) {
     store::submit(
         Source::BodyMirrorPouches,
         primitives,
         FRESHNESS.get().body.mirror_ms.duration(),
     );
-    *POUCH_RENDER_STATUS.lock() = (Some(Stamp::now()), status);
 }
 
 /// Clear the render source without replacing the skeleton and socket submission.
 pub fn clear_pouch_render() {
     store::clear(Source::BodyMirrorPouches);
-    *POUCH_RENDER_STATUS.lock() = (None, PouchRenderStatus::default());
 }
 
 /// The last pass's status. A leaf lock, so any thread may read it.
@@ -219,7 +158,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         &mut primitives,
     );
     let now = Stamp::now();
-    let attachments = ATTACHMENT_SAMPLER.get().and_then(|sampler| {
+    if let Some(sampler) = ATTACHMENT_SAMPLER.get() {
         sampler(
             &AttachmentPass {
                 owner: character as *const Character as usize,
@@ -229,8 +168,8 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
                 head,
             },
             &mut primitives,
-        )
-    });
+        );
+    }
     let submitted = primitives.len();
     store::submit(
         Source::BodyMirror,
@@ -241,16 +180,6 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         at: Some(now),
         bones: Some(found),
         primitives: submitted,
-    };
-    *ATTACHMENT_STATUS.lock() = AttachmentStatus {
-        at: Some(now),
-        sockets_current: attachments.is_some(),
-        sockets_missing: attachments.map_or(0, |counts| counts.missing),
-        socket_markers: attachments.map_or(0, |counts| counts.markers),
-        socket_offers: attachments.map_or(0, |counts| counts.offers),
-        occupied_sockets: attachments.map_or(0, |counts| counts.occupied),
-        pouches_current: false,
-        pouches_missing: 0,
     };
 }
 
@@ -522,28 +451,6 @@ static STATUS: Mutex<MirrorStatus> = Mutex::new(MirrorStatus {
     at: None,
     bones: None,
     primitives: 0,
-});
-
-static POUCH_RENDER_STATUS: Mutex<(Option<Stamp>, PouchRenderStatus)> = Mutex::new((
-    None,
-    PouchRenderStatus {
-        render: None,
-        input: None,
-        displayed: 0,
-        targets: 0,
-        missing: 0,
-    },
-));
-
-static ATTACHMENT_STATUS: Mutex<AttachmentStatus> = Mutex::new(AttachmentStatus {
-    at: None,
-    sockets_current: false,
-    sockets_missing: 0,
-    socket_markers: 0,
-    socket_offers: 0,
-    occupied_sockets: 0,
-    pouches_current: false,
-    pouches_missing: 0,
 });
 
 #[cfg(test)]

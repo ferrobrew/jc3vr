@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
-use jc3vr_body::controllers::body::mirror::PouchRenderStatus;
 use jc3vr_view::controllers::{
     cockpit::CockpitTransform,
     overlay::{
@@ -123,13 +122,7 @@ fn all_props_compare_the_applied_render_matrix_with_the_unchanged_input_target()
                     assert_eq!(render.models[prop.index()].unwrap().matrix, applied);
                     let context = PouchRenderContext::new(&render, 1.5).unwrap();
                     let mut primitives = Vec::new();
-                    let status = pouch_render_markers(&render, context, &mut primitives);
-                    assert_eq!(status.render, Some(id(19)));
-                    assert_eq!(status.input, Some(id(11)));
-                    assert_eq!(
-                        (status.targets, status.displayed, status.missing),
-                        (1, 1, 0)
-                    );
+                    pouch_render_markers(&render, context, &mut primitives);
                     assert_eq!(primitives.len(), 4);
                     let target = input.character.transform_point3(pouch.position);
                     assert!(
@@ -179,12 +172,12 @@ fn missing_hidden_unapplied_and_replaced_models_do_not_claim_display_parity() {
     let hidden = placement(Prop::Grenade, Some(&wanted), Some(17), &frames(), &config);
     let mut visible = hidden;
     visible.visible = true;
-    for (attachment, model, expected_targets, expected_missing) in [
-        (absent, None, 0, 0),
-        (missing, None, 1, 1),
-        (hidden, Some(17), 1, 1),
-        (visible, None, 1, 1),
-        (visible, Some(23), 1, 1),
+    for (attachment, model, expected_targets) in [
+        (absent, None, 0),
+        (missing, None, 1),
+        (hidden, Some(17), 1),
+        (visible, None, 1),
+        (visible, Some(23), 1),
     ] {
         let input = sample(attachment);
         let mut render = RenderSample::new(id(19), &input, Mat4::IDENTITY, input.at).unwrap();
@@ -193,10 +186,7 @@ fn missing_hidden_unapplied_and_replaced_models_do_not_claim_display_parity() {
         }
         let context = PouchRenderContext::new(&render, 1.5).unwrap();
         let mut primitives = Vec::new();
-        let status = pouch_render_markers(&render, context, &mut primitives);
-        assert_eq!(status.targets, expected_targets);
-        assert_eq!(status.missing, expected_missing);
-        assert_eq!(status.displayed, 0);
+        pouch_render_markers(&render, context, &mut primitives);
         assert_eq!(primitives.len(), expected_targets);
     }
 }
@@ -251,10 +241,7 @@ fn foreign_expired_invalid_or_different_phase_samples_are_rejected() {
     let mut context = PouchRenderContext::new(&render, 1.5).unwrap();
     context.id.sequence -= 1;
     let mut primitives = Vec::new();
-    assert_eq!(
-        pouch_render_markers(&render, context, &mut primitives),
-        PouchRenderStatus::default()
-    );
+    pouch_render_markers(&render, context, &mut primitives);
     assert!(primitives.is_empty());
     assert!(PouchRenderContext::new(&render, f32::NAN).is_none());
 }

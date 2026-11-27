@@ -8,9 +8,8 @@ use jc3vr_body::controllers::{
     body::{
         mirror,
         mirror::{
-            ATTACHMENT_AXIS_M, ATTACHMENT_RING_M, AttachmentCounts, AttachmentPass, BONE_WIDTH,
-            EMPTY, FRAME, NO_FIT, OCCUPIED, Plane, PouchRenderStatus, SampleId, TARGET,
-            TARGET_RING_M, line, ring,
+            ATTACHMENT_AXIS_M, ATTACHMENT_RING_M, AttachmentPass, BONE_WIDTH, EMPTY, FRAME, NO_FIT,
+            OCCUPIED, Plane, SampleId, TARGET, TARGET_RING_M, line, ring,
         },
     },
     overlay::config::{OVERLAY_CONFIG, body_mirror_distance_m},
@@ -27,38 +26,11 @@ use crate::controllers::weapons::{
 };
 
 /// The body mirror's attachment sampler ([`mirror::register_attachment_sampler`]): the sockets'
-/// copied interaction targets for this pass, reflected, and what was drawn.
-pub(crate) fn sample_attachments(
-    pass: &AttachmentPass,
-    out: &mut Vec<Primitive>,
-) -> Option<AttachmentCounts> {
-    let sample = docks::attachment_sample(pass.owner, pass.character, pass.now)?;
-    attachment_markers(&sample, pass.plane, pass.head, out);
-    Some(AttachmentCounts {
-        missing: sample
-            .attachments
-            .iter()
-            .filter(|attachment| {
-                attachment.hand.is_none()
-                    && (attachment.pose.is_err()
-                        || sample
-                            .attachments
-                            .iter()
-                            .any(|offer| offer.socket == attachment.socket && offer.pose.is_err()))
-            })
-            .count(),
-        markers: sample.markers().count(),
-        offers: sample
-            .attachments
-            .iter()
-            .filter(|attachment| attachment.hand.is_some())
-            .count(),
-        occupied: sample
-            .attachments
-            .iter()
-            .filter(|attachment| attachment.hand.is_none() && attachment.item.is_some())
-            .count(),
-    })
+/// copied interaction targets for this pass, reflected.
+pub(crate) fn sample_attachments(pass: &AttachmentPass, out: &mut Vec<Primitive>) {
+    if let Some(sample) = docks::attachment_sample(pass.owner, pass.character, pass.now) {
+        attachment_markers(&sample, pass.plane, pass.head, out);
+    }
 }
 
 /// Publish only copied values after the model producer applies this render's matrices.
@@ -71,8 +43,8 @@ pub(crate) fn pouches_rendered(sample: &PouchRenderSample) {
         return;
     };
     let mut primitives = Vec::new();
-    let status = pouch_render_markers(sample, context, &mut primitives);
-    mirror::submit_pouch_render(&mut primitives, status);
+    pouch_render_markers(sample, context, &mut primitives);
+    mirror::submit_pouch_render(&mut primitives);
 }
 
 /// A plane derived from the same render publication as the applied model matrices.
@@ -131,15 +103,10 @@ pub(crate) fn pouch_render_markers(
     sample: &PouchRenderSample,
     context: PouchRenderContext,
     out: &mut Vec<Primitive>,
-) -> PouchRenderStatus {
+) {
     if context.id != sample.id {
-        return PouchRenderStatus::default();
+        return;
     }
-    let mut status = PouchRenderStatus {
-        render: Some(sample.id),
-        input: Some(sample.input.id),
-        ..PouchRenderStatus::default()
-    };
     let at = |point| Anchor::World(context.plane.reflect(point));
     for attachment in &sample.input.attachments {
         let displayed = sample.displayed(attachment);
@@ -151,7 +118,6 @@ pub(crate) fn pouch_render_markers(
         if let Some(target) = target {
             let color = if displayed.is_some() { EMPTY } else { NO_FIT };
             out.push(ring(at(target), ATTACHMENT_RING_M, color));
-            status.targets += 1;
         }
         if let Some(matrix) = displayed {
             let origin = matrix.w_axis.truncate();
@@ -165,10 +131,6 @@ pub(crate) fn pouch_render_markers(
             if let Some(target) = target {
                 out.push(line(at(target), at(origin), BONE_WIDTH, EMPTY));
             }
-            status.displayed += 1;
-        } else if attachment.side.is_some() {
-            status.missing += 1;
         }
     }
-    status
 }
