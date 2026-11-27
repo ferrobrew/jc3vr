@@ -2,8 +2,8 @@
 //! rig's level gaze and head speed, the standing height's sampling, the yaw's hand reach and
 //! turning readout, and the contact model's fixed rules.
 //!
-//! The values live in the body crate's `tuning/rig.toml`, under `core`, which the payload loads and
-//! validates and the offline evaluator in `tools/tracking-synth` reads from the repository. The
+//! The values live in the body crate's `tuning/rig.toml`, under `core`, which the body crate loads
+//! and validates and the offline evaluator in `tools/tracking-synth` reads from the repository. The
 //! pelvis, step, and yaw tuning ([`crate::RigTuning`]) and the contact model's
 //! ([`crate::contact::ContactTuning`]) are the player's settings, not the file's.
 

@@ -20,8 +20,8 @@
 //! travel that the rules read are taken relative to the support carrying the body, so a deck's
 //! speed is neither a walk nor the root carried away.
 //!
-//! The model works in any frame with +Y up in which the supports' frames are given: the payload uses
-//! the game world, in Rico's metres.
+//! The model works in any frame with +Y up in which the supports' frames are given: the body crate
+//! uses the game world, in Rico's metres.
 
 mod rate;
 mod rules;

@@ -1,6 +1,6 @@
-//! The grounded body rig's pure core, shared by the payload, which runs it once per rendered frame
-//! against the live tracking, and the offline evaluator in `tools/tracking-synth`, which runs it
-//! over a recording. See `docs/mod/body/rig.md`.
+//! The grounded body rig's pure core, shared by the body crate (`jc3vr-body`), which runs it once
+//! per rendered frame against the live tracking, and the offline evaluator in
+//! `tools/tracking-synth`, which runs it over a recording. See `docs/mod/body/rig.md`.
 //!
 //! - [`pelvis`]: whether the head is out over Rico's pelvis because the player leans or because the
 //!   player stepped, from one spine segment between the waist and the neck pivots.
@@ -20,7 +20,7 @@
 //! - [`tuning`]: the tuning of all of them that the player's settings do not hold, which the body
 //!   crate's `tuning/rig.toml` gives.
 //!
-//! [`math`] holds the primitives the payload shares: headings, rotations, geometry, smoothing, axis
+//! [`math`] holds the primitives the layer crates share: headings, rotations, geometry, smoothing, axis
 //! shaping, the two-bone solve, the shoulder model, the body's sides, and the rigid [`Pose`].
 //!
 //! Everything works in the room frame: metres over the floor, +X right, +Y up, -Z forward, with

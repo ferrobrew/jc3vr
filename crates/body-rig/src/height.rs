@@ -2,9 +2,10 @@
 //!
 //! The calibrated eye height and the runtime's floor disagree by a few centimetres from session to
 //! session, and near vertical a few centimetres of drop are a large lean, so the standing neck
-//! height is measured rather than assumed: the height nine in ten of the recent level-gaze samples
-//! lie below, seeded at the calibration and held within [`HeightTuning::max_drift_m`] of it, so
-//! that half a minute crouched behind cover never becomes the standing height.
+//! height is measured rather than assumed: the height that the tuning's percentile
+//! ([`HeightTuning::percentile`]) of the recent level-gaze samples lie below, seeded at the
+//! calibration and held within [`HeightTuning::max_drift_m`] of it, so that half a minute crouched
+//! behind cover never becomes the standing height.
 
 /// How many samples are held: half a minute of them at the shipped
 /// [`HeightTuning::sample_s`].
