@@ -5,11 +5,11 @@
 //! The rotation is a terminal-time drive on the body's angular velocity ([`turn_drive`]): each tick
 //! it asks for the hand's own turn rate plus the turn still to make over the time left until the
 //! catch, so its gain grows as the catch nears and it closes the turn by then, held to a spin cap
-//! and an angular acceleration cap. The position is
-//! corrected only while the line pulls, and only sideways to the line by a capped shift of its aim
-//! ([`aim_shift`]), so the gun's grip rather than its centre heads for the palm, and a hand that
-//! moves away after the line goes slack still misses. The hand it steers toward is the line's
-//! receiver ([`receiver`](crate::controllers::snatch::catch::receiver)).
+//! and an angular acceleration cap. The position is corrected only while the line pulls, and only
+//! sideways to the line by a capped shift of its aim ([`aim_shift`]), so the gun's grip rather than
+//! its centre heads for the palm, and a hand that moves away after the line goes slack still
+//! misses. The hand it steers toward is the line's receiver
+//! ([`receiver`](crate::controllers::snatch::catch::receiver)).
 
 use body_rig::math::rotation::{angular_velocity, rotation_error};
 use glam::{Quat, Vec3};

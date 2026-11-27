@@ -1,11 +1,11 @@
-//! The grappling device drawn on the forearm as drawn. The device's mesh is a rigid object under
-//! the local player's grappling hook, whose world transform the hook takes from Rico's forearm
-//! twist bone after each tick's pose ([`GrapplingHook::OnPostPoseUpdate`]), and its render update
-//! ([`RigidObject::UpdateRender`]) draws it from those simulation transforms. The presentation
-//! layer re-poses the drawn arms every rendered frame from the latest tracking
-//! (`docs/mod/rendering/presentation-layer.md`), so the forearm and hand moved on while the device
-//! stayed where the tick left the forearm. A detour on the render update re-pushes the mesh's
-//! matrix with the drawn left forearm's edit ([`late::drawn_forearm_delta`]), as the held guns are
+//! The grappling device, drawn on the forearm as the arm is drawn. The device's mesh is a rigid
+//! object under the local player's grappling hook, whose world transform the hook takes from Rico's
+//! forearm twist bone after each tick's pose ([`GrapplingHook::OnPostPoseUpdate`]), and its render
+//! update ([`RigidObject::UpdateRender`]) draws it from those simulation transforms. The
+//! presentation layer re-poses the drawn arms every rendered frame from the latest tracking
+//! (`docs/mod/rendering/presentation-layer.md`), so the forearm and hand move on while the device
+//! stays where the tick left the forearm. A detour on the render update re-pushes the mesh's matrix
+//! with the drawn left forearm's edit ([`late::drawn_forearm_delta`]), as the held guns are
 //! re-pushed with their hand's.
 //!
 //! [`GrapplingHook::OnPostPoseUpdate`]: jc3gi::equipment::grappling_hook::GrapplingHook

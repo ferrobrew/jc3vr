@@ -1,5 +1,5 @@
-//! The engine side of a snatched gun's arrival: the aligned landing that steers the flying body into
-//! the pose the catching hand will hold it in ([`crate::controllers::snatch::landing`] has the
+//! The engine side of a snatched gun's arrival: the aligned landing that steers the flying body
+//! into the pose the catching hand will hold it in ([`crate::controllers::snatch::landing`] has the
 //! math), and the watch over the gun's first ticks in the hand.
 //!
 //! The landing reads the gun's body frame relative to the gun's own frame once at the hook's bite,

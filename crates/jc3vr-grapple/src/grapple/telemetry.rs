@@ -3,10 +3,10 @@
 //!
 //! While enabled (from the debug UI's Camera tab; off by default), one row is written per input
 //! tick (`tick`) and per rendered VR frame (`frame`) to a new file in the session's grapple logs
-//! (see [`jc3vr_core::session`]). The file is created lazily on
-//! the first row, and toggling off and on starts a fresh file, so captures with different settings
-//! stay separate. A dedicated file rather than the tracing stack because the capture is a dense
-//! machine-read stream that must survive log-filter changes and re-injection.
+//! (see [`jc3vr_core::session`]). The file is created lazily on the first row, and toggling off and
+//! on starts a fresh file, so captures with different settings stay separate. The capture has a
+//! file of its own rather than going through the tracing stack because it is a dense machine-read
+//! stream that must survive log-filter changes and re-injection.
 
 use std::{
     io::Write as _,
@@ -35,8 +35,8 @@ pub fn set_log_enabled(enabled: bool) {
 }
 
 /// Log one input tick's filter state (no-op when disabled). Called from
-/// [`jc3vr_view::headpose::sim::on_input_tick`] after [`crate::grapple::advance`]; `dt` is the engine's tick
-/// delta.
+/// [`jc3vr_view::headpose::sim::on_input_tick`] after [`crate::grapple::advance`]; `dt` is the
+/// engine's tick delta.
 pub fn log_tick(body: Quat, dt: f32) {
     if !log_enabled() {
         return;

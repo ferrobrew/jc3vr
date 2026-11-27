@@ -816,7 +816,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
         let velocity = if why.restores_velocity() {
             // The swing's own last velocity is what the reel handed the character. The wanted
             // velocity read back from the character reads near zero while the lock drives the
-            // reel, and a release that took it stopped the character dead in the air.
+            // reel, so a release that took it would stop the character dead in the air.
             // SAFETY: the game thread before the world update, the local player's live character.
             last_velocity.or_else(|| unsafe { engine::wanted_velocity(character) })
         } else {

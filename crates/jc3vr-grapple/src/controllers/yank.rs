@@ -1,5 +1,5 @@
 //! The yank gesture: a sharp pull of the grapple hand back toward the body while a grapple line is
-//! attached, which issues the same grapple tap that zips (the plan of record's "The grapple",
+//! attached, which issues the same grapple tap that zips ("The grapple" in
 //! `docs/mod/input/controllers-and-roomscale.md`). Pure.
 //!
 //! The detector keeps a measure of the grapple hand's reach over a short window, sampled at the
@@ -9,15 +9,16 @@
 //!
 //! The measure is the hand's reach along its aim when the gesture armed ([`reach_along`], latched
 //! by [`ArmedLine`], which [`LineYank`] keeps for the zip and the reel's boost): a pull away from
-//! what the hand pointed at, whichever way it goes. The hand's distance from a point below the head would miss the pull of a
-//! seated player, whose hand starts close to the body and pulls back past its side.
+//! what the hand pointed at, whichever way it goes. The hand's distance from a point below the head
+//! would miss the pull of a seated player, whose hand starts close to the body and pulls back past
+//! its side.
 //!
-//! A pull that carries the hand out from the head across the ground is not a yank
-//! (the grapple tuning's `yank.outward_share`): spreading the arms for the wingsuit swings the grapple hand out to the side,
-//! which drops its reach along an aim pointed across the body as fast as a yank, but takes it away
-//! from the body, where a yank brings it in, down, or back past the side. The distance is taken
-//! across the ground alone, so a pull down from a raised hand, which takes it further from the head
-//! but not out from it, still yanks.
+//! A pull that carries the hand out from the head across the ground is not a yank (the grapple
+//! tuning's `yank.outward_share`): spreading the arms for the wingsuit swings the grapple hand out
+//! to the side, which drops its reach along an aim pointed across the body as fast as a yank, but
+//! takes it away from the body, where a yank brings it in, down, or back past the side. The
+//! distance is taken across the ground alone, so a pull down from a raised hand, which takes it
+//! further from the head but not out from it, still yanks.
 
 use std::collections::VecDeque;
 
@@ -34,7 +35,8 @@ pub fn grapple_yank() -> &'static YankConfig {
     &GRAPPLE.get().grapple_yank
 }
 
-/// A yank detector's settings: the grapple's ([`grapple_yank`]), or the snatch's ([`snatch_yank`](crate::controllers::snatch::config::snatch_yank)).
+/// A yank detector's settings: the grapple's ([`grapple_yank`]), or the snatch's
+/// (`controllers::snatch::config::snatch_yank`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct YankConfig {
@@ -132,8 +134,7 @@ impl LineYank {
 
     /// Advance by `dt` seconds with the hand's grip and aim (`None` while untracked); `armed` is
     /// whether a yank may fire. The first tracked tick of an arming keeps its aim as the line.
-    /// Returns the yank detected this tick, if any. The head is not considered: the tests' measure
-    /// of the reach alone.
+    /// Returns the yank detected this tick, if any. The tests' form, which leaves the head out.
     #[cfg(test)]
     pub fn step(
         &mut self,
@@ -145,7 +146,7 @@ impl LineYank {
         self.step_from(dt, hand, None, armed, config)
     }
 
-    /// [`step`](Self::step), with the head's position in the same frame as the hand, whose Y is up
+    /// `step`, with the head's position in the same frame as the hand, whose Y is up
     /// (`None` when unknown): a pull that takes the hand out from the head across the ground does
     /// not yank.
     pub fn step_from(
@@ -203,9 +204,9 @@ impl YankDetector {
         }
     }
 
-    /// Advance by `dt` seconds with the hand's current distance from the body (`None` while the
-    /// hand is untracked). `armed` is whether a yank may fire: a line is attached and the gesture
-    /// is on. Returns the yank detected this tick, if any.
+    /// Advance by `dt` seconds with the hand's reach along its line (`None` while the hand is
+    /// untracked); `armed` is whether a yank may fire. Returns the yank detected this tick, if
+    /// any.
     pub fn step(
         &mut self,
         dt: f32,

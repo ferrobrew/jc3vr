@@ -14,7 +14,8 @@ use crate::{
     },
 };
 
-/// The owner facts required before continuing any snatch phase.
+/// What a snatch phase needs of the grapple hand and the player to go on;
+/// [`cancellation`](Self::cancellation) names the first that fails.
 pub(super) struct Continuation {
     pub available: bool,
     pub tracked: bool,
@@ -39,7 +40,7 @@ impl Continuation {
     }
 }
 
-/// The attached target's next operation, before any engine access.
+/// What the attached target does next, decided before any game call.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum AttachedMode {
     Swing,
@@ -58,9 +59,10 @@ pub(super) fn attached_mode(button_held: bool, swinging: bool, tethered: bool) -
     }
 }
 
-/// The most tension the line holds on a target of `mass_kg`, newtons: `strength_n` at the
-/// tuning's [`reference_mass_kg`](SwingTuning::reference_mass_kg), growing with the mass to the power `scaling`, `0..=1`. Below 1 the
-/// acceleration the line can give falls as the mass grows. A mass that is not positive gets none.
+/// The most tension the line holds on a target of `mass_kg`, newtons: `strength_n` at the tuning's
+/// [`reference_mass_kg`](SwingTuning::reference_mass_kg), growing with the mass to the power
+/// `scaling`, `0..=1`. Below 1 the acceleration the line can give falls as the mass grows. A mass
+/// that is not positive gets none.
 pub(super) fn line_strength_n(mass_kg: f32, strength_n: f32, scaling: f32) -> f32 {
     if !(mass_kg.is_finite() && mass_kg > 0.0 && strength_n.is_finite()) {
         return 0.0;
@@ -83,10 +85,11 @@ pub(super) fn braced_strength_n(single_n: f32, factor: f32, braced: bool) -> f32
     }
 }
 
-/// Reel `rope` in for one tick of `dt` at `reel_mps` toward `floor_m`, with the target
-/// `distance_m` from the hand. The reel takes in line no faster than the target comes, keeping it
-/// at most the tuning's [`reel_lead_m`](SwingTuning::reel_lead_m) inside the target, so a heavy target that lags is pulled hard rather
-/// than left far beyond the line. It never pays line out ([`Rope::shorten`]).
+/// Reel `rope` in for one tick of `dt` at `reel_mps` toward `floor_m`, with the target `distance_m`
+/// from the hand. The reel takes in line no faster than the target comes, keeping it at most the
+/// tuning's [`reel_lead_m`](SwingTuning::reel_lead_m) inside the target, so a heavy target that
+/// lags is pulled hard rather than left far beyond the line. It never pays line out
+/// ([`Rope::shorten`]).
 pub(super) fn reel_in(rope: &mut Rope, distance_m: f32, floor_m: f32, reel_mps: f32, dt: f32) {
     if reel_mps.is_finite() && floor_m.is_finite() && distance_m.is_finite() {
         rope.shorten(
@@ -128,7 +131,8 @@ impl LineTuning {
     }
 }
 
-/// One pre-simulation correction along the line; gravity and collisions remain the engine's work.
+/// One tick's correction of the target's velocity along the line, made before the physics step;
+/// gravity and collisions stay the engine's.
 pub(super) struct SlingStep {
     pub centre: Vec3,
     pub velocity: Vec3,

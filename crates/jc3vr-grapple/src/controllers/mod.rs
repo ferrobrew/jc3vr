@@ -1,5 +1,4 @@
-//! The grapple layer's controller subsystem, under the same `controllers` path it keeps in the
-//! payload's module map.
+//! The grapple layer's controllers.
 //!
 //! - [`grapple_button`]: the grapple button's gestures, read before the game sees the button while
 //!   tethers or a line are attached.

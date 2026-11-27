@@ -9,19 +9,18 @@
 //! - [`swing`] is the hang swing's pump, which the hang task's detour applies
 //!   ([`jc3vr_body::controllers::hands::anchor`]);
 //! - [`lock`] holds the line's length during the reel while the grapple button is held, and the
-//!   character swings from it;
+//!   character swings from it.
 //!
 //! The yank that starts a reel along an attached line is the bindings' own gesture
-//! ([`crate::controllers::yank`]); the point-and-fire of a tether is the grapple's hand
-//! aim ([`jc3vr_body::controllers::aim::grapple`]) with the grip's held `FIRE_GRAPPLE`. Everything here
+//! ([`crate::controllers::yank`]); the point-and-fire of a tether is the grapple's hand aim
+//! ([`jc3vr_body::controllers::aim::grapple`]) with the grip's held `FIRE_GRAPPLE`. Everything here
 //! coexists with the buttons: the retract the pull drives merges with the trigger's, the larger
 //! value winning, and a reel the hand does not drive runs on the game's own tuning.
 //!
-//! [`input_tick`] runs in the bindings' game stage (`controllers::bindings::stage`), which
-//! hands it the grapple hand's grip and aim and injects the retract it returns. It reads
-//! the hook, steps the pull, publishes the reel's drive for the reel task's detour, vibrates the
-//! grapple hand, logs the grapple's events, and publishes the readout ([`status`]) for the
-//! status rows (`status`).
+//! [`input_tick`] runs in the bindings' game stage, which hands it the grapple hand's grip and aim
+//! and injects the retract it returns. It reads the hook, steps the pull, publishes the reel's
+//! drive for the reel task's detour, vibrates the grapple hand, logs the grapple's events, and
+//! publishes the readout ([`status`]) for the status rows.
 
 pub mod config;
 pub mod lock;
@@ -63,7 +62,7 @@ use crate::{
     },
 };
 
-/// The physical grapple's hooks, aggregated by `hooks`.
+/// The physical grapple's hooks: the reel's and the lock's.
 pub fn hook_library() -> HookLibrary {
     reel::hook_library().with_hook_library(lock::hook_library())
 }
@@ -462,7 +461,7 @@ struct HookTick {
 ///
 /// # Safety
 ///
-/// Game thread, before the world update.
+/// The game thread, before the world update.
 unsafe fn read_hook() -> Option<HookTick> {
     let hook = unsafe { hook::local_hook() }?;
     let tension = unsafe { hook.GetHighestWireTension() };

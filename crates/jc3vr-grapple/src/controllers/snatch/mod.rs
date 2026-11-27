@@ -3,38 +3,37 @@
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 //!
 //! The grapple's aim sees weapons lying in the world through a patch scoped to the grapple's pass
-//! of the aim ray ([`jc3vr_body::controllers::aim::grapple_weapons`]), which also publishes what the
-//! aim hit, and the steal notes the guns in characters' hands and holsters out to the snatch's
+//! of the aim ray ([`jc3vr_body::controllers::aim::grapple_weapons`]), which also publishes what
+//! the aim hit, and the steal notes the guns in characters' hands and holsters out to the snatch's
 //! range ([`jc3vr_weapons::controllers::weapons::hold::steal`]). On each input tick:
 //!
 //! 1. [`targets`] offers the grip one remote target ([`GrabVolume::Snatch`], ranked
-//!    [`Tier::Remote`](jc3vr_body::controllers::grab::Tier::Remote), taken only when nothing at all is
-//!    in reach) for the empty grapple hand on foot, with the hook free and the grapple button up
+//!    [`Tier::Remote`](jc3vr_body::controllers::grab::Tier::Remote), taken only when nothing at all
+//!    is in reach) for the empty grapple hand on foot, with the hook free and the grapple button up
 //!    ([`target`]): the weapon, loose object, or car door under the grapple's aim, or the weapon or
 //!    loose object lying in the world or gun in a character's hands or holster nearest the aim's
 //!    line within its cone and in sight.
 //! 2. [`finish_tick`] acts on the grip's grab of it, which arms the snatch on that target. A yank
 //!    of the hand back along its aim at the grip edge while the grip is held fires it
-//!    ([`ArmedLine`], [`pull`]): a gun on a
-//!    character is first let go of, with the steal's drop and stagger; then the game's hook flies
-//!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it bites a
-//!    weapon or an object, the line yanks the body toward its receiver, the free, empty hand
-//!    nearest the target's incoming path ([`catch::receiver`]), through the hold solve, pulling
-//!    at the hook's point so the body spins, then over the final approach slows and pulls at the
-//!    body's centre, and a couple of ticks out goes slack: the body flies on by its momentum, and
-//!    when a hand's grip closes on it within the hand's catch zone, or a moment after it passed
-//!    ([`catch::CatchWatch`]), that hand has caught it, the wire is ended, and the weapon is taken
-//!    into that hand through the loadout table, as a pickup is, or the object handed to the hand's
-//!    ordinary hold. A heavy target's centre cannot come as near the palm, so its catch zone
-//!    widens and the line asks less speed of it ([`rules::HeavyCatch`]). The grapple hand, whose
-//!    grip holds the line, catches only as the receiver. While the line is out the other free
-//!    hand's grip is held for the catch: it
-//!    takes nothing else and drives no game action ([`reserved_hands`]). A body no hand is where it
-//!    arrives flies past or hits the player and drops. Once the hook holds a
-//!    door, the door comes open and swings outward, and the wire is ended. Opening the grip at any
-//!    point cancels: in flight the line comes away and the target keeps its momentum. A stall, a
-//!    line run out, a missed hook, a missed catch, or a refused take fails the snatch and leaves the
-//!    target in the world. The grapple's own sounds and effects play throughout ([`juice`]).
+//!    ([`ArmedLine`], [`pull`]): a gun on a character is first let go of, with the steal's drop and
+//!    stagger; then the game's hook flies to the target as a ghost wire through the custom fire
+//!    ([`engine::fire`]). Once it bites a weapon or an object, the line yanks the body toward its
+//!    receiver, the free, empty hand nearest the target's incoming path ([`catch::receiver`]),
+//!    through the hold solve, pulling at the hook's point so the body spins, then over the final
+//!    approach slows and pulls at the body's centre, and a couple of ticks out goes slack: the body
+//!    flies on by its momentum, and when a hand's grip closes on it within the hand's catch zone,
+//!    or a moment after it passed ([`catch::CatchWatch`]), that hand has caught it, the wire is
+//!    ended, and the weapon is taken into that hand through the loadout table, as a pickup is, or
+//!    the object handed to the hand's ordinary hold. A heavy target's centre cannot come as near
+//!    the palm, so its catch zone widens and the line asks less speed of it
+//!    ([`rules::HeavyCatch`]). The grapple hand, whose grip holds the line, catches only as the
+//!    receiver. While the line is out the other free hand's grip is held for the catch: it takes
+//!    nothing else and drives no game action ([`reserved_hands`]). A body no hand is where it
+//!    arrives flies past or hits the player and drops. Once the hook holds a door, the door comes
+//!    open and swings outward, and the wire is ended. Opening the grip at any point cancels: in
+//!    flight the line comes away and the target keeps its momentum. A stall, a line run out, a
+//!    missed hook, a missed catch, or a refused take fails the snatch and leaves the target in the
+//!    world. The grapple's own sounds and effects play throughout ([`juice`]).
 //!
 //! The snatch's runtime state (armed, freeing, hook out, pulling) lives here alone; where a weapon
 //! ends up is the loadout table's. Ordinary targets have a strong reference from the fire to the
@@ -42,15 +41,15 @@
 //! snatch holds the grapple button back from the game while its line is out, and ends its own wire
 //! on every exit and stand-down.
 //!
-//! A loose object too heavy for a hand to carry, up to the swing's ceiling, is never pulled in: once
-//! the hook bites, the held line swings it ([`sling`]), a stiff, tension-only spring-damper from the
-//! grapple hand whose strength scales with the target's mass, and which the other hand can brace at
-//! the grapple hand's wrist, or take hold of ahead of it to pull and swing the target by
-//! ([`brace`], [`crate::grapple::line_grab`]). Holding B after arming swings a weapon or a light object
-//! the same way until B releases. [`sling_hooks`] keeps the native device endpoint on the tracked
-//! forearm and excludes the owned wire's native constraint and tension path while the line swings.
-//! Grip release writes no target velocity. [`hooks`] keeps ordinary grapple taps and holds working
-//! on aimed weapons.
+//! A loose object too heavy for a hand to carry, up to the swing's ceiling, is never pulled in:
+//! once the hook bites, the held line swings it ([`sling`]), a stiff, tension-only spring-damper
+//! from the grapple hand whose strength scales with the target's mass, and which the other hand can
+//! brace at the grapple hand's wrist, or take hold of ahead of it to pull and swing the target by
+//! ([`brace`], [`crate::grapple::line_grab`]). Holding B after arming swings a weapon or a light
+//! object the same way until B releases. [`sling_hooks`] keeps the native device endpoint on the
+//! tracked forearm and excludes the owned wire's native constraint and tension path while the line
+//! swings. Grip release writes no target velocity. [`hooks`] keeps ordinary grapple taps and holds
+//! working on aimed weapons.
 
 mod acquisition;
 mod arrival;
@@ -137,10 +136,11 @@ pub fn available_in(game: &GameTick<'_>, detection: &Detection) -> bool {
     }
 }
 
-/// Only an already-gripped remote target can claim a subsequent fresh B press: armed, or with the
-/// hook out to it or its line pulling it in, so that a press after the yank holds the line (the
-/// swing) as a press before it does. A heavy object swings without it, and the claimed press does
-/// nothing to it, rather than firing the game's grapple from under the snatch.
+/// Whether the snatch may claim a fresh press of the grapple button: only while it holds a gripped
+/// remote target, armed, or with the hook out to it or its line pulling it in, so that a press
+/// after the yank holds the line (the swing) as a press before it does. A heavy object swings
+/// without it, and the claimed press does nothing to it, rather than firing the game's grapple from
+/// under the snatch.
 #[inline]
 pub fn can_claim_button() -> bool {
     matches!(
@@ -149,7 +149,7 @@ pub fn can_claim_button() -> bool {
     )
 }
 
-/// A copied phase-specific instruction for the current usable-controls provider.
+/// What the snatch's current phase tells the player the controls do, for the controls summary.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Hint {
     /// The grapple hand.
@@ -305,7 +305,8 @@ pub fn targets(game: &GameTick<'_>, input: &OfferInput) -> Provided {
     }
 }
 
-/// Separate consumers of the routed grapple hold.
+/// The grapple button's hold, split between its two readers: the ordinary grapple's while the
+/// press is not the snatch's, and the snatch's modifier while it is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ButtonHolds {
     pub ordinary: bool,
@@ -337,9 +338,9 @@ pub struct FinishInput<'a> {
     pub latches: [GripLatch; 2],
     /// The grapple hand's grip and aim, or `None` while the hand is untracked.
     pub line: Option<HandLine>,
-    /// The routed ordinary grapple hold, independent of the snatch modifier.
+    /// The grapple button's hold as the ordinary grapple sees it ([`ButtonHolds::ordinary`]).
     pub ordinary_button_held: bool,
-    /// The grapple hold owned by the snatch after a grip-first claim.
+    /// The grapple button's hold while the snatch claimed the press ([`ButtonHolds::modifier`]).
     pub modifier_held: bool,
     pub detection: &'a Detection,
     /// The tick's length, game seconds: the wire's flight and the free target's wait.
@@ -349,8 +350,8 @@ pub struct FinishInput<'a> {
     pub config: &'a SnatchSettings,
 }
 
-/// Act on the tick's grab of a remote target, step the snatch, and hold the grapple button back from
-/// the game while its line is out.
+/// Act on the tick's grab of a remote target, step the snatch, and hold the grapple button back
+/// from the game while its line is out.
 pub fn finish_tick(game: &GameTick<'_>, input: &FinishInput, desired: &mut Vec<Desired>) {
     hooks::publish(true, input.ordinary_button_held);
     if let Some(weak) = hooks::take_toss() {

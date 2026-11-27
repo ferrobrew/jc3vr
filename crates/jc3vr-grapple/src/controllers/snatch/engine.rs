@@ -346,13 +346,23 @@ pub(super) unsafe fn cancel(wire: NonZeroUsize) {
     hook::release_custom(CustomOwner::Snatch);
 }
 
-/// The owned native wire's device proxy. No wire address is dereferenced after ownership is lost.
+/// The address of the device end's point proxy on the custom wire `wire`, while it is the hook's
+/// active wire; the wire is not read once the snatch no longer owns it.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
 pub(super) unsafe fn device_proxy(wire: NonZeroUsize) -> Option<usize> {
     let wire = unsafe { active_wire(wire) }?;
     NonZeroUsize::new(hook::device_end(wire).m_PointProxy as usize).map(NonZeroUsize::get)
 }
 
-/// Remove a native rope before substituting the same tension model for both target categories.
+/// Destroy the native rope's constraint on the custom wire `wire`, while it is the hook's active
+/// wire, so that the snatch's own rope is the one force on the target, whatever its kind.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
 pub(super) unsafe fn remove_constraint(wire: NonZeroUsize) {
     if unsafe { active_wire(wire) }.is_some() {
         unsafe { (&mut *(wire.get() as *mut GrapplingHookWire)).DestroyConstraint() };

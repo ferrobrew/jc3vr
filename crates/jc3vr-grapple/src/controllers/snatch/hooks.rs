@@ -44,7 +44,8 @@ pub(super) fn publish(enabled: bool, button_held: bool) {
     BUTTON_HELD.store(button_held, Ordering::Relaxed);
 }
 
-/// The input-side gate runs before the native held/tether latch updates.
+/// Whether the hook's update ends a line holding a weapon: the snatch is on and the grapple
+/// button, as the input tick last injected it, is not held.
 pub fn should_reel_weapon(enabled: bool, ordinary_button_held: bool) -> bool {
     enabled && !ordinary_button_held
 }

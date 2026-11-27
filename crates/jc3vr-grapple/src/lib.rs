@@ -17,14 +17,14 @@
 //!
 //! The layers above reach these modules by path, so an item is `pub` exactly when a crate above
 //! names it: the bindings, which run the grapple's and the snatch's ticks in their game stage, the
-//! controllers' register files, the debug UI's panels and status rows, the diagnostics, and the
-//! payload's composition and settings aggregate. Everything else keeps its crate-private
-//! visibility.
+//! gameplay crate's register files, the debug UI's panels and status rows, the diagnostics, and the
+//! payload's composition and tuning loader. Everything else keeps its crate-private visibility.
 //!
 //! The payload's composition enables the hook libraries, [`controllers::snatch::hook_library`],
 //! [`grapple::physical::hook_library`], and [`grapple::device::hook_library`], in its order with
-//! the other layers', and calls [`register`] once before the hooks are installed. The grapple has no settings group: its tuning is read from the crate's
-//! tuning files, `tuning/grapple.toml` ([`grapple::tuning::GRAPPLE`]) and `tuning/snatch.toml`
+//! the other layers', and calls [`register()`] once before the hooks are installed. The grapple has
+//! no settings group: its tuning is read from the crate's tuning files, `tuning/grapple.toml`
+//! ([`grapple::tuning::GRAPPLE`]) and `tuning/snatch.toml`
 //! ([`controllers::snatch::config::SNATCH`]).
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`), since the

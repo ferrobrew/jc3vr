@@ -15,8 +15,9 @@
 //! The drive is published by the input tick ([`publish`]) and read by the detour on the same
 //! thread's character update; a drive older than the tuning's
 //! [`drive_max_age_ms`](crate::grapple::physical::config::ReelPullTuning::drive_max_age_ms) is
-//! ignored, so the reel returns to the game's own as soon as the input tick stops publishing. While the lock holds the line,
-//! the detour hands the reel the lock's velocity instead ([`lock::drive`]).
+//! ignored, so the reel returns to the game's own as soon as the input tick stops publishing. While
+//! the lock holds the line, the detour hands the reel the lock's velocity instead
+//! ([`lock::drive`]).
 //!
 //! [`NStateTask_ReelIn::UpdateReelVelocity`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::UpdateReelVelocity
 

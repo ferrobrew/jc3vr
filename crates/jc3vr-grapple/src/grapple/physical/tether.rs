@@ -27,11 +27,10 @@ pub struct TetherTick {
     pub detection: Detection,
 }
 
-/// Whether the pull may retract the tethers: tethers are attached, the grapple
-/// has no line of its own, nothing carries the character along a line, and the character is on
-/// the ground, falling, or seated in a vehicle, with the grapple button held.
-/// The wingsuit and the parachute are left out: the retract input boosts
-/// them too, and their arm steering and handles already use the hands.
+/// Whether the pull may retract the tethers: tethers are attached, the grapple has no line of its
+/// own, nothing carries the character along a line, and the character is on the ground, falling, or
+/// seated in a vehicle, with the grapple button held. The wingsuit and the parachute are left out:
+/// the retract input boosts them too, and their arm steering and handles already use the hands.
 pub fn armed(tick: &TetherTick) -> bool {
     tick.button_held
         && tick.tethers > 0

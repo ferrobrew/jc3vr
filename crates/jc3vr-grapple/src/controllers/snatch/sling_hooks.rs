@@ -23,7 +23,8 @@ use jc3vr_body::controllers::physics::grapple_hook as hook;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-/// Only addresses identifying the owned wire and its native near-end proxy accompany the pose.
+/// The forearm transform the native device end follows, with the owned wire and its device-end
+/// proxy, by address, which identify the native calls it applies to.
 #[derive(Copy, Clone)]
 struct Snapshot {
     wire: usize,
@@ -40,7 +41,8 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GET_VISUAL_TRANSFORM_WS_BINDER)
 }
 
-/// Publish on the game thread before native simulation; workers read only the copied value.
+/// Publish the forearm transform the owned wire's device end follows. Called on the game thread
+/// before the simulation; the native callbacks on the worker threads read only this copy.
 pub(super) fn publish(wire: usize, proxy: usize, transform: Mat4) {
     *SNAPSHOT.lock() = Some(Snapshot {
         wire,

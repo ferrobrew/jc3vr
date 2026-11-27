@@ -1,4 +1,5 @@
-//! The lock's engine side: the far end of the local player's hook, its point, motion, and body, the character's mass and support, and the line let go of. The engine side is in "The
+//! The lock's engine side: the far end of the local player's hook, its point, motion, and body,
+//! the character's mass and support, and the line let go of. The engine is described in "The
 //! reel's motion and endings" in `docs/engine/gameplay/grapple-pipeline.md`.
 
 use std::num::NonZeroUsize;

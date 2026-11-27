@@ -5,17 +5,17 @@
 //!
 //! The arrival's upside-down ending ([`GrapplingHook::StartReelUpsideDown`], the ceiling attach)
 //! and the arrival onto a helicopter's hang entry (the game's stunt hang under the airframe; a
-//! door-side arrival is the game's hijack and runs as the game's) are held off for
-//! the local player while the lock's tick runs: the reel keeps running, and the
-//! lock's next tick hangs the character below the hook instead (`lock::want_hang`). While the
-//! lock's tick does not run (the bindings idle, as under the gamepad scheme), or just after it
-//! refused a hang, the arrival is the game's (`lock::hang_takes_over`).
+//! door-side arrival is the game's hijack and runs as the game's) are held off for the local player
+//! while the lock's tick runs: the reel keeps running, and the lock's next tick hangs the character
+//! below the hook instead (`lock::want_hang`). While the lock's tick does not run (the bindings
+//! idle, as under the gamepad scheme), or just after it refused a hang, the arrival is the game's
+//! (`lock::hang_takes_over`).
 //!
 //! While the lock holds, the reel's motion ([`NStateTask_ReelIn::UpdateMotion`]) turns the
 //! character toward the line's level part rather than up the line, so a hook overhead hangs Rico
 //! upright instead of pitching him to face it. The arrival skips that motion: inside about a metre
 //! of the hook the reel's arrival test passes on every tick, and without the motion the lock's
-//! velocity never reached the proxy, which froze Rico under ceilings. The arrival detour therefore
+//! velocity would never reach the proxy, freezing Rico under ceilings. The arrival detour therefore
 //! runs the motion itself with the lock's velocity, using the reel task's own instance from its
 //! last motion.
 //!

@@ -2,7 +2,7 @@
 //! character the other way, as a body hanging from a rope moves against the hand that holds it.
 //! Pure; the hang task's detour in the hands' anchor applies it with the hold that the hand's
 //! displacement drives, through [`HANG_PUMP`], which the grapple's registration fills there
-//! ([`crate::register`]).
+//! ([`crate::register()`]).
 //!
 //! The hold pushes for as long as the hand stays off where it took the line, like a stick held
 //! over. The pump pushes only while the hand moves, so pulling the hand back as the body swings

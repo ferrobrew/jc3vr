@@ -102,7 +102,7 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
 ///
 /// # Safety
 ///
-/// The main thread, outside the physics step; `object` must be held alive.
+/// The game thread, outside the physics step; `object` must be held alive.
 unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), PhysicsError> {
     let loosened = unsafe { physics::bodies::loosen(object, body) }?;
     if loosened {
@@ -623,8 +623,9 @@ unsafe fn verified_hit(
     }
 }
 
-/// The native device endpoint follows the tracked wrist frame, never the aim ray. Gives the line's
-/// origin on the grapple hand and the hand's wrist.
+/// Start the held line on `wire`: the native device end follows the grapple hand's tracked wrist
+/// frame, never the aim ray, and the native rope's constraint comes off. Returns the line's origin
+/// on the grapple hand and the hand's wrist.
 ///
 /// # Safety
 ///
@@ -758,7 +759,7 @@ pub(super) unsafe fn sling(
     if let Pulled::Ragdoll { .. } = grabbed.kind {
         // A body is yanked in to arm's reach, where the free hand can take it, and then swung on
         // the line held there; at the swing's own length and reel, a body bitten a few metres off
-        // barely came.
+        // would barely come.
         // The reel slows as the line nears that length, so the body arrives at a walk rather than
         // flying on through the view at the yank's speed.
         let ragdoll = &SNATCH.get().ragdoll;

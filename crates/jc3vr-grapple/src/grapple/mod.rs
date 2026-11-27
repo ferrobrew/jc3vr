@@ -28,8 +28,8 @@
 //!   head anchor up to a metre against the root in one sim tick. A tick's change in the anchor's
 //!   offset from the root beyond the tuning's
 //!   [`anchor_snap_m`](tuning::ComfortTuning::anchor_snap_m) is absorbed into an offset that
-//!   decays out of the view; the root's own motion, at any speed, passes through 1:1, and the filtered anchor is
-//!   always `raw + offset`, so the engine's tick interpolation is undisturbed.
+//!   decays out of the view; the root's own motion, at any speed, passes through 1:1, and the
+//!   filtered anchor is always `raw + offset`, so the engine's tick interpolation is undisturbed.
 //!
 //! The filter advances on the engine's input tick and again on every rendered VR frame
 //! ([`advance`]): the body starts rotating the instant the grapple acts, and a tick-only (~33 Hz)
@@ -43,6 +43,11 @@
 //!
 //! [`telemetry`] captures the filter's inputs and outputs to a CSV for offline analysis; every
 //! behaviour above was diagnosed and verified through it.
+//!
+//! The rest of the grapple lives in the submodules: the device drawn on the forearm ([`device`]),
+//! the free hand's hold on the line ([`line_grab`]), the physical pull, reel, swing, and lock
+//! ([`physical`]), the rope model the snatch and the lock share (`rope`), the seat grapple
+//! ([`seat`]), and the tuning ([`tuning`]).
 
 use std::{
     sync::atomic::{AtomicU32, Ordering},
@@ -79,8 +84,8 @@ use crate::grapple::tuning::GRAPPLE;
 /// and `rooted` the head anchor's offset from the character's root (`None` without anchors);
 /// `on_foot` gates the yaw handoff, and the head pose settings' `grapple` section picks the mode.
 ///
-/// Called from both cadences — the input tick ([`jc3vr_view::headpose::sim::on_input_tick`], the poll
-/// stage, in the engine's input job in play) and the VR frame loop (render thread) — under one
+/// Called from both cadences — the input tick ([`jc3vr_view::headpose::sim::on_input_tick`], the
+/// poll stage, in the engine's input job in play) and the VR frame loop (render thread) — under one
 /// mutex, with the step `dt` measured internally. `on_foot` arrives as a parameter because the
 /// input-tick caller already holds the sim lock, and reading `sim::mode()` here would deadlock (SIM
 /// → FILTER is the only legal lock order).
@@ -198,9 +203,9 @@ pub fn take_body_yaw_retarget() -> Option<f32> {
 
 /// The landing-snap absorber step (see the module docs). The detection runs on the anchor's offset
 /// from the root, which the root's own motion does not change: measured against the world, a fast
-/// flight's ticks of uneven length read as velocity changes, and the absorber pulled the view a
-/// few tenths of a metre behind the body after every reel. The offset changes only when a new
-/// tick's anchors are published, so per-advance steps are zero between ticks.
+/// flight's ticks of uneven length read as velocity changes, which would pull the view a few
+/// tenths of a metre behind the body after every reel. The offset changes only when a new tick's
+/// anchors are published, so per-advance steps are zero between ticks.
 fn advance_absorber(s: &mut GrappleFilter, rooted: Option<Vec3>, reeling: bool, dt: f32) {
     // Armed only from the attach/landing onward, never during the zip: the only positional snap
     // the grapple produces is at the landing.

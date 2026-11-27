@@ -7,13 +7,14 @@
 //! tethers or a line attached, the button does more, and the gesture is read before the game sees
 //! it:
 //!
-//! - a tap fires the grapple, once a second tap has not followed within [`DOUBLE_TAP_S`];
+//! - a tap fires the grapple, once a second tap has not followed within the grapple tuning's
+//!   `button.double_tap_s`;
 //! - a double tap releases every tether, and fires nothing: on foot and in the wingsuit it is the
 //!   gamepad's B, which also cancels and steps off a ledge, since the grapple took that button;
 //! - a hold with a grapple target under the aim is the game's hold, a new tether;
-//! - a hold with nothing new under the aim tightens the tethers, the retract rising from
-//!   the grapple tuning's `button.tighten_start` to `tighten_held` over `tighten_ramp_s`; pulling the hand back while
-//!   holding tightens harder, by the physical grapple's pull (`grapple::physical`),
+//! - a hold with nothing new under the aim tightens the tethers, the retract rising from the
+//!   grapple tuning's `button.tighten_start` to `tighten_held` over `tighten_ramp_s`; pulling the
+//!   hand back while holding tightens harder, by the physical grapple's pull (`grapple::physical`),
 //!   which the bindings merge with this retract, the larger winning;
 //! - a sharp pull of the hand while the button is held, with a line attached, zips along the
 //!   line, as a tap would ([`crate::controllers::yank`]).
@@ -23,18 +24,18 @@
 //!
 //! While the hook reels in along a line to a target the lock can hold
 //! ([`GrappleContext::reeling`]), from the reel's wind-up on, the button is the lock's
-//! (`grapple::physical::lock`): a press locks the line's length at once, or, in the
-//! wind-up, as soon as the reel carries the character; a release within the tuning's `button.tap_s` unlocks it and
-//! resumes the reel, firing nothing, since a fire onto the attached line can release it; a release
-//! after a longer hold lets go of the line; and a yank of the grapple hand while it is held unlocks
-//! it and resumes the reel. The game sees no held fire input through any of it. A press that
-//! reached the game just before the reel took the line (the hold of a tap and hold, landing as the
-//! hook attaches) becomes the lock's as soon as the reel does, while it is still held.
+//! (`grapple::physical::lock`): a press locks the line's length at once, or, in the wind-up, as
+//! soon as the reel carries the character; a release within the tuning's `button.tap_s` unlocks it
+//! and resumes the reel, firing nothing, since a fire onto the attached line can release it; a
+//! release after a longer hold lets go of the line; and a yank of the grapple hand while it is held
+//! unlocks it and resumes the reel. The game sees no held fire input through any of it. A press
+//! that reached the game just before the reel took the line (the hold of a tap and hold, landing as
+//! the hook attaches) becomes the lock's as soon as the reel does, while it is still held.
 //!
 //! In a vehicle seat ([`GrappleContext::seated`]), where the game takes no grapple fire, the
-//! button's fire is the seat grapple's (`grapple::seat`): a press with nothing attached,
-//! and a tap read as a fire with tethers attached, fire it ([`GrappleOutput::seat_fire`]), and the
-//! game sees no fire input; the double tap and the tightening hold stay as they are.
+//! button's fire is the seat grapple's (`grapple::seat`): a press with nothing attached, and a tap
+//! read as a fire with tethers attached, fire it ([`GrappleOutput::seat_fire`]), and the game sees
+//! no fire input; the double tap and the tightening hold stay as they are.
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
@@ -89,7 +90,8 @@ pub struct GrappleOutput {
     pub tighten: Option<f32>,
     /// What the button asks of the lock this tick.
     pub lock: Option<LockButton>,
-    /// Fire the seat grapple: the button's fire in a vehicle seat, in place of [`fire`](Self::fire).
+    /// Fire the seat grapple: the button's fire in a vehicle seat, in place of
+    /// [`fire`](Self::fire).
     pub seat_fire: Option<SeatRequest>,
 }
 
@@ -107,8 +109,8 @@ pub enum LockButton {
     Pressed,
     /// The button is held into the lock.
     Held,
-    /// The button came up within the grapple tuning's `button.tap_s`: unlock, the reel resuming. Nothing is fired onto the
-    /// attached line.
+    /// The button came up within the grapple tuning's `button.tap_s`: unlock, the reel resuming.
+    /// Nothing is fired onto the attached line.
     Tapped,
     /// The button came up after a longer hold: let go of the line.
     LetGo,
@@ -140,9 +142,10 @@ enum Phase {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct GrappleButton {
     phase: Phase,
-    /// An external snatch press stays consumed until an observed neutral sample.
+    /// The snatch owns the current press: the gestures ignore the button until it reads up.
     snatch_owned: bool,
-    /// A replaced traversal owns its button until a usable neutral sample, across mode changes.
+    /// Another traversal spent the current press: the gestures ignore the button until it reads
+    /// up, across mode changes.
     traversal_spent: bool,
 }
 
@@ -161,7 +164,8 @@ impl GrappleButton {
         }
     }
 
-    /// Claim a fresh grip-first press before the ordinary grapple gestures see it.
+    /// Give a fresh press to the snatch while it is `eligible`, before the gestures see it.
+    /// Returns whether the snatch owns the press.
     pub fn claim_snatch(&mut self, button: ButtonControl, eligible: bool) -> bool {
         if eligible
             && button.pressed
@@ -174,8 +178,8 @@ impl GrappleButton {
         self.snatch_owned
     }
 
-    /// Consume the owned release too; masked or missing samples cannot transfer ownership.
-    /// Traversal replacement shares this neutral observation with the snatch's button ownership.
+    /// Free the button once a `usable` sample reads it up, its release included, from the snatch
+    /// and from a traversal that spent it; a masked or missing sample frees nothing.
     pub fn observe_snatch_neutral(&mut self, button: ButtonControl, usable: bool) {
         if usable && !button.held() && !button.released {
             self.snatch_owned = false;
@@ -193,7 +197,7 @@ impl GrappleButton {
         }
     }
 
-    /// Reset ordinary gestures without transferring a consumed press back to the game.
+    /// Forget the gesture under way, keeping a press the snatch or a traversal owns.
     pub fn reset_preserving_snatch(&mut self) {
         self.phase = Phase::Idle;
     }
@@ -221,18 +225,19 @@ impl GrappleButton {
         self.phase != Phase::Idle || self.traversal_spent
     }
 
-    /// Invalidate the accepted episode without producing a release or a delayed click.
+    /// Forget the gesture under way, with no release or waiting tap reaching the game.
     pub fn cancel(&mut self) {
         self.phase = Phase::Idle;
     }
 
-    /// Spend the current press after another traversal intent replaces the grapple.
+    /// Spend the current press: another traversal took it in place of the grapple.
     pub fn spend(&mut self) {
         self.phase = Phase::Spent;
         self.traversal_spent = true;
     }
 
-    /// Physical pulls share the ordinary button episode, not merely its raw held level.
+    /// Whether the physical grapple's pulls see the button `held`: only while the press is the
+    /// gestures', not the snatch's or a spent traversal's.
     pub fn physical_button_held(&self, held: bool) -> bool {
         held && !self.snatch_owned && !self.traversal_spent
     }

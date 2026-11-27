@@ -148,11 +148,13 @@ pub struct FlightSample {
     pub to: Vec3,
     /// The target's velocity now.
     pub velocity: Vec3,
-    /// The palm of the hand the line steers toward, now ([`receiver`](crate::controllers::snatch::catch::receiver)).
+    /// The palm of the hand the line steers toward, now
+    /// ([`receiver`](crate::controllers::snatch::catch::receiver)).
     pub hand: Vec3,
     /// Where the hands that may catch the target need it now, by [`Hand::index`].
     pub(crate) catchers: [Option<Vec3>; 2],
-    /// What the catch found this tick ([`CatchWatch`](crate::controllers::snatch::catch::CatchWatch)).
+    /// What the catch found this tick
+    /// ([`CatchWatch`](crate::controllers::snatch::catch::CatchWatch)).
     pub catch: CatchTick,
     /// How long the line has been slack, seconds, or `None` while it pulls.
     pub(crate) slack_s: Option<f32>,
@@ -213,8 +215,9 @@ pub(crate) struct HeavyCatch {
 }
 
 impl HeavyCatch {
-    /// How heavy the target is, `0..=1`: zero at or below half [`heavy_mass_kg`](Self::heavy_mass_kg),
-    /// rising linearly to one at it. A mass that is not finite counts as heavy.
+    /// How heavy the target is, `0..=1`: zero at or below half
+    /// [`heavy_mass_kg`](Self::heavy_mass_kg), rising linearly to one at it. A mass that is not
+    /// finite counts as heavy.
     pub(crate) fn heaviness(&self) -> f32 {
         let half = self.heavy_mass_kg.max(0.0) * 0.5;
         let span = self.heavy_mass_kg.max(0.0) - half;

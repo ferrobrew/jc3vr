@@ -24,7 +24,11 @@ impl<T> Prearm<T> {
         *self = Self::new();
     }
 
-    /// A held fist cannot acquire a new remote target after missing its press.
+    /// Advance by `dt` seconds with the target aimed at now (`current`) and the grip: while the
+    /// grip is open the latest aimed target is kept, and the grip's press keeps one aimed within
+    /// the tuning's `retain_s`, so a short aim miss at the grip edge still offers it. A held fist
+    /// takes no new target after its press. Returns the target the grip may take, while it is
+    /// `valid`.
     pub(super) fn observe(
         &mut self,
         current: Option<T>,

@@ -199,9 +199,9 @@ mod tests {
         assert!((back[0].depth_m - 0.1).abs() < 0.01, "{back:?}");
     }
 
-    /// A seated player's grapple hand, the line out ahead and to the right, pulled back and out past
-    /// their left side, sampled every other tick, with its aim at the arming and the head; cockpit frame.
-    /// The shape of a recorded seated pull.
+    /// A seated player's grapple hand, the line out ahead and to the right, pulled back and out
+    /// past their left side, sampled every other tick, with its aim at the arming and the head;
+    /// cockpit frame. The shape of a recorded seated pull.
     const SEATED_PULL: [Vec3; 7] = [
         Vec3::new(-0.029, -0.274, -0.390),
         Vec3::new(-0.060, -0.252, -0.381),

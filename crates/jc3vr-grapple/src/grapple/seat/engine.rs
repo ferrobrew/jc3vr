@@ -1,3 +1,9 @@
+//! The seat grapple's game calls: the target's capture along the grapple's aim, the fire as a
+//! custom wire the seat owns on the local player's hook, the wire's reading, its car end following
+//! the grapple hand, the tether to the vehicle, and the call back. A wire is known by its address
+//! and read only while the local player's hook still holds it as its active wire and the seat
+//! still owns it ([`active_wire`]). Every function runs on the game thread in the input tick.
+
 use std::{mem::MaybeUninit, num::NonZeroUsize};
 
 use glam::{Mat4, Vec3};
@@ -54,8 +60,8 @@ pub struct Target {
 impl Target {
     /// The target at `at`, a point along the grapple's aim: the world hit a ray from the aim's
     /// origin toward it meets close to it, passing through the local player and the vehicle it
-    /// rides, with the physics body there. `None` when the point is not finite, the grapple has no aim, or the ray meets
-    /// nothing near the point.
+    /// rides, with the physics body there. `None` when the point is not finite, the grapple has no
+    /// aim, or the ray meets nothing near the point.
     pub fn capture(game: &GameTick<'_>, at: Vec3) -> Option<Self> {
         if !at.is_finite() {
             return None;

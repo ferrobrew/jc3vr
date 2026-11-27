@@ -416,8 +416,8 @@ pub(super) fn offerable(game: &GameTick<'_>, input: &OfferInput) -> Result<(), &
 
 /// The target the grapple's aim picks along `ray`: the weapon, object, or car door under it, or a
 /// weapon, a loose object, an inert grenade, or a placed C4 charge lying in the world or a gun in a
-/// character's hands or holster near its line, within the range, in sight. A loose object is the player's other
-/// hand's own only while that hand does not hold it.
+/// character's hands or holster near its line, within the range, in sight. A loose object is the
+/// player's other hand's own only while that hand does not hold it.
 ///
 /// # Safety
 ///
@@ -806,8 +806,8 @@ unsafe fn aimed_offer(aimed: &grapple_weapons::Aimed) -> Option<OfferKind> {
     }
     // A part still on its vehicle (a turret, a door on its hinge) is the vehicle's to the hook,
     // whose attachment then selects the vehicle's body and refuses the snatch: offered as an
-    // object, an armoured car's turret armed three yanks on the 14 November take that each fired
-    // nothing. A door is offered as a door below.
+    // object, a turret would arm the snatch and every yank would fire nothing. A door is offered
+    // as a door below.
     // SAFETY: the caller's strong reference keeps the object alive, before the world update.
     let attached_part =
         unsafe { is_vehicle_part(aimed.object) && !broken_off(aimed.object, aimed.body) };
@@ -857,8 +857,7 @@ pub(super) unsafe fn aimed_mass() -> Option<f32> {
 }
 
 /// The ragdoll of the character `object` the aim hit on its body `body` at `point`, when the
-/// snatch offers it: the character ragdolls, the swing is on, and the whole ragdoll is within the
-/// swing's ceiling.
+/// snatch offers it: the character ragdolls, and the whole ragdoll is within the swing's ceiling.
 ///
 /// # Safety
 ///

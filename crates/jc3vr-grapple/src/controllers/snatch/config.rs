@@ -68,9 +68,8 @@ pub struct SwingTuning {
     pub(crate) strength_n: f32,
     /// How the line's strength grows with the target's mass, `0..=1`: the strength is
     /// [`strength_n`](Self::strength_n) times the mass over
-    /// [`reference_mass_kg`](Self::reference_mass_kg) to this power
-    /// (`line_strength_n`). At 1 every mass
-    /// swings alike; at 0 the line pulls every mass equally hard, so a heavy one barely moves.
+    /// [`reference_mass_kg`](Self::reference_mass_kg) to this power (`line_strength_n`). At 1 every
+    /// mass swings alike; at 0 the line pulls every mass equally hard, so a heavy one barely moves.
     pub(crate) mass_scaling: f32,
     /// The line's strength while the other hand braces the grapple hand's wrist, as a multiple of
     /// one hand's.
@@ -171,11 +170,12 @@ pub struct SnatchTuning {
     /// How near a hand's palm the target's centre must pass for the hand to catch it, metres:
     /// the hand's own reach around the target, with no pull toward the hand.
     pub(crate) catch_zone_m: f32,
-    /// The mass at which a target's catch zone reaches [`heavy_catch_zone_m`](Self::heavy_catch_zone_m)
-    /// and the line's speed falls to [`heavy_speed_share`](Self::heavy_speed_share), kilograms. A
-    /// target at or below half of it keeps the light values. A heavy target's centre cannot come as near
-    /// the palm as a light one's, so the hand catches it from further out, and it needs less speed
-    /// to arrive without passing the hand.
+    /// The mass at which a target's catch zone reaches
+    /// [`heavy_catch_zone_m`](Self::heavy_catch_zone_m) and the line's speed falls to
+    /// [`heavy_speed_share`](Self::heavy_speed_share), kilograms. A target at or below half of it
+    /// keeps the light values. A heavy target's centre cannot come as near the palm as a light
+    /// one's, so the hand catches it from further out, and it needs less speed to arrive without
+    /// passing the hand.
     pub(crate) heavy_mass_kg: f32,
     /// The catch zone for a heavy target, metres.
     pub(crate) heavy_catch_zone_m: f32,

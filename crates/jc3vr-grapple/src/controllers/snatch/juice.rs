@@ -126,7 +126,7 @@ pub(super) unsafe fn fire() {
     }
 }
 
-/// The hook's local player hook the reel's loop is held on, by address, or zero.
+/// The local player's hook the reel's loop is held on, by address, or zero.
 static REELING: AtomicUsize = AtomicUsize::new(0);
 
 /// Play `usage` once on `hook`'s container, unless it loops, as the hook's own message playback
