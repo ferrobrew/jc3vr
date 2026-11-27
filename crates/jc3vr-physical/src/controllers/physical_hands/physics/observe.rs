@@ -104,7 +104,7 @@ pub fn observe(dt: f32) {
         }
         // A snap turn or a recenter moves every palm at once without the hands moving: the
         // palms' motion starts afresh, and the next step carries the bodies with the rig.
-        let jumped = shared.rig.observe(rig);
+        let jumped = shared.rig.observe(rig).is_some();
         if jumped {
             shared.trackers = TRACKERS_AT_REST;
             shared.carrier.reset();

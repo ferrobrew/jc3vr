@@ -3,4 +3,4 @@
 # accepted. Angles are radians.
 
 [rig]
-jump_rad = 0.2
+unannounced_turn_rad = 1.5707964

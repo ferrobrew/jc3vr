@@ -343,7 +343,7 @@ impl Pump {
             return;
         };
         let previous = self.previous.replace(sample);
-        let jumped = self.rig.observe(sample.rig);
+        let jumped = self.rig.observe(sample.rig).is_some();
         let Some(previous) = previous else { return };
         if jumped || (previous.world_scale - sample.world_scale).abs() > 1e-4 {
             self.velocity = Vec3::ZERO;

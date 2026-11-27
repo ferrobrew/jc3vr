@@ -13,7 +13,6 @@ use jc3vr_input::{
     frame::Hand,
     haptics::cues::{self, Sustain},
 };
-use jc3vr_view::vr::recenter_count;
 
 use crate::controllers::physical_hands::{
     climb::{
@@ -96,11 +95,11 @@ pub fn observe(observed: Observed) {
         let mut state = STATE.lock();
         // A recenter or a snap turn moves every palm in the rig at once without the hands moving;
         // the grips are taken afresh from where the body is then, rather than pulling it.
-        let rig = RigSample {
-            rotation: body_rotation,
-            recenters: recenter_count(),
-        };
-        if state.rig.observe(rig) {
+        if state
+            .rig
+            .observe(RigSample::with_rotation(body_rotation))
+            .is_some()
+        {
             state.rig_epoch = state.rig_epoch.wrapping_add(1);
         }
         state.palms = palms;

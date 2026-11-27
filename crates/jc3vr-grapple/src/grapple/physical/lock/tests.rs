@@ -20,7 +20,8 @@ fn pump_sample(hand: Vec3, head: Vec3) -> PumpSample {
         head,
         rig: RigSample {
             rotation: Quat::IDENTITY,
-            recenters: 0,
+            rebases: 0,
+            turns: 0,
         },
         world_scale: 1.0,
     }
@@ -83,17 +84,18 @@ fn lateral_pump_keeps_rope_length_and_adds_no_tangent_target_reaction() {
 }
 
 #[test]
-fn pump_reseeds_after_recenter_tracking_gap_or_implausible_jump() {
+fn pump_reseeds_after_recenter_snap_turn_tracking_gap_or_implausible_jump() {
     let tuning = GRAPPLE.get().physical.swing;
-    for discontinuity in 0..5 {
+    for discontinuity in 0..6 {
         let mut pump = Pump::default();
         pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
         let mut next = pump_sample(Vec3::X * 0.1, Vec3::ZERO);
         match discontinuity {
-            0 => next.rig.recenters += 1,
-            1 => next.rig.rotation = Quat::from_rotation_y(0.5),
-            2 => next.hand = Vec3::X * 2.0,
-            3 => next.world_scale = 2.0,
+            0 => next.rig.rebases += 1,
+            1 => next.rig.turns += 1,
+            2 => next.rig.rotation = Quat::from_rotation_y(2.0),
+            3 => next.hand = Vec3::X * 2.0,
+            4 => next.world_scale = 2.0,
             _ => pump.sample(None, DT, &tuning),
         }
         pump.sample(Some(next), DT, &tuning);
