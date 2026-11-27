@@ -29,7 +29,7 @@ use jc3gi::graphics_engine::{
 };
 use jc3vr_render::{
     image_writer::{ChannelOrder, Image},
-    screenshot::create_staging,
+    readback::{read_mapped, staging_texture},
 };
 use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use parking_lot::Mutex;
@@ -47,8 +47,8 @@ use windows::{
         Foundation::RECT,
         Graphics::{
             Direct3D11::{
-                D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_RASTERIZER_DESC,
-                D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11DeviceContext, ID3D11Texture2D,
+                D3D11_RASTERIZER_DESC, D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11DeviceContext,
+                ID3D11Texture2D,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_TYPELESS, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -743,28 +743,17 @@ fn read_texture(
     };
     // SAFETY: the context is locked, and the copy and mapping use its live device.
     unsafe {
-        let staging = create_staging(&device.m_Device, &staging_desc)?;
+        let staging = staging_texture(&device.m_Device, &staging_desc)?;
         ctx.CopyResource(&staging, texture);
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-            .context("mapping stage texture")?;
-        let result = (|| {
-            let len = (mapped.RowPitch as usize)
-                .checked_mul(desc.Height as usize)
-                .filter(|len| *len <= isize::MAX as usize)
-                .context("stage mapping length overflow")?;
-            if mapped.pData.is_null() {
-                bail!("stage mapping has no data");
-            }
-            let bytes = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), len);
-            match stage_means(bytes, mapped.RowPitch as usize, &desc) {
+        read_mapped(ctx, &staging, |mapped| {
+            let bytes = mapped.rows(desc.Height)?;
+            match stage_means(bytes, mapped.row_pitch(), &desc) {
                 Ok(means) => record.means = means,
                 Err(error) => record.error = Some(format!("screenshot stages: {error:#}")),
             }
-            stage_image(record.stage, bytes, mapped.RowPitch as usize, &desc)
-        })();
-        ctx.Unmap(&staging, 0);
-        result
+            stage_image(record.stage, bytes, mapped.row_pitch(), &desc)
+        })
+        .context("mapping stage texture")?
     }
 }
 

@@ -5,13 +5,10 @@ use std::{io::Write as _, path::Path};
 
 use anyhow::{Context as _, bail};
 use flate2::{Compression, write::GzEncoder};
+use jc3vr_render::readback::{read_mapped, staging_texture};
 use serde::Serialize;
 use windows::Win32::Graphics::{
-    Direct3D11::{
-        D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-        D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, ID3D11Device, ID3D11DeviceContext,
-        ID3D11Texture2D,
-    },
+    Direct3D11::{D3D11_BOX, D3D11_TEXTURE2D_DESC, ID3D11Device, ID3D11DeviceContext},
     Dxgi::Common::DXGI_SAMPLE_DESC,
 };
 
@@ -58,20 +55,13 @@ impl DumpImage {
                 Count: 1,
                 Quality: 0,
             },
-            Usage: D3D11_USAGE_STAGING,
-            BindFlags: 0,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            MiscFlags: 0,
+            ..Default::default()
         };
         let row_bytes = (width * plane.format.pixel_bytes) as usize;
         // SAFETY: per the caller's contract; the staging texture is ours and the box lies within
         // the plane.
         unsafe {
-            let mut staging: Option<ID3D11Texture2D> = None;
-            device
-                .CreateTexture2D(&desc, None, Some(&mut staging))
-                .context("creating the dump readback")?;
-            let staging = staging.context("the dump readback was not created")?;
+            let staging = staging_texture(device, &desc).context("creating the dump readback")?;
             context.CopySubresourceRegion(
                 &staging,
                 0,
@@ -89,23 +79,17 @@ impl DumpImage {
                     back: 1,
                 }),
             );
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context
-                .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-                .context("mapping the dump readback")?;
-            if mapped.pData.is_null() || (mapped.RowPitch as usize) < row_bytes {
-                context.Unmap(&staging, 0);
-                bail!("the dump readback mapped too little");
-            }
-            let mut bytes = Vec::with_capacity(row_bytes * height as usize);
-            for y in 0..height as usize {
-                let row = std::slice::from_raw_parts(
-                    mapped.pData.cast::<u8>().add(y * mapped.RowPitch as usize),
-                    row_bytes,
-                );
-                bytes.extend_from_slice(row);
-            }
-            context.Unmap(&staging, 0);
+            let bytes = read_mapped(context, &staging, |mapped| {
+                if mapped.row_pitch() < row_bytes {
+                    bail!("the dump readback mapped too little");
+                }
+                let mut bytes = Vec::with_capacity(row_bytes * height as usize);
+                for y in 0..height as usize {
+                    bytes.extend_from_slice(mapped.row(y, row_bytes));
+                }
+                Ok(bytes)
+            })
+            .context("mapping the dump readback")??;
             Ok(Self {
                 bytes,
                 width,

@@ -1,12 +1,12 @@
 use anyhow::{Context as _, bail};
-use jc3vr_render::screenshot::create_staging;
+use jc3vr_render::readback::{read_mapped, staging_texture};
 use windows::{
     Win32::Graphics::{
         Direct3D11::{
-            D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_DSV_DIMENSION_TEXTURE2D, D3D11_MAP_READ,
-            D3D11_MAPPED_SUBRESOURCE, D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RTV_DIMENSION_TEXTURE2D,
-            D3D11_TEXTURE2D_DESC, ID3D11DepthStencilView, ID3D11DeviceContext,
-            ID3D11RenderTargetView, ID3D11Resource, ID3D11Texture2D,
+            D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_DSV_DIMENSION_TEXTURE2D,
+            D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_TEXTURE2D_DESC,
+            ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11RenderTargetView, ID3D11Resource,
+            ID3D11Texture2D,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -289,25 +289,19 @@ fn read_target(
         Format: staging_format(desc.Format),
         ..desc
     };
-    let staging = unsafe { create_staging(&device, &staging_desc) }?;
+    let staging = unsafe { staging_texture(&device, &staging_desc) }?;
+    // SAFETY: the context is locked, and the staging copy is the target's size.
     unsafe {
         ctx.CopyResource(&staging, &texture);
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-            .context("mapping target")?;
-        let result = (|| {
-            let len = (mapped.RowPitch as usize)
-                .checked_mul(desc.Height as usize)
-                .filter(|len| *len <= isize::MAX as usize)
-                .context("mapping length overflow")?;
-            if mapped.pData.is_null() {
-                bail!("target mapping has no data");
-            }
-            let bytes = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), len);
-            stage_image(record.stage, bytes, mapped.RowPitch as usize, &desc)
-        })();
-        ctx.Unmap(&staging, 0);
-        result
+        read_mapped(ctx, &staging, |mapped| {
+            stage_image(
+                record.stage,
+                mapped.rows(desc.Height)?,
+                mapped.row_pitch(),
+                &desc,
+            )
+        })
+        .context("mapping target")?
     }
 }
 

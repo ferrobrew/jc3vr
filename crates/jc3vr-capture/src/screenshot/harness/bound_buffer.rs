@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
+use jc3vr_render::readback::{read_mapped, staging_buffer};
 use windows::{
     Win32::Graphics::Direct3D11::{
-        D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-        D3D11_USAGE_STAGING, ID3D11Buffer, ID3D11DeviceContext, ID3D11DeviceContext1,
-        ID3D11Resource,
+        D3D11_BUFFER_DESC, ID3D11Buffer, ID3D11DeviceContext, ID3D11DeviceContext1,
     },
     core::Interface,
 };
@@ -209,47 +208,24 @@ fn read(
     }
     // SAFETY: `ctx` is the live immediate context; `GetDevice` only reads its device.
     let device = unsafe { ctx.GetDevice() }.context("getting the device")?;
-    let staging_desc = D3D11_BUFFER_DESC {
-        ByteWidth: desc.ByteWidth,
-        Usage: D3D11_USAGE_STAGING,
-        BindFlags: 0,
-        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-        MiscFlags: 0,
-        StructureByteStride: 0,
-    };
-    let mut staging = None;
-    // SAFETY: the descriptor is valid and `staging` is an out parameter.
-    unsafe { device.CreateBuffer(&staging_desc, None, Some(&mut staging)) }
-        .context("creating the staging buffer")?;
-    let staging = staging.context("staging buffer not created")?;
-    let source: ID3D11Resource = binding
-        .buffer
-        .cast()
-        .context("constant buffer is not a resource")?;
-    let destination: ID3D11Resource = staging.cast().context("staging buffer is not a resource")?;
-    // SAFETY: both resources are live and the copy covers the whole source.
-    unsafe { ctx.CopyResource(&destination, &source) };
-    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    // SAFETY: `staging` is a readback staging buffer.
-    unsafe { ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
-        .context("mapping the staging buffer")?;
+    // SAFETY: the device is the context's own.
+    let staging = unsafe { staging_buffer(&device, desc.ByteWidth) }?;
     // The whole buffer is mapped, so the decode can start at the bound range's first constant
     // rather than at the buffer's beginning.
-    // SAFETY: the mapping exposes `ByteWidth` bytes, and it stays live until `Unmap` below.
-    if mapped.pData.is_null() {
-        unsafe { ctx.Unmap(&staging, 0) };
-        anyhow::bail!("constant buffer mapping has no data");
+    // SAFETY: both resources are live, the copy covers the whole source, and the mapping exposes the
+    // `ByteWidth` bytes the staging buffer holds.
+    let decoded = unsafe {
+        ctx.CopyResource(&staging, &binding.buffer);
+        read_mapped(ctx, &staging, |mapped| {
+            decode_range_limited(
+                mapped.bytes(desc.ByteWidth as usize),
+                binding.first_constant,
+                binding.num_constants,
+                max_rows,
+            )
+        })
     }
-    let whole =
-        unsafe { std::slice::from_raw_parts(mapped.pData.cast::<u8>(), desc.ByteWidth as usize) };
-    let decoded = decode_range_limited(
-        whole,
-        binding.first_constant,
-        binding.num_constants,
-        max_rows,
-    );
-    // SAFETY: the mapping was created above, and `Unmap` is infallible.
-    unsafe { ctx.Unmap(&staging, 0) };
+    .context("mapping the staging buffer")?;
     Ok(match decoded {
         Ok(values) if !values.is_empty() => Readback {
             values: Some(values),

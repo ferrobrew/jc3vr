@@ -4,7 +4,10 @@ use std::{cell::Cell, ffi::c_void};
 
 use anyhow::Context as _;
 use cascade::{CascadeGuard, CascadeTrial};
-use jc3vr_render::stereo::single_pass::{shader_identity, shader_identity::IdentityResult};
+use jc3vr_render::{
+    readback::{read_mapped, staging_buffer},
+    stereo::single_pass::{shader_identity, shader_identity::IdentityResult},
+};
 use jc3vr_view::{
     stereo::{dispatch, draw_index},
     vr,
@@ -13,11 +16,9 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
     Win32::Graphics::Direct3D11::{
-        D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-        D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC,
-        D3D11_USAGE_STAGING, ID3D11Buffer, ID3D11DeviceContext, ID3D11DeviceContext1,
-        ID3D11PixelShader, ID3D11Resource, ID3D11ShaderResourceView, ID3D11Texture2D,
-        ID3D11Texture3D,
+        D3D11_BUFFER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_TEXTURE2D_DESC,
+        D3D11_TEXTURE3D_DESC, ID3D11Buffer, ID3D11DeviceContext, ID3D11DeviceContext1,
+        ID3D11PixelShader, ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11Texture3D,
     },
     core::Interface,
 };
@@ -410,39 +411,17 @@ pub(super) fn copy_content(
     range: std::ops::Range<usize>,
 ) -> anyhow::Result<Vec<u8>> {
     let device = unsafe { ctx.GetDevice() }.context("resolve constants: device")?;
-    let desc = D3D11_BUFFER_DESC {
-        ByteWidth: byte_width,
-        Usage: D3D11_USAGE_STAGING,
-        BindFlags: 0,
-        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-        MiscFlags: 0,
-        StructureByteStride: 0,
-    };
-    let mut staging = None;
-    unsafe { device.CreateBuffer(&desc, None, Some(&mut staging)) }
+    let staging = unsafe { staging_buffer(&device, byte_width) }
         .context("resolve constants: staging buffer")?;
-    let staging =
-        staging.ok_or_else(|| anyhow::anyhow!("resolve constants: staging buffer missing"))?;
-    let source: ID3D11Resource = buffer
-        .cast()
-        .context("resolve constants: source resource")?;
-    let destination: ID3D11Resource = staging
-        .cast()
-        .context("resolve constants: staging resource")?;
-    unsafe { ctx.CopyResource(&destination, &source) };
-    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    unsafe { ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
-        .context("resolve constants: map")?;
-    if mapped.pData.is_null() {
-        unsafe { ctx.Unmap(&staging, 0) };
-        anyhow::bail!("resolve constants: null mapped data");
+    // SAFETY: the context is locked, the copy covers the whole source, and the mapping spans the
+    // `byte_width` bytes the staging buffer holds.
+    unsafe {
+        ctx.CopyResource(&staging, buffer);
+        read_mapped(ctx, &staging, |mapped| {
+            mapped.bytes(byte_width as usize)[range].to_vec()
+        })
     }
-    let bytes =
-        unsafe { std::slice::from_raw_parts(mapped.pData.cast::<u8>(), byte_width as usize) }
-            [range]
-            .to_vec();
-    unsafe { ctx.Unmap(&staging, 0) };
-    Ok(bytes)
+    .context("resolve constants: map")
 }
 
 fn observe(ctx: &ID3D11DeviceContext) -> Observation {

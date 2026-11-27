@@ -16,14 +16,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Context as _, bail};
 use windows::{
     Win32::Graphics::Direct3D11::{
-        D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC,
-        D3D11_USAGE_STAGING, ID3D11Device, ID3D11DeviceContext, ID3D11Resource, ID3D11Texture2D,
+        D3D11_TEXTURE2D_DESC, ID3D11Device, ID3D11DeviceContext, ID3D11Resource, ID3D11Texture2D,
     },
     core::Interface as _,
 };
 
 use crate::{
     image_writer::{self, ChannelOrder, Image, ImageTarget},
+    readback::{read_mapped, staging_texture},
     stereo::single_pass::FrameDiagnostics,
 };
 
@@ -102,7 +102,7 @@ pub fn read_back(
                 let mut desc = D3D11_TEXTURE2D_DESC::default();
                 texture.GetDesc(&mut desc);
                 let order = channel_order(&desc)?;
-                let staging = create_staging(device, &desc)?;
+                let staging = staging_texture(device, &desc)?;
                 context.CopyResource(&staging, &texture);
                 map_out(context, &staging, &desc, order)
             }
@@ -129,7 +129,7 @@ pub fn read_back(
                     Width: left_desc.Width * 2,
                     ..left_desc
                 };
-                let staging = create_staging(device, &staging_desc)?;
+                let staging = staging_texture(device, &staging_desc)?;
                 context.CopySubresourceRegion(&staging, 0, 0, 0, 0, left, 0, None);
                 context.CopySubresourceRegion(&staging, 0, left_desc.Width, 0, 0, right, 0, None);
                 map_out(context, &staging, &staging_desc, order)
@@ -149,32 +149,6 @@ fn channel_order(desc: &D3D11_TEXTURE2D_DESC) -> anyhow::Result<ChannelOrder> {
     })
 }
 
-/// A CPU-readable staging texture matching `desc`'s size and format.
-///
-/// # Safety
-///
-/// `device` must be the live device, used on the render thread.
-pub unsafe fn create_staging(
-    device: &ID3D11Device,
-    desc: &D3D11_TEXTURE2D_DESC,
-) -> anyhow::Result<ID3D11Texture2D> {
-    let staging_desc = D3D11_TEXTURE2D_DESC {
-        Usage: D3D11_USAGE_STAGING,
-        BindFlags: 0,
-        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-        MiscFlags: 0,
-        ..*desc
-    };
-    let mut staging: Option<ID3D11Texture2D> = None;
-    // SAFETY: per the caller's contract -- the live device on the render thread.
-    unsafe {
-        device
-            .CreateTexture2D(&staging_desc, None, Some(&mut staging))
-            .context("creating the staging texture")?;
-    }
-    staging.context("the staging texture was not created")
-}
-
 /// Map `staging` and copy its rows out into an owned [`Capture`].
 unsafe fn map_out(
     context: &ID3D11DeviceContext,
@@ -184,20 +158,15 @@ unsafe fn map_out(
 ) -> anyhow::Result<Capture> {
     // SAFETY: per the caller's contract -- the live immediate context, and a staging texture the
     // copies into which were issued on this same context. The mapping spans `RowPitch` bytes per row
-    // for `Height` rows, and is read only before the unmap.
+    // for `Height` rows.
     let image = unsafe {
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        context
-            .Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-            .context("mapping the staging texture")?;
-        let row_pitch = mapped.RowPitch as usize;
-        let bytes =
-            std::slice::from_raw_parts(mapped.pData.cast::<u8>(), row_pitch * desc.Height as usize);
-        let image = Image::from_rows(bytes, row_pitch, desc.Width, desc.Height, order);
-        context.Unmap(staging, 0);
-        image
+        read_mapped(context, staging, |mapped| {
+            let bytes = mapped.rows(desc.Height)?;
+            Image::from_rows(bytes, mapped.row_pitch(), desc.Width, desc.Height, order)
+                .context("the mapped rows are shorter than the texture")
+        })
     }
-    .context("the mapped rows are shorter than the texture")?;
+    .context("mapping the staging texture")??;
     Ok(Capture {
         image,
         format: format!("{:?}", desc.Format),

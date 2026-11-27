@@ -8,7 +8,8 @@ use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 #[cfg(feature = "profiler")]
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use jc3vr_render::{
-    probes::state::vertex_identity_lookup, screenshot::create_staging,
+    probes::state::vertex_identity_lookup,
+    readback::{read_mapped, staging_texture},
     stereo::single_pass::shader_identity,
 };
 use jc3vr_view::stereo::{dispatch::RenderMode, draw_index};
@@ -467,52 +468,43 @@ impl Trace {
                     && desc.ArraySize == 1,
                 "unexpected main depth: {desc:?}"
             );
-            let staging = unsafe { create_staging(&ctx.GetDevice()?, &desc) }?;
+            let staging = unsafe { staging_texture(&ctx.GetDevice()?, &desc) }?;
             self.resources = Some((src, staging));
         }
         let (src, staging) = self.resources.as_ref().unwrap();
         let stride = if self.color { 4 } else { 8 };
         let depths = || -> Result<Vec<u32>> {
-            let mut m = D3D11_MAPPED_SUBRESOURCE::default();
+            // SAFETY: the context is locked, and every read lies within the depth's mapped rows,
+            // whose pitch is checked first.
             unsafe {
                 ctx.CopyResource(staging, src);
-                ctx.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?
-            };
-            let result = (|| {
-                let offset = if self.evidence.packed && physical_eye == 1 {
-                    320
-                } else {
-                    0
-                };
-                ensure!(
-                    !m.pData.is_null() && m.RowPitch >= (320 + offset) * stride,
-                    "invalid mapped depth"
-                );
-                let physical = |base: u32| {
-                    self.evidence
-                        .points
-                        .iter()
-                        .copied()
-                        .map(move |[x, y]| unsafe {
-                            m.pData
-                                .cast::<u8>()
-                                .add((y * m.RowPitch + (x + base) * stride) as usize)
+                read_mapped(ctx, staging, |m| {
+                    let pitch = m.row_pitch() as u32;
+                    let offset = if self.evidence.packed && physical_eye == 1 {
+                        320
+                    } else {
+                        0
+                    };
+                    ensure!(pitch >= (320 + offset) * stride, "invalid mapped depth");
+                    let physical = |base: u32| {
+                        self.evidence.points.iter().copied().map(move |[x, y]| {
+                            m.data()
+                                .add((y * pitch + (x + base) * stride) as usize)
                                 .cast::<u32>()
                                 .read_unaligned()
                         })
-                };
-                let mut result: Vec<u32> = physical(offset).collect();
-                if (self.base_sources || self.group_sources) && self.evidence.packed {
-                    ensure!(
-                        m.RowPitch >= 640 * stride,
-                        "group sources: short packed depth row"
-                    );
-                    result.extend(physical(320));
-                }
-                Ok(result)
-            })();
-            unsafe { ctx.Unmap(staging, 0) };
-            result
+                    };
+                    let mut result: Vec<u32> = physical(offset).collect();
+                    if (self.base_sources || self.group_sources) && self.evidence.packed {
+                        ensure!(
+                            pitch >= 640 * stride,
+                            "group sources: short packed depth row"
+                        );
+                        result.extend(physical(320));
+                    }
+                    Ok(result)
+                })?
+            }
         };
         let mut rt = None;
         let mut ds = None;
@@ -698,7 +690,7 @@ impl Trace {
                 "terrain albedo: wrong target"
             );
             Some((
-                unsafe { create_staging(&ctx.GetDevice()?, &desc) }?,
+                unsafe { staging_texture(&ctx.GetDevice()?, &desc) }?,
                 texture,
             ))
         } else {
@@ -708,28 +700,27 @@ impl Trace {
             let Some((staging, texture)) = albedo.as_ref() else {
                 return Ok(None);
             };
-            let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-            unsafe {
-                ctx.CopyResource(staging, texture);
-                ctx.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
-            }
             let x = if self.evidence.packed && physical_eye == 1 {
                 320
             } else {
                 0
             };
-            let result = if !m.pData.is_null() && m.RowPitch >= 4 * (x + 320) {
-                Some([(186, 161), (187, 162)].map(|(tx, ty)| unsafe {
-                    m.pData
-                        .cast::<u8>()
-                        .add((ty * m.RowPitch + 4 * (tx + x)) as usize)
-                        .cast::<u32>()
-                        .read_unaligned()
-                }))
-            } else {
-                None
+            // SAFETY: the context is locked, and both taps lie within the albedo's mapped rows, whose
+            // pitch is checked first.
+            let result = unsafe {
+                ctx.CopyResource(staging, texture);
+                read_mapped(ctx, staging, |m| {
+                    let pitch = m.row_pitch() as u32;
+                    (pitch >= 4 * (x + 320)).then(|| {
+                        [(186, 161), (187, 162)].map(|(tx, ty)| {
+                            m.data()
+                                .add((ty * pitch + 4 * (tx + x)) as usize)
+                                .cast::<u32>()
+                                .read_unaligned()
+                        })
+                    })
+                })?
             };
-            unsafe { ctx.Unmap(staging, 0) };
             Ok(Some(result.context("terrain albedo: invalid mapped row")?))
         };
         let before_color = color_taps()?;

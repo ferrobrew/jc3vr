@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, ensure};
+use jc3vr_render::readback::{read_mapped, staging_buffer};
 use serde::Serialize;
 use windows::{
     Win32::Graphics::{
@@ -260,18 +261,7 @@ pub(super) fn buffer_slice(
         bytes > 0 && end <= desc.ByteWidth,
         "impostor inputs: truncated buffer"
     );
-    let desc = D3D11_BUFFER_DESC {
-        ByteWidth: bytes,
-        Usage: D3D11_USAGE_STAGING,
-        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-        ..Default::default()
-    };
-    let mut staging = None;
-    unsafe {
-        ctx.GetDevice()?
-            .CreateBuffer(&desc, None, Some(&mut staging))?
-    };
-    let staging = staging.context("missing staging buffer")?;
+    let staging = unsafe { staging_buffer(&ctx.GetDevice()?, bytes)? };
     let region = D3D11_BOX {
         left: start,
         right: end,
@@ -280,14 +270,9 @@ pub(super) fn buffer_slice(
         front: 0,
         back: 1,
     };
-    let mut map = D3D11_MAPPED_SUBRESOURCE::default();
+    // SAFETY: the context is locked, and the mapping spans the `bytes` the staging buffer holds.
     unsafe {
         ctx.CopySubresourceRegion(&staging, 0, 0, 0, 0, buffer, 0, Some(&region));
-        ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut map))?
-    };
-    let result = (!map.pData.is_null()).then(|| {
-        unsafe { std::slice::from_raw_parts(map.pData.cast::<u8>(), bytes as usize) }.to_vec()
-    });
-    unsafe { ctx.Unmap(&staging, 0) };
-    result.context("empty mapped buffer")
+        read_mapped(ctx, &staging, |map| map.bytes(bytes as usize).to_vec())
+    }
 }

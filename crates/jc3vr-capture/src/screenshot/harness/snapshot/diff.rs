@@ -2,14 +2,14 @@
 //! cells back. Render thread only, with the engine's immediate context locked.
 
 use anyhow::{Context as _, bail};
+use jc3vr_render::readback::{read_mapped, staging_buffer};
 use windows::Win32::Graphics::{
     Direct3D11::{
         D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_UNORDERED_ACCESS, D3D11_BOX, D3D11_BUFFER_DESC,
-        D3D11_BUFFER_UAV, D3D11_CPU_ACCESS_READ, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_READ,
-        D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_UAV_DIMENSION_BUFFER,
-        D3D11_UNORDERED_ACCESS_VIEW_DESC, D3D11_UNORDERED_ACCESS_VIEW_DESC_0, D3D11_USAGE_DYNAMIC,
-        D3D11_USAGE_STAGING, ID3D11Buffer, ID3D11ComputeShader, ID3D11Device, ID3D11DeviceContext,
-        ID3D11ShaderResourceView, ID3D11UnorderedAccessView,
+        D3D11_BUFFER_UAV, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
+        D3D11_MAPPED_SUBRESOURCE, D3D11_UAV_DIMENSION_BUFFER, D3D11_UNORDERED_ACCESS_VIEW_DESC,
+        D3D11_UNORDERED_ACCESS_VIEW_DESC_0, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11ComputeShader,
+        ID3D11Device, ID3D11DeviceContext, ID3D11ShaderResourceView, ID3D11UnorderedAccessView,
     },
     Dxgi::Common::DXGI_FORMAT_R32_UINT,
 };
@@ -103,20 +103,8 @@ impl Pipeline {
                 )
                 .context("creating the diff cells view")?;
             let cells_view = cells_view.context("the diff cells view was not created")?;
-            let mut staging: Option<ID3D11Buffer> = None;
-            device
-                .CreateBuffer(
-                    &D3D11_BUFFER_DESC {
-                        ByteWidth: words * 4,
-                        Usage: D3D11_USAGE_STAGING,
-                        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-                        ..Default::default()
-                    },
-                    None,
-                    Some(&mut staging),
-                )
-                .context("creating the diff readback")?;
-            let staging = staging.context("the diff readback was not created")?;
+            let staging =
+                staging_buffer(device, words * 4).context("creating the diff readback")?;
             Ok(Self {
                 shader,
                 params,
@@ -191,27 +179,21 @@ impl Pipeline {
                     back: 1,
                 }),
             );
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context
-                .Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-                .context("mapping the diff readback")?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                bail!("the diff readback mapped no data");
-            }
-            let words = std::slice::from_raw_parts(mapped.pData.cast::<u32>(), bytes as usize / 4);
-            let result = words
-                .chunks_exact(cells_per_job() * CELL_WORDS)
-                .map(|job| {
-                    job.as_chunks::<CELL_WORDS>()
-                        .0
-                        .iter()
-                        .map(Cell::from_words)
-                        .collect()
-                })
-                .collect();
-            context.Unmap(&self.staging, 0);
-            Ok(result)
+            read_mapped(context, &self.staging, |mapped| {
+                let words =
+                    std::slice::from_raw_parts(mapped.data().cast::<u32>(), bytes as usize / 4);
+                words
+                    .chunks_exact(cells_per_job() * CELL_WORDS)
+                    .map(|job| {
+                        job.as_chunks::<CELL_WORDS>()
+                            .0
+                            .iter()
+                            .map(Cell::from_words)
+                            .collect()
+                    })
+                    .collect()
+            })
+            .context("mapping the diff readback")
         }
     }
 

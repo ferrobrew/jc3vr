@@ -11,9 +11,10 @@
 //!   draw counts, and, with the `profiler` feature, the engine-phase scopes).
 //! - [`controllers`]: the render-side pieces of the layers above: the overlay and scope renderers
 //!   and passes, and their registration in the post-draw.
-//! - [`debug`], [`screenshot`], [`image_writer`], and [`profiler`]: the render diagnostics, the
-//!   F12 screenshot, the image writer, the GPU dispatch records, and, with the `profiler` feature,
-//!   the GPU timestamp lane.
+//! - [`debug`], [`screenshot`], [`readback`], [`image_writer`], and [`profiler`]: the render
+//!   diagnostics, the F12 screenshot, the staging readbacks it and the capture harness read GPU
+//!   resources through, the image writer, the GPU dispatch records, and, with the `profiler`
+//!   feature, the GPU timestamp lane.
 //! - [`tuning`]: the render layer's tuning file.
 //! - [`draw_path`]: the plain load-and-store counter the draw path bumps.
 //! - [`probes`]: the capture probes, the one table the capture crate above fills at install, read
@@ -29,6 +30,7 @@ pub mod hooks;
 pub mod image_writer;
 pub mod probes;
 pub mod profiler;
+pub mod readback;
 pub mod screenshot;
 pub mod stereo;
 pub mod tuning;

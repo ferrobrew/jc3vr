@@ -1,14 +1,13 @@
 use anyhow::{Context as _, bail, ensure};
-use jc3vr_render::screenshot::create_staging;
+use jc3vr_render::readback::{read_mapped, staging_texture};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use windows::{
     Win32::Graphics::{
         Direct3D::D3D_SRV_DIMENSION_TEXTURE2D,
         Direct3D11::{
-            D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SAMPLER_DESC,
-            D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_TEXTURE2D_DESC, ID3D11DeviceContext,
-            ID3D11PixelShader, ID3D11ShaderResourceView, ID3D11Texture2D,
+            D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_TEXTURE2D_DESC,
+            ID3D11DeviceContext, ID3D11PixelShader, ID3D11ShaderResourceView, ID3D11Texture2D,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R11G11B10_FLOAT,
@@ -128,7 +127,7 @@ fn wave_footprint(
     for level in 0..8 {
         let dim = 128 >> level;
         let staging = unsafe {
-            create_staging(
+            staging_texture(
                 &device,
                 &D3D11_TEXTURE2D_DESC {
                     Width: dim,
@@ -138,28 +137,21 @@ fn wave_footprint(
                 },
             )
         }?;
-        let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
+        // SAFETY: the context is locked, and every row read lies within the mip's mapped rows.
+        let hash = unsafe {
             ctx.CopySubresourceRegion(&staging, 0, 0, 0, 0, &texture, level, None);
-            ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
-        }
-        let hash = (|| -> anyhow::Result<String> {
-            ensure!(
-                !m.pData.is_null() && m.RowPitch >= dim * 8,
-                "lake footprint: invalid mip mapping"
-            );
-            let mut digest = Sha256::new();
-            for y in 0..dim as usize {
-                digest.update(unsafe {
-                    std::slice::from_raw_parts(
-                        m.pData.cast::<u8>().add(y * m.RowPitch as usize),
-                        dim as usize * 8,
-                    )
-                });
-            }
-            Ok(format!("{:x}", digest.finalize()))
-        })();
-        unsafe { ctx.Unmap(&staging, 0) };
+            read_mapped(ctx, &staging, |m| -> anyhow::Result<String> {
+                ensure!(
+                    m.row_pitch() >= dim as usize * 8,
+                    "lake footprint: invalid mip mapping"
+                );
+                let mut digest = Sha256::new();
+                for y in 0..dim as usize {
+                    digest.update(m.row(y, dim as usize * 8));
+                }
+                Ok(format!("{:x}", digest.finalize()))
+            })?
+        };
         mip_sha256.push(hash?);
     }
     Ok(WaveFootprint {
@@ -546,25 +538,19 @@ fn read_water_input(
         bytes_per_pixel: format_byte_width(view_format),
     });
     let device = unsafe { ctx.GetDevice() }.context("getting context device")?;
-    let staging = unsafe { create_staging(&device, &desc) }?;
+    let staging = unsafe { staging_texture(&device, &desc) }?;
+    // SAFETY: the context is locked, and the staging copy is the selected mip's size.
     unsafe {
         ctx.CopySubresourceRegion(&staging, 0, 0, 0, 0, &texture, mip, None);
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-            .context("mapping water input")?;
-        let result = (|| {
-            let len = (mapped.RowPitch as usize)
-                .checked_mul(desc.Height as usize)
-                .filter(|len| *len <= isize::MAX as usize)
-                .context("water input mapping length overflow")?;
-            if mapped.pData.is_null() {
-                bail!("water input mapping has no data");
-            }
-            let bytes = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), len);
-            stage_image(record.stage, bytes, mapped.RowPitch as usize, &raw_desc)
-        })();
-        ctx.Unmap(&staging, 0);
-        result
+        read_mapped(ctx, &staging, |mapped| {
+            stage_image(
+                record.stage,
+                mapped.rows(desc.Height)?,
+                mapped.row_pitch(),
+                &raw_desc,
+            )
+        })
+        .context("mapping water input")?
     }
 }
 

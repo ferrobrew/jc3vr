@@ -1,5 +1,5 @@
 use anyhow::{Context, ensure};
-use jc3vr_render::screenshot::create_staging;
+use jc3vr_render::readback::{read_mapped, staging_texture};
 use windows::{
     Win32::Graphics::{
         Direct3D11::*,
@@ -371,7 +371,7 @@ impl LakeSampleTargets {
         record: StageRecord,
     ) -> anyhow::Result<()> {
         let device = unsafe { self.ctx.GetDevice()? };
-        let staging = unsafe { create_staging(&device, &self.desc) }?;
+        let staging = unsafe { staging_texture(&device, &self.desc) }?;
         for (stage, tex) in self.stages.iter().copied().zip(&self.textures) {
             let mut r = StageRecord {
                 stage,
@@ -385,25 +385,13 @@ impl LakeSampleTargets {
                 ..record.clone()
             };
             r.water_input = None;
-            let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-            unsafe {
+            // SAFETY: the context is locked, and the staging copy is the sample targets' size.
+            let image = unsafe {
                 self.ctx.CopyResource(&staging, tex);
-                self.ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?
+                read_mapped(&self.ctx, &staging, |m| {
+                    stage_image(stage, m.rows(self.desc.Height)?, m.row_pitch(), &self.desc)
+                })?
             };
-            let image = (|| {
-                ensure!(!m.pData.is_null(), "null sample mapping");
-                let len = (m.RowPitch as usize)
-                    .checked_mul(self.desc.Height as usize)
-                    .filter(|n| *n <= isize::MAX as usize)
-                    .context("invalid sample pitch")?;
-                stage_image(
-                    stage,
-                    unsafe { std::slice::from_raw_parts(m.pData.cast(), len) },
-                    m.RowPitch as usize,
-                    &self.desc,
-                )
-            })();
-            unsafe { self.ctx.Unmap(&staging, 0) };
             let ix = state.records.len();
             state.records.push(r);
             state.images.push(StageImage {
