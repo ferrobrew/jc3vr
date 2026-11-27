@@ -273,9 +273,9 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
     state.reach_notes = notes;
     state.clamp = clamp;
     state.at = Some(now);
+    drop(state);
     physics::publish_holds([None; 2]);
     physics::publish_pins([None; 2]);
-    drop(state);
     for hand in Hand::BOTH {
         if let Some((at, why)) = &refused[hand.index()] {
             grab_view::refused(hand, Some(*at), why);

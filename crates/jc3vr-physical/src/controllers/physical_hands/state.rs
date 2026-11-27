@@ -31,9 +31,6 @@ pub(super) fn stand_down(idle: Idle) {
     state.reset_probes();
     state.seated_vehicle = None;
     state.pickup.drop_all();
-    physics::publish_holds([None; 2]);
-    physics::publish_pins([None; 2]);
-
     state.last_sample = [None; 2];
     state.clamp = [Vec3::ZERO; 2];
     state.at = None;
@@ -42,6 +39,8 @@ pub(super) fn stand_down(idle: Idle) {
     state.status.push = Vec2::ZERO;
     state.status.casts = 0;
     drop(state);
+    physics::publish_holds([None; 2]);
+    physics::publish_pins([None; 2]);
     climb::stand_down();
 }
 

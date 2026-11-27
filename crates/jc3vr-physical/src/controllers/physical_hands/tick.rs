@@ -624,9 +624,9 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
     state.reach_notes = reach_notes;
     state.clamp = clamp;
     state.at = Some(now);
+    drop(state);
     physics::publish_holds(joined);
     physics::publish_pins(pins);
-    drop(state);
     climb::observe(climb::Observed {
         palms: climb_palms,
         reaches: climb_reaches,
