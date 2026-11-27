@@ -10,7 +10,10 @@
 //! ([`register_frame_participants`], [`register_teardown_participant`], and
 //! [`register_resize_observer`]), before any hook can start a frame.
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use glam::{Quat, Vec3};
 
@@ -80,12 +83,15 @@ pub fn frame_participants_registered() -> bool {
     PARTICIPANTS.get().is_some()
 }
 
-/// The registered participants. Every frame and recenter runs from a hook, and the table is
-/// registered before the hooks are installed, so it is always present by then.
-pub(crate) fn frame_participants() -> &'static FrameParticipants {
-    PARTICIPANTS
-        .get()
-        .expect("frame participants: the table is registered before the hooks are installed")
+/// The registered participants, or `None` when no table is registered. Every frame and recenter
+/// runs from a hook, and the startup's registration check refuses a composition without the table,
+/// so a missing one is logged once and the caller skips the work that needs it.
+pub(crate) fn frame_participants() -> Option<&'static FrameParticipants> {
+    let participants = PARTICIPANTS.get().copied();
+    if participants.is_none() && !FRAME_MISSING_LOGGED.swap(true, Ordering::Relaxed) {
+        tracing::error!(target: "vr", "frame participants: no table is registered; the frame stands down");
+    }
+    participants
 }
 
 /// Hand the VR teardown its participant. Called once at install; a second one is ignored.
@@ -103,13 +109,16 @@ pub fn teardown_participant_registered() -> bool {
     TEARDOWN.get().is_some()
 }
 
-/// The registered teardown participant. The teardown releases state the runtime cannot release
-/// itself, so a runtime without it would leave the flip blocked: [`crate::vr::install`] checks it is
-/// present before the runtime can bring a session up.
-pub(crate) fn teardown_participant() -> &'static TeardownParticipant {
-    TEARDOWN
-        .get()
-        .expect("teardown participant: registered before the VR runtime is installed")
+/// The registered teardown participant, or `None` when none is registered. The teardown releases
+/// state the runtime cannot release itself, so a runtime without it would leave the flip blocked;
+/// the startup's registration check refuses a composition without it, and a missing one is logged
+/// once.
+pub(crate) fn teardown_participant() -> Option<&'static TeardownParticipant> {
+    let participant = TEARDOWN.get().copied();
+    if participant.is_none() && !TEARDOWN_MISSING_LOGGED.swap(true, Ordering::Relaxed) {
+        tracing::error!(target: "vr", "teardown participant: none is registered; the flip stays blocked");
+    }
+    participant
 }
 
 /// Hand the native-resolution driver its resize observer. Called once at install; a second one is
@@ -132,6 +141,10 @@ pub fn resize_observer_registered() -> bool {
 pub(crate) fn resize_observer() -> Option<&'static ResizeObserver> {
     RESIZE_OBSERVER.get().copied()
 }
+
+static FRAME_MISSING_LOGGED: AtomicBool = AtomicBool::new(false);
+
+static TEARDOWN_MISSING_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static PARTICIPANTS: OnceLock<&'static FrameParticipants> = OnceLock::new();
 

@@ -74,7 +74,9 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     if !config.enabled {
         return;
     }
-    let participants = head_participants();
+    let Some(participants) = head_participants() else {
+        return;
+    };
     // Read before the SIM lock: it takes the config lock and the torso estimate's slot.
     let follow = (participants.follow_settings)();
 

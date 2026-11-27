@@ -170,7 +170,8 @@ impl Context {
             });
         Self {
             source: crate::headpose::source(),
-            gameplay: jc3vr_core::hooks::in_gameplay() && !(head_participants().ui_mode)(),
+            gameplay: jc3vr_core::hooks::in_gameplay()
+                && !head_participants().is_some_and(|p| (p.ui_mode)()),
             teleport: teleport::epoch(),
             recenter: crate::vr::recenter_count(),
             world_scale: VR_CONFIG.query(|c| c.world_scale),

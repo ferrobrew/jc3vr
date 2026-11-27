@@ -292,6 +292,9 @@ pub fn begin_render_frame(frame: &LocatedFrame, cfg: &VrConfig) {
 /// The body of [`begin_render_frame`], over the frame's views. `display_time` is the VR frame's
 /// predicted display time.
 fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig) {
+    let Some(participants) = frame_participants() else {
+        return;
+    };
     // Cockpit-pose freeze diagnostic: reuse the first captured pose -- eye views plus the sim-driven
     // body frame and anchor -- so the head contributes the same thing every frame, isolating
     // per-frame-input-driven artifacts (pose noise, head-bone idle animation) from intrinsic render
@@ -330,7 +333,6 @@ fn render_frame(views: [EyeView; 2], display_time: openxr::Time, cfg: &VrConfig)
         || anchor_pair.map_or(Vec3::ZERO, |pair| pair[1].view_head()),
         |f| f.anchor,
     );
-    let participants = frame_participants();
     let filter = body_frame_filter();
     let headpose_config = HEADPOSE_CONFIG.query(|c| *c);
     (filter.advance)(

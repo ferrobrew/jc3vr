@@ -147,7 +147,9 @@ fn recenter_as(kind: RecenterKind, cause: RecenterCause) {
 
 /// What follows a re-base of the baseline: the cockpit frame turned by `turn`, new frame from old.
 fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
-    (frame_participants().on_recenter)(kind, turn, cause);
+    if let Some(participants) = frame_participants() {
+        (participants.on_recenter)(kind, turn, cause);
+    }
     // The head's forward becomes the body's: any turn of the body under the view is spent, and
     // the torso estimate turns with the frame.
     on_recenter();
@@ -159,7 +161,7 @@ fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
 fn service_requested_recenter() {
     let bits = PENDING_RECENTER.swap(REQUEST_NONE, Ordering::Relaxed);
     let posture_kind = if bits & REQUEST_POSTURE != 0 {
-        (frame_participants().manual_recenter_kind)()
+        frame_participants().map_or(RecenterKind::Full, |p| (p.manual_recenter_kind)())
     } else {
         RecenterKind::Full
     };
@@ -298,7 +300,9 @@ fn service_seat_yaw() {
     // the anchors' interpolation, so it does not count as a recenter of its own.
     let turn = rotation.conjugate();
     let (kind, cause) = (RecenterKind::YawAndHeight, RecenterCause::SeatTransition);
-    (frame_participants().on_recenter)(kind, turn, cause);
+    if let Some(participants) = frame_participants() {
+        (participants.on_recenter)(kind, turn, cause);
+    }
     on_recenter();
     crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
 }
@@ -336,7 +340,9 @@ static PENDING_SEAT_YAW: AtomicBool = AtomicBool::new(false);
 /// What follows a follow bank of `yaw` besides the baseline's own turn: the cockpit frame turned by
 /// `turn`, new frame from old, and the composition gives the turn back.
 fn banked(yaw: f32, turn: glam::Quat) {
-    (frame_participants().on_recenter)(RecenterKind::YawAndHeight, turn, RecenterCause::FollowBank);
+    if let Some(participants) = frame_participants() {
+        (participants.on_recenter)(RecenterKind::YawAndHeight, turn, RecenterCause::FollowBank);
+    }
     bank(yaw);
 }
 
@@ -414,7 +420,7 @@ pub fn auto_recenter_tick() {
                 // In place rather than requested: this is the top of the frame, before it takes
                 // the runtime lock.
                 recenter_as(
-                    (frame_participants().manual_recenter_kind)(),
+                    frame_participants().map_or(RecenterKind::Full, |p| (p.manual_recenter_kind)()),
                     RecenterCause::Manual,
                 );
                 tracing::info!(target: "vr", "auto-recentered on gameplay resume");

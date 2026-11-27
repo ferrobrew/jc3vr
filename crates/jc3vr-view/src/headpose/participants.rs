@@ -7,7 +7,10 @@
 //! install ([`register_head_participants`] and [`register_body_frame_filter`]), before any hook
 //! can tick the simulation or start a frame.
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use glam::{Quat, Vec3};
 use jc3vr_core::published::Stamp;
@@ -101,12 +104,15 @@ pub fn head_participants_registered() -> bool {
     PARTICIPANTS.get().is_some()
 }
 
-/// The registered participants. The simulation ticks and the frames run from hooks, and the table
-/// is registered before the hooks are installed, so it is always present by then.
-pub(crate) fn head_participants() -> &'static HeadParticipants {
-    PARTICIPANTS
-        .get()
-        .expect("head participants: the table is registered before the hooks are installed")
+/// The registered participants, or `None` when no table is registered. The simulation ticks and
+/// the frames run from hooks, and the startup's registration check refuses a composition without
+/// the table, so a missing one is logged once and the caller skips the work that needs it.
+pub(crate) fn head_participants() -> Option<&'static HeadParticipants> {
+    let participants = PARTICIPANTS.get().copied();
+    if participants.is_none() && !MISSING_LOGGED.swap(true, Ordering::Relaxed) {
+        tracing::error!("head participants: no table is registered; the head pose stands down");
+    }
+    participants
 }
 
 /// The registered body frame filter, or the pass-through one when none is registered, as in a test
@@ -116,6 +122,8 @@ pub(crate) fn body_frame_filter() -> &'static BodyFrameFilter {
 }
 
 static PARTICIPANTS: OnceLock<&'static HeadParticipants> = OnceLock::new();
+
+static MISSING_LOGGED: AtomicBool = AtomicBool::new(false);
 
 static FILTER: OnceLock<&'static BodyFrameFilter> = OnceLock::new();
 

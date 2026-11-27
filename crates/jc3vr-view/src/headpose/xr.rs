@@ -348,7 +348,7 @@ pub fn follow_status() -> (bool, f32) {
 /// frame filter is engaged or the swim levelling drops the body's tilt: both compose with the
 /// turned body frame, so folding the turn out of it then would turn the view.
 pub fn pending_bank() -> Option<f32> {
-    if (body_frame_filter().engaged)() || (head_participants().swimming)() {
+    if (body_frame_filter().engaged)() || head_participants().is_some_and(|p| (p.swimming)()) {
         return None;
     }
     let s = BODY_YAW.lock();
@@ -466,7 +466,7 @@ pub fn body_rotation_prev() -> Quat {
 /// costs the surface bob. Deliberately scoped to swimming: a banking wingsuit wants its pitch and
 /// roll in the view.
 fn level_while_swimming(rotation: Quat) -> Quat {
-    if !(head_participants().swimming)() {
+    if !head_participants().is_some_and(|p| (p.swimming)()) {
         return rotation;
     }
     Quat::from_rotation_y(heading(rotation))

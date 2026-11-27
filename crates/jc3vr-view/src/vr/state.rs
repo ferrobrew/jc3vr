@@ -53,9 +53,6 @@ use crate::{
 /// via the module declaration wiring). The cleanup fully tears the runtime down so the OpenXR
 /// instance never outlives the DLL on uninject → reinject.
 pub fn install() {
-    // Checked here rather than at the first teardown, so a composition that forgot it fails at
-    // startup instead of leaving the flip blocked when a session ends.
-    teardown_participant();
     // Register the native-resolution shutdown restore: the deferred resize back to the pre-VR display
     // size is requested while the hooks are still live, so the delayed hook uninstall (lib.rs
     // `shutdown_startup`) leaves the `Draw` prologue time to service it before teardown.
@@ -685,7 +682,9 @@ impl VrState {
                 self.end_session_cleanly();
             }
         }
-        (teardown_participant().release_flip)();
+        if let Some(participant) = teardown_participant() {
+            (participant.release_flip)();
+        }
 
         // The controller input goes before the session and the instance it belongs to: stashed
         // alongside them when persisting, destroyed with them otherwise.
