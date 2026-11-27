@@ -38,7 +38,11 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponState},
 };
 use jc3vr_body::{
-    controllers::{aim::gun, physics::local_player::LocalPlayer},
+    controllers::{
+        acts::{Guard, Owner, flush, submit},
+        aim::gun,
+        physics::local_player::LocalPlayer,
+    },
     hooks::character::acts::resolve_act_id,
 };
 use jc3vr_core::game_tick::GameTick;
@@ -423,6 +427,7 @@ unsafe fn abort_clips(owner: &mut Character) {
     let Some(act) = resolve_act_id(EventIdSymbolTable::ACT_ABORT_WEAPON_PARTIAL) else {
         return;
     };
-    let act = act as u32;
-    unsafe { owner.QueueAct(&act) };
+    submit(Owner::WeaponReconcile, act, Guard::Unguarded);
+    // SAFETY: the caller's contract: the live local player, on the game thread.
+    unsafe { flush(owner) };
 }

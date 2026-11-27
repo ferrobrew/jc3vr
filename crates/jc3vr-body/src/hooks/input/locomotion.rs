@@ -26,7 +26,13 @@ use jc3vr_view::headpose::{HeadMode, LatchState};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{controllers::body_frame, hooks::input::tuning::INPUT_HOOKS};
+use crate::{
+    controllers::{
+        acts::{ActId, Guard, Owner, flush, submit},
+        body_frame,
+    },
+    hooks::input::tuning::INPUT_HOOKS,
+};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -480,9 +486,9 @@ fn setup_target_dir(character: *mut Character, target_dir: *mut c_void, props: *
 /// act, so the legs pop straight into the run cycle. The start clips' lean reads poorly from a
 /// first-person viewpoint, and their ramping root velocity is the on-foot acceleration (see
 /// [`evaluate_character_speed`]). Guarded by the game's own act pre-flight
-/// (`AnimatedModel::TryAct`), exactly as the game's dispatchers guard their queues: when the
-/// animation state machine will not accept the move act from the current state, the native starts
-/// run instead.
+/// (`AnimatedModel::TryAct`) in the act arbiter's flush (`controllers::acts`), exactly as the
+/// game's dispatchers guard their queues: when the animation state machine will not accept the move
+/// act from the current state, the native starts run instead.
 #[detour(address = jc3gi::input::locomotion::NStateTask_LocoUtil::QueueStarts_ADDRESS)]
 fn queue_starts(
     character: *mut Character,
@@ -492,9 +498,10 @@ fn queue_starts(
     if slide_move_dir(character).is_some()
         && let Some(character) = unsafe { character.as_mut() }
     {
-        let act: *const u32 = unsafe { get_NCharacter_ActMoveNoAim() };
-        if unsafe { character.m_AnimatedModel.TryAct(act) } {
-            unsafe { character.QueueAct(act) };
+        let act = unsafe { *get_NCharacter_ActMoveNoAim() } as ActId;
+        submit(Owner::SlideStart, act, Guard::PreFlight);
+        // SAFETY: the task's character, on the thread running its state machines.
+        if unsafe { flush(character) }.queued(Owner::SlideStart) {
             LOCOMOTION_COUNTS.skipped_starts.bump();
             return true;
         }
