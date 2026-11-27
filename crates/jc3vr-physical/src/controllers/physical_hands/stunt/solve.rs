@@ -32,7 +32,7 @@ pub struct Tick {
     pub held: [bool; 2],
     /// A mantle that landed on a vehicle since the last tick: how far the feet are from the
     /// vehicle's nearest stunt area, metres, or `None` for a vehicle without one.
-    pub roof_landing: Option<Option<f32>>,
+    pub(crate) roof_landing: Option<Option<f32>>,
     /// The tick's length, seconds.
     pub dt: f32,
 }
@@ -47,14 +47,14 @@ pub struct Tick {
 pub struct Tuning {
     /// How far from a vehicle's nearest stunt area a mantle may land on its roof to enter it,
     /// metres.
-    pub roof_offer_m: f32,
+    pub(crate) roof_offer_m: f32,
     /// How long every grip must stay open in an armed hang before it lets go, seconds.
-    pub release_grace_s: f32,
+    pub(crate) release_grace_s: f32,
     /// How long after a refused entry another is tried, seconds.
-    pub retry_s: f32,
+    pub(crate) retry_s: f32,
     /// How long the hang may last after a let-go before the game is reported to have kept it,
     /// seconds.
-    pub let_go_timeout_s: f32,
+    pub(crate) let_go_timeout_s: f32,
 }
 
 /// What to do on this tick.

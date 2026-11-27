@@ -55,7 +55,7 @@ impl Striker {
 }
 
 /// The number of strikers: a palm and a gun per hand.
-pub const STRIKERS: usize = 4;
+pub(crate) const STRIKERS: usize = 4;
 
 /// Where a striker was at a tick, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -127,7 +127,7 @@ pub fn sweep(from: Vec3, to: Vec3, lead_m: f32) -> Option<Sweep> {
 /// strike too slow to count: from [`StrikeTuning::min_damage`] at
 /// [`StrikeTuning::min_speed_mps`] up to [`StrikeTuning::max_damage`] at
 /// [`StrikeTuning::full_speed_mps`] and beyond.
-pub fn hit_damage(speed_mps: f32, tuning: &StrikeTuning) -> Option<f32> {
+pub(crate) fn hit_damage(speed_mps: f32, tuning: &StrikeTuning) -> Option<f32> {
     if !(speed_mps.is_finite() && speed_mps >= tuning.min_speed_mps) {
         return None;
     }
@@ -142,7 +142,7 @@ pub fn hit_damage(speed_mps: f32, tuning: &StrikeTuning) -> Option<f32> {
 
 /// The total strength of a pane's damage points, each counted up to one, as the window shader
 /// draws them.
-pub fn point_total(strengths: impl IntoIterator<Item = f32>) -> f32 {
+pub(crate) fn point_total(strengths: impl IntoIterator<Item = f32>) -> f32 {
     strengths
         .into_iter()
         .map(|s| {
@@ -218,7 +218,7 @@ pub fn outcome(speed_mps: f32, total: f32, tuning: &StrikeTuning) -> Outcome {
 /// `world`, a world point, in the space of the row-major rigid transform `matrix` (rotation rows,
 /// translation in the fourth row): the inverse the engine applies to a bullet's hit before it adds
 /// window damage (`CMatrix4f::MultiplyReverse`).
-pub fn world_to_local(matrix: &[f32; 16], world: Vec3) -> Vec3 {
+pub(crate) fn world_to_local(matrix: &[f32; 16], world: Vec3) -> Vec3 {
     let offset = world - Vec3::new(matrix[12], matrix[13], matrix[14]);
     let row = |i: usize| Vec3::new(matrix[i * 4], matrix[i * 4 + 1], matrix[i * 4 + 2]);
     Vec3::new(offset.dot(row(0)), offset.dot(row(1)), offset.dot(row(2)))

@@ -30,7 +30,7 @@ use crate::controllers::physical_hands::{physics, stunt::solve::StuntKind};
 
 /// Why the game did not take the player into a stunt position.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum StuntError {
+pub(crate) enum StuntError {
     /// There is no local player character.
     NoPlayer,
     /// The game refused: a helicopter without a hang, or a vehicle without a stunt area or the
@@ -52,12 +52,12 @@ impl std::error::Error for StuntError {}
 
 /// The stunt position the game has the local player in, and the speed of the vehicle it is on.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PositionRead {
+pub(crate) struct PositionRead {
     pub kind: Option<StuntKind>,
     /// Whether native vehicle attachment or stunt traversal owns the character's movement.
-    pub owns_movement: bool,
+    pub(crate) owns_movement: bool,
     /// The vehicle's speed over the last simulation step, metres per second; zero off a vehicle.
-    pub vehicle_speed_mps: f32,
+    pub(crate) vehicle_speed_mps: f32,
 }
 
 /// Read the local player's stunt position, or `None` without a player.

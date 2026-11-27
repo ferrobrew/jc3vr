@@ -62,18 +62,18 @@ impl std::error::Error for DoorError {}
 
 /// One of a vehicle's doors as a hand sees it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct DoorRead {
+pub(crate) struct DoorRead {
     pub slot: DoorSlot,
     pub part_index: u32,
     /// Whether the door is merged into the vehicle's body rather than hanging on its hinge.
     pub latched: bool,
     /// The door's box, from the part's root-space transform; `None` for a part without a model.
-    pub door_box: Option<DoorBox>,
+    pub(crate) door_box: Option<DoorBox>,
     /// The door's own body and its owner, while it hangs on its hinge.
     pub body: Option<(NonZeroUsize, u32)>,
     /// The door part's name hash, from its entry in the vehicle's parts resource; `None` for a
     /// part without one.
-    pub part_hash: Option<u32>,
+    pub(crate) part_hash: Option<u32>,
 }
 
 /// Whether the physics game object at `object`, owning its body `body`, is a vehicle part that has
@@ -203,9 +203,9 @@ pub(crate) unsafe fn unlatch(
 pub(crate) struct HingeRead {
     /// Whether the door is open and nothing is asked of it: no motor turns it, and no opening or
     /// closing request is pending.
-    pub resting_open: bool,
+    pub(crate) resting_open: bool,
     /// The hinge's travel from its smallest angle to its largest, radians.
-    pub range_rad: f32,
+    pub(crate) range_rad: f32,
     /// The door's own body and its owner.
     pub body: Option<(NonZeroUsize, u32)>,
 }

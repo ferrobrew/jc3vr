@@ -38,31 +38,31 @@ pub struct CharacterGripTuning {
     /// blow ([`HandHitsTuning::knockdown_impulse_ns`]); one and above knocks the character down.
     ///
     /// [`HandHitsTuning::knockdown_impulse_ns`]: crate::controllers::physical_hands::physics::HandHitsTuning::knockdown_impulse_ns
-    pub yank_strength: f32,
+    pub(crate) yank_strength: f32,
     /// How long after a yank the hand looks for the fallen character's ragdoll to hold, seconds of
     /// game time: the fall takes as long as the game's clock says, so slow motion gives it longer.
-    pub regrip_s: f32,
+    pub(crate) regrip_s: f32,
     /// How long a hand waits for the ragdoll after a topple before retrying the ragdoll act, game
     /// seconds: the hit reaction's ragdoll is under way well before this when it comes.
-    pub ragdoll_retry_after_s: f32,
+    pub(crate) ragdoll_retry_after_s: f32,
     /// The slowest hand that shoves a character it lets go of, metres per second.
-    pub shove_min_speed_mps: f32,
+    pub(crate) shove_min_speed_mps: f32,
     /// How hard a grip throws a standing character into their ragdoll, as a share of the knockdown
     /// blow: just past it, so that the character falls where the hand holds them rather than
     /// flying off.
-    pub topple_strength: f32,
+    pub(crate) topple_strength: f32,
     /// How much harder a hand pulls a character's ragdoll than a loose object, as a multiple of
     /// the hand's strength. The hand drags the whole body by one of its bones, and the rest hangs
     /// from that bone by the ragdoll's own constraints, so the pull must move the whole body's mass
     /// rather than the bone's. Scoped to ragdolls: every other hold keeps the hand's own strength.
-    pub ragdoll_carry_strength: f32,
+    pub(crate) ragdoll_carry_strength: f32,
     /// How fast a held ragdoll's motion within itself dies down, per second.
-    pub held_ragdoll_damping_per_s: f32,
+    pub(crate) held_ragdoll_damping_per_s: f32,
     /// How far open a door beside the hand must stand for a hand to reach in, degrees.
-    pub hijack_min_open_deg: f32,
+    pub(crate) hijack_min_open_deg: f32,
     /// How far from the palm an open door may be for the hand to reach in through it, metres of
     /// the player's hand.
-    pub hijack_door_reach_m: f32,
+    pub(crate) hijack_door_reach_m: f32,
 }
 
 /// The stunt positions (see [`crate::controllers::physical_hands::stunt`]).
@@ -71,29 +71,29 @@ pub struct CharacterGripTuning {
 pub struct StuntTuning {
     pub tracker: TrackerTuning,
     /// How long the last input tick's reading of the stunt position stays current, milliseconds.
-    pub reading_stale_after_ms: u64,
+    pub(crate) reading_stale_after_ms: u64,
     /// How long the last input tick's observation of who moves the player stays current,
     /// milliseconds.
-    pub observation_stale_after_ms: u64,
+    pub(crate) observation_stale_after_ms: u64,
     /// The longest tick the tracker counts, seconds, so that a hitch or a pause does not count as
     /// a held grip or an open one.
-    pub max_tick_s: f32,
+    pub(crate) max_tick_s: f32,
     /// The least share of the hold pulse that pulses a hand.
-    pub min_strain: f32,
+    pub(crate) min_strain: f32,
     /// The diameter of the bar the fingers close round on a helicopter's skid, metres.
-    pub skid_diameter_m: f32,
+    pub(crate) skid_diameter_m: f32,
     /// The helicopter's speed of the strongest hold pulse, metres per second.
-    pub hold_full_speed_mps: f32,
+    pub(crate) hold_full_speed_mps: f32,
 }
 
 impl StuntTuning {
     /// [`reading_stale_after_ms`](Self::reading_stale_after_ms) as a freshness window.
-    pub fn reading_stale_after(&self) -> Window {
+    pub(crate) fn reading_stale_after(&self) -> Window {
         Window::from_millis(self.reading_stale_after_ms)
     }
 
     /// [`observation_stale_after_ms`](Self::observation_stale_after_ms) as a freshness window.
-    pub fn observation_stale_after(&self) -> Window {
+    pub(crate) fn observation_stale_after(&self) -> Window {
         Window::from_millis(self.observation_stale_after_ms)
     }
 }
@@ -106,19 +106,19 @@ pub struct ImpactsTuning {
     /// current, milliseconds.
     pub stale_after_ms: u64,
     /// How long a contact keeps obstructing a held object's drive, milliseconds.
-    pub contact_freshness_ms: u64,
+    pub(crate) contact_freshness_ms: u64,
     /// The most contacts queued for delivery; more are dropped.
-    pub max_queued: usize,
+    pub(crate) max_queued: usize,
     /// The most recent contacts kept for the obstruction; the oldest goes first.
-    pub max_recent_contacts: usize,
+    pub(crate) max_recent_contacts: usize,
     /// The most native hit conversions kept; the oldest goes first.
-    pub max_native_hits: usize,
+    pub(crate) max_native_hits: usize,
     /// The most recently struck pairs kept against a repeat; the oldest goes first.
-    pub max_struck_pairs: usize,
+    pub(crate) max_struck_pairs: usize,
     /// The most contacts whose participants are kept alive for delivery; more are not observed.
-    pub max_retained: usize,
+    pub(crate) max_retained: usize,
     pub strike: StrikeTuning,
-    pub object_damage: ObjectDamageTuning,
+    pub(crate) object_damage: ObjectDamageTuning,
     pub feedback: FeedbackTuning,
 }
 
@@ -129,7 +129,7 @@ impl ImpactsTuning {
     }
 
     /// [`contact_freshness_ms`](Self::contact_freshness_ms) as a freshness window.
-    pub fn contact_freshness(&self) -> Window {
+    pub(crate) fn contact_freshness(&self) -> Window {
         Window::from_millis(self.contact_freshness_ms)
     }
 }
@@ -142,26 +142,26 @@ pub struct StrikeTuning {
     /// relative to the target's, to strike, metres per second.
     pub min_speed_mps: f32,
     /// The held object's mass is counted within this range, kilograms.
-    pub min_mass_kg: f32,
-    pub max_mass_kg: f32,
+    pub(crate) min_mass_kg: f32,
+    pub(crate) max_mass_kg: f32,
     /// The fastest closing speed counted, metres per second.
     pub max_speed_mps: f32,
     /// The strongest strike, newton seconds.
-    pub max_impulse_ns: f32,
+    pub(crate) max_impulse_ns: f32,
     /// The weakest strike dealt, newton seconds.
-    pub min_impulse_ns: f32,
+    pub(crate) min_impulse_ns: f32,
     /// How long one pair of bodies is not struck again, seconds.
-    pub repeat_s: f64,
+    pub(crate) repeat_s: f64,
 }
 
 /// The native impact damage a strike deals.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ObjectDamageTuning {
+pub(crate) struct ObjectDamageTuning {
     /// The weakest strike that deals damage, newton seconds.
-    pub min_impulse_ns: f32,
+    pub(crate) min_impulse_ns: f32,
     /// The health points dealt per newton second.
-    pub health_per_ns: f32,
+    pub(crate) health_per_ns: f32,
     /// The most health points one strike deals.
     pub max_health: f32,
 }
@@ -175,14 +175,14 @@ pub struct FeedbackTuning {
     /// The fastest contact point speed counted, metres per second.
     pub max_speed_mps: f32,
     /// The held object's mass is counted within this range, kilograms.
-    pub min_mass_kg: f32,
-    pub max_mass_kg: f32,
+    pub(crate) min_mass_kg: f32,
+    pub(crate) max_mass_kg: f32,
     /// The momentum of the strongest feedback, newton seconds.
-    pub full_momentum_ns: f32,
+    pub(crate) full_momentum_ns: f32,
     /// The weakest share of the strongest feedback that is given.
     pub min_share: f32,
     /// How long a hand's feedback waits before the next, seconds.
-    pub repeat_s: f64,
+    pub(crate) repeat_s: f64,
 }
 
 impl Tuning for CharactersTuning {

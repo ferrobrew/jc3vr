@@ -11,7 +11,7 @@ use crate::controllers::physical_hands::{PalmReadout, status::Idle, views::GrabD
 
 /// One of a palm's reach rays as the tick cast it, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ReachRay {
+pub(crate) struct ReachRay {
     pub from: Vec3,
     pub to: Vec3,
     /// Where it hit, if it did.
@@ -33,7 +33,7 @@ impl ReachRay {
 
 /// What a reach ray found.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum RayOutcome {
+pub(crate) enum RayOutcome {
     /// It hit nothing within the reach.
     Missed,
     /// It hit something a hand does not take: the static world, a body that is not dynamic, too
@@ -64,14 +64,14 @@ impl RayOutcome {
 
 /// A vehicle door's handle near a palm, as the tick's door reach found it, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HandleSeen {
+pub(crate) struct HandleSeen {
     pub at: Vec3,
     pub outcome: HandleOutcome,
 }
 
 /// How a door's handle stood to the palm.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum HandleOutcome {
+pub(crate) enum HandleOutcome {
     /// Within the handle reach, with a body found at it: offered to the grip.
     InReach,
     /// Near the palm, but past the handle reach.
@@ -207,7 +207,7 @@ impl CandidateKind {
 
 /// How a hand stands to a grip target.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TargetState {
+pub(crate) enum TargetState {
     /// Within the view's radius, but out of the hand's reach.
     OutOfReach,
     /// Within the hand's reach.
@@ -262,14 +262,14 @@ pub fn approach(distance: f32, reach: f32, radius: f32) -> f32 {
 
 /// A target's end marker's diameter at `approach`, metres, between `tuning`'s smallest and
 /// largest.
-pub fn target_mark_size(approach: f32, tuning: &GrabDrawTuning) -> f32 {
+pub(crate) fn target_mark_size(approach: f32, tuning: &GrabDrawTuning) -> f32 {
     let (min, max) = (tuning.min_target_mark_m, tuning.max_target_mark_m);
     min + (max - min) * approach.clamp(0.0, 1.0)
 }
 
 /// A target's line and end marker colour in `state` at `approach`: an out-of-reach target
 /// brightens as the hand comes nearer.
-pub fn target_colour(state: TargetState, approach: f32) -> Rgba {
+pub(crate) fn target_colour(state: TargetState, approach: f32) -> Rgba {
     let [r, g, b, a] = state.colour();
     let a = match state {
         TargetState::OutOfReach => a + (0.75 - a) * approach.clamp(0.0, 1.0),
@@ -281,7 +281,7 @@ pub fn target_colour(state: TargetState, approach: f32) -> Rgba {
 /// A refusal's flash `age_s` seconds after it, of one lasting `flash_s` and starting at
 /// `start_share` of its size, as its opacity and its size's share, or `None` once it is spent: it
 /// starts full and small, and fades as it grows.
-pub fn refusal_flash(age_s: f32, flash_s: f32, start_share: f32) -> Option<(f32, f32)> {
+pub(crate) fn refusal_flash(age_s: f32, flash_s: f32, start_share: f32) -> Option<(f32, f32)> {
     if !(0.0..flash_s).contains(&age_s) {
         return None;
     }
@@ -289,7 +289,7 @@ pub fn refusal_flash(age_s: f32, flash_s: f32, start_share: f32) -> Option<(f32,
     Some((1.0 - t, start_share + (1.0 - start_share) * t))
 }
 
-pub const REFUSAL_COLOUR: [f32; 3] = [1.0, 0.1, 0.1];
+pub(crate) const REFUSAL_COLOUR: [f32; 3] = [1.0, 0.1, 0.1];
 
 #[cfg(test)]
 mod tests {

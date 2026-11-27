@@ -12,7 +12,7 @@ use jc3vr_input::frame::{Hand, Pose};
 
 /// The offset that draws a hand where its body is.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RenderOffset {
+pub(crate) struct RenderOffset {
     /// The palm centre's shift.
     pub shift: Vec3,
     /// The turn about the palm's centre.
@@ -66,7 +66,7 @@ impl RenderOffset {
 
     /// Carry the hand's poses about `pivot`: another hand's palm centre, for a hand that rides
     /// that hand's correction.
-    pub fn apply_about(&self, hand: &mut CockpitHand, pivot: Vec3) {
+    pub(crate) fn apply_about(&self, hand: &mut CockpitHand, pivot: Vec3) {
         for pose in [&mut hand.wrist, &mut hand.grip, &mut hand.aim] {
             pose.position = pivot + self.turn * (pose.position - pivot) + self.shift;
             pose.orientation = (self.turn * pose.orientation).normalize();
@@ -75,7 +75,7 @@ impl RenderOffset {
 }
 
 /// The palm centre of `hand`, at `palm_offset` in its wrist frame.
-pub fn palm_centre(hand: &CockpitHand, palm_offset: Vec3) -> Vec3 {
+pub(crate) fn palm_centre(hand: &CockpitHand, palm_offset: Vec3) -> Vec3 {
     hand.wrist.position + hand.wrist.orientation * palm_offset
 }
 
@@ -83,7 +83,7 @@ pub fn palm_centre(hand: &CockpitHand, palm_offset: Vec3) -> Vec3 {
 /// hand of an engaged two-handed hold), which rides the holding hand's offset about the holding
 /// palm: the hold placed it on the gun, and the gun follows the holding hand's correction, so it
 /// stays on the gun as drawn whatever its own body met.
-pub fn apply_offsets(
+pub(crate) fn apply_offsets(
     cockpit: &mut [Option<CockpitHand>; 2],
     offsets: [Option<RenderOffset>; 2],
     palm_offset: Vec3,
@@ -107,7 +107,7 @@ pub fn apply_offsets(
 
 /// The latest pre-step offset, retained as a fallback when a post-step body read fails.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct OffsetTimeline {
+pub(crate) struct OffsetTimeline {
     current: Option<([RenderOffset; 2], Stamp)>,
 }
 

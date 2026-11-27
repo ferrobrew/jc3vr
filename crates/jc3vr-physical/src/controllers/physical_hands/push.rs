@@ -11,7 +11,7 @@ use crate::controllers::physical_hands::tuning::PalmTuning;
 
 /// The horizontal push one palm asks for, world `(x, z)` metres per second, from a press `depth`
 /// metres into a surface with the world `normal`.
-pub fn hand_push(normal: Vec3, depth: f32, config: &PalmTuning) -> Vec2 {
+pub(crate) fn hand_push(normal: Vec3, depth: f32, config: &PalmTuning) -> Vec2 {
     let Some(normal) = normal.try_normalize() else {
         return Vec2::ZERO;
     };

@@ -16,7 +16,7 @@ use glam::{Affine3A, Quat, Vec2, Vec3};
 /// One gripping hand: where the body and the palm were when it took hold, and where the palm is
 /// in the rig now.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Follow {
+pub(crate) struct Follow {
     /// The player's body when the hand took hold, game space.
     pub body: Vec3,
     /// The palm in the rig when the hand took hold, world metres.
@@ -34,7 +34,7 @@ impl Follow {
 
 /// Where the hands would have the body: the mean of the gripping hands' targets. `None` without a
 /// gripping hand.
-pub fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<Vec3> {
+pub(crate) fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<Vec3> {
     let (sum, count) = follows
         .into_iter()
         .fold((Vec3::ZERO, 0u32), |(sum, count), f| {
@@ -56,7 +56,7 @@ pub fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<Vec3> {
 /// the face. A vertical face, an overhang, a lowering, or a face the normal says nothing of adds
 /// nothing, and so does a normal whose level share is below `min_face_level`, a ledge's top rather
 /// than a face.
-pub fn slope_follow(rise: f32, normal: Vec3, min_face_level: f32) -> Vec3 {
+pub(crate) fn slope_follow(rise: f32, normal: Vec3, min_face_level: f32) -> Vec3 {
     let level = Vec3::new(normal.x, 0.0, normal.z);
     let level_len = level.length();
     if !rise.is_finite() || rise <= 0.0 || !normal.is_finite() || level_len < min_face_level {
@@ -77,7 +77,7 @@ pub struct PullTuning {
 
 /// The velocity that closes `tuning.gain` of the gap from `body` to `target` over one step, capped
 /// at the fastest climb. Zero for a gap or step that is not finite.
-pub fn climb_velocity(target: Vec3, body: Vec3, tuning: &PullTuning) -> Vec3 {
+pub(crate) fn climb_velocity(target: Vec3, body: Vec3, tuning: &PullTuning) -> Vec3 {
     if !(tuning.step_s.is_finite() && tuning.step_s > 0.0) {
         return Vec3::ZERO;
     }
@@ -105,7 +105,7 @@ pub fn carried(from: Affine3A, to: Affine3A, point: Vec3) -> Vec3 {
 }
 
 /// The turn of a body that has moved from `from` to `to`, world space.
-pub fn carried_turn(from: Affine3A, to: Affine3A) -> Quat {
+pub(crate) fn carried_turn(from: Affine3A, to: Affine3A) -> Quat {
     let (_, from_turn, _) = from.to_scale_rotation_translation();
     let (_, to_turn, _) = to.to_scale_rotation_translation();
     let turn = (to_turn * from_turn.inverse()).normalize();
@@ -130,7 +130,7 @@ pub fn carry_velocity(points: impl IntoIterator<Item = Vec3>, max_speed_mps: f32
 }
 
 /// Filter total and carry together, resetting both when the contributing grip set changes.
-pub fn smooth_motion(
+pub(crate) fn smooth_motion(
     previous: (Vec3, Vec3),
     current: (Vec3, Vec3),
     changed: bool,
@@ -150,7 +150,7 @@ pub fn smooth_motion(
 /// The velocity a fling of `kept` carries `elapsed_s` seconds after the release: thrown, under
 /// `gravity_mps2`, so that the game's own air handling, whenever it takes over, finds the body
 /// moving as a throw would.
-pub fn fling_carry(kept: Vec3, elapsed_s: f32, gravity_mps2: f32) -> Vec3 {
+pub(crate) fn fling_carry(kept: Vec3, elapsed_s: f32, gravity_mps2: f32) -> Vec3 {
     if !(kept.is_finite() && elapsed_s.is_finite() && gravity_mps2.is_finite()) {
         return Vec3::ZERO;
     }
@@ -168,7 +168,7 @@ pub fn tension(speed_mps: f32, full_mps: f32) -> f32 {
 
 /// How the mantle carries the body over a ledge.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct MantleTuning {
+pub(crate) struct MantleTuning {
     /// How far below the top the feet may be for the mantle to start, metres.
     pub start_m: f32,
     /// How far above the top the feet are lifted before the body goes over, metres.
@@ -180,19 +180,19 @@ pub struct MantleTuning {
     pub min_speed_mps: f32,
     /// How far the feet must have climbed since the climb started for a mantle to start while the
     /// proxy still stands on something, metres.
-    pub min_climb_m: f32,
+    pub(crate) min_climb_m: f32,
     /// How far past the top the feet must be carried before the mantle lets them down onto it,
     /// metres: about the proxy capsule's radius, so the whole capsule is over the ledge.
-    pub land_past_m: f32,
+    pub(crate) land_past_m: f32,
     /// How fast the feet are let down onto the ledge once they are over it, metres per second.
-    pub land_speed_mps: f32,
+    pub(crate) land_speed_mps: f32,
     /// How close to where the mantle carries them the feet count as there, metres.
-    pub arrived_m: f32,
+    pub(crate) arrived_m: f32,
     /// The share of the clearance the feet may still be below where the mantle carries them and
     /// go over the top rather than straight up.
-    pub over_below_clearance_share: f32,
+    pub(crate) over_below_clearance_share: f32,
     /// How far below the top feet that stand count as on the ledge, metres.
-    pub landed_below_m: f32,
+    pub(crate) landed_below_m: f32,
     pub step_s: f32,
 }
 
@@ -200,7 +200,7 @@ pub struct MantleTuning {
 /// least `min_normal_y` upward, and, for a player who stood on something when the hand took hold,
 /// more than the mantle's start height above the feet then. A floor or a low table gripped while
 /// standing is never a ledge.
-pub fn is_ledge(
+pub(crate) fn is_ledge(
     normal_y: f32,
     top_y: f32,
     feet_y: f32,
@@ -215,15 +215,15 @@ pub fn is_ledge(
 
 /// What decides whether the mantle starts this step.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct MantleCheck {
+pub(crate) struct MantleCheck {
     /// The feet's height, metres.
-    pub feet_y: f32,
+    pub(crate) feet_y: f32,
     /// The gripped ledge's top's height, metres.
-    pub top_y: f32,
+    pub(crate) top_y: f32,
     /// The climb's smoothed upward speed, metres per second.
-    pub rise_mps: f32,
+    pub(crate) rise_mps: f32,
     /// How far the feet have climbed since the climb started, metres.
-    pub climbed_m: f32,
+    pub(crate) climbed_m: f32,
     /// Whether the proxy's own update found it standing on something this step.
     pub supported: bool,
 }
@@ -231,7 +231,7 @@ pub struct MantleCheck {
 /// Whether the mantle starts: the feet have come within `start_m` below the gripped top while the
 /// hands pull the body up steadily, and the feet are off what they stood on, or have climbed far
 /// enough that it is not the ground they started on.
-pub fn mantle_starts(check: &MantleCheck, tuning: &MantleTuning) -> bool {
+pub(crate) fn mantle_starts(check: &MantleCheck, tuning: &MantleTuning) -> bool {
     let MantleCheck {
         feet_y,
         top_y,
@@ -248,7 +248,7 @@ pub fn mantle_starts(check: &MantleCheck, tuning: &MantleTuning) -> bool {
 
 /// What the mantle does this step.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum MantleMotion {
+pub(crate) enum MantleMotion {
     /// Move the feet at this velocity.
     Move(Vec3),
     /// The feet are over the ledge where the mantle carries them: let go.
@@ -257,7 +257,7 @@ pub enum MantleMotion {
 
 /// A mantle under way: the gripped top, and the horizontal way over it, fixed when it starts.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Mantle {
+pub(crate) struct Mantle {
     pub top: Vec3,
     /// The unit `(x, z)` direction from the body over the ledge.
     pub over: Vec2,

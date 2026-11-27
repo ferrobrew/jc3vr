@@ -42,7 +42,7 @@ pub struct SurfaceHit {
 
 /// One probe point's contact on a tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum PointContact {
+pub(crate) enum PointContact {
     Clear,
     /// The point is `depth` metres behind the solid surface it crossed.
     Pressed {
@@ -53,7 +53,7 @@ pub enum PointContact {
 
 /// One probe point's memory across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct PointProbe {
+pub(crate) struct PointProbe {
     last_clear: Option<Vec3>,
 }
 
@@ -96,7 +96,7 @@ impl PointProbe {
 }
 
 /// How far `point` lies behind the surface `hit` lies on, metres, along its normal; zero in front.
-pub fn depth_behind(hit: SurfaceHit, point: Vec3) -> f32 {
+pub(crate) fn depth_behind(hit: SurfaceHit, point: Vec3) -> f32 {
     let depth = (hit.position - point).dot(hit.normal);
     if depth.is_finite() {
         depth.max(0.0)
@@ -107,7 +107,7 @@ pub fn depth_behind(hit: SurfaceHit, point: Vec3) -> f32 {
 
 /// A palm's contacts on a tick, folded from its probe points.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct HandContact {
+pub(crate) struct HandContact {
     /// The deepest press into a solid surface, and its depth.
     pub press: Option<(SurfaceHit, f32)>,
 }

@@ -42,13 +42,13 @@ use crate::controllers::physical_hands::tuning::PHYSICAL_HANDS;
 #[serde(deny_unknown_fields)]
 pub struct SoundsTuning {
     /// The slowest a palm may meet a surface and still sound, metres per second.
-    pub min_touch_speed_mps: f32,
+    pub(crate) min_touch_speed_mps: f32,
     /// The least share of the strongest hit pulse a hand body's contact must carry to sound.
-    pub min_strike_share: f32,
+    pub(crate) min_strike_share: f32,
     /// How long a hand stays silent after it sounds, seconds.
-    pub hand_cooldown_s: f32,
+    pub(crate) hand_cooldown_s: f32,
     /// The least time between two sounds of either hand, seconds.
-    pub min_interval_s: f32,
+    pub(crate) min_interval_s: f32,
 }
 
 /// What a sound is for.
@@ -103,7 +103,7 @@ pub fn status() -> SoundsStatus {
 }
 
 /// Whether `impact` is strong enough to sound under `config`.
-pub fn strong_enough(impact: &Impact, config: &SoundsTuning) -> bool {
+pub(crate) fn strong_enough(impact: &Impact, config: &SoundsTuning) -> bool {
     let min = match impact.kind {
         ImpactKind::Touch => config.min_touch_speed_mps,
         ImpactKind::Strike => config.min_strike_share,
@@ -142,7 +142,7 @@ impl Limiter {
 
 /// The material a hand body's contact plays against: flesh for a character, the default for
 /// anything else, since the contact does not carry the struck shape.
-pub const fn strike_material(character: bool) -> u32 {
+pub(crate) const fn strike_material(character: bool) -> u32 {
     if character {
         GameMaterialId::EGameMaterialId_Flesh as u32
     } else {

@@ -90,22 +90,22 @@ pub struct Contact {
     /// Whether it was the gun's body.
     pub gun: bool,
     /// The impulse the solver applied at the contact over the step, newton seconds.
-    pub impulse_ns: f32,
+    pub(crate) impulse_ns: f32,
     /// The other body's id.
-    pub other_body: u32,
+    pub(crate) other_body: u32,
     /// The other body's engine instance, as an address; zero for a body without one.
-    pub other_instance: usize,
+    pub(crate) other_instance: usize,
     /// The other instance's owner, as an address; zero for none.
-    pub other_object: usize,
+    pub(crate) other_object: usize,
     /// Where the body was before the step, game space.
-    pub hand_position: Vec3,
+    pub(crate) hand_position: Vec3,
     /// The velocity the body was driven at, or moved at, for the step, world space.
-    pub hand_velocity: Vec3,
+    pub(crate) hand_velocity: Vec3,
 }
 
 /// Why a hand body's contacts could not be listened for.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ContactError {
+pub(crate) enum ContactError {
     /// The wrapper's virtual table is not the engine's wrapper table.
     ForeignTable,
 }

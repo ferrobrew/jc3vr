@@ -42,18 +42,18 @@ pub struct ColliderViewTuning {
     /// How far from the player a body's box may be and still be drawn, metres.
     pub radius_m: f32,
     /// How far the gaze looks for a body, as a multiple of [`Self::radius_m`].
-    pub gaze_reach_per_radius: f32,
+    pub(crate) gaze_reach_per_radius: f32,
     /// The most bodies drawn, the nearest first.
     pub max_bodies: usize,
     /// The most overlay primitives the view submits in a frame, at most
     /// [`PRIMITIVE_CEILING`]. The overlay's own cap covers every readout together, and the view's
     /// slot comes last, so the view gives way first.
-    pub max_primitives: usize,
+    pub(crate) max_primitives: usize,
     /// How long the view's overlay slot lives, milliseconds: the view submits every rendered
     /// frame, so its slot lives a little past one.
     pub ttl_ms: u64,
     /// The most contacts kept flashing at once.
-    pub max_flashes: usize,
+    pub(crate) max_flashes: usize,
     pub draw: ColliderDrawTuning,
 }
 
@@ -88,37 +88,37 @@ impl ColliderViewTuning {
 #[serde(deny_unknown_fields)]
 pub struct ColliderDrawTuning {
     /// How long a contact flashes, seconds.
-    pub flash_s: f32,
+    pub(crate) flash_s: f32,
     /// A flash's ring diameter at no impulse, metres.
-    pub flash_ring_m: f32,
+    pub(crate) flash_ring_m: f32,
     /// How much a flash's ring grows per newton second of the contact's impulse, metres.
-    pub flash_ring_per_ns_m: f32,
+    pub(crate) flash_ring_per_ns_m: f32,
     /// The impulse past which a flash's ring grows no more, newton seconds.
-    pub flash_max_impulse_ns: f32,
+    pub(crate) flash_max_impulse_ns: f32,
     /// A flash's ring thickness, as a share of its radius.
-    pub flash_ring_thickness: f32,
+    pub(crate) flash_ring_thickness: f32,
     /// A body's box's line width, metres.
-    pub box_width_m: f32,
+    pub(crate) box_width_m: f32,
     /// The line width of a flashed or gazed body's box, as a multiple of [`Self::box_width_m`].
-    pub highlight_box_width: f32,
+    pub(crate) highlight_box_width: f32,
     /// The line width of the player's ground's box, as a multiple of [`Self::box_width_m`].
-    pub ground_box_width: f32,
+    pub(crate) ground_box_width: f32,
     /// A body's shape's line width, metres.
-    pub shape_width_m: f32,
+    pub(crate) shape_width_m: f32,
     /// A sphere's or a capsule end's ring thickness, as a share of its radius.
-    pub shape_ring_thickness: f32,
+    pub(crate) shape_ring_thickness: f32,
     /// A joint's and the ground normal's line width, metres.
-    pub joint_width_m: f32,
+    pub(crate) joint_width_m: f32,
     /// A joint's end disc's diameter, metres.
-    pub joint_end_m: f32,
+    pub(crate) joint_end_m: f32,
     /// A face-less hull's vertex disc's diameter, metres.
-    pub point_m: f32,
+    pub(crate) point_m: f32,
     /// The ground normal's length, metres.
-    pub normal_m: f32,
+    pub(crate) normal_m: f32,
     /// The most edges of one hull drawn.
-    pub max_hull_edges: usize,
+    pub(crate) max_hull_edges: usize,
     /// The most vertices of one hull without faces drawn.
-    pub max_points: usize,
+    pub(crate) max_points: usize,
 }
 
 impl ColliderDrawTuning {
@@ -183,25 +183,25 @@ pub struct GrabViewTuning {
     pub ttl_ms: u64,
     /// How long the palms' last tick is drawn after it ran, milliseconds: they tick every
     /// simulation tick while they act, so an older record means they have stopped.
-    pub record_max_age_ms: u64,
+    pub(crate) record_max_age_ms: u64,
     /// How old the palms' last tick may be and still describe the hands, milliseconds.
-    pub palm_stale_ms: u64,
+    pub(crate) palm_stale_ms: u64,
     /// How often the world is read for candidates, milliseconds: a pass over every body slot, a
     /// few times a second rather than every tick.
-    pub candidate_period_ms: u64,
+    pub(crate) candidate_period_ms: u64,
     /// How long the candidates are drawn after their read, milliseconds, past which they are taken
     /// as stale.
-    pub candidate_max_age_ms: u64,
+    pub(crate) candidate_max_age_ms: u64,
     /// How far from a hand a candidate's box may be and still be drawn, metres.
-    pub candidate_radius_m: f32,
+    pub(crate) candidate_radius_m: f32,
     /// The most bodies a read keeps, the nearest the hands first, before they are told apart.
-    pub scan_max_bodies: u32,
+    pub(crate) scan_max_bodies: u32,
     /// The most candidates drawn, the nearest first.
-    pub max_candidates: usize,
+    pub(crate) max_candidates: usize,
     /// The most refused grabs flashing at once.
-    pub max_flashes: usize,
+    pub(crate) max_flashes: usize,
     /// How long a refused grab flashes, seconds.
-    pub refusal_flash_s: f32,
+    pub(crate) refusal_flash_s: f32,
     pub draw: GrabDrawTuning,
 }
 
@@ -212,17 +212,17 @@ impl GrabViewTuning {
     }
 
     /// [`Self::record_max_age_ms`] as a freshness window.
-    pub fn record_max_age(&self) -> Window {
+    pub(crate) fn record_max_age(&self) -> Window {
         Window::from_millis(self.record_max_age_ms)
     }
 
     /// [`Self::candidate_period_ms`] as a duration.
-    pub fn candidate_period(&self) -> Duration {
+    pub(crate) fn candidate_period(&self) -> Duration {
         Duration::from_millis(self.candidate_period_ms)
     }
 
     /// [`Self::candidate_max_age_ms`] as a freshness window.
-    pub fn candidate_max_age(&self) -> Window {
+    pub(crate) fn candidate_max_age(&self) -> Window {
         Window::from_millis(self.candidate_max_age_ms)
     }
 
@@ -267,47 +267,47 @@ pub struct GrabDrawTuning {
     /// The most primitives the view submits in a tick.
     pub primitive_budget: usize,
     /// A refusal's flash at its largest, metres.
-    pub refusal_mark_m: f32,
+    pub(crate) refusal_mark_m: f32,
     /// A refusal's flash's size as it starts, as a share of [`Self::refusal_mark_m`]: it grows to
     /// the whole as it fades.
-    pub refusal_start_share: f32,
+    pub(crate) refusal_start_share: f32,
     /// A refusal's ring thickness, as a share of its radius.
-    pub refusal_ring_thickness: f32,
+    pub(crate) refusal_ring_thickness: f32,
     /// A reach ray's line width, metres.
-    pub ray_width_m: f32,
+    pub(crate) ray_width_m: f32,
     /// A reach ray's hit disc's diameter, metres.
-    pub hit_mark_m: f32,
+    pub(crate) hit_mark_m: f32,
     /// A door handle's ring diameter, metres.
-    pub handle_mark_m: f32,
+    pub(crate) handle_mark_m: f32,
     /// A door handle's ring thickness, as a share of its radius.
     pub handle_ring_thickness: f32,
     /// A line from a hand to a grip target's width, metres.
-    pub target_line_width_m: f32,
+    pub(crate) target_line_width_m: f32,
     /// The smallest a target's end marker is drawn, metres.
-    pub min_target_mark_m: f32,
+    pub(crate) min_target_mark_m: f32,
     /// The largest a target's end marker is drawn, metres.
-    pub max_target_mark_m: f32,
+    pub(crate) max_target_mark_m: f32,
     /// The ring thickness of the end marker of a target in reach or out of it, as a share of its
     /// radius.
-    pub target_ring_thickness: f32,
+    pub(crate) target_ring_thickness: f32,
     /// The most target lines per hand.
-    pub max_target_lines: usize,
+    pub(crate) max_target_lines: usize,
     /// How far from a hand a grip target out of its reach still gets a line, metres.
-    pub target_radius_m: f32,
+    pub(crate) target_radius_m: f32,
     /// A candidate's box's and its line's width, metres.
-    pub box_width_m: f32,
+    pub(crate) box_width_m: f32,
     /// The magazine zone's and the knock zone's axis width, metres.
-    pub zone_line_width_m: f32,
+    pub(crate) zone_line_width_m: f32,
     /// The magazine zone's end rings' thickness, as a share of their radius.
-    pub zone_ring_thickness: f32,
+    pub(crate) zone_ring_thickness: f32,
     /// The handover reach's ring thickness, as a share of its radius.
-    pub handover_ring_thickness: f32,
+    pub(crate) handover_ring_thickness: f32,
     /// The knock zone's top ring's thickness, as a share of its radius.
-    pub knock_top_ring_thickness: f32,
+    pub(crate) knock_top_ring_thickness: f32,
     /// The knock zone's base ring's thickness, as a share of its radius.
-    pub knock_base_ring_thickness: f32,
+    pub(crate) knock_base_ring_thickness: f32,
     /// The held tip's marker diameter, metres at the player's scale.
-    pub knock_tip_m: f32,
+    pub(crate) knock_tip_m: f32,
 }
 
 impl GrabDrawTuning {

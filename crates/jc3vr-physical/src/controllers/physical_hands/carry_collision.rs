@@ -26,7 +26,7 @@ use crate::controllers::physical_hands::{
 pub(super) struct Subject {
     pub body: u32,
     pub owner: NonZeroUsize,
-    pub assembly: Assembly,
+    pub(crate) assembly: Assembly,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

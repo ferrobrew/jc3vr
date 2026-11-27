@@ -23,7 +23,7 @@
 pub(crate) mod acquisition;
 pub mod engine;
 pub mod geometry;
-pub mod hinge;
+pub(crate) mod hinge;
 pub mod pressure;
 pub(crate) mod scan;
 pub mod table;
@@ -213,7 +213,7 @@ pub struct Latch {
     /// The palm at acquisition, in the vehicle's frame, before its opening pull.
     pub palm: Pose,
     /// The first native unlatch attempt, bounding a body-publication retry.
-    pub opening_at: Option<Stamp>,
+    pub(crate) opening_at: Option<Stamp>,
 }
 
 impl Latch {

@@ -32,16 +32,16 @@ use crate::controllers::{
 
 /// A constraint slot, as far as an articulation cares.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ConstraintSlot {
-    pub body_a: u32,
-    pub body_b: u32,
+pub(crate) struct ConstraintSlot {
+    pub(crate) body_a: u32,
+    pub(crate) body_b: u32,
     pub disabled: bool,
 }
 
 /// The body `body` is joined to by an enabled constraint among `slots`, other than a body
 /// `excluded` says to leave out; `None` when there is none. A destroyed constraint's slot, whose
 /// first body is invalid, joins nothing.
-pub fn joined_to(
+pub(crate) fn joined_to(
     slots: impl IntoIterator<Item = ConstraintSlot>,
     body: u32,
     excluded: impl Fn(u32) -> bool,
@@ -66,7 +66,7 @@ pub fn joined_to(
 /// body `excluded` says to leave out is neither taken nor passed through, and nor is one that is
 /// not `dynamic`, since the world's fixed body or a keyframed one would join every body hung from
 /// it. At most `max` bodies are taken.
-pub fn assembly(
+pub(crate) fn assembly(
     slots: &[ConstraintSlot],
     body: u32,
     dynamic: impl Fn(u32) -> bool,

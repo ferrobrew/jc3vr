@@ -32,14 +32,14 @@ pub struct ShoveTuning {
     /// The fastest the contact asks the point to move into the body, metres per second.
     pub max_speed_mps: f32,
     /// The strongest push a hand makes, newtons.
-    pub max_force_n: f32,
+    pub(crate) max_force_n: f32,
     /// The friction coefficient between the palm and the surface.
-    pub friction: f32,
+    pub(crate) friction: f32,
     /// How long the measure of how much a body gives is smoothed over, seconds.
-    pub give_smoothing_s: f32,
+    pub(crate) give_smoothing_s: f32,
     /// The slowest asked speed whose outcome measures the give, metres per second: below it, a body
     /// at rest says nothing about how freely it moves.
-    pub min_asked_mps: f32,
+    pub(crate) min_asked_mps: f32,
 }
 
 /// One tick's shove of a body.
@@ -52,7 +52,7 @@ pub struct Shove {
     /// The share of the wanted normal impulse the strength cap held back, `0..=1`.
     pub saturation: f32,
     /// The point's speed into the body asked for, metres per second.
-    pub asked_mps: f32,
+    pub(crate) asked_mps: f32,
     /// The point's speed into the body before the shove, metres per second.
     pub speed_mps: f32,
 }

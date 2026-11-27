@@ -29,7 +29,7 @@ pub struct DoorBox {
     /// root-space transform.
     pub to_world: Mat4,
     /// The door's own space to the vehicle's: the part's root-space transform.
-    pub to_vehicle: Mat4,
+    pub(crate) to_vehicle: Mat4,
     /// The model's box in the door's own space.
     pub min: Vec3,
     pub max: Vec3,
@@ -151,7 +151,12 @@ impl DoorBox {
     /// The handle a table entry places at `local` with the outer face's normal `normal`, both in
     /// the door's own space, carried into the world. `None` for a point or normal that does not
     /// carry.
-    pub fn handle_at(&self, local: Vec3, normal: Vec3, grade: HandleGrade) -> Option<Handle> {
+    pub(crate) fn handle_at(
+        &self,
+        local: Vec3,
+        normal: Vec3,
+        grade: HandleGrade,
+    ) -> Option<Handle> {
         let point = self.to_world.transform_point3(local);
         let normal = self.to_world.transform_vector3(normal).normalize_or_zero();
         (point.is_finite() && normal != Vec3::ZERO).then_some(Handle {

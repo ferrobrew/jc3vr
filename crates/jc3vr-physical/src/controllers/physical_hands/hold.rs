@@ -79,7 +79,7 @@ impl HoldTuning {
     /// ([`Strain`](crate::controllers::physical_hands::grasp::Strain)). Gravity is the world's, on the world's clock, so in slow
     /// motion a heavy body is easier to hold up, as it falls slower. A `time_scale` that is not
     /// finite and positive is taken as real time.
-    pub fn in_real_time(self, time_scale: f32) -> Self {
+    pub(crate) fn in_real_time(self, time_scale: f32) -> Self {
         let rate = 1.0 / TimeScale::new(time_scale).get();
         Self {
             stiffness_per_s: self.stiffness_per_s * rate,
@@ -123,7 +123,7 @@ pub struct HoldSolution {
     /// Each hand's share of its strongest pull used, `0..=1`; one when it pulls as hard as it can.
     pub loads: [f32; 2],
     /// Each hand's share of its strongest twist used, `0..=1`.
-    pub torque_loads: [f32; 2],
+    pub(crate) torque_loads: [f32; 2],
 }
 
 /// Solve the holds `holds` (indexed by hand) on `body` over a tick of `dt` seconds.
@@ -243,7 +243,7 @@ pub fn solve_in_frame(
 /// point lags the hand by more than `deadband_m` ([`resist_deadband_m`]), past
 /// [`PalmTuning::resist_onset_load`]. `anchor` is the grab point, `target` where the hand would
 /// have it, and `load` the hand's [`HoldSolution::loads`]. World `(x, z)` metres per second.
-pub fn resist_push(
+pub(crate) fn resist_push(
     anchor: Vec3,
     target: Vec3,
     load: f32,
@@ -273,7 +273,7 @@ pub fn resist_push(
 /// [`PalmTuning::carry_resist_deadband_m`]: a heavy object the hands cannot keep up with holds the
 /// player back well before it trails past [`PickupTuning::break_distance_m`], where a hold that
 /// stops following is torn away.
-pub fn resist_deadband_m(prop: bool, config: &PalmTuning) -> f32 {
+pub(crate) fn resist_deadband_m(prop: bool, config: &PalmTuning) -> f32 {
     if prop {
         config.carry_resist_deadband_m
     } else {
@@ -297,7 +297,7 @@ pub struct BodySpace {
 /// torso's own capsules, rather than a cylinder loose enough to cover any pose, keeps a held
 /// object off the chest and the belly as closely as the hand IK does.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum PlayerKeepOut {
+pub(crate) enum PlayerKeepOut {
     Torso(TorsoKeepOut),
     Cylinder(BodySpace),
 }

@@ -25,7 +25,7 @@ impl Motion {
         mass_kg: 0.0,
     };
 
-    pub fn velocity_at(self, point: Vec3) -> Vec3 {
+    pub(crate) fn velocity_at(self, point: Vec3) -> Vec3 {
         point_velocity(self.centre, self.linear, self.angular, point)
     }
 }

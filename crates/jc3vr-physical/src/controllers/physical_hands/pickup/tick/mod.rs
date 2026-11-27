@@ -78,8 +78,8 @@ pub(crate) struct TickInputs {
     pub reaches: [Option<Reach>; 2],
     /// The player character's world velocity, metres per second, whose change a carried object
     /// takes on ([`PickupTuning::carrier_motion_share`]); none when it is not known.
-    pub carrier_velocity: Option<Vec3>,
-    pub carrier_pose: Option<Pose>,
+    pub(crate) carrier_velocity: Option<Vec3>,
+    pub(crate) carrier_pose: Option<Pose>,
 }
 
 /// What a pickup tick did, for the readout, the haptics, and the overlay.
@@ -98,7 +98,7 @@ pub(crate) struct TickOutcome {
     /// Holds lost this tick.
     pub lost: u64,
     /// Why each hand's hold of a body was lost this tick, when it was.
-    pub losses: [Option<HoldLoss>; 2],
+    pub(crate) losses: [Option<HoldLoss>; 2],
     pub error: Option<String>,
     /// Each hand's grab that was refused this tick: where it reached (world space), and why.
     pub refused: [Option<(Vec3, String)>; 2],
@@ -107,7 +107,7 @@ pub(crate) struct TickOutcome {
     /// Where each hand gripping a latched door is held, world space.
     pub pins: [Option<Vec3>; 2],
     /// The latches the hands undid this tick.
-    pub unlatched: [bool; 2],
+    pub(crate) unlatched: [bool; 2],
     /// Grips taken on a latched door this tick.
     pub door_grips: u64,
     pub tears: u64,
@@ -127,7 +127,7 @@ pub(crate) struct TickOutcome {
     pub regrips: u64,
     /// The characters a hand's grip toppled this tick, so a second hand seizing the same one on
     /// the same tick does not topple it again.
-    pub toppled: Vec<NonZeroUsize>,
+    pub(crate) toppled: Vec<NonZeroUsize>,
 }
 
 /// Why a hand's hold of a body ended other than by the grip opening.

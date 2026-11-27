@@ -60,7 +60,7 @@ pub struct HandBodiesStatus {
     /// Contacts dropped because more arrived between two frame ticks than the queue holds.
     pub dropped_contacts: u64,
     /// Blows dealt to characters.
-    pub blows: u64,
+    pub(crate) blows: u64,
     pub last_blow: Option<BlowReport>,
     /// Shoves and yanks the hands gave characters they held.
     pub shoves: u64,
@@ -110,5 +110,5 @@ pub struct HoldTarget {
     /// assembly stores momentum the drive does not see ([`state::holding_tuning`]).
     ///
     /// [`state::holding_tuning`]: crate::controllers::physical_hands::physics::state::holding_tuning
-    pub constrained: bool,
+    pub(crate) constrained: bool,
 }

@@ -242,7 +242,7 @@ pub struct Seize {
     pub grab: Vec3,
     pub bone: Option<SafeBoneIndex>,
     /// The original contact in the palm's frame, retained through toppling.
-    pub in_palm: Vec3,
+    pub(crate) in_palm: Vec3,
 }
 
 /// A hand that threw a character off their feet, by the grip's topple or a yank, waiting to take
@@ -250,7 +250,7 @@ pub struct Seize {
 /// finds one of the character's ragdoll's bodies, or until it gives up.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Regrip {
-    pub seize: Seize,
+    pub(crate) seize: Seize,
     /// The game time left before the hand gives up, seconds.
     pub remaining_s: f32,
     /// Whether the ragdoll act was retried for a character the topple left standing.
@@ -268,13 +268,13 @@ impl Regrip {
     }
 
     /// Whether the wait has run long enough, with no ragdoll, to retry the ragdoll act once.
-    pub fn retry_due(&self) -> bool {
+    pub(crate) fn retry_due(&self) -> bool {
         let tuning = &CHARACTERS.get().characters;
         !self.retried && tuning.regrip_s - self.remaining_s >= tuning.ragdoll_retry_after_s
     }
 
     /// Count `dt` seconds of game time off the wait, and return whether it has run out.
-    pub fn run_down(&mut self, dt: f32) -> bool {
+    pub(crate) fn run_down(&mut self, dt: f32) -> bool {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.remaining_s -= dt;
         self.expired()

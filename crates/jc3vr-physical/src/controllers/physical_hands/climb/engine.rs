@@ -157,7 +157,7 @@ pub unsafe fn body_frame(body: u32) -> Option<BodyFrame> {
 
 /// Whether a hand climbs the body `frame`: the static world, a keyframed body, or a dynamic one at
 /// least `min_mass_kg`.
-pub fn climbable(frame: &BodyFrame, min_mass_kg: f32) -> bool {
+pub(crate) fn climbable(frame: &BodyFrame, min_mass_kg: f32) -> bool {
     frame.is_static || frame.is_keyframed || frame.mass_kg.is_none_or(|m| m >= min_mass_kg.max(0.0))
 }
 

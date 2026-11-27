@@ -64,7 +64,7 @@ pub(super) struct Contact {
     holders: [Option<u64>; 2],
     pub motion: Motion,
     pub target: Option<Identity>,
-    pub target_motion: Option<Motion>,
+    pub(crate) target_motion: Option<Motion>,
     pub retention: u64,
     pub at: Vec3,
     pub normal: Vec3,
@@ -76,7 +76,7 @@ pub(super) struct Feedback {
     pub contact: Contact,
     pub share: f32,
     pub hands: [bool; 2],
-    pub damage_impulse: Option<f32>,
+    pub(crate) damage_impulse: Option<f32>,
     pub native: [bool; 2],
 }
 
@@ -107,7 +107,7 @@ pub(super) struct State {
     published: Option<Stamp>,
     wanted: [Option<Held>; 2],
     generations: [u64; 2],
-    pub leases: [Option<Lease>; 2],
+    pub(crate) leases: [Option<Lease>; 2],
     queue: Vec<(Contact, Stamp)>,
     recent_contacts: Vec<(Contact, Stamp)>,
     gate: Gate,
@@ -168,7 +168,7 @@ impl State {
     }
 
     /// Keep and acquire leases from live observations, and plan only necessary native flag changes.
-    pub fn plan_step(
+    pub(crate) fn plan_step(
         &mut self,
         now: Stamp,
         enabled: Enabled,
@@ -241,7 +241,11 @@ impl State {
     }
 
     /// Preserve unrelated bits and cache mode while retaining the leased event bit.
-    pub fn intercept_flags(&mut self, mut call: FlagCall, identity: Option<Identity>) -> FlagCall {
+    pub(crate) fn intercept_flags(
+        &mut self,
+        mut call: FlagCall,
+        identity: Option<Identity>,
+    ) -> FlagCall {
         if call.flags & hknpBody::RAISE_CONTACT_IMPULSE_EVENTS != 0
             && let Some(lease) = self.leases.iter_mut().flatten().find(|l| {
                 Some(l.identity) == identity

@@ -33,8 +33,8 @@ use crate::controllers::physical_hands::physics::tuning::HandHitsTuning;
 /// character, and the character's toward the hand, metres per second, neither below zero.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Approach {
-    pub hand_mps: f32,
-    pub victim_mps: f32,
+    pub(crate) hand_mps: f32,
+    pub(crate) victim_mps: f32,
 }
 
 /// How a hand moving at `hand_velocity` and a character moving at `victim_velocity` closed on
@@ -107,7 +107,7 @@ impl Intent {
 /// itself is the hand's speed through the world, so in slow motion the player's arm, as fast as
 /// ever in real time, strikes as hard as it moves through the slowed world, as a throw leaves the
 /// hand. `None` for a hand too slow to strike, and for a hand taking the gun.
-pub fn blow_impulse(
+pub(crate) fn blow_impulse(
     approach: Approach,
     intent: Intent,
     time_scale: TimeScale,
@@ -134,7 +134,7 @@ pub fn blow_impulse(
 /// The hits' settings for a blow struck with a held gun of `gun_mass_kg`: the gun's mass swung with
 /// the arm's, so a rifle swung into a character strikes harder than a fist at the same speed.
 /// `config` unchanged for a hand's own blow, or a mass that is not finite and positive.
-pub fn striking_with(config: &HandHitsTuning, gun_mass_kg: Option<f32>) -> HandHitsTuning {
+pub(crate) fn striking_with(config: &HandHitsTuning, gun_mass_kg: Option<f32>) -> HandHitsTuning {
     match gun_mass_kg.filter(|m| m.is_finite() && *m > 0.0) {
         Some(mass) => HandHitsTuning {
             blow_mass_kg: config.blow_mass_kg.max(0.0) + mass,
@@ -150,9 +150,9 @@ pub struct VictimTuning {
     /// The factor the character's hit reaction scales a blow of this type by.
     pub type_scale: f32,
     /// The scaled impulse at or above which the character staggers.
-    pub stagger_threshold: f32,
+    pub(crate) stagger_threshold: f32,
     /// The scaled impulse at or above which the character is knocked down.
-    pub knockdown_threshold: f32,
+    pub(crate) knockdown_threshold: f32,
 }
 
 /// What a blow does to a character.
@@ -173,7 +173,7 @@ pub struct BlowPlan {
     /// The blow as a share of the knockdown impulse; one and above knocks the character down.
     pub strength: f32,
     /// The impulse the character's hit reaction is given, before it scales it by the type factor.
-    pub reaction_impulse: f32,
+    pub(crate) reaction_impulse: f32,
     /// The damage dealt, in health points, for a blow hard enough to deal any.
     pub damage: Option<i16>,
 }
@@ -191,7 +191,7 @@ pub(super) struct RiderReaction {
     pub blocked: bool,
     /// The damage was suppressed by the shared cooldown, so this blow did not test the native
     /// damage path and cannot stand in for a rejected damaging message.
-    pub damage_suppressed: bool,
+    pub(crate) damage_suppressed: bool,
 }
 
 impl RiderReaction {
@@ -285,7 +285,7 @@ fn scaled_reaction(impulse_ns: f32, victim: VictimTuning, config: &HandHitsTunin
 }
 
 /// The share of the strongest hit pulse a contact of `impulse_ns` pulses its hand with, `0..=1`.
-pub fn pulse_share(impulse_ns: f32, full_impulse_ns: f32) -> f32 {
+pub(crate) fn pulse_share(impulse_ns: f32, full_impulse_ns: f32) -> f32 {
     if !(impulse_ns.is_finite() && full_impulse_ns.is_finite() && full_impulse_ns > 0.0) {
         return 0.0;
     }
@@ -294,7 +294,7 @@ pub fn pulse_share(impulse_ns: f32, full_impulse_ns: f32) -> f32 {
 
 /// The total of a contact's point impulses: the first `points` of `impulses`, the positive and
 /// finite ones.
-pub fn contact_impulse(impulses: [f32; 4], points: i32) -> f32 {
+pub(crate) fn contact_impulse(impulses: [f32; 4], points: i32) -> f32 {
     let points = points.clamp(0, 4) as usize;
     impulses[..points]
         .iter()
@@ -306,7 +306,7 @@ pub fn contact_impulse(impulses: [f32; 4], points: i32) -> f32 {
 /// contacts for a while, so that one blow, whose contact may start and end several times as the
 /// hand passes through, is one hit.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct HitGate {
+pub(crate) struct HitGate {
     /// The hand, the character's address, and when it was struck, seconds.
     recent: Vec<(usize, usize, f64)>,
 }
@@ -341,7 +341,7 @@ impl HitGate {
 }
 
 /// The hand index [`HitGate::admit`] is given to gate a character's damage from either hand.
-pub const ANY_HAND: usize = usize::MAX;
+pub(crate) const ANY_HAND: usize = usize::MAX;
 
 /// The most hits the gate remembers.
 const MAX_RECENT: usize = 32;

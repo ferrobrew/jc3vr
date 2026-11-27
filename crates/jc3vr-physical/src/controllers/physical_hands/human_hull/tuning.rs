@@ -41,25 +41,25 @@ impl Tuning for HumanHullTuning {
 pub struct StepUpTuning {
     /// The slowest horizontal speed the controller drives the proxy at that counts as walking into
     /// something, metres per second.
-    pub min_wanted_mps: f32,
+    pub(crate) min_wanted_mps: f32,
     /// The share of the driven speed the player may still make along it and count as stopped,
     /// `0..=1`.
-    pub blocked_share: f32,
+    pub(crate) blocked_share: f32,
     /// How far past the narrowed hull's edge the step's top is looked for, metres.
-    pub probe_ahead_m: f32,
+    pub(crate) probe_ahead_m: f32,
     /// How far above the authored cone's height the ray down starts, and the path ahead must be
     /// clear, metres.
-    pub probe_above_m: f32,
+    pub(crate) probe_above_m: f32,
     /// The least walkable top's normal height: the cosine of the steepest top stepped onto.
-    pub min_top_normal_y: f32,
+    pub(crate) min_top_normal_y: f32,
     /// How far above the step's top the feet are lifted, metres.
-    pub lift_margin_m: f32,
+    pub(crate) lift_margin_m: f32,
     /// The time a lift takes to raise the feet to the step's top, seconds.
-    pub lift_time_s: f32,
+    pub(crate) lift_time_s: f32,
     /// The fastest lift, metres per second.
-    pub max_lift_mps: f32,
+    pub(crate) max_lift_mps: f32,
     /// The longest a lift lasts, seconds: a step the proxy does not clear by then is let go.
-    pub lift_hold_s: f32,
+    pub(crate) lift_hold_s: f32,
 }
 
 impl StepUpTuning {
@@ -84,14 +84,14 @@ pub struct RestoreTuning {
     /// the eject leaves the hulls in place. The lifecycle retries every few frames: each body
     /// restores once its own surroundings are clear, which a body pressed against a wall may never
     /// be, and an idle subsystem must not hold the eject indefinitely.
-    pub shutdown_attempts: u32,
+    pub(crate) shutdown_attempts: u32,
     /// The longest wait between attempts while disabled and some body stays obstructed, in
     /// pre-simulation passes.
-    pub max_retry_wait_passes: u32,
+    pub(crate) max_retry_wait_passes: u32,
     /// The candidates one pass may examine across all of its bodies.
-    pub max_candidates: usize,
+    pub(crate) max_candidates: usize,
     /// The shape leaves one pass's clearance queries may examine across all of its bodies.
-    pub max_leaf_work: usize,
+    pub(crate) max_leaf_work: usize,
 }
 
 impl RestoreTuning {
@@ -128,7 +128,7 @@ impl RestoreTuning {
 #[serde(deny_unknown_fields)]
 pub struct DiscoveryTuning {
     /// The longest a table whose characters stream in waits to be found, in pre-simulation passes.
-    pub interval_passes: u32,
+    pub(crate) interval_passes: u32,
 }
 
 /// Check that the count `value` is in `[min, max]`.

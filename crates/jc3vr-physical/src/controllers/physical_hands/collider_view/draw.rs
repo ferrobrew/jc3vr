@@ -29,7 +29,7 @@ pub struct Flash {
     /// How long ago the contact was reported, seconds.
     pub age_s: f32,
     /// The contact's impulse, newton seconds.
-    pub impulse_ns: f32,
+    pub(crate) impulse_ns: f32,
 }
 
 /// What the view draws from.
@@ -59,7 +59,7 @@ pub struct Drawn {
 
 /// The most primitives the view submits, whatever its budget, and the bound the views' tuning
 /// checks its budgets against: the overlay's cap covers every readout together.
-pub const PRIMITIVE_CEILING: usize = 2048;
+pub(crate) const PRIMITIVE_CEILING: usize = 2048;
 
 /// Build the frame's primitives into `out` (cleared first).
 pub fn build(inputs: &DrawInputs<'_>, out: &mut Vec<Primitive>) -> Drawn {

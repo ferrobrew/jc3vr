@@ -41,7 +41,7 @@ use crate::controllers::physical_hands::{physics::body::release, world::World};
 
 /// Why a joint could not be made.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum JointError {
+pub(crate) enum JointError {
     /// The world could not be reached, a body's slot is empty, or the object's body cannot be
     /// held.
     Physics(PhysicsError),
@@ -104,7 +104,7 @@ impl Joint {
     ///
     /// The thread that steps the physics world, outside the step; `hand` must be a live hand body
     /// in the simulation.
-    pub unsafe fn create_at(
+    pub(crate) unsafe fn create_at(
         hand: u32,
         object_body: u32,
         object: NonZeroUsize,
@@ -121,7 +121,7 @@ impl Joint {
     /// # Safety
     ///
     /// As [`Joint::create_at`]; `body` must be a live body in the simulation.
-    pub unsafe fn create_between(hand: u32, body: u32) -> Result<Self, JointError> {
+    pub(crate) unsafe fn create_between(hand: u32, body: u32) -> Result<Self, JointError> {
         unsafe { Self::join(hand, body, None, None, JointKind::Fixed) }
     }
 
@@ -266,7 +266,7 @@ impl Joint {
 
 /// The frame of the hand body `hand` in the body space of the object's body `object`: where the
 /// constraint holds the hand's frame on the object.
-pub fn pivot_in(object: Affine3A, hand: Affine3A) -> Affine3A {
+pub(crate) fn pivot_in(object: Affine3A, hand: Affine3A) -> Affine3A {
     object.inverse() * hand
 }
 

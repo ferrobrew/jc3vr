@@ -31,7 +31,7 @@ pub struct TableEntry {
     /// The door part's name.
     pub part: String,
     /// The door part's name hash, the table's key.
-    pub part_hash: u32,
+    pub(crate) part_hash: u32,
     /// The handle, in the door part's own space, metres.
     pub handle_m: Vec3,
     /// The door's outer face at the handle, a unit vector in the part's own space.

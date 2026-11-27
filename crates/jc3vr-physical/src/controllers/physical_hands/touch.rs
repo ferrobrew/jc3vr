@@ -202,7 +202,7 @@ pub fn strength(speed: f32, min_mps: f32, full_mps: f32) -> Option<f32> {
 
 /// The speed of a hand moving at `velocity` into a surface whose normal is `normal` (pointing back
 /// toward the hand): the share of the velocity that drives into the surface, never negative.
-pub fn impact_speed(velocity: Vec3, normal: Vec3) -> f32 {
+pub(crate) fn impact_speed(velocity: Vec3, normal: Vec3) -> f32 {
     let into = velocity.dot(-normal.normalize_or_zero());
     if into.is_finite() { into.max(0.0) } else { 0.0 }
 }

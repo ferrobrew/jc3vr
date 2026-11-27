@@ -57,7 +57,7 @@ pub(crate) struct ReachTuning<'a> {
     /// The hand bodies, whose grip joints do not make what they hold articulated.
     pub hand_bodies: [Option<u32>; 2],
     /// Live dropped-weapon bodies discovered once for both hands this simulation tick.
-    pub floor_weapons: &'a [FloorWeapon],
+    pub(crate) floor_weapons: &'a [FloorWeapon],
 }
 
 /// A dropped weapon's exact dynamic body and its broad-phase bounds.

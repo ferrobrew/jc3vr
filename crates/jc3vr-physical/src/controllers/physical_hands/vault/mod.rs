@@ -65,7 +65,7 @@ pub fn status() -> VaultStatus {
 /// The lift a hand gives the player while it presses with the lag `lag` (where its body was sent,
 /// less where it is, world space), metres per second: past the deadband, the downward press times
 /// the stiffness, capped; zero for a press that is not mostly downward.
-pub fn press_lift(lag: Vec3, tuning: &LiftTuning) -> f32 {
+pub(crate) fn press_lift(lag: Vec3, tuning: &LiftTuning) -> f32 {
     let length = lag.length();
     if !(lag.is_finite() && length > f32::EPSILON) {
         return 0.0;
@@ -85,7 +85,7 @@ pub fn press_lift(lag: Vec3, tuning: &LiftTuning) -> f32 {
 /// surface its reach found: [`press_lift`] for a hand over a surface that faces up at least as
 /// steeply as a press must point down, nothing for a hand that reaches no surface or one on a wall
 /// or overhead.
-pub fn supported_press_lift(lag: Vec3, support: Option<&Hold>, tuning: &LiftTuning) -> f32 {
+pub(crate) fn supported_press_lift(lag: Vec3, support: Option<&Hold>, tuning: &LiftTuning) -> f32 {
     let Some(support) = support else {
         return 0.0;
     };
@@ -98,7 +98,7 @@ pub fn supported_press_lift(lag: Vec3, support: Option<&Hold>, tuning: &LiftTuni
 
 /// Whether `support` is far enough above the feet, at `feet_y` in game space, to push on: at least
 /// `min_height_m` above them.
-pub fn clear_of_the_feet(support: &Hold, feet_y: f32, min_height_m: f32) -> bool {
+pub(crate) fn clear_of_the_feet(support: &Hold, feet_y: f32, min_height_m: f32) -> bool {
     let height = support.point.y - feet_y;
     height.is_finite() && height >= min_height_m.max(0.0)
 }
@@ -125,7 +125,7 @@ impl PressTimer {
 
 /// Where the player is as the game's character proxy found it on this step.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PlayerMotion {
+pub(crate) struct PlayerMotion {
     /// Whether the proxy's update found it standing on a surface.
     pub grounded: bool,
     /// The proxy's vertical velocity, metres per second, positive up.
@@ -135,7 +135,7 @@ pub struct PlayerMotion {
 /// Whether the hands may lift a player moving as `motion` says: never one moving down faster than
 /// `fall_tolerance_mps` (a fall, or the drop off a ledge), and one off the ground only while a push
 /// that started on the ground goes on (`pushing`).
-pub fn may_lift(motion: PlayerMotion, pushing: bool, fall_tolerance_mps: f32) -> bool {
+pub(crate) fn may_lift(motion: PlayerMotion, pushing: bool, fall_tolerance_mps: f32) -> bool {
     if !(motion.vertical_mps.is_finite() && motion.vertical_mps >= -fall_tolerance_mps.max(0.0)) {
         return false;
     }
@@ -144,11 +144,11 @@ pub fn may_lift(motion: PlayerMotion, pushing: bool, fall_tolerance_mps: f32) ->
 
 /// How a press lifts, in world metres.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct LiftTuning {
+pub(crate) struct LiftTuning {
     pub deadband_m: f32,
     pub stiffness_per_s: f32,
-    pub max_lift_mps: f32,
-    pub min_vertical: f32,
+    pub(crate) max_lift_mps: f32,
+    pub(crate) min_vertical: f32,
 }
 
 impl LiftTuning {
@@ -173,7 +173,7 @@ pub fn lifted(current: Vec3, lift: f32) -> Vec3 {
 /// What the hands press with this step.
 pub(crate) struct Press {
     /// Each acting hand's lag, for a hand that neither grips nor holds anything.
-    pub lags: [Option<Vec3>; 2],
+    pub(crate) lags: [Option<Vec3>; 2],
     /// The static surface each hand reaches: a press counts only on one under the hand, and the
     /// player is written as supported on it.
     pub supports: [Option<Hold>; 2],

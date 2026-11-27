@@ -24,18 +24,18 @@ use jc3vr_body::controllers::clock::TimeScale;
 pub struct DriveTuning {
     pub mass_kg: f32,
     /// The strongest pull, newtons.
-    pub max_force_n: f32,
+    pub(crate) max_force_n: f32,
     /// The strongest twist, newton metres.
-    pub max_torque_nm: f32,
+    pub(crate) max_torque_nm: f32,
     /// The share of the position error closed in one step, `0..=1`.
-    pub linear_gain: f32,
+    pub(crate) linear_gain: f32,
     /// The share of the rotation error closed in one step, `0..=1`.
-    pub angular_gain: f32,
+    pub(crate) angular_gain: f32,
     /// The fastest a body is driven relative to its carrier, metres per second.
     pub max_speed_mps: f32,
     pub max_angular_speed_rps: f32,
     /// The fastest carrier the drive feeds forward, metres per second.
-    pub max_carrier_speed_mps: f32,
+    pub(crate) max_carrier_speed_mps: f32,
 }
 
 impl DriveTuning {
@@ -44,7 +44,7 @@ impl DriveTuning {
     /// top speeds rise by that and its strength, an acceleration's worth, by the square. The gains
     /// close a share of the error per step and stay. A hand body in slow motion follows the hand
     /// as at full speed, instead of lagging as far as the world is slowed.
-    pub fn in_real_time(self, time_scale: TimeScale) -> Self {
+    pub(crate) fn in_real_time(self, time_scale: TimeScale) -> Self {
         let rate = 1.0 / time_scale.get();
         Self {
             max_force_n: self.max_force_n * rate * rate,
@@ -124,8 +124,8 @@ pub fn drive(
 /// The physical hand and gravity for a joined assembly. [`DriveTuning::mass_kg`] includes
 /// the hand and the carried share; only the carried share has gravity enabled.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct JoinedLoad {
-    pub hand_mass_kg: f32,
+pub(crate) struct JoinedLoad {
+    pub(crate) hand_mass_kg: f32,
     pub gravity: Vec3,
 }
 
@@ -134,7 +134,7 @@ pub struct JoinedLoad {
 /// impulse into a hand velocity. The constraint solver shares that momentum with the assembly.
 /// Gravity compensation consumes the same force budget and covers only the carried mass.
 /// The speed cap limits the desired assembly velocity, not the hand's pre-solver velocity.
-pub fn drive_joined(
+pub(crate) fn drive_joined(
     body: &BodyMotion,
     goal: &Goal,
     carrier: Vec3,
@@ -214,7 +214,7 @@ pub fn drive_joined(
 /// The drive's gain for a hand whose body the last step held back by `press`, the share of its
 /// strength it pressed with (`0..=1`): `gain` for a free hand, falling to `gain` times
 /// `contact_share` for one pressing as hard as it can.
-pub fn contact_gain(gain: f32, contact_share: f32, press: f32) -> f32 {
+pub(crate) fn contact_gain(gain: f32, contact_share: f32, press: f32) -> f32 {
     let press = if press.is_finite() {
         press.clamp(0.0, 1.0)
     } else {
@@ -225,17 +225,17 @@ pub fn contact_gain(gain: f32, contact_share: f32, press: f32) -> f32 {
 
 /// How a hand's lag pushes the player.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PushTuning {
+pub(crate) struct PushTuning {
     /// The stiffness of the spring between a held-back hand and its controller, newtons per metre.
-    pub stiffness_n_per_m: f32,
+    pub(crate) stiffness_n_per_m: f32,
     /// The strongest pull of the hand, newtons.
-    pub max_force_n: f32,
+    pub(crate) max_force_n: f32,
     /// The mass the reaction moves, kilograms.
     pub body_mass_kg: f32,
     /// The lag left alone, metres.
     pub deadband_m: f32,
     /// The least horizontal share of the lag that pushes, `0..=1`.
-    pub min_horizontal: f32,
+    pub(crate) min_horizontal: f32,
 }
 
 /// The push a hand gives the player, world `(x, z)` metres per second, from `lag`: how far the hand
@@ -245,7 +245,7 @@ pub struct PushTuning {
 /// the controller pulls (independent of the hand body's own mass), within the hand's strength,
 /// over a step of `step_s` seconds. A lag that is
 /// mostly vertical (pressing down on a table or the floor) does not push.
-pub fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
+pub(crate) fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
     if !(lag.is_finite() && step_s.is_finite() && step_s > 0.0 && tuning.body_mass_kg > 0.0) {
         return Vec2::ZERO;
     }
@@ -265,7 +265,13 @@ pub fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
 
 /// Fold `push` into the smoothed push `smoothed` over `dt` seconds with the time constant
 /// `smoothing_s`, and cap the result at `max_speed`.
-pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_speed: f32) -> Vec2 {
+pub(crate) fn smooth_push(
+    smoothed: Vec2,
+    push: Vec2,
+    dt: f32,
+    smoothing_s: f32,
+    max_speed: f32,
+) -> Vec2 {
     if !push.is_finite() || !smoothed.is_finite() {
         return Vec2::ZERO;
     }
@@ -277,7 +283,7 @@ pub fn smooth_push(smoothed: Vec2, push: Vec2, dt: f32, smoothing_s: f32, max_sp
 
 /// Where a body at `body` goes when the rig carries its hand's palm from `from` to `to` in one
 /// tick: the body keeps its place and turn relative to the palm.
-pub fn rig_carry(body: Goal, from: Goal, to: Goal) -> Goal {
+pub(crate) fn rig_carry(body: Goal, from: Goal, to: Goal) -> Goal {
     let turn = (to.orientation * from.orientation.inverse()).normalize();
     let carried = Goal {
         position: to.position + turn * (body.position - from.position),

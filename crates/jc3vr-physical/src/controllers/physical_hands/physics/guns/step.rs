@@ -67,7 +67,7 @@ pub(crate) struct GunStep<'a> {
     pub holds: GunHolds,
     pub config: &'a HeldGunsTuning,
     /// How many steps a body put somewhere, rather than moved there, ignores its contacts.
-    pub placed_mute_steps: u64,
+    pub(crate) placed_mute_steps: u64,
     /// Whether the gun bodies' contacts are listened for.
     pub contact_events: bool,
     /// The player's collision system group.

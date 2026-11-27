@@ -32,7 +32,7 @@ pub(super) struct GunSource {
 
 /// Why a gun body could not be made.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum GunError {
+pub(crate) enum GunError {
     /// The physics world could not be reached.
     Physics(PhysicsError),
     /// The gun's own body is gone, or is no longer the gun's: the weapon was destroyed or changed.

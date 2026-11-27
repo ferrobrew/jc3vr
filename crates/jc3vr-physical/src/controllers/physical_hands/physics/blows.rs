@@ -76,7 +76,7 @@ use crate::controllers::physical_hands::{
 pub struct BlowReport {
     pub hand: Hand,
     /// The blow's impulse: the arm's momentum at the hand's speed into the character.
-    pub impulse_ns: f32,
+    pub(crate) impulse_ns: f32,
     /// Whether the player's faction is hostile to the character.
     pub hostile: bool,
     /// The blow as a share of the knockdown impulse.
@@ -92,10 +92,10 @@ pub struct BlowReport {
 pub struct Delivered {
     pub contacts: u64,
     pub dropped: u64,
-    pub blows: u64,
+    pub(crate) blows: u64,
     pub last: Option<BlowReport>,
     /// The hands that struck hard enough to follow through.
-    pub follow_through: [bool; 2],
+    pub(crate) follow_through: [bool; 2],
 }
 
 /// Deal the blows of the contacts recorded since the last frame tick, and pulse their hands.
@@ -398,7 +398,7 @@ pub enum ShoveForce {
 
 /// What a frame tick's shoves did.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ShovesDelivered {
+pub(crate) struct ShovesDelivered {
     pub shoves: u64,
     /// Shoves that reached a knockdown.
     pub knockdowns: u64,
@@ -713,7 +713,7 @@ unsafe fn exposed_seat(victim: &Character, hand_at: Vec3) -> Option<ExposedSeat>
 pub(crate) struct DamageContext<'a> {
     pub source: &'a WeakPtrGameObject,
     pub body: Option<u32>,
-    pub source_position: Vec3,
+    pub(crate) source_position: Vec3,
     pub player: Option<&'a Character>,
     pub flags: DamageFlags,
 }

@@ -277,7 +277,7 @@ pub(super) struct MantleTick<'a> {
     pub stands: bool,
     pub tuning: &'a MantleTuning,
     pub max_steps: u32,
-    pub max_carry_speed_mps: f32,
+    pub(crate) max_carry_speed_mps: f32,
     pub context: Option<Context>,
 }
 

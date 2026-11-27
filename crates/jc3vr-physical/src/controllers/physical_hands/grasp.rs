@@ -87,7 +87,7 @@ impl Grip {
     }
 
     /// The centre of mass of a body at `target`.
-    pub fn centre_at(&self, target: GripTarget) -> Vec3 {
+    pub(crate) fn centre_at(&self, target: GripTarget) -> Vec3 {
         target.point - target.orientation * self.on_body
     }
 }
@@ -107,7 +107,7 @@ impl Grip {
 /// The watch runs in real time, as the hold does: the palm moves in real time, so in slow motion
 /// a grab point keeps up with it as at full speed and a snag is let go as soon.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Strain {
+pub(crate) struct Strain {
     /// How long the grab point has been past the break distance without following the hand,
     /// seconds of real time.
     stuck_s: f32,
@@ -116,7 +116,7 @@ pub struct Strain {
 
 /// One tick of a hold, as its [`Strain`] measures it, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct StrainSample {
+pub(crate) struct StrainSample {
     /// The grab point on the body now.
     pub anchor: Vec3,
     /// Where the hand would have the grab point.
@@ -124,12 +124,12 @@ pub struct StrainSample {
     /// The grab point's velocity, metres per second of game time.
     pub velocity: Vec3,
     /// The velocity of where the hand would have the grab point, metres per second of game time.
-    pub hand_velocity: Vec3,
+    pub(crate) hand_velocity: Vec3,
     /// Whether the hands holding the body can lift it.
     pub liftable: bool,
     /// Whether the body rests against the player's own drawn torso, so that the lag is the
     /// player's body in the way rather than a snag in the world.
-    pub own_body: bool,
+    pub(crate) own_body: bool,
 }
 
 impl Strain {
@@ -188,13 +188,13 @@ impl Strain {
 }
 
 /// Whether a hand may take hold of a body of `mass_kg` at all.
-pub fn can_hold(mass_kg: f32, config: &PickupTuning) -> bool {
+pub(crate) fn can_hold(mass_kg: f32, config: &PickupTuning) -> bool {
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_mass_kg
 }
 
 /// Whether a hand may take hold of an articulated object of `mass_kg`, which its constraint
 /// carries.
-pub fn can_hold_articulated(mass_kg: f32, config: &PickupTuning) -> bool {
+pub(crate) fn can_hold_articulated(mass_kg: f32, config: &PickupTuning) -> bool {
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_articulated_mass_kg
 }
 
@@ -208,7 +208,7 @@ pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupTuning) -> bool 
 
 /// A palm's motion on a tick: its place, and its linear and angular velocity, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PalmMotion {
+pub(crate) struct PalmMotion {
     pub pose: Pose,
     pub velocity: Vec3,
     pub angular_velocity: Vec3,
@@ -223,7 +223,7 @@ impl PalmMotion {
 
 /// A position's velocity, smoothed across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct VelocityTracker {
+pub(crate) struct VelocityTracker {
     last: Option<Vec3>,
     velocity: Vec3,
 }
@@ -263,7 +263,7 @@ impl VelocityTracker {
 
 /// An orientation's angular velocity, world space, smoothed across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct AngularTracker {
+pub(crate) struct AngularTracker {
     last: Option<Quat>,
     velocity: Vec3,
 }

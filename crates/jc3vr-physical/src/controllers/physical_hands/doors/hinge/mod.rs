@@ -129,15 +129,15 @@ impl LatchCause {
 pub(crate) struct HingeTick {
     pub held: bool,
     /// Whether the door is a lid, hinged across the vehicle.
-    pub lid: bool,
+    pub(crate) lid: bool,
     /// The door's angle above the hinge's smallest, radians.
     pub angle_rad: f32,
     /// The hinge's travel, radians.
-    pub range_rad: f32,
+    pub(crate) range_rad: f32,
     /// The angle's rate, radians per second, opening positive; `None` on the first tick.
-    pub rate_rad_s: Option<f32>,
+    pub(crate) rate_rad_s: Option<f32>,
     /// How long the door has rested within the latch angle, seconds.
-    pub rested_s: f32,
+    pub(crate) rested_s: f32,
     pub dt: f32,
 }
 

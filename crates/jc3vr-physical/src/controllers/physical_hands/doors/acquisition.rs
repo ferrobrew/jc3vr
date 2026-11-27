@@ -33,7 +33,7 @@ pub(crate) struct PanelAcquisition {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct PanelReach {
     /// How far outside the door's box the palm still reaches the door, metres.
-    pub box_m: f32,
+    pub(crate) box_m: f32,
     /// How far from a closed door's handle the palm takes the door, metres. The door scan offers a
     /// handle at the same distance, so a closed door is taken alike whichever finds it.
     pub handle_m: f32,

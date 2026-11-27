@@ -38,25 +38,25 @@ pub struct StrikeTuning {
     pub full_speed_mps: f32,
     /// The damage of the slowest strike that counts, in the game's damage-point strength (the
     /// strength a bullet adds is on `MetaWindow::AddWindowDamagePoint`).
-    pub min_damage: f32,
+    pub(crate) min_damage: f32,
     /// The damage of a strike at [`full_speed_mps`](Self::full_speed_mps).
-    pub max_damage: f32,
+    pub(crate) max_damage: f32,
     /// One strike at this speed or faster brings the whole pane down.
-    pub shatter_speed_mps: f32,
+    pub(crate) shatter_speed_mps: f32,
     /// A pane whose damage reaches this brings itself down: the total of its damage points, each
     /// counted up to one, plus what blows on a point already at full strength added past it.
-    pub shatter_total: f32,
+    pub(crate) shatter_total: f32,
     /// How long a striker waits before it strikes again, seconds, so that one swing strikes once.
     pub cooldown_s: f32,
     /// How far past the palm its sweep reaches, metres.
-    pub palm_lead_m: f32,
+    pub(crate) palm_lead_m: f32,
     /// How far past the muzzle a gun's sweep reaches, metres.
-    pub tip_lead_m: f32,
+    pub(crate) tip_lead_m: f32,
     /// How far ahead of the hand's aim pose a gun without measured geometry (a pistol) has its
     /// muzzle, metres.
-    pub pistol_reach_m: f32,
+    pub(crate) pistol_reach_m: f32,
     /// The longest time between two samples of a striker that still makes a swing, seconds.
-    pub max_gap_s: f32,
+    pub(crate) max_gap_s: f32,
 }
 
 /// The panes whose strikes are remembered, for the damage their point lists could not take.
@@ -64,7 +64,7 @@ pub struct StrikeTuning {
 #[serde(deny_unknown_fields)]
 pub struct PanesTuning {
     /// How long a pane's strikes are remembered after its last, seconds.
-    pub memory_s: f32,
+    pub(crate) memory_s: f32,
     /// The most panes whose strikes are remembered at once; the oldest is forgotten past it.
     pub max_records: usize,
 }

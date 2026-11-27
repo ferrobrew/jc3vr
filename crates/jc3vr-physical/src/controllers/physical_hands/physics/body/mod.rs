@@ -51,7 +51,7 @@ use crate::controllers::physical_hands::{
 
 /// Why a hand body could not be made, read, or driven.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum BodyError {
+pub(crate) enum BodyError {
     /// The world could not be reached, or the body's state, or a value to drive it with, is not
     /// finite.
     Physics(PhysicsError),
@@ -98,7 +98,7 @@ pub struct Capsule {
 
 /// A body's shape.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub enum BodyShape {
+pub(crate) enum BodyShape {
     /// A capsule made for the body.
     Capsule(Capsule),
     /// Another body's shape, which the new body takes a reference of its own to. The address
@@ -108,7 +108,7 @@ pub enum BodyShape {
 
 /// What a hand body, or a held gun's body, is made with.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct BodySpec {
+pub(crate) struct BodySpec {
     pub shape: BodyShape,
     pub mass_kg: f32,
     /// The collision system group it shares with the player's character proxy, so that it never
@@ -123,7 +123,7 @@ pub struct BodySpec {
 
 /// A hand body or a held gun's body: the engine wrapper this module allocated, which owns the
 /// Havok body.
-pub struct HandBody {
+pub(crate) struct HandBody {
     wrapper: NonNull<PfxRigidBody>,
     body_id: u32,
     spec: BodySpec,
@@ -264,7 +264,7 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn raises_contact_events(&self) -> Result<bool, BodyError> {
+    pub(crate) unsafe fn raises_contact_events(&self) -> Result<bool, BodyError> {
         let world = unsafe { World::require() }?;
         let slot = unsafe { self.slot(world.world()) }?;
         Ok(slot.m_flags & hknpBody::RAISE_CONTACT_IMPULSE_EVENTS != 0)
@@ -275,7 +275,7 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn is_added(&self) -> Result<bool, BodyError> {
+    pub(crate) unsafe fn is_added(&self) -> Result<bool, BodyError> {
         unsafe { self.with_checked(|access| access.wrapper.as_ref().IsAddedToWorld()) }
     }
 
@@ -345,7 +345,7 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn centre_of_mass(&self) -> Result<Vec3, BodyError> {
+    pub(crate) unsafe fn centre_of_mass(&self) -> Result<Vec3, BodyError> {
         let world = unsafe { World::require() }?;
         let slot = unsafe { self.slot(world.world()) }?;
         let motion = world.motion(slot).ok_or(PhysicsError::BadMotion)?;
@@ -378,7 +378,7 @@ impl HandBody {
     /// # Safety
     ///
     /// As [`HandBody::create`].
-    pub unsafe fn make_keyframed(&mut self) -> Result<(), BodyError> {
+    pub(crate) unsafe fn make_keyframed(&mut self) -> Result<(), BodyError> {
         let access = unsafe { self.checked() }?;
         // SAFETY: the wrapper is this body's, checked live above.
         unsafe { (*access.wrapper.as_ptr()).SetMotionType(PfxMotionType::KEYFRAMED, true) };
@@ -505,7 +505,7 @@ struct CheckedBody {
 /// # Safety
 ///
 /// As [`HandBody::create`].
-pub unsafe fn player_system_group() -> Option<u32> {
+pub(crate) unsafe fn player_system_group() -> Option<u32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let body = unsafe { proxy_body(character) }?;
     let world = unsafe { World::get() }?;
@@ -520,7 +520,7 @@ pub unsafe fn player_system_group() -> Option<u32> {
 /// # Safety
 ///
 /// As [`HandBody::create`].
-pub unsafe fn in_player_group(body: u32) -> bool {
+pub(crate) unsafe fn in_player_group(body: u32) -> bool {
     let Some(group) = (unsafe { player_system_group() }) else {
         return false;
     };

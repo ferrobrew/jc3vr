@@ -18,13 +18,13 @@ pub struct PalmBox {
 }
 
 /// How many points a palm's contacts are probed from: [`PalmBox::probe_points`].
-pub const PROBE_POINTS: usize = 6;
+pub(crate) const PROBE_POINTS: usize = 6;
 
 impl PalmBox {
     /// The palm box of a hand whose wrist frame is at `wrist` in the world, for a VR world scale
     /// of `world_scale` (world metres per metre of the player's hand), centred on the hand's palm
     /// centre ([`palm_centre_m()`]: -Z toward the fingers, +Y out of the back of the hand).
-    pub fn from_wrist(wrist: Pose, world_scale: f32, config: &PalmTuning) -> Self {
+    pub(crate) fn from_wrist(wrist: Pose, world_scale: f32, config: &PalmTuning) -> Self {
         let scale = if world_scale.is_finite() && world_scale > 0.0 {
             world_scale
         } else {
@@ -45,7 +45,7 @@ impl PalmBox {
     /// The points a palm's contacts are probed from: the centre, the middle of the palm's face,
     /// and the four corners of the face toward the fingers, which lead a punch and a slap's
     /// follow-through.
-    pub fn probe_points(&self) -> [Vec3; PROBE_POINTS] {
+    pub(crate) fn probe_points(&self) -> [Vec3; PROBE_POINTS] {
         [
             self.centre,
             self.point(Vec3::new(0.0, -1.0, 0.0)),

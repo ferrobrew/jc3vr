@@ -41,7 +41,7 @@ pub(super) struct ActRequest<'a> {
     /// hand; none for a hand that holds an object through a joint, whose hold's strain decides
     /// when it is torn away
     /// ([`grasp::Strain`](crate::controllers::physical_hands::grasp::Strain)).
-    pub break_distance_m: Option<f32>,
+    pub(crate) break_distance_m: Option<f32>,
     /// Whether nothing solid lies between two points, game space: a body put back on its hand
     /// must not pass through a wall or a character to get there.
     pub clear: &'a mut dyn FnMut(Vec3, Vec3) -> bool,
@@ -53,9 +53,9 @@ pub(super) struct ActRequest<'a> {
 
 /// How a hand is drawn at its body.
 pub(super) struct RenderTuning {
-    pub max_shift_m: f32,
-    pub deadband_rad: f32,
-    pub max_turn_rad: f32,
+    pub(crate) max_shift_m: f32,
+    pub(crate) deadband_rad: f32,
+    pub(crate) max_turn_rad: f32,
 }
 
 /// What driving one hand did.
@@ -69,7 +69,7 @@ pub(super) struct Acted {
     pub created: bool,
     pub destroyed: bool,
     /// Whether the body's joint ended against the grip's wish.
-    pub joint_lost: bool,
+    pub(crate) joint_lost: bool,
 }
 
 /// The bodies, owned by the step.
@@ -89,7 +89,7 @@ pub(super) struct Hands {
     /// Where each controller's palm was predicted for the end of the last step, world space.
     palms: [Option<Goal>; 2],
     /// When each hand stopped acting.
-    pub missing_since: [Option<Stamp>; 2],
+    pub(crate) missing_since: [Option<Stamp>; 2],
     resets: [u64; 2],
     pub last_log: Option<Stamp>,
 }

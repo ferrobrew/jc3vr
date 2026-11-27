@@ -110,7 +110,7 @@ pub struct PalmReadout {
     /// Why the palms stood down, if they did.
     pub idle: Option<Idle>,
     /// How long ago the palms last ticked, or `None` before the first tick.
-    pub age_ms: Option<u128>,
+    pub(crate) age_ms: Option<u128>,
     /// Whether the hand holds nothing else: no gun, not the foregrip, no grenade or charge, and the
     /// controller drives it.
     pub free: bool,

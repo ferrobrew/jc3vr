@@ -13,7 +13,7 @@ use crate::controllers::physical_hands::physics::tuning::{
 
 /// The support palm seated on its selected region on the actual gun body, preserving the tracked
 /// wrist's orientation. This is also the pose captured by its fixed brace joint.
-pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
+pub(crate) fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
     Pose {
         position: gun.position
             + gun.orientation * contact.point
@@ -24,7 +24,7 @@ pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
 
 /// Whether a brace's palm frame changed enough, past `rebuild`, to remake the fixed joint. A fixed
 /// joint otherwise keeps a stale contact when the hand slides or rotates its grip around the gun.
-pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceTuning) -> bool {
+pub(crate) fn brace_changed(before: Pose, after: Pose, rebuild: &BraceTuning) -> bool {
     before.position.distance(after.position) > rebuild.distance_m
         || angle_between(before.orientation, after.orientation) > rebuild.angle_rad
 }
@@ -34,7 +34,7 @@ pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceTuning) -> bool {
 /// joint holds (not from the last step's, so a slow slide is caught and jitter is not), and the
 /// joint has stood for `rebuild.min_interval_s`, so a hand sliding along the gun remakes it at a
 /// bounded rate.
-pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceTuning) -> bool {
+pub(crate) fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceTuning) -> bool {
     let stood = !age_s.is_finite() || age_s >= rebuild.min_interval_s;
     stood && brace_changed(built, wanted, rebuild)
 }
@@ -42,13 +42,13 @@ pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceTuning) -
 /// Whether a brace has broken: the tracked support palm at `tracked` is further than `break_m`
 /// from `held`, where the brace holds the palm on the gun, both world space. A pose that is not
 /// finite breaks nothing here: a hand that lost tracking ends its hold elsewhere.
-pub fn brace_broken(tracked: Vec3, held: Vec3, break_m: f32) -> bool {
+pub(crate) fn brace_broken(tracked: Vec3, held: Vec3, break_m: f32) -> bool {
     let gap = tracked.distance(held);
     gap.is_finite() && break_m.is_finite() && gap > break_m.max(0.0)
 }
 
 /// The value of `values` for a gun of weight class `class`.
-pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
+pub(crate) fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
     match class {
         HeftClass::Sidearm => values.sidearm,
         HeftClass::Smg => values.smg,
@@ -61,7 +61,7 @@ pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
 /// (`inverse_mass`, zero for an infinite one), or the class's fallback when that gives no finite,
 /// positive mass. A weapon of `guns` guns (the dual-wield pair) shares its own body's mass among
 /// them. Either is held between the lightest and the class's heaviest.
-pub fn gun_mass(
+pub(crate) fn gun_mass(
     inverse_mass: f32,
     class: HeftClass,
     guns: usize,
@@ -102,7 +102,7 @@ pub fn deviation(hand: Pose, seat: Pose, gun: Pose) -> Pose {
 
 /// Whether a deviation is past what a held gun may stray before it is put back on its seat: a
 /// shift past `max_shift_m`, or a turn past `max_turn_rad`.
-pub fn strayed(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> bool {
+pub(crate) fn strayed(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> bool {
     let finite = deviation.position.is_finite() && deviation.orientation.is_finite();
     !finite
         || deviation.position.length() > max_shift_m.max(0.0)
@@ -128,7 +128,7 @@ pub fn limit(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> Pose {
 /// body is within them, or for a step or pose that is not finite. Added to the velocities the
 /// hand carries the gun with, they keep the body where the drawn gun is drawn, so a shot's muzzle
 /// rise or a knock moves the body no further than the render shows.
-pub fn clamp_velocity(
+pub(crate) fn clamp_velocity(
     seated: Pose,
     gun: Pose,
     max_shift_m: f32,
@@ -155,7 +155,7 @@ pub fn clamp_velocity(
 /// which the hand's body is driven to. The hand's body may lag its palm while it carries the gun
 /// in, so the seat taken from where the body is would hold the gun as far off the hand as the
 /// body lagged, for as long as it is held.
-pub fn intended_seat(palm: Pose, gun: Pose) -> Pose {
+pub(crate) fn intended_seat(palm: Pose, gun: Pose) -> Pose {
     seat(palm, gun)
 }
 
@@ -171,7 +171,7 @@ pub fn settled(body: Pose, palm: Pose, config: &HeldGunsTuning) -> bool {
 /// The gun's barrel and muzzle in its own frame: the barrel the axis of its fire point `fire_point`
 /// (the fire point's -Z, as the sight line's), and the muzzle the fire point's origin.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GunAxes {
+pub(crate) struct GunAxes {
     pub muzzle: Vec3,
     /// A unit vector.
     pub barrel: Vec3,
@@ -181,7 +181,7 @@ pub struct GunAxes {
 
 /// The gun's axes from its fire point `fire_point` in its own frame, with `up_in_gun` the world's
 /// up in the gun's frame when the body is made. `None` for a degenerate fire point.
-pub fn gun_axes(fire_point: Mat4, up_in_gun: Vec3) -> Option<GunAxes> {
+pub(crate) fn gun_axes(fire_point: Mat4, up_in_gun: Vec3) -> Option<GunAxes> {
     let barrel = fire_point.transform_vector3(Vec3::NEG_Z).try_normalize()?;
     let muzzle = fire_point.w_axis.truncate();
     // The world's up across the barrel; a gun made pointing straight up takes any axis across.
@@ -195,7 +195,12 @@ pub fn gun_axes(fire_point: Mat4, up_in_gun: Vec3) -> Option<GunAxes> {
 /// along the barrel by `impulse_ns`, and up across it by `muzzle_rise` of that, which, given at the
 /// muzzle, also turns the gun's muzzle up about its centre of mass. Returns the impulse and the
 /// point it is given at, game space.
-pub fn shot_impulse(gun: Pose, axes: &GunAxes, impulse_ns: f32, muzzle_rise: f32) -> (Vec3, Vec3) {
+pub(crate) fn shot_impulse(
+    gun: Pose,
+    axes: &GunAxes,
+    impulse_ns: f32,
+    muzzle_rise: f32,
+) -> (Vec3, Vec3) {
     let back = -(gun.orientation * axes.barrel);
     let up = gun.orientation * axes.up;
     let impulse_ns = if impulse_ns.is_finite() {

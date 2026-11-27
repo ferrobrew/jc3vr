@@ -74,7 +74,7 @@ impl BodyKind {
 
 /// Which of the mod's own bodies a body is.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ModBody {
+pub(crate) enum ModBody {
     Hand,
     Gun,
 }
@@ -87,7 +87,7 @@ pub struct KindInputs {
     /// The collision layer: the low field of the collision-filter word.
     pub layer: Layer,
     /// Whether the body is one of the mod's own.
-    pub mod_body: Option<ModBody>,
+    pub(crate) mod_body: Option<ModBody>,
     /// Whether the body is the player's character proxy.
     pub player: bool,
 }
@@ -155,7 +155,7 @@ impl Geometry {
 /// A capsule's radius from its convex radius: the core box reaches `radius_in_core` of the radius
 /// past the segment, and the convex radius is the rest
 /// ([`hknpCapsuleShape::RADIUS_IN_CORE`](jc3gi::havok::hknpCapsuleShape::RADIUS_IN_CORE)).
-pub fn capsule_radius(convex_radius: f32, radius_in_core: f32) -> f32 {
+pub(crate) fn capsule_radius(convex_radius: f32, radius_in_core: f32) -> f32 {
     let rest = 1.0 - radius_in_core;
     if rest > 0.0 {
         convex_radius / rest
@@ -167,7 +167,11 @@ pub fn capsule_radius(convex_radius: f32, radius_in_core: f32) -> f32 {
 /// The edges of a polytope from its faces, each face a run `(first, count)` of `indices` going
 /// round it: every pair of consecutive indices and the last and first, each edge once, smaller
 /// index first. A face that runs past the indices, or an index past `vertex_count`, is skipped.
-pub fn hull_edges(faces: &[(u16, u8)], indices: &[u8], vertex_count: usize) -> Vec<(u8, u8)> {
+pub(crate) fn hull_edges(
+    faces: &[(u16, u8)],
+    indices: &[u8],
+    vertex_count: usize,
+) -> Vec<(u8, u8)> {
     let mut edges: Vec<(u8, u8)> = Vec::new();
     for &(first, count) in faces {
         let (first, count) = (usize::from(first), usize::from(count));
@@ -196,7 +200,7 @@ pub fn hull_edges(faces: &[(u16, u8)], indices: &[u8], vertex_count: usize) -> V
 pub struct Body {
     pub id: u32,
     /// The shape's address, which tells a reused body id from the body it was.
-    pub shape_key: usize,
+    pub(crate) shape_key: usize,
     pub kind: BodyKind,
     pub motion: MotionKind,
     /// The collision-filter word.
@@ -215,8 +219,8 @@ pub struct Body {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Joint {
     pub kind: JointKind,
-    pub body_a: u32,
-    pub body_b: u32,
+    pub(crate) body_a: u32,
+    pub(crate) body_b: u32,
 }
 
 /// Which of the mod's joints a joint is.
@@ -268,7 +272,7 @@ pub fn nearest(mut candidates: Vec<(f32, u32)>, radius: f32, max: usize) -> (Vec
 }
 
 /// A body's frame between the last two reads, `t` of the way from `previous` to `current`.
-pub fn interpolate(previous: &Affine3A, current: &Affine3A, t: f32) -> Affine3A {
+pub(crate) fn interpolate(previous: &Affine3A, current: &Affine3A, t: f32) -> Affine3A {
     let t = if t.is_finite() {
         t.clamp(0.0, 1.0)
     } else {
@@ -289,7 +293,7 @@ pub fn interpolate(previous: &Affine3A, current: &Affine3A, t: f32) -> Affine3A 
 
 /// The body whose box the gaze ray from `origin` along the unit `forward` enters within `max_m`:
 /// the smallest such box, so that a prop on the ground wins over the ground around it.
-pub fn gazed<'a>(
+pub(crate) fn gazed<'a>(
     bodies: impl IntoIterator<Item = &'a Body>,
     origin: Vec3,
     forward: Vec3,

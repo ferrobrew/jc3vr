@@ -44,69 +44,69 @@ pub struct HandClimbTuning {
     pub max_speed_mps: f32,
     /// How far the body may be from where the hands would have it before the grips let go, metres:
     /// a hand pulled much further than the body can follow, through a wall or out of reach.
-    pub break_distance_m: f32,
+    pub(crate) break_distance_m: f32,
     /// The least level share of a gripped surface's normal for it to count as a face the body rises
     /// along, rather than a ledge's top ([`slope_follow`]).
     ///
     /// [`slope_follow`]: crate::controllers::physical_hands::climb::solve::slope_follow
-    pub min_face_level: f32,
+    pub(crate) min_face_level: f32,
     /// The share of the climbing speed the body keeps when the last grip lets go, so that a pull
     /// flings the player.
-    pub fling_scale: f32,
+    pub(crate) fling_scale: f32,
     /// The fastest fling, metres per second.
-    pub max_fling_speed_mps: f32,
+    pub(crate) max_fling_speed_mps: f32,
     /// How long the climbing speed a fling keeps is smoothed over, seconds.
-    pub fling_smoothing_s: f32,
+    pub(crate) fling_smoothing_s: f32,
     /// How long a fling keeps carrying the body after the release, seconds, as a throw under
     /// gravity, until the player stands on something or grips again.
-    pub fling_carry_s: f32,
+    pub(crate) fling_carry_s: f32,
     /// How far below the gripped top the feet may be for the mantle to start, metres.
-    pub mantle_start_m: f32,
+    pub(crate) mantle_start_m: f32,
     /// How far above the gripped top the mantle lifts the feet before it carries the body over,
     /// metres.
-    pub mantle_clearance_m: f32,
+    pub(crate) mantle_clearance_m: f32,
     /// The share of [`HandClimbTuning::mantle_clearance_m`] the feet may still be below where the
     /// mantle carries them and go over the top rather than straight up, `0..=1`.
-    pub mantle_over_below_clearance_share: f32,
+    pub(crate) mantle_over_below_clearance_share: f32,
     /// How far past the grip the mantle carries the body, metres.
-    pub mantle_forward_m: f32,
+    pub(crate) mantle_forward_m: f32,
     /// The mantle's speed, metres per second.
-    pub mantle_speed_mps: f32,
+    pub(crate) mantle_speed_mps: f32,
     /// The least smoothed upward climbing speed for the mantle to start, metres per second, so that
     /// a twitch upward near a ledge does not start one.
-    pub mantle_min_speed_mps: f32,
+    pub(crate) mantle_min_speed_mps: f32,
     /// How far the feet must have climbed since the climb started for the mantle to start while
     /// the player still stands on something, metres.
-    pub mantle_min_climb_m: f32,
+    pub(crate) mantle_min_climb_m: f32,
     /// How far past the ledge's top the mantle carries the feet before it lets them down onto it,
     /// metres: about the player capsule's radius.
-    pub mantle_land_past_m: f32,
+    pub(crate) mantle_land_past_m: f32,
     /// How fast the mantle lets the feet down onto the ledge once they are over it, metres per
     /// second.
-    pub mantle_land_speed_mps: f32,
+    pub(crate) mantle_land_speed_mps: f32,
     /// How close to where the mantle carries them the feet count as there, metres.
-    pub mantle_arrived_m: f32,
+    pub(crate) mantle_arrived_m: f32,
     /// How far below the gripped top feet that stand count as on the ledge, metres.
-    pub mantle_landed_below_m: f32,
+    pub(crate) mantle_landed_below_m: f32,
     /// How many steps a mantle may take before it gives up, counted at the game's simulation tick.
-    pub max_mantle_steps: u32,
+    pub(crate) max_mantle_steps: u32,
     /// The least upward share of a gripped surface's normal for it to count as a ledge's top,
     /// `0..=1`.
-    pub min_ledge_normal_y: f32,
+    pub(crate) min_ledge_normal_y: f32,
     /// The climbing speed of the strongest tension pulse, metres per second.
-    pub tension_full_speed_mps: f32,
+    pub(crate) tension_full_speed_mps: f32,
     /// The least share of the tension pulse that pulses a gripping hand, `0..=1`.
-    pub min_tension: f32,
+    pub(crate) min_tension: f32,
     /// The lightest dynamic body a hand climbs, kilograms; a lighter one is a loose object.
-    pub min_moving_mass_kg: f32,
+    pub(crate) min_moving_mass_kg: f32,
     /// The fastest a gripped body's motion carries the climber, metres per second.
-    pub max_carry_speed_mps: f32,
+    pub(crate) max_carry_speed_mps: f32,
     /// How long a publish stays current for the input tick, which runs every frame, milliseconds.
     pub stale_after_ms: u64,
     /// How many steps in a row may run without a publish, or with a gripping hand's body not
     /// acting, before the grips let go: the aim update runs every simulation tick, and a game
     /// pause stops the steps as well as the publishes.
-    pub max_stale_steps: u32,
+    pub(crate) max_stale_steps: u32,
 }
 
 impl HandClimbTuning {
@@ -117,7 +117,7 @@ impl HandClimbTuning {
 
     /// How many physics steps the palms' tick's last run stays current for a step: the step after
     /// it takes it, and [`HandClimbTuning::max_stale_steps`] more may run without another.
-    pub fn publish_window(&self) -> StepWindow {
+    pub(crate) fn publish_window(&self) -> StepWindow {
         StepWindow::new(u64::from(self.max_stale_steps) + 1)
     }
 
@@ -205,16 +205,16 @@ pub struct VaultTuning {
     /// The lifting speed per metre of press past the deadband, per second.
     pub stiffness_per_s: f32,
     /// The fastest lift, metres per second.
-    pub max_lift_mps: f32,
+    pub(crate) max_lift_mps: f32,
     /// The least downward share of a press for it to lift, `0..=1`.
-    pub min_vertical: f32,
+    pub(crate) min_vertical: f32,
     /// The highest the feet rise above where the push started, metres.
-    pub max_rise_m: f32,
+    pub(crate) max_rise_m: f32,
     /// How far above the feet a surface must be for a press on it to lift, metres of the game
     /// world: the ground the player stands on, and anything barely above it (a kerb, a step, the
     /// floor where the player's real floor sits a little lower than the game's), is never pushed
     /// on; a hand reaching down for something on the ground rests on it instead.
-    pub min_height_m: f32,
+    pub(crate) min_height_m: f32,
     /// How long a press must stay past the deadband before it starts to lift, seconds: a hand
     /// that brushes a surface on its way past, or lands on it with a moment's overshoot, lifts
     /// nothing, and a deliberate push lifts.
@@ -222,7 +222,7 @@ pub struct VaultTuning {
     /// The fastest the player may be moving down for the hands to lift them, metres per second:
     /// a player falling faster is never lifted, so that a fall is not stopped. Above zero, so that
     /// a player settling onto the ground or stepping down a slope still pushes up.
-    pub fall_tolerance_mps: f32,
+    pub(crate) fall_tolerance_mps: f32,
 }
 
 impl VaultTuning {

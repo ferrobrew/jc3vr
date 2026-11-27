@@ -115,14 +115,14 @@ impl TearGesture {
 pub(crate) struct Gesture {
     pub dt: f32,
     pub lag_m: f32,
-    pub lag_direction: Vec3,
-    pub separating_speed_mps: f32,
-    pub opening_push_m: f32,
+    pub(crate) lag_direction: Vec3,
+    pub(crate) separating_speed_mps: f32,
+    pub(crate) opening_push_m: f32,
     pub load: f32,
-    pub at_limit: bool,
+    pub(crate) at_limit: bool,
     /// Whether the lag runs mostly along a swing the hinge leaves free: the door would follow the
     /// hand there.
-    pub free_swing: bool,
+    pub(crate) free_swing: bool,
 }
 
 /// A native request's outcome, without retaining any native pointer across a tick.
