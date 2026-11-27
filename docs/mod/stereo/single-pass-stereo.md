@@ -477,8 +477,7 @@ transforming an upload in flight, and puts the type's own rows back afterwards. 
 has to describe where that geometry actually landed. On by default, but the hardest of this group to
 A/B: the affected family may not be on screen at all at the water-quality setting in use, which makes a
 headset comparison the only way to tell the fix from a no-op. The re-issue lives in
-`hooks/graphics_engine/scene/water.rs` and has not been verified in the headset; the
-[playtest checklist](../vr-runtime.md#playtest-checklist) carries the check.
+`hooks/graphics_engine/scene/water.rs` and has not been verified in the headset.
 
 > **Not `NvWaterHighEnd`, and not a shader rewrite.** This mechanism is not `NvWaterHighEnd`'s, and its
 > fix is not a DXBC rewrite of nine water pixel shaders with eye parity plumbed into a pixel shader.
