@@ -22,10 +22,7 @@
 //! orientation sinks into the palm; each placement moves its model out of the palm
 //! ([`away_from_palm`]) and turns it the way a hand holds it.
 
-use std::{
-    ffi::c_void,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::ffi::c_void;
 
 use detours_macro::detour;
 use glam::{Mat3, Mat4, Quat, Vec3};
@@ -34,7 +31,7 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -134,7 +131,7 @@ pub fn hold(slot: Slot, held: Option<Held>) {
 
 /// Explosive models re-pushed at render time since the payload loaded.
 pub fn updated() -> u64 {
-    UPDATED.load(Ordering::Relaxed)
+    UPDATED.get()
 }
 
 /// The world matrix of a model held at `local` (its pose in the grip frame) in a hand whose grip is
@@ -164,7 +161,7 @@ fn explosive_update_render(game_object: *mut c_void, context: *const GameObjectR
     let explosive = unsafe { &*(explosive as *const Explosive) };
     if let Some(model) = unsafe { explosive.m_ModelInstance.as_mut() } {
         unsafe { model.UpdateMatrix(&Matrix4::from(matrix)) };
-        UPDATED.fetch_add(1, Ordering::Relaxed);
+        UPDATED.bump();
     }
 }
 
@@ -188,7 +185,7 @@ fn planted_explosive_update_render(
     let charge = unsafe { &*(charge as *const PlantedExplosive) };
     if let Some(model) = unsafe { charge.m_InactiveModelInstance.as_mut() } {
         unsafe { model.UpdateMatrix(&Matrix4::from(matrix)) };
-        UPDATED.fetch_add(1, Ordering::Relaxed);
+        UPDATED.bump();
     }
 }
 
@@ -240,7 +237,7 @@ fn current(explosive: usize, slots: [Slot; 2], now: Stamp) -> Option<Held> {
 }
 
 static HELD: Mutex<[Option<(Held, Stamp)>; Slot::COUNT]> = Mutex::new([None; Slot::COUNT]);
-static UPDATED: AtomicU64 = AtomicU64::new(0);
+static UPDATED: Counter = Counter::new();
 
 #[cfg(test)]
 mod tests {

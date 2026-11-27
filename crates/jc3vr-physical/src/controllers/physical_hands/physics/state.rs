@@ -263,7 +263,6 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
         last_blow: None,
         shoves: 0,
         knockdowns: 0,
-        last_shove: None,
         last_error: None,
     },
 });

@@ -8,10 +8,7 @@
 //! reticle, and auto-aim -- so the overrides here act on the orientation and displacement
 //! evaluators rather than on the flags.
 
-use std::{
-    ffi::c_void,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::ffi::c_void;
 
 use detours_macro::detour;
 use jc3gi::{
@@ -47,21 +44,32 @@ pub fn hook_library() -> HookLibrary {
         .with_static_binder(&GET_AIM_MOVE_ANGLE_BINDER)
 }
 
-/// Diagnostic counters for the debug UI, so hook liveness and the overrides' activity are visible
-/// in-game: how often each locomotion task ran, and how often the orientation executor was forced
-/// into face-dir tracking.
-pub static MOVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static AIM_RELATIVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static FACE_CAMERA_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static SLIDE_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static SKIPPED_STARTS: AtomicU64 = AtomicU64::new(0);
-pub static INSTANT_SPEED_FLOORS: AtomicU64 = AtomicU64::new(0);
+jc3vr_core::counters! {
+    /// The locomotion hooks' counts for the debug UI, so the hooks' liveness and the overrides'
+    /// activity are visible in-game.
+    pub struct LocomotionCounters => LocomotionCounts {
+        /// How often the move task ran.
+        move_tasks,
+        /// How often the aim-relative task ran.
+        aim_relative_tasks,
+        /// How often the orientation executor was forced into face-dir tracking.
+        face_camera,
+        /// How often the slide task ran.
+        slides,
+        /// How often a start was skipped.
+        skipped_starts,
+        /// How often the instant speed was floored.
+        instant_speed_floors,
+    }
+}
+
+pub static LOCOMOTION_COUNTS: LocomotionCounters = LocomotionCounters::new();
 
 #[detour(
     address = jc3gi::input::locomotion::NStateTask_InputLocoMoveTask::Update_ADDRESS
 )]
 fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
-    MOVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
+    LOCOMOTION_COUNTS.move_tasks.bump();
     INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
 }
 
@@ -69,7 +77,7 @@ fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut
     address = jc3gi::input::locomotion::NStateTask_InputLocoAimRelativeTask::Update_ADDRESS
 )]
 fn input_loco_aim_relative_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
-    AIM_RELATIVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
+    LOCOMOTION_COUNTS.aim_relative_tasks.bump();
     INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
         .get()
         .unwrap()
@@ -280,7 +288,7 @@ fn force_face_camera(
                 std::ptr::null(),
             );
         }
-        FACE_CAMERA_CALLS.fetch_add(1, Ordering::Relaxed);
+        LOCOMOTION_COUNTS.face_camera.bump();
         return (true, INPUT_HOOKS.get().locomotion.turn_step_deg);
     }
 
@@ -312,7 +320,7 @@ fn force_face_camera(
             std::ptr::null(),
         );
     }
-    FACE_CAMERA_CALLS.fetch_add(1, Ordering::Relaxed);
+    LOCOMOTION_COUNTS.face_camera.bump();
     (true, INPUT_HOOKS.get().locomotion.turn_step_deg)
 }
 
@@ -487,7 +495,7 @@ fn queue_starts(
         let act: *const u32 = unsafe { get_NCharacter_ActMoveNoAim() };
         if unsafe { character.m_AnimatedModel.TryAct(act) } {
             unsafe { character.QueueAct(act) };
-            SKIPPED_STARTS.fetch_add(1, Ordering::Relaxed);
+            LOCOMOTION_COUNTS.skipped_starts.bump();
             return true;
         }
     }
@@ -533,7 +541,7 @@ fn evaluate_character_speed(character: *mut Character, use_blackboard_override: 
         return speed;
     };
     if target > speed {
-        INSTANT_SPEED_FLOORS.fetch_add(1, Ordering::Relaxed);
+        LOCOMOTION_COUNTS.instant_speed_floors.bump();
         target
     } else {
         speed
@@ -616,7 +624,7 @@ fn evaluate_character_displacement(
             }
         }
 
-        SLIDE_CALLS.fetch_add(1, Ordering::Relaxed);
+        LOCOMOTION_COUNTS.slides.bump();
     }
 }
 

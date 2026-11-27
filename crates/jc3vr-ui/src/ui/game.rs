@@ -1,7 +1,5 @@
 //! The movement hooks' live readouts.
 
-use std::sync::atomic::Ordering;
-
 use jc3gi::character::character::{AimState, Character};
 use jc3vr_body::{
     hooks,
@@ -9,15 +7,9 @@ use jc3vr_body::{
         animation::canopy::REEL_OPENINGS_SKIPPED,
         input::{
             air::carried_updates,
-            locomotion::{
-                AIM_RELATIVE_TASK_CALLS, FACE_CAMERA_CALLS, INSTANT_SPEED_FLOORS, MOVE_TASK_CALLS,
-                SKIPPED_STARTS, SLIDE_CALLS,
-            },
+            locomotion::LOCOMOTION_COUNTS,
             parachute::{PARACHUTE_LINE_TURNS, PARACHUTE_LOOK_STEER_SUPPRESSIONS},
-            swim::{
-                SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS,
-                SWIM_ROTATE_OVERRIDES, SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED,
-            },
+            swim::SWIM_COUNTS,
             wingsuit::{barrel_rolls_dropped, suppressed as stall_flip_suppressed},
         },
     },
@@ -41,28 +33,25 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
 }
 
 fn swimming_readout(ui: &mut egui::Ui) {
+    let swim = SWIM_COUNTS.snapshot();
     ui.label(format!(
         "Swim: cores {}  dir-overrides {}  rotate-overrides {}  turn-suppressions {}  \
          move-refusals {}  untargeted {}",
-        SWIM_EVAL_CALLS.load(Ordering::Relaxed),
-        SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
-        SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
-        SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
-        SWIM_MOVE_REFUSALS.load(Ordering::Relaxed),
-        SWIM_UNTARGETED.load(Ordering::Relaxed),
+        swim.evals, swim.directions, swim.rotates, swim.turns, swim.moves, swim.untargeted,
     ));
 }
 
 fn locomotion_readout(ui: &mut egui::Ui) {
+    let loco = LOCOMOTION_COUNTS.snapshot();
     ui.label(format!(
         "Loco task calls: move {}  aim-relative {}  face-camera {}  slide {}  \
          starts-skipped {}  speed-floors {}",
-        MOVE_TASK_CALLS.load(Ordering::Relaxed),
-        AIM_RELATIVE_TASK_CALLS.load(Ordering::Relaxed),
-        FACE_CAMERA_CALLS.load(Ordering::Relaxed),
-        SLIDE_CALLS.load(Ordering::Relaxed),
-        SKIPPED_STARTS.load(Ordering::Relaxed),
-        INSTANT_SPEED_FLOORS.load(Ordering::Relaxed),
+        loco.move_tasks,
+        loco.aim_relative_tasks,
+        loco.face_camera,
+        loco.slides,
+        loco.skipped_starts,
+        loco.instant_speed_floors,
     ));
     match hooks::input::locomotion::debug_blackboard_snapshot() {
         Some(snapshot) => {
@@ -119,9 +108,9 @@ fn locomotion_readout(ui: &mut egui::Ui) {
 fn parachute_readout(ui: &mut egui::Ui) {
     ui.label(format!(
         "Parachute: look-steer suppressions {}, line-turn ticks {}, reel openings skipped {}",
-        PARACHUTE_LOOK_STEER_SUPPRESSIONS.load(Ordering::Relaxed),
-        PARACHUTE_LINE_TURNS.load(Ordering::Relaxed),
-        REEL_OPENINGS_SKIPPED.load(Ordering::Relaxed),
+        PARACHUTE_LOOK_STEER_SUPPRESSIONS.get(),
+        PARACHUTE_LINE_TURNS.get(),
+        REEL_OPENINGS_SKIPPED.get(),
     ));
 }
 

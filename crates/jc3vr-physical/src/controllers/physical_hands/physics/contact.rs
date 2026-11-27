@@ -38,7 +38,7 @@ use jc3gi::{
     havok::{hknpContactImpulseEvent, hknpContactJacobianUtil},
     physics::{PfxInstance, PfxRigidBody, PfxRigidBodyVftable},
 };
-use jc3vr_core::published::Step;
+use jc3vr_core::published::{Counter, Step};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -206,7 +206,7 @@ pub(super) fn record_motion(source: impl Into<Source>, position: Vec3, velocity:
 /// full.
 pub(super) fn take() -> (Vec<Contact>, u64) {
     let contacts = std::mem::take(&mut *QUEUE.lock());
-    (contacts, DROPPED.swap(0, Ordering::Relaxed))
+    (contacts, DROPPED.take())
 }
 
 /// The engine wrapper's table with the event slot replaced, laid out as the compiler lays a virtual
@@ -245,7 +245,7 @@ static MOTION: Mutex<[Option<(Vec3, Vec3)>; SOURCES]> = Mutex::new([None; SOURCE
 static MUTED_UNTIL: [AtomicU64; SOURCES] = [const { AtomicU64::new(0) }; SOURCES];
 
 static QUEUE: Mutex<Vec<Contact>> = Mutex::new(Vec::new());
-static DROPPED: AtomicU64 = AtomicU64::new(0);
+static DROPPED: Counter = Counter::new();
 static FIRST_EVENT: AtomicBool = AtomicBool::new(true);
 
 /// The most contacts the queue holds between two frame ticks.
@@ -331,7 +331,7 @@ unsafe fn record(
         MOTION.lock()[source.index()].unwrap_or((Vec3::ZERO, Vec3::ZERO));
     let mut queue = QUEUE.lock();
     if queue.len() >= QUEUE_CAPACITY {
-        DROPPED.fetch_add(1, Ordering::Relaxed);
+        DROPPED.bump();
         return;
     }
     queue.push(Contact {

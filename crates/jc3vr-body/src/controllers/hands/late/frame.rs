@@ -1,14 +1,11 @@
 //! The frame's snapshot of the late update's inputs, the correction it derives from them, and the
 //! palette edit that carries the correction onto the skinning palette.
 
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::OnceLock;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
-use jc3vr_core::render_frame::RenderFrameSlot;
+use jc3vr_core::{published::Counter, render_frame::RenderFrameSlot};
 use jc3vr_input::frame::{self, Hand, Pose};
 use jc3vr_view::{
     controllers::cockpit::{CockpitTransform, body_of_head},
@@ -108,12 +105,12 @@ pub fn drawn_forearm_delta(hand: Hand, dtf: f32) -> Option<Mat4> {
 /// Count a palette upload edited by a draw outside this module (the presentation layer's), for the
 /// readout's tally.
 pub fn count_palette_edit() {
-    PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
+    PALETTES_EDITED.bump();
 }
 
 /// Count a gun model matrix re-pushed by the weapon render detour, for the readout's tally.
 pub(super) fn count_weapon_update() {
-    WEAPONS_UPDATED.fetch_add(1, Ordering::Relaxed);
+    WEAPONS_UPDATED.bump();
 }
 
 /// Why a hand was or was not corrected at the sampled render interpolation fraction.
@@ -205,8 +202,8 @@ pub fn status() -> LateStatus {
                 _ => None,
             }
         }),
-        weapons_updated: WEAPONS_UPDATED.load(Ordering::Relaxed),
-        palettes_edited: PALETTES_EDITED.load(Ordering::Relaxed),
+        weapons_updated: WEAPONS_UPDATED.get(),
+        palettes_edited: PALETTES_EDITED.get(),
     }
 }
 
@@ -345,7 +342,7 @@ impl PaletteEdit {
                 }
             }
         }
-        PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
+        PALETTES_EDITED.bump();
     }
 
     fn edited_bones(&self) -> impl Iterator<Item = (usize, &Mat4)> + '_ {
@@ -725,8 +722,8 @@ fn render_views(
 
 static FRAME: RenderFrameSlot<Option<LateFrame>> = RenderFrameSlot::new();
 static POST_STEP_SAMPLE: OnceLock<fn()> = OnceLock::new();
-static WEAPONS_UPDATED: AtomicU64 = AtomicU64::new(0);
-static PALETTES_EDITED: AtomicU64 = AtomicU64::new(0);
+static WEAPONS_UPDATED: Counter = Counter::new();
+static PALETTES_EDITED: Counter = Counter::new();
 
 #[cfg(test)]
 mod tests {

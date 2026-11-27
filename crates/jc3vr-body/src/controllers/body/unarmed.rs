@@ -30,11 +30,11 @@
 
 use std::sync::{
     LazyLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
 };
 
 use jc3gi::character::character::{AnimationLayer, Character};
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
@@ -162,7 +162,7 @@ pub fn wielded_relaxed() -> bool {
 
 /// Count one weapon-wielded evaluation that the relaxed locomotion read as false, for the readout.
 pub fn count_relaxed_wielded() {
-    RELAXED_EVALUATIONS.fetch_add(1, Ordering::Relaxed);
+    RELAXED_EVALUATIONS.bump();
 }
 
 /// What the unarmed body decided on its last tick, for the debug UI.
@@ -188,7 +188,7 @@ pub struct UnarmedStatus {
 pub fn status() -> UnarmedStatus {
     let mut status = *STATE.lock();
     status.skipped = hooks::character::layers::skipped();
-    status.relaxed_evaluations = RELAXED_EVALUATIONS.load(Ordering::Relaxed);
+    status.relaxed_evaluations = RELAXED_EVALUATIONS.get();
     status
 }
 
@@ -265,7 +265,7 @@ static STATE: LazyLock<Mutex<UnarmedStatus>> =
     LazyLock::new(|| Mutex::new(UnarmedStatus::default()));
 
 static WIELDED_RELAXED: AtomicBool = AtomicBool::new(false);
-static RELAXED_EVALUATIONS: AtomicU64 = AtomicU64::new(0);
+static RELAXED_EVALUATIONS: Counter = Counter::new();
 
 /// Each animation layer's blender address, indexed by layer, zero where a layer has none.
 ///

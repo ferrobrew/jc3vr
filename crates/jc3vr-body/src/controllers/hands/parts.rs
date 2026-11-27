@@ -17,10 +17,7 @@
 //! [`held::adjust_part`]): a pistol's slide, held back while its chamber is empty and following the
 //! hand while it is worked, and a magazine part carried in the hand that took it from the pouch.
 
-use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::collections::HashMap;
 
 use detours_macro::detour;
 use glam::Mat4;
@@ -30,6 +27,7 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
+use jc3vr_core::published::Counter;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -48,7 +46,7 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// Model parts re-pushed since the payload loaded.
 pub fn parts_updated() -> u64 {
-    PARTS_UPDATED.load(Ordering::Relaxed)
+    PARTS_UPDATED.get()
 }
 
 /// The hand a part rides: the hand of the holder's bone it was last placed on, or, while it rides
@@ -75,7 +73,7 @@ static PLACED_ON: Mutex<Option<HashMap<usize, u32>>> = Mutex::new(None);
 /// More entries than the local player's weapons carry parts; past it the record is rebuilt, which
 /// drops the parts of weapons since freed.
 const MAX_RECORDED_PARTS: usize = 64;
-static PARTS_UPDATED: AtomicU64 = AtomicU64::new(0);
+static PARTS_UPDATED: Counter = Counter::new();
 
 /// The part's placement, then the bone it was placed on recorded for a local player's weapon.
 #[detour(
@@ -219,7 +217,7 @@ unsafe fn late_update_part(
     }
     let matrix = Matrix4::from(adjusted.unwrap_or(corrected));
     unsafe { instance.UpdateMatrix(&matrix) };
-    PARTS_UPDATED.fetch_add(1, Ordering::Relaxed);
+    PARTS_UPDATED.bump();
 }
 
 fn animated_part(parent: [Mat4; 2], part: [Mat4; 2], rendered_parent: Mat4, dtf: f32) -> Mat4 {

@@ -19,10 +19,7 @@
 //! so the check may run on a worker thread. The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
 //! external actions) are caught as they happen.
 
-use std::sync::{
-    LazyLock,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::LazyLock;
 
 use detours_macro::detour;
 use jc3gi::{
@@ -30,7 +27,7 @@ use jc3gi::{
     character::character::Character,
     hash::HashString,
 };
-use jc3vr_core::hash::hashlittle;
+use jc3vr_core::{hash::hashlittle, published::Counter};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::hooks::{animation::body_rule_system, input::locomotion::head_decoupled};
@@ -40,7 +37,7 @@ pub(super) fn hook_library() -> HookLibrary {
 }
 
 /// How often the canopy's opening out of a reel was skipped. Read by the Air feature's readout.
-pub static REEL_OPENINGS_SKIPPED: AtomicU64 = AtomicU64::new(0);
+pub static REEL_OPENINGS_SKIPPED: Counter = Counter::new();
 
 /// Move the local player's body machine on from a reel opening it is in into the canopy's idle,
 /// before the local controller evaluates the pose.
@@ -111,7 +108,7 @@ unsafe fn skip_reel_opening(machine: *mut StateMachineInstance, new_state: *mut 
     };
     // SAFETY: as above; the idle is looked up in the machine's own definition.
     if unsafe { rule_system.SetStateById(&raw const idle) } {
-        REEL_OPENINGS_SKIPPED.fetch_add(1, Ordering::Relaxed);
+        REEL_OPENINGS_SKIPPED.bump();
         tracing::info!(
             target: "controllers",
             opening,

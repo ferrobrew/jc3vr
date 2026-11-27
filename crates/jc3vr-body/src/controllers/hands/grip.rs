@@ -38,7 +38,7 @@
 //! animated attach bone sat relative to the canonical grip before the pin, and how the gun sits on
 //! the wrist after the placement, for the weapon handling's grip watch.
 
-use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use body_rig::math::rotation::angle_between;
 use glam::{Mat4, Quat, Vec3};
@@ -50,7 +50,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
 };
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
@@ -117,7 +117,7 @@ pub struct GripStatus {
 pub fn status() -> GripStatus {
     GripStatus {
         hands: body_frame::grip().hands,
-        pins: PINS.load(Ordering::Relaxed),
+        pins: PINS.get(),
     }
 }
 
@@ -602,7 +602,7 @@ unsafe fn pin(
         attach_joint.m_Translation.data = pinned_pose.position.to_array();
         attach_joint.m_Orientation.data = pinned_pose.orientation.to_array();
         unsafe { controller.SetJoint(attach_index, &mut attach_joint) };
-        PINS.fetch_add(1, Ordering::Relaxed);
+        PINS.bump();
     }
     Some(PinRead {
         wrist_index,
@@ -830,7 +830,7 @@ static FRAMES: Mutex<[Option<(FrameKey, Quat)>; 2]> = Mutex::new([None; 2]);
 /// The left hand's grip mirrored onto the right wrist, and the controller it was read for.
 static MIRRORED: Mutex<Option<(GripKey, Pose)>> = Mutex::new(None);
 static RIGHT_GRIP: Mutex<Option<RightGripRead>> = Mutex::new(None);
-static PINS: AtomicU64 = AtomicU64::new(0);
+static PINS: Counter = Counter::new();
 /// Each hand's last [`GripRead`] as its discriminant, `0` before the hand placed a gun.
 static READS: [AtomicU8; 2] = [const { AtomicU8::new(0) }; 2];
 

@@ -15,7 +15,6 @@
 //!
 //! [`NAirMovement_UpdateAirPhysics`]: jc3gi::input::parachute::NAirMovement_UpdateAirPhysics
 
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use body_rig::math::smooth::smoothstep;
 use detours_macro::detour;
@@ -23,7 +22,7 @@ use jc3gi::{
     character::character::Character, input::parachute::CharacterAirMovementSettings,
     types::math::Vector2,
 };
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -52,7 +51,7 @@ pub fn carry_speed(speed_mps: f32) {
 
 /// How many air physics updates ran with a raised cap, for the debug UI.
 pub fn carried_updates() -> u64 {
-    CARRIED_UPDATES.load(Ordering::Relaxed)
+    CARRIED_UPDATES.get()
 }
 
 #[detour(address = jc3gi::input::parachute::NAirMovement_UpdateAirPhysics_ADDRESS)]
@@ -77,7 +76,7 @@ fn update_air_physics(
         });
     let settings_in = match raised.as_ref() {
         Some(copy) => {
-            CARRIED_UPDATES.fetch_add(1, Ordering::Relaxed);
+            CARRIED_UPDATES.bump();
             std::ptr::from_ref(copy)
         }
         None => settings,
@@ -111,4 +110,4 @@ struct Carry {
 
 static CARRY: Mutex<Option<Carry>> = Mutex::new(None);
 
-static CARRIED_UPDATES: AtomicU64 = AtomicU64::new(0);
+static CARRIED_UPDATES: Counter = Counter::new();

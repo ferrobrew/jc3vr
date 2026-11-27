@@ -9,7 +9,7 @@
 //! turned since the last line, the turn input, the swim counters' advance, the core's last rotation
 //! (its own target and what it returned), and the procedural body's swim torso and the hand tiers.
 
-use std::{sync::atomic::Ordering, time::Duration};
+use std::time::Duration;
 
 use body_rig::math::angle::{heading, wrap, yaw_of};
 use glam::Vec3;
@@ -19,10 +19,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{body::procedural, hands::tiers, locomotion::strokes, telemetry::report},
-    hooks::input::swim::{
-        SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
-        SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED, SwimCore, SwimSignals,
-    },
+    hooks::input::swim::{SWIM_COUNTS, SwimCore, SwimCounts, SwimSignals},
 };
 
 /// Record one heading rotation of a swim core: the body's forward before it (`from`), the core's
@@ -50,7 +47,7 @@ pub fn log_tick(look_x: f32) {
         return;
     }
     let now = Stamp::now();
-    let counters = Counters::now();
+    let counters = SWIM_COUNTS.snapshot();
     let body = headpose::xr::body_rotation_raw();
     let body_forward = body * Vec3::NEG_Z;
     let body_yaw = heading(body);
@@ -74,7 +71,7 @@ pub fn log_tick(look_x: f32) {
         .as_secs_f32()
         .max(f32::EPSILON);
     let rate = |now: f32, then: f32| wrap(now - then).to_degrees() / elapsed;
-    let advanced = counters.since(&before);
+    let advanced = since(&counters, &before);
     let rotate = *LAST_ROTATE.lock();
     let procedural = procedural::published_status();
     let tiers = tiers::status();
@@ -164,45 +161,22 @@ struct RotateSample {
 
 static LAST_ROTATE: Mutex<Option<RotateSample>> = Mutex::new(None);
 
-/// The swim counters at one moment.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-struct Counters {
-    evals: u64,
-    directions: u64,
-    rotates: u64,
-    turns: u64,
-    moves: u64,
-    untargeted: u64,
-}
-
-impl Counters {
-    fn now() -> Self {
-        Self {
-            evals: SWIM_EVAL_CALLS.load(Ordering::Relaxed),
-            directions: SWIM_DIRECTION_OVERRIDES.load(Ordering::Relaxed),
-            rotates: SWIM_ROTATE_OVERRIDES.load(Ordering::Relaxed),
-            turns: SWIM_TURN_SUPPRESSIONS.load(Ordering::Relaxed),
-            moves: SWIM_MOVE_REFUSALS.load(Ordering::Relaxed),
-            untargeted: SWIM_UNTARGETED.load(Ordering::Relaxed),
-        }
-    }
-
-    fn since(&self, before: &Self) -> Self {
-        Self {
-            evals: self.evals.wrapping_sub(before.evals),
-            directions: self.directions.wrapping_sub(before.directions),
-            rotates: self.rotates.wrapping_sub(before.rotates),
-            turns: self.turns.wrapping_sub(before.turns),
-            moves: self.moves.wrapping_sub(before.moves),
-            untargeted: self.untargeted.wrapping_sub(before.untargeted),
-        }
+/// How far each swim count advanced from `before` to `now`.
+fn since(now: &SwimCounts, before: &SwimCounts) -> SwimCounts {
+    SwimCounts {
+        evals: now.evals.wrapping_sub(before.evals),
+        directions: now.directions.wrapping_sub(before.directions),
+        rotates: now.rotates.wrapping_sub(before.rotates),
+        turns: now.turns.wrapping_sub(before.turns),
+        moves: now.moves.wrapping_sub(before.moves),
+        untargeted: now.untargeted.wrapping_sub(before.untargeted),
     }
 }
 
 struct TelemetryState {
     /// When the last line was logged, with the counters, the body's euler yaw, and the target's
     /// heading then.
-    logged: Option<(Stamp, Counters, f32, Option<f32>)>,
+    logged: Option<(Stamp, SwimCounts, f32, Option<f32>)>,
     /// The largest turn input since the last line.
     look_x_peak: f32,
 }

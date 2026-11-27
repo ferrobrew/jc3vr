@@ -29,14 +29,14 @@
 
 use std::sync::{
     OnceLock,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
 };
 
 use jc3gi::{
     animation::symbol_table::EventIdSymbolTable, character::character::AnimatedModel,
     input::parachute::get_WingsuitBlendState_StallFlagSet,
 };
-use jc3vr_core::config::engine::ConfigSlot;
+use jc3vr_core::{config::engine::ConfigSlot, published::Counter};
 use jc3vr_view::{headpose, headpose::Source};
 use serde::{Deserialize, Serialize};
 
@@ -77,7 +77,7 @@ pub fn suppressed() -> bool {
 
 /// How many barrel rolls [`drops_act`] has dropped.
 pub fn barrel_rolls_dropped() -> u64 {
-    BARREL_ROLLS_DROPPED.load(Ordering::Relaxed)
+    BARREL_ROLLS_DROPPED.get()
 }
 
 /// Whether the animated model's act queue should drop `act`, queued on `model`: the barrel roll,
@@ -92,7 +92,7 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
         && headpose::source() == Source::Vr
         && !WINGSUIT_EVADE_CONFIG.query(|evade| evade.enabled);
     if wanted {
-        BARREL_ROLLS_DROPPED.fetch_add(1, Ordering::Relaxed);
+        BARREL_ROLLS_DROPPED.bump();
         tracing::info!(
             target: "controllers",
             "wingsuit: dropped the barrel roll, the evade is switched off"
@@ -132,7 +132,7 @@ pub fn sync() {
 
 static PATCHED: AtomicBool = AtomicBool::new(false);
 
-static BARREL_ROLLS_DROPPED: AtomicU64 = AtomicU64::new(0);
+static BARREL_ROLLS_DROPPED: Counter = Counter::new();
 
 /// The barrel roll's runtime id, once the act table is live. The name is an `NCharacter` id the
 /// game registers at startup, so resolving it never adds a name to the table.

@@ -396,23 +396,12 @@ pub enum ShoveForce {
     Push { speed_mps: f32 },
 }
 
-/// A shove dealt, for the readout.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ShoveReport {
-    pub hand: Hand,
-    /// The shove as a share of the knockdown impulse.
-    pub strength: f32,
-    pub hostile: bool,
-    pub yank: bool,
-}
-
 /// What a frame tick's shoves did.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ShovesDelivered {
     pub shoves: u64,
     /// Shoves that reached a knockdown.
     pub knockdowns: u64,
-    pub last: Option<ShoveReport>,
 }
 
 /// Queue `shove` for the next frame tick. Called from the palms' tick.
@@ -470,12 +459,6 @@ pub(super) fn deliver_shoves(game: &GameTick<'_>) -> ShovesDelivered {
         );
         delivered.shoves += 1;
         delivered.knockdowns += u64::from(plan.strength >= 1.0);
-        delivered.last = Some(ShoveReport {
-            hand: shove.hand,
-            strength: plan.strength,
-            hostile,
-            yank,
-        });
     }
     delivered
 }

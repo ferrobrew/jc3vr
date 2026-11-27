@@ -25,9 +25,8 @@ mod scan;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
-use jc3vr_body::controllers::{hands::late, held::guns};
+use jc3vr_body::controllers::held::guns;
 use jc3vr_core::published::{Stamp, Step};
-use jc3vr_input::frame::Hand;
 use jc3vr_view::{
     controllers::overlay::{
         primitive::{Primitive, Source},
@@ -68,30 +67,9 @@ pub struct ColliderViewStatus {
     pub primitives: usize,
     /// How long the last read took, microseconds.
     pub read_us: u32,
-    /// Render-time transform samples, including frames without a physics step.
-    pub pose_reads: u64,
-    /// The physics step identified by the current body-pose sample.
-    pub pose_step: u64,
-    /// The render fraction, for comparison with the separately interpolated visible meshes.
-    pub render_fraction: f32,
-    /// Time since the frame's body poses were sampled, microseconds.
-    pub pose_age_us: u32,
-    /// Mesh versus current collision pose for each hand's identified held gun.
-    pub gun_pose_gaps: [Option<GunPoseGap>; 2],
     /// The body under the gaze at the last frame.
     pub gaze: Option<GazeReadout>,
     pub last_error: Option<String>,
-}
-
-/// A current collision body compared with the mesh submitted in this render frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GunPoseGap {
-    pub weapon: usize,
-    pub body: u32,
-    pub translation_m: f32,
-    pub rotation_deg: f32,
-    pub mesh_age_us: u32,
-    pub render_fraction: f32,
 }
 
 /// The body under the gaze, for the debug UI.
@@ -185,7 +163,6 @@ pub unsafe fn render_tick(dtf: f32) {
             }
         }
     }
-    let sampled_at = Stamp::now();
     if let Some(current) = state.current.as_mut() {
         // SAFETY: forwarded from the caller; only retained transforms and boxes are read here.
         if let Err(e) = unsafe { scan::refresh(current, head.position) } {
@@ -233,26 +210,6 @@ pub unsafe fn render_tick(dtf: f32) {
         distance_m: b.distance_m,
     });
     let (scanned, in_range) = (current.scanned, current.in_range);
-    let rendered = late::rendered_guns();
-    let physical = guns::status();
-    let gun_pose_gaps = Hand::BOTH.map(|hand| {
-        let mesh = rendered[hand.index()]?;
-        let gun = physical.hands[hand.index()].as_ref()?;
-        if mesh.weapon != gun.weapon || !gun.in_world {
-            return None;
-        }
-        let body = current.body(gun.body_id)?;
-        let (_, rotation, position) = mesh.matrix.to_scale_rotation_translation();
-        let (_, body_rotation, body_position) = body.transform.to_scale_rotation_translation();
-        Some(GunPoseGap {
-            weapon: mesh.weapon,
-            body: gun.body_id,
-            translation_m: position.distance(body_position),
-            rotation_deg: rotation.angle_between(body_rotation).to_degrees(),
-            mesh_age_us: u32::try_from(mesh.at.elapsed().as_micros()).unwrap_or(u32::MAX),
-            render_fraction: mesh.fraction,
-        })
-    });
     store::submit(Source::ColliderView, &mut state.primitives, tuning.ttl());
 
     let mut status = STATUS.lock();
@@ -263,11 +220,6 @@ pub unsafe fn render_tick(dtf: f32) {
     status.drawn = drawn;
     status.primitives = primitives;
     status.gaze = gaze;
-    status.pose_reads += 1;
-    status.gun_pose_gaps = gun_pose_gaps;
-    status.pose_step = steps;
-    status.render_fraction = dtf;
-    status.pose_age_us = u32::try_from(sampled_at.elapsed().as_micros()).unwrap_or(u32::MAX);
     if let Some(took) = took {
         status.reads += 1;
         status.read_us = u32::try_from(took.as_micros()).unwrap_or(u32::MAX);
@@ -357,11 +309,6 @@ static STATUS: Mutex<ColliderViewStatus> = Mutex::new(ColliderViewStatus {
     },
     primitives: 0,
     read_us: 0,
-    pose_reads: 0,
-    pose_step: 0,
-    render_fraction: 0.0,
-    pose_age_us: 0,
-    gun_pose_gaps: [None; 2],
     gaze: None,
     last_error: None,
 });

@@ -42,7 +42,6 @@ pub fn frame_tick(game: &GameTick<'_>) {
             let mut shared = SHARED.lock();
             shared.status.shoves += shoves.shoves;
             shared.status.knockdowns += shoves.knockdowns;
-            shared.status.last_shove = shoves.last;
         }
     }
     // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.

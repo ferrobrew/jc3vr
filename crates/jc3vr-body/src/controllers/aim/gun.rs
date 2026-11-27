@@ -16,7 +16,6 @@
 //! update and the weapon updates run one after the other on the same thread, aim first, so the
 //! points are always the current tick's.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -27,7 +26,7 @@ use jc3gi::{
     },
     types::math::Vector3,
 };
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -84,8 +83,8 @@ pub struct GunCounters {
 
 pub fn counters() -> GunCounters {
     GunCounters {
-        aimed: AIMED.load(Ordering::Relaxed),
-        kept: KEPT.load(Ordering::Relaxed),
+        aimed: AIMED.get(),
+        kept: KEPT.get(),
     }
 }
 
@@ -225,7 +224,7 @@ fn update_from_user_post_sim(
 fn hand_target(weapon: &WeaponBase) -> Option<Vec3> {
     let address = weapon as *const WeaponBase as usize;
     if let Some(target) = mounted::target(address) {
-        AIMED.fetch_add(1, Ordering::Relaxed);
+        AIMED.bump();
         return Some(target);
     }
     let snapshot = SNAPSHOT.lock().filter(Snapshot::fresh)?;
@@ -240,7 +239,7 @@ fn hand_target(weapon: &WeaponBase) -> Option<Vec3> {
         .flatten()
         .and_then(|hand| snapshot.targets[hand.index()]);
     let counter = if target.is_some() { &AIMED } else { &KEPT };
-    counter.fetch_add(1, Ordering::Relaxed);
+    counter.bump();
     target
 }
 
@@ -266,8 +265,8 @@ impl Snapshot {
 }
 
 static SNAPSHOT: Mutex<Option<Snapshot>> = Mutex::new(None);
-static AIMED: AtomicU64 = AtomicU64::new(0);
-static KEPT: AtomicU64 = AtomicU64::new(0);
+static AIMED: Counter = Counter::new();
+static KEPT: Counter = Counter::new();
 
 /// The weapon's guns, in order. A single pistol has one: its first, the only one it shows and
 /// fires ([`is_single_pistol`]).

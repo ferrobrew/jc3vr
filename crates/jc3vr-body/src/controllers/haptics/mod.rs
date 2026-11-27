@@ -24,6 +24,7 @@ pub mod shot;
 
 use std::time::{Duration, Instant};
 
+use jc3vr_core::published::EventLog;
 use jc3vr_input::{
     frame::Hand,
     haptics::{
@@ -157,8 +158,8 @@ pub struct CueRecord {
 /// The haptics readout.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct HapticsStatus {
-    /// The most recent one-off cues, newest last.
-    pub recent: Vec<CueRecord>,
+    /// The most recent one-off cues.
+    pub recent: EventLog<CueRecord, 12>,
     /// The one-off cues sent, per category, indexed by [`Category::index`].
     pub sent: [u64; Category::ALL.len()],
     /// What the mixer did.
@@ -180,13 +181,11 @@ pub fn status() -> HapticsStatus {
     status
 }
 
-/// How many one-off cues the readout keeps.
-const MAX_RECENT: usize = 12;
 /// How long a sustained primitive plays when tested, seconds.
 const TEST_SUSTAIN_S: f32 = 0.4;
 
 static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
-    recent: Vec::new(),
+    recent: EventLog::new(),
     sent: [0; Category::ALL.len()],
     mix: MixStats {
         played: 0,
@@ -239,6 +238,4 @@ fn queue(hand: Hand, event: Event, transient: Transient) {
         amplitude: transient.amplitude,
         duration_s: transient.duration.as_secs_f32(),
     });
-    let excess = status.recent.len().saturating_sub(MAX_RECENT);
-    status.recent.drain(..excess);
 }

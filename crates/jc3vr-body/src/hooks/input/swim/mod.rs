@@ -30,10 +30,7 @@
 //! hooked: it receives the orientation composed with the frame's swimming capsule offset, which for
 //! the surface crawl pose is a quarter turn about X, so a yaw rewrite there is at gimbal lock.
 
-use std::{
-    cell::Cell,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::cell::Cell;
 
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
@@ -74,21 +71,26 @@ pub fn hook_library() -> HookLibrary {
         .with_static_binder(&PROCESS_MOTION_BINDER)
 }
 
-/// How often a swim movement core ran for the local player, for the readout. The headpose sim's
-/// in-water signal is the cores' liveness in the body's frame ([`body_frame::ModeLiveness`]); the head
-/// participants that still compare this count read it until they read the liveness.
-pub static SWIM_EVAL_CALLS: AtomicU64 = AtomicU64::new(0);
-/// How often the move direction was substituted for the body-yaw target.
-pub static SWIM_DIRECTION_OVERRIDES: AtomicU64 = AtomicU64::new(0);
-/// How often the heading rotation was aimed at the body-yaw target.
-pub static SWIM_ROTATE_OVERRIDES: AtomicU64 = AtomicU64::new(0);
-/// How often the turn-angle probe was suppressed, keeping a turn act from queuing.
-pub static SWIM_TURN_SUPPRESSIONS: AtomicU64 = AtomicU64::new(0);
-/// How often backward or sideways input was cleared before the game could see it.
-pub static SWIM_MOVE_REFUSALS: AtomicU64 = AtomicU64::new(0);
-/// How often a swim movement core ran for the local player with the override on but no body-yaw
-/// target to give it, so the game's own camera-relative heading turned the body.
-pub static SWIM_UNTARGETED: AtomicU64 = AtomicU64::new(0);
+jc3vr_core::counters! {
+    /// The swim overrides' counts, for the readout and the swim telemetry.
+    pub struct SwimCounters => SwimCounts {
+        /// How often a swim movement core ran for the local player.
+        evals,
+        /// How often the move direction was substituted for the body-yaw target.
+        directions,
+        /// How often the heading rotation was aimed at the body-yaw target.
+        rotates,
+        /// How often the turn-angle probe was suppressed, keeping a turn act from queuing.
+        turns,
+        /// How often backward or sideways input was cleared before the game could see it.
+        moves,
+        /// How often a swim movement core ran for the local player with the override on but no
+        /// body-yaw target to give it, so the game's own camera-relative heading turned the body.
+        untargeted,
+    }
+}
+
+pub static SWIM_COUNTS: SwimCounters = SwimCounters::new();
 
 /// Whether the local player is swimming, by either of [`SwimSignals`]. Read by consumers outside
 /// this module too (the VR frame loop levels the view frame on it).
@@ -167,7 +169,7 @@ pub fn refuse_swim_moves(map: &mut LocalPlayerActionMap) {
         if effector.m_Value == 0.0 {
             continue;
         }
-        SWIM_MOVE_REFUSALS.fetch_add(1, Ordering::Relaxed);
+        SWIM_COUNTS.moves.bump();
         effector.m_Value = 0.0;
         effector.m_PrevValue = 0.0;
         effector.m_State = EffectorState::Idle;
@@ -237,7 +239,7 @@ fn transform_input_dir_to_world_dir(
     input: *mut Vector2,
 ) -> *mut Vector3 {
     if let Some(target) = SWIM_WINDOW.with(Cell::get).and_then(|_| engaged_target()) {
-        SWIM_DIRECTION_OVERRIDES.fetch_add(1, Ordering::Relaxed);
+        SWIM_COUNTS.directions.bump();
         if let Some(out) = unsafe { out.as_mut() } {
             out.data = target.to_array();
         }
@@ -277,7 +279,7 @@ fn do_rotate(from: *const Vector3, to: *const Vector3, rate: f32, out: *mut Vect
         }
         return;
     };
-    SWIM_ROTATE_OVERRIDES.fetch_add(1, Ordering::Relaxed);
+    SWIM_COUNTS.rotates.bump();
     // SAFETY: the core passes a live vector or null.
     let game_to = unsafe { to.as_ref() }.map(|v| Vec3::from_array(v.data));
     let target = match window.core {
@@ -321,7 +323,7 @@ fn record_facing(out: *const Vector3) {
 fn get_delta_angle_from_orientation(character: *const Character, dir: *const Vector3) -> f32 {
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
     if local && engaged_target().is_some() {
-        SWIM_TURN_SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
+        SWIM_COUNTS.turns.bump();
         return 0.0;
     }
     GET_DELTA_ANGLE_FROM_ORIENTATION
@@ -396,10 +398,10 @@ fn with_swim_window(character: *mut Character, core: SwimCore, dt: f32, call: im
         call();
         return;
     }
-    SWIM_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
+    SWIM_COUNTS.evals.bump();
     body_frame::mark_swim_evaluated();
     if body_yaw_target().is_none() {
-        SWIM_UNTARGETED.fetch_add(1, Ordering::Relaxed);
+        SWIM_COUNTS.untargeted.bump();
     }
     SWIM_WINDOW.with(|w| w.set(Some(SwimWindow { core, dt })));
     FACING.with(|f| f.set(None));

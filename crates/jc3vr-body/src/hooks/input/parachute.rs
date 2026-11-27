@@ -27,7 +27,6 @@
 //!
 //! [`UpdateParachutePhysics`]: jc3gi::input::parachute::UpdateParachutePhysics
 
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use body_rig::math::angle::{wrap, yaw_of_flat};
 use detours_macro::detour;
@@ -38,7 +37,7 @@ use jc3gi::{
     input::parachute::{CharacterAirMovementSettings, CharacterParachuteSettings},
     types::math::{Vector2, Vector3},
 };
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -54,11 +53,11 @@ pub fn hook_library() -> HookLibrary {
 
 /// How often the parachute look-steer was removed for the local player while the head was
 /// decoupled. Read by the Game tab's movement readout.
-pub static PARACHUTE_LOOK_STEER_SUPPRESSIONS: AtomicU64 = AtomicU64::new(0);
+pub static PARACHUTE_LOOK_STEER_SUPPRESSIONS: Counter = Counter::new();
 
 /// How often the canopy was turned toward a grapple line it reels along. Read by the Air feature's
 /// readout.
-pub static PARACHUTE_LINE_TURNS: AtomicU64 = AtomicU64::new(0);
+pub static PARACHUTE_LINE_TURNS: Counter = Counter::new();
 
 #[detour(address = jc3gi::input::parachute::GetParachuteSteeringValues_ADDRESS)]
 fn get_parachute_steering_values(
@@ -194,7 +193,7 @@ fn remove_look_steer(
             + air.m_YLookYawPitchRollAmount[axis] * look.data[1];
     }
     look.data = [0.0, 0.0];
-    PARACHUTE_LOOK_STEER_SUPPRESSIONS.fetch_add(1, Ordering::Relaxed);
+    PARACHUTE_LOOK_STEER_SUPPRESSIONS.bump();
 }
 
 /// Put back the look steer a camera looking along the reeling line would give, while the local character's hook reels in. Called after [`remove_look_steer`], so the look steer
@@ -248,7 +247,7 @@ unsafe fn turn_toward_line(
     for axis in 0..3 {
         steering.data[axis] += settings.m_AirControl.m_XLookYawPitchRollAmount[axis] * yaw;
     }
-    PARACHUTE_LINE_TURNS.fetch_add(1, Ordering::Relaxed);
+    PARACHUTE_LINE_TURNS.bump();
 }
 
 /// The look-steer yaw the game's look-steer block gives a camera looking along `direction` (the

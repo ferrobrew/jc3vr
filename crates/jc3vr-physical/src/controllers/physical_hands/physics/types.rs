@@ -6,7 +6,7 @@ use std::num::NonZeroUsize;
 use glam::{Vec2, Vec3};
 use jc3vr_input::frame::Pose;
 
-use crate::controllers::physical_hands::physics::blows::{BlowReport, ShoveReport};
+use crate::controllers::physical_hands::physics::blows::BlowReport;
 
 /// What a hand body is doing.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -66,7 +66,6 @@ pub struct HandBodiesStatus {
     pub shoves: u64,
     /// Those that reached a knockdown.
     pub knockdowns: u64,
-    pub last_shove: Option<ShoveReport>,
     pub last_error: Option<String>,
 }
 
