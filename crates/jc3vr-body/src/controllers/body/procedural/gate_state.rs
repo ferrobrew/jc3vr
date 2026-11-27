@@ -70,7 +70,12 @@ pub(super) struct State {
 
 impl State {
     /// The rig of `controller`'s skeleton, checked against it.
+    ///
+    /// # Safety
+    ///
+    /// `controller` must be a live animation controller, on the thread that owns its character.
     pub(super) unsafe fn rig_for(&mut self, controller: &AnimationController) -> Option<LiveRig> {
+        // SAFETY: forwarded from the caller.
         let lookup = unsafe { self.rig.get(controller) };
         if lookup.rebuilt {
             self.legs = WeightFollower::new();
@@ -96,6 +101,8 @@ impl State {
         config: &ProceduralTuning,
     ) -> [ClavicleTurn; 2] {
         let wanted = {
+            // SAFETY: the live local character at its solve gate, which this method's contract
+            // requires.
             let targets = unsafe { deferred_wrist_targets(character) };
             Side::BOTH.map(|side| {
                 targets[side.index()].map_or(ClavicleTurn::ZERO, |(target, weight)| {

@@ -234,6 +234,8 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
         state.wing_queue.take()
     };
     // Queued with the gate's state let go: the hand IK takes the configuration lock.
+    // SAFETY: the live local character, at its solve gate on the thread running the pass, as
+    // this function's contract requires.
     let wing_queued = unsafe { wings::queue(character, wing_queue) };
     let status = {
         let mut state = STATE.lock();
@@ -301,16 +303,22 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.wing_weight = 0.0;
     state.status.at = Some(now);
     state.arms = None;
+    // SAFETY: the character is live and on its own thread (this function's contract), so the
+    // controller pointer it holds is either null, which the `else` handles, or valid for the gate.
     let Some(controller) = (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() })
     else {
         return false;
     };
+    // SAFETY: `controller` is the live controller of the gate's character, on its thread.
     let Some(live) = (unsafe { state.rig_for(controller) }) else {
         return false;
     };
     let rig = &live.rig;
+    // SAFETY: `live` was checked against this `controller` just above, on the same thread, in the
+    // same tick.
     let animated = unsafe { live.read(controller) };
     let locomotion = body_frame::locomotion();
+    // SAFETY: the live local character, inside its pose-finalization pass on the thread running it.
     let read = unsafe {
         state
             .tracker
@@ -380,6 +388,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.stance_targets = match visual_hips.or_else(|| state.hips.yaw()) {
         Some(heading) if stance_weight > 0.0 => {
             let feet = square_stance(&animated, heading);
+            // SAFETY: the live local character's solver, before the `MAIN` solve in this pass;
+            // `rig` is the rig of its skeleton and `animated` the pose read this tick.
             unsafe { place_feet(&mut character.m_HIK, rig, &animated, &feet, stance_weight) }
         }
         _ => 0,
@@ -445,6 +455,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         arm_shoulders,
     };
     let mut pose = if weight > 0.0 {
+        // SAFETY: this function's own contract, forwarded.
         let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, config) }) else {
             return false;
         };
@@ -464,6 +475,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
             pose.bones[bone.index()] = legs.bones[bone.index()];
         }
     }
+    // SAFETY: `controller` is the one `live` was checked against and read from this tick, still on
+    // the pass's thread.
     unsafe { live.write(controller, &pose) };
     publish_leg_weight(leg_weight);
     finish_write(&mut state, character, &pose, weight, config);
@@ -567,6 +580,7 @@ unsafe fn pose_torso(
             }
         }
     }
+    // SAFETY: this function's own contract, forwarded.
     let turns = unsafe { state.turn_clavicles(gate.character, rig, &solved, gate.dt, config) };
     for side in Side::BOTH {
         clavicles::apply(&mut solved, rig, side, turns[side.index()]);

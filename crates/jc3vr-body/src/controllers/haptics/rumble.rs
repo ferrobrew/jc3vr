@@ -93,10 +93,10 @@ pub fn kick(hand: Hand, kick_rad: f32) {
     }
 }
 
-/// Which hand a gamepad motor index drives: motor 0 (low frequency) the left hand, motor 1 (high
-/// frequency, which also carries the trigger motors) the right hand, matching how a one-off
-/// rumble's own left and right motors are already understood to sit on each hand. Any other index
-/// is not one the game uses.
+/// Which hand a gamepad motor drives: the low-frequency motor the left hand, the high-frequency
+/// motor (which also carries the trigger motors) the right hand, matching how a one-off rumble's
+/// own left and right motors are already understood to sit on each hand. Any other index is not
+/// one the game uses (see [`Gamepad::SetMotorValue`]).
 pub(crate) fn motor_hand(motor: i32) -> Option<Hand> {
     match motor {
         0 => Some(Hand::Left),
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn motor_0_is_the_left_hand_and_motor_1_the_right() {
+    fn the_low_motor_is_the_left_hand_and_the_high_motor_the_right() {
         assert_eq!(motor_hand(0), Some(Hand::Left));
         assert_eq!(motor_hand(1), Some(Hand::Right));
         assert_eq!(motor_hand(2), None);
