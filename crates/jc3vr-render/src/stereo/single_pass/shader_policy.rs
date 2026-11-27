@@ -99,7 +99,7 @@ const WATER_PLANE_REPROJECT_NAME: &str = "watermask";
 /// is one of [`CLOUD_REPROJECT_NAMES`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
-pub fn should_reproject(name: Option<&str>) -> bool {
+pub(crate) fn should_reproject(name: Option<&str>) -> bool {
     let Some(name) = name else {
         return false;
     };
@@ -150,7 +150,7 @@ pub fn should_reproject(name: Option<&str>) -> bool {
 /// reprojection folds that bias into the clip position it then transforms by `M_eye`; `M_eye` is near
 /// identity so it survives approximately, and it is the first thing to suspect if z-fighting shows up
 /// on any of them.
-pub fn should_reproject_camera_only(name: Option<&str>, code: &[u8]) -> bool {
+pub(crate) fn should_reproject_camera_only(name: Option<&str>, code: &[u8]) -> bool {
     should_reproject(name)
         && dxbc_stereo::reads_global_view_projection(code).is_ok_and(|reads| !reads)
 }
@@ -174,7 +174,7 @@ const TERRAIN_VS_NAME_PREFIXES: &[&str] = &[
 /// path: the `single_pass_terrain` config flag is on and the name is on [`TERRAIN_VS_NAME_PREFIXES`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands and the name is not a reprojection candidate.
-pub fn should_eye_inject(name: Option<&str>) -> bool {
+pub(crate) fn should_eye_inject(name: Option<&str>) -> bool {
     let Some(name) = name else {
         return false;
     };
@@ -191,7 +191,7 @@ pub fn should_eye_inject(name: Option<&str>) -> bool {
 /// domain shader with no free eye lane (the patch system's tessellated permutations, whose vertex
 /// shaders fill all of `TEXCOORD3`). Both are drawn once per eye, never instance-doubled, so the pin
 /// the per-eye re-issue places on `cb13` gives each submission its eye.
-pub fn should_pin_terrain(name: Option<&str>) -> bool {
+pub(crate) fn should_pin_terrain(name: Option<&str>) -> bool {
     let flags = config_flags();
     flags.has(SinglePassSwitch::Terrain)
         && flags.has(SinglePassSwitch::TerrainPatchPerEye)
@@ -226,24 +226,24 @@ fn reproject_or_remap_full_view_projection(code: &[u8]) -> Result<Vec<u8>, DxbcE
 /// and the hull and domain hooks are reached without a paired-VS identity, so failing closed costs a
 /// terrain draw its single-pass treatment (it stays double-drawn -- correct, just slower) where
 /// failing open would silently eye-transform a shadow-atlas draw.
-pub fn is_terrain_shadow_pass(name: Option<&str>) -> bool {
+pub(crate) fn is_terrain_shadow_pass(name: Option<&str>) -> bool {
     name.is_none_or(|n| n.contains("shadow"))
 }
 
 /// Whether the single-pass terrain path is live: single-pass is [`active`] and the `single_pass_terrain`
 /// flag is on. Gates the hull-forward and domain-reproject substitutions in the shader-creation hooks.
-pub fn terrain_active() -> bool {
+pub(crate) fn terrain_active() -> bool {
     active() && config_flags().has(SinglePassSwitch::Terrain)
 }
 
 /// Record that a terrain hull shader's eye lane was forwarded (its `TEXCOORD3.z` widened), for the
 /// debug UI's is-the-terrain-path-catching-anything readout.
-pub fn record_hull_forwarded() {
+pub(crate) fn record_hull_forwarded() {
     TERRAIN_HS_FORWARDED.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Record that a terrain domain shader was reprojected, for the debug UI.
-pub fn record_domain_reprojected() {
+pub(crate) fn record_domain_reprojected() {
     TERRAIN_DS_REPROJECTED.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -265,7 +265,7 @@ pub fn terrain_counts() -> (usize, usize) {
 /// guessing can only ever produce the `cb0` remap, which for the reprojection families is the wrong
 /// transform and for the intercept-owned families is one transform too many.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum VsTransform {
+pub(crate) enum VsTransform {
     /// The `cb0` per-eye remap ([`dxbc_stereo::patch_vertex_shader`]).
     Remap,
     /// The `M_eye` reprojection, keeping the remap if the reprojection bows out. For a family the
@@ -294,7 +294,7 @@ pub enum VsTransform {
 /// the shader takes its clip origin from it and
 /// [`clip_origin_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
 /// Decided at shader creation, so a change to the switch applies at the next shader reload.
-pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
+pub(crate) fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
     let origin = if config_flags().has(SinglePassSwitch::ClipOriginPerEye) {
         dxbc_stereo::ClipOrigin::PerEye
     } else {
@@ -336,7 +336,7 @@ pub(crate) fn report_malformed(rewrite: &'static str, error: DxbcError) {
 /// Decided independently of [`active`], so the decision is on record for the D3D layer even in the
 /// census-only dry-run: enabling single-pass afterwards creates no new shader *programs*, so the
 /// dry-run pass is the only chance to record a name-derived decision for the shaders already loaded.
-pub fn decide_vs_transform(
+pub(crate) fn decide_vs_transform(
     name: Option<&str>,
     code: &[u8],
     remap: &Result<Vec<u8>, DxbcError>,
@@ -359,7 +359,7 @@ pub fn decide_vs_transform(
 /// decision was [`VsTransform::None`] or every rewrite the decision allows bowed out). `remapped` is
 /// the `cb0` remap's output where the caller already has it, so the creation path does not run the
 /// rewrite twice; pass `None` to have it run on demand. `name` is used only for the terrain log line.
-pub fn apply_vs_transform(
+pub(crate) fn apply_vs_transform(
     transform: VsTransform,
     code: &[u8],
     remapped: Option<Vec<u8>>,
@@ -423,7 +423,7 @@ pub fn apply_vs_transform(
 /// apply the same decision to a shader that reaches D3D without passing the `CreateVertexProgram`
 /// hook. Overwrites any previous decision for the same blob, so a re-created program re-decides under
 /// the current config rather than being pinned by the first pass.
-pub fn remember_vs_transform(code: &[u8], transform: VsTransform) {
+pub(crate) fn remember_vs_transform(code: &[u8], transform: VsTransform) {
     VS_TRANSFORM_CACHE
         .lock()
         .insert(vs_blob_key(code), transform);
@@ -490,7 +490,7 @@ pub(super) fn vs_blob_key(code: &[u8]) -> (usize, u64) {
 /// `SV_InstanceID`-already-declared deferral (shaders that instance themselves, whose `>> 1` consumer
 /// rewrite is a later phase -- also expected, left double-drawn); and genuinely errored (an
 /// unexpected shape the rewriter could not handle -- worth investigating, should be zero).
-pub fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>) {
+pub(crate) fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>) {
     let counter = match outcome {
         Ok(_) => &PATCHED,
         Err(DxbcError::NoPerEyeReferences) => &NO_REFS,
@@ -528,7 +528,7 @@ pub fn errored_count() -> usize {
 
 /// Reset the census counters (on a shader reload, so the reported numbers reflect one clean pass over
 /// the shader set rather than accumulating across reloads).
-pub fn reset_census() {
+pub(crate) fn reset_census() {
     PATCHED.store(0, Ordering::Relaxed);
     NO_REFS.store(0, Ordering::Relaxed);
     DEFERRED.store(0, Ordering::Relaxed);

@@ -64,7 +64,7 @@ pub enum EyeLayout {
 /// The engine textures one resolve reads and writes.
 pub struct ChainTextures<'a> {
     /// The chain's current result texture: the resolve's colour input and its copy-back target.
-    pub slot_color: &'a Texture,
+    pub(crate) slot_color: &'a Texture,
     /// The engine's main depth buffer.
     pub depth: &'a Texture,
     /// The engine's velocity buffer.
@@ -273,7 +273,7 @@ fn camera_cut(eye_reprojection: &Matrix4) -> bool {
 }
 
 /// Global FSR state. Locked briefly on the render thread at the AA hook.
-pub static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());
+pub(crate) static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());
 
 /// Release both eyes' contexts, outputs, and velocity decodes, and the temporal resolve's
 /// textures, for eject. The state lives in a
@@ -499,7 +499,7 @@ pub struct DispatchRecord {
 /// One eye's view-projections, column-major, without the FSR jitter: its own and the centre camera's
 /// (with the eye's projection), this frame's and last frame's.
 #[derive(Clone, Copy, Serialize)]
-pub struct RecordedViews {
+pub(crate) struct RecordedViews {
     current_eye: [f32; 16],
     previous_eye: [f32; 16],
     current_center: [f32; 16],
@@ -520,7 +520,7 @@ impl RecordedViews {
 
 /// The decode's clip-to-previous-clip matrices, column-major as uploaded.
 #[derive(Clone, Copy, Serialize)]
-pub struct RecordedReprojection {
+pub(crate) struct RecordedReprojection {
     center: [f32; 16],
     eye: [f32; 16],
 }

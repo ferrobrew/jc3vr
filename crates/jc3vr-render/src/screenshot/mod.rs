@@ -45,7 +45,7 @@ pub fn request() {
 }
 
 /// Whether a screenshot is waiting for a frame to capture.
-pub fn is_requested() -> bool {
+pub(crate) fn is_requested() -> bool {
     REQUESTED.load(Ordering::Relaxed)
 }
 
@@ -54,7 +54,7 @@ pub fn is_requested() -> bool {
 /// them to the [`crate::image_writer`] with the frame's single-pass sidecar. Render thread, inside
 /// the engine's context critical section; a no-op unless requested. Errors (unsupported format, map
 /// failure) are logged, never propagated -- a screenshot must not take the frame down with it.
-pub fn capture_if_requested(
+pub(crate) fn capture_if_requested(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     source: CaptureSource<'_>,

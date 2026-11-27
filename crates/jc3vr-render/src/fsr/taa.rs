@@ -69,7 +69,7 @@ impl TaaState {
 }
 
 /// Global resolve state. Locked briefly on the render thread at the AA hook.
-pub static TAA_STATE: Mutex<TaaState> = Mutex::new(TaaState::new());
+pub(crate) static TAA_STATE: Mutex<TaaState> = Mutex::new(TaaState::new());
 
 /// Release every texture and the pipeline, for eject; see [`crate::fsr::release_on_eject`].
 pub(super) fn release_on_eject() {

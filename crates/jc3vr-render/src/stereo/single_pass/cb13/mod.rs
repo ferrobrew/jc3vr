@@ -74,7 +74,7 @@ pub(super) const PER_EYE_ROW_COUNT: usize = PER_EYE_SOURCE_ROWS.len();
 ///
 /// Called from the `SetAllGlobalShaderProgramConstants` detour, after the engine has refreshed
 /// `m_VPGlobalConstData` and uploaded `cb0`, on the render thread.
-pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
+pub(crate) fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
     // Ensure the viewport-duplication detours are installed (once, on the first active frame).
     ensure_viewport_detours();
 

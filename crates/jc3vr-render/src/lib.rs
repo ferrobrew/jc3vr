@@ -27,7 +27,7 @@
 
 pub mod controllers;
 pub mod debug;
-pub mod draw_path;
+pub(crate) mod draw_path;
 pub mod fsr;
 pub mod hooks;
 pub mod image_writer;

@@ -15,9 +15,9 @@ pub struct EyeDiagnostics {
     /// The per-eye world position offset from the head centre (the IPD parallax), engine world units.
     pub world_offset: [f32; 3],
     /// The per-eye orientation delta from the head centre, as a quaternion `[x, y, z, w]`.
-    pub orientation_delta_quat: [f32; 4],
+    pub(crate) orientation_delta_quat: [f32; 4],
     /// The magnitude of [`orientation_delta_quat`](Self::orientation_delta_quat), in degrees.
-    pub orientation_delta_deg: f32,
+    pub(crate) orientation_delta_deg: f32,
     /// This eye's world-space view forward direction (`-Z` of the eye world transform).
     pub forward: [f32; 3],
     /// The per-eye reverse-Z projection from the runtime, row-major (engine `Matrix4` order).
@@ -28,7 +28,7 @@ pub struct EyeDiagnostics {
     pub cb13_camera_position: [f32; 4],
     /// The reprojection matrix `M_eye = VP_eye · VP_center⁻¹` written into `cb13`'s `M_eye` block, one
     /// row per `cb13` row. Near-identity for a small IPD and cant; a large deviation flags a bug.
-    pub cb13_m_eye: [f32; 16],
+    pub(crate) cb13_m_eye: [f32; 16],
 }
 
 /// A serializable snapshot of the whole frame's single-pass matrix state, refreshed each time
@@ -41,13 +41,13 @@ pub struct FrameDiagnostics {
     pub double_wide: bool,
     pub capability: &'static str,
     /// The recorded full (unsplit) viewport `[x, y, w, h, minDepth, maxDepth]`, if one is bound.
-    pub full_viewport: Option<[f32; 6]>,
+    pub(crate) full_viewport: Option<[f32; 6]>,
     /// The pristine head-centre world transform, row-major (engine `Matrix4` order).
     pub center_transform: [f32; 16],
     /// The head-centre camera world position (`cb0[4]`).
-    pub center_camera_position: [f32; 4],
+    pub(crate) center_camera_position: [f32; 4],
     /// The angle between the two eyes' view forwards, in degrees (a stereo pair should be a few).
-    pub forward_divergence_deg: f32,
+    pub(crate) forward_divergence_deg: f32,
     /// The cumulative shader-substitution tallies at capture time. See [`SubstitutionStats`].
     pub substitution: SubstitutionStats,
     pub eyes: [EyeDiagnostics; 2],

@@ -126,7 +126,7 @@ pub(super) fn reissue_viewport(
 /// slot 1. Called right after the engine binds a render setup ([`SetRenderSetup`]), which is where
 /// the viewport is (re)set -- including per-cascade in the shadow passes, so slot 1 tracks whatever
 /// region is currently bound rather than going stale between binds.
-pub fn duplicate_current_viewport() {
+pub(crate) fn duplicate_current_viewport() {
     if !active() {
         return;
     }
@@ -155,7 +155,7 @@ pub fn duplicate_current_viewport() {
 /// splitting -- and that dup'd viewport covers the bulk of the geometry, so both instances of a
 /// patched draw land in the same half. Called right after the range flag goes up (dual-eye only),
 /// this reads that bound viewport and re-sets it as left/right halves.
-pub fn apply_eye_split_viewport() {
+pub(crate) fn apply_eye_split_viewport() {
     // Collapse routes per draw (`ensure_collapse_viewport`), so the pass-level pre-split is off there.
     if collapse_active() || !(active() && in_gbuffer_range()) {
         return;

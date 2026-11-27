@@ -40,25 +40,25 @@ use crate::controllers::draw_state::DrawStateGuard;
 pub struct EyeConstants {
     pub offset_view_projection: [f32; 16],
     /// `xyz`: the frame's origin relative to the eye.
-    pub origin_to_eye: [f32; 4],
+    pub(crate) origin_to_eye: [f32; 4],
     /// Viewport width and height, pixels per metre at unit distance, and the minimum line width in
     /// pixels.
-    pub viewport_size: [f32; 2],
-    pub pixel_scale: f32,
-    pub min_line_pixels: f32,
+    pub(crate) viewport_size: [f32; 2],
+    pub(crate) pixel_scale: f32,
+    pub(crate) min_line_pixels: f32,
     /// Depth texels per target pixel, and the projection's z row.
-    pub depth_scale: [f32; 2],
-    pub depth_z_row: [f32; 2],
+    pub(crate) depth_scale: [f32; 2],
+    pub(crate) depth_z_row: [f32; 2],
     /// The last depth texel, and the absolute and relative depth tolerances.
-    pub depth_max: [f32; 2],
-    pub depth_tolerance_abs: f32,
+    pub(crate) depth_max: [f32; 2],
+    pub(crate) depth_tolerance_abs: f32,
     pub depth_tolerance_rel: f32,
 }
 
 /// What one eye's draw needs besides the renderer.
 pub struct EyeDraw<'a> {
     pub target: &'a Texture,
-    pub scene_depth: &'a ID3D11ShaderResourceView,
+    pub(crate) scene_depth: &'a ID3D11ShaderResourceView,
     pub viewport: D3D11_VIEWPORT,
     pub constants: EyeConstants,
 }

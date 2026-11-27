@@ -139,10 +139,10 @@ pub(super) fn pin_dispatch_config_flags() {
 /// water's reflection camera update, which runs as such a job, saw the collapse off on the frames it
 /// landed on a worker last used for a multipass dispatch, and sized the reflection to the double-wide
 /// target.
-pub struct DispatchEnd(());
+pub(crate) struct DispatchEnd(());
 
 /// Open the scope that ends this thread's dispatch pin; held for the dispatch's last seam.
-pub fn end_dispatch() -> DispatchEnd {
+pub(crate) fn end_dispatch() -> DispatchEnd {
     DispatchEnd(())
 }
 

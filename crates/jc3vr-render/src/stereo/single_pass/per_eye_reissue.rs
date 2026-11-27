@@ -138,7 +138,7 @@ pub(super) unsafe fn render_context_graphics_context(rc: *const RenderContext) -
 ///
 /// `this` and `rc` must be the live pointers the detoured `Draw` received, and `draw` must invoke the
 /// original `Draw`.
-pub unsafe fn terrain_detail_per_eye(
+pub(crate) unsafe fn terrain_detail_per_eye(
     this: *const RenderBlockTerrainDetail,
     rc: *const RenderContext,
     mut draw: impl FnMut(),
@@ -274,7 +274,7 @@ pub(super) static REPROJECT_FIRED: AtomicBool = AtomicBool::new(false);
 /// Whether a baked-cb per-eye re-issue has to satisfy itself that the block's vertex shader was not
 /// claimed by the `cb0` remap.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum BoundVsGate {
+pub(crate) enum BoundVsGate {
     /// Stand down if a patched vertex shader is bound. For a block whose shaders the remap may claim
     /// (patching is by operand detection, not by name), a patched shader already renders both eyes from
     /// one draw: re-issuing would draw the geometry twice per eye, from `cb13`'s eye slot rather than
@@ -363,7 +363,7 @@ pub(super) fn eye_split_state() -> Option<([glam::Mat4; 2], D3D11_VIEWPORT, Engi
 ///
 /// `rc` must be the live [`RenderContext`] the detoured `Draw` received, and `draw` must invoke the
 /// block's original `Draw` trampoline.
-pub unsafe fn reproject_baked_cb_per_eye(
+pub(crate) unsafe fn reproject_baked_cb_per_eye(
     rc: *const RenderContext,
     cb_index: i32,
     reg_offset: u32,
@@ -387,7 +387,7 @@ pub unsafe fn reproject_baked_cb_per_eye(
 ///
 /// `rc` must be the live [`RenderContext`] the detoured `Draw` received, and `render` must invoke the
 /// block's original `Draw` trampoline.
-pub unsafe fn reproject_baked_cb_per_eye_staged(
+pub(crate) unsafe fn reproject_baked_cb_per_eye_staged(
     rc: *const RenderContext,
     cb_index: i32,
     reg_offset: u32,
@@ -440,7 +440,7 @@ pub unsafe fn reproject_baked_cb_per_eye_staged(
 ///
 /// `rc` must be the live [`RenderContext`] the detoured `Draw` received, and `draw` must invoke the
 /// block's original `Draw` trampoline.
-pub unsafe fn screen_uv_cb_per_eye(
+pub(crate) unsafe fn screen_uv_cb_per_eye(
     rc: *const RenderContext,
     cb_index: i32,
     reg_offset: u32,
@@ -474,7 +474,7 @@ pub unsafe fn screen_uv_cb_per_eye(
 /// interpolation: `u' · w = (u · w) · 0.5 + w · 0.5 · eye`. Both `u · w` and `w` are per-row sums of
 /// the row-vector product, so row-wise that is `row.x ← row.x · 0.5 + row.w · 0.5 · eye`, with the
 /// `y`, `z`, and `w` columns left alone.
-pub fn eye_half_screen_uv_rows(base: [f32; 16], eye: usize) -> [f32; 16] {
+pub(crate) fn eye_half_screen_uv_rows(base: [f32; 16], eye: usize) -> [f32; 16] {
     let mut rows = base;
     for k in 0..4 {
         rows[k * 4] = base[k * 4].mul_add(0.5, base[k * 4 + 3] * 0.5 * eye as f32);
@@ -496,7 +496,7 @@ pub fn eye_half_screen_uv_rows(base: [f32; 16], eye: usize) -> [f32; 16] {
 /// `site` names the calling block for the decline diagnostic (see
 /// [`warn_intercept_declined_on_patched_vs`]); it is the caller's identity rather than this helper's,
 /// because a bound-shader decline is a fact about that block's own shaders.
-pub fn draw_per_eye_half(site: &'static str, mut render: impl FnMut(usize)) -> bool {
+pub(crate) fn draw_per_eye_half(site: &'static str, mut render: impl FnMut(usize)) -> bool {
     let Some((_, full, d3d)) = baked_cb_intercept_ready(site, BoundVsGate::Checked) else {
         return false;
     };
@@ -518,7 +518,7 @@ pub fn draw_per_eye_half(site: &'static str, mut render: impl FnMut(usize)) -> b
 /// rewrite claims any shader referencing the per-eye `cb0` entries, and `cb0[4]` is a camera position
 /// that such a family may still read for shading. Where a family reads it, the shader has to be
 /// declined at creation instead ([`baked_cb_block_owns_vs`]).
-pub fn draw_per_eye_half_ignoring_bound_vs(mut render: impl FnMut(usize)) -> bool {
+pub(crate) fn draw_per_eye_half_ignoring_bound_vs(mut render: impl FnMut(usize)) -> bool {
     let Some((_, full, d3d)) = eye_split_state() else {
         return false;
     };

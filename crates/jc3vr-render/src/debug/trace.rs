@@ -31,7 +31,7 @@ pub struct TraceState {
 
 /// One dumped trace record: a [`TraceEvent`] plus when/where it happened.
 #[derive(serde::Serialize)]
-pub struct TraceRecord {
+pub(crate) struct TraceRecord {
     /// Nanoseconds since the trace started (monotonic), for ordering + intra-frame timing.
     pub time_ns: u64,
     /// Real-frame index within the trace (0-based).
@@ -50,7 +50,7 @@ static TRACE_STATE: Mutex<TraceState> = Mutex::new(TraceState::new());
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct DrawCounts {
     pub draw: AtomicUsize,
-    pub draw_indexed: AtomicUsize,
+    pub(crate) draw_indexed: AtomicUsize,
     pub dispatch: AtomicUsize,
 }
 impl DrawCounts {
@@ -342,7 +342,7 @@ impl TraceState {
     }
 
     /// Append a per-dispatch record tagged with the current eye while a trace is active (auto-locks).
-    pub fn record_eye(event: TraceEvent) {
+    pub(crate) fn record_eye(event: TraceEvent) {
         if tracing_active() {
             let eye = jc3vr_view::stereo::draw_index();
             TRACE_STATE.lock().push_event(Some(eye), event);

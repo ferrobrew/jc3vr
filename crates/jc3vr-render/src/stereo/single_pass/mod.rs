@@ -89,7 +89,7 @@ pub use detour_lifecycle::{com_detours_installed, ensure_viewport_detours};
 pub(crate) use detour_lifecycle::{ensure_pixel_shader_detour, vertex_identity_detour_ready};
 use draw_detours::*;
 pub use frame_diagnostics::*;
-pub use impostor_pixel_size::EyeDisplayWidth;
+pub(crate) use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
 pub(crate) use jc3vr_view::stereo::engine_context::EngineContext;
 use jc3vr_view::stereo::{
@@ -97,13 +97,13 @@ use jc3vr_view::stereo::{
     config::SinglePassSwitch,
     layout::{Capability, capability, collapse_active},
 };
-pub use per_eye_reissue::*;
+pub(crate) use per_eye_reissue::*;
 pub(crate) use pinned_eye::tag_pinned_eye;
 pub use shader_detours::*;
 pub use shader_policy::*;
-pub use static_lights::EyeLightWidth;
-pub use sun::*;
-pub use viewport::*;
+pub(crate) use static_lights::EyeLightWidth;
+pub(crate) use sun::*;
+pub(crate) use viewport::*;
 pub(crate) use water_fragment_state::begin_water_surface;
 
 use crate::draw_path::bump;
@@ -174,7 +174,7 @@ pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
 /// ([`nvwater_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::nvwater_per_eye)). Read from
 /// the frame's config snapshot, so the block `Draw` detour, which fires for every draw of its type
 /// whether or not single-pass is on, costs a relaxed load rather than a mutex acquisition.
-pub fn nv_water_per_eye() -> bool {
+pub(crate) fn nv_water_per_eye() -> bool {
     config_flags().has(SinglePassSwitch::NvwaterPerEye)
 }
 
@@ -214,7 +214,7 @@ const BAKED_CB_VS_NAME_PREFIXES: &[(&str, bool)] = &[
 /// The decline is recorded as [`VsTransform::None`] against the blob, so the D3D-level re-create path
 /// honours it too -- that path has no name to decline by, and left to itself it would remap the very
 /// shaders this declined.
-pub fn baked_cb_block_owns_vs(name: Option<&str>, code: &[u8]) -> bool {
+pub(crate) fn baked_cb_block_owns_vs(name: Option<&str>, code: &[u8]) -> bool {
     let reads = dxbc_stereo::reads_global_view_projection(code);
     baked_cb_vs_owned(name, reads.is_ok_and(|reads| !reads), nv_water_per_eye())
 }
@@ -241,7 +241,7 @@ static COLLAPSE_UI_EYE: AtomicUsize = AtomicUsize::new(NO_UI_EYE);
 const NO_UI_EYE: usize = usize::MAX;
 
 /// Select the eye for the collapse UI overlay draws (`Some(0)`/`Some(1)`), or clear it (`None`).
-pub fn set_collapse_ui_eye(eye: Option<usize>) {
+pub(crate) fn set_collapse_ui_eye(eye: Option<usize>) {
     COLLAPSE_UI_EYE.store(eye.unwrap_or(NO_UI_EYE), Ordering::Relaxed);
 }
 
@@ -300,13 +300,13 @@ pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
 /// skipped the clear would leave the flag raised for the rest of the session -- after which *every*
 /// shadow and reflection draw is instance-doubled and eye-split.
 #[must_use = "the G-buffer range ends when the guard is dropped"]
-pub fn enter_gbuffer_range() -> GBufferRange {
+pub(crate) fn enter_gbuffer_range() -> GBufferRange {
     IN_GBUFFER_RANGE.store(true, Ordering::Relaxed);
     GBufferRange(())
 }
 
 /// Holds [`in_gbuffer_range`] true; see [`enter_gbuffer_range`].
-pub struct GBufferRange(());
+pub(crate) struct GBufferRange(());
 
 impl Drop for GBufferRange {
     fn drop(&mut self) {
@@ -363,7 +363,7 @@ const NO_PASS: u8 = 0xFF;
 ///
 /// Takes the engine's `m_Index` in its own `i16` form; an id outside the byte range is not a pass this
 /// module can classify, so it reads as [`NO_PASS`] rather than truncating into a real pass's slot.
-pub fn set_current_pass(pass: i16) -> u8 {
+pub(crate) fn set_current_pass(pass: i16) -> u8 {
     let pass = u8::try_from(pass).unwrap_or(NO_PASS);
     // A pass boundary: whatever the slots held, the next routed draw binds its viewports afresh.
     viewport_record::forget_bound();
@@ -371,7 +371,7 @@ pub fn set_current_pass(pass: i16) -> u8 {
 }
 
 /// Restore a pass id previously returned by [`set_current_pass`].
-pub fn restore_current_pass(pass: u8) {
+pub(crate) fn restore_current_pass(pass: u8) {
     CURRENT_PASS.store(pass, Ordering::Relaxed);
 }
 
@@ -444,7 +444,7 @@ pub fn begin_frame() {
 /// arm and its restore would leave that state raised for the rest of the frame. Sampled per dispatch
 /// rather than per frame because a dispatch is the unit the draw thread actually walks: under the
 /// collapse the game thread is already a frame ahead of it.
-pub fn begin_dispatch() {
+pub(crate) fn begin_dispatch() {
     pin_dispatch_config_flags();
     clear_gbuffer_range();
     hw_instanced::maintain();
@@ -470,7 +470,7 @@ const DIAGNOSTIC_FRAME_CADENCE: usize = 120;
 /// `torn` counts the ranges whose guard found the flag already lowered: a non-zero value means the
 /// range was closed from outside while it was still running, and every draw after that point was
 /// mis-classified as out-of-range.
-pub fn log_draw_split(first: u32, last: u32) {
+pub(crate) fn log_draw_split(first: u32, last: u32) {
     let patched = PATCHED_DRAWS.swap(0, Ordering::Relaxed);
     let unpatched = UNPATCHED_DRAWS.swap(0, Ordering::Relaxed);
     let split = VIEWPORT_SPLIT.swap(0, Ordering::Relaxed);
@@ -536,7 +536,7 @@ pub fn log_draw_split(first: u32, last: u32) {
 /// payload code, so leaving them enabled while the DLL unmaps dangles those jumps and the next D3D
 /// call crashes. Runs under a thread suspender and the install lock, like install -- with the same
 /// caveat that suspension narrows rather than closes the in-prologue window.
-pub fn uninstall_com_detours() -> bool {
+pub(crate) fn uninstall_com_detours() -> bool {
     let _install = DETOUR_INSTALL.lock();
     if !allow_com_reclamation(PIXEL_SHADER_EVER_ENABLED.load(Ordering::Acquire), true, 0) {
         tracing::error!(
@@ -710,13 +710,13 @@ thread_local! {
 
 /// Set (or clear) this thread's [`PIN_PENDING`] flag. Called by the `CreateVertexProgram` hook around
 /// the engine's shader creation.
-pub fn set_pin_pending(pending: bool) {
+pub(crate) fn set_pin_pending(pending: bool) {
     PIN_PENDING.with(|flag| flag.set(pending));
 }
 
 /// Set (or clear) this thread's [`PATCH_PENDING`] flag and the pending shader's engine name. Called
 /// by the `CreateVertexProgram` hook around the engine's shader creation.
-pub fn set_patch_pending(pending: bool, name: Option<&str>) {
+pub(crate) fn set_patch_pending(pending: bool, name: Option<&str>) {
     PATCH_PENDING.with(|flag| flag.set(pending));
     PATCH_PENDING_NAME.with(|slot| slot.set(pending.then(|| name.map(str::to_owned)).flatten()));
 }

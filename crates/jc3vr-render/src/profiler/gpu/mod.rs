@@ -146,7 +146,7 @@ pub fn enabled() -> bool {
 ///
 /// # Safety
 /// `ctx` must be the live immediate-context handle for this dispatch.
-pub unsafe fn begin_dispatch(ctx: *mut HContext_t) {
+pub(crate) unsafe fn begin_dispatch(ctx: *mut HContext_t) {
     if !enabled() {
         return;
     }
@@ -190,7 +190,7 @@ pub unsafe fn begin_dispatch(ctx: *mut HContext_t) {
 ///
 /// # Safety
 /// `ctx` must be the same immediate-context handle passed to [`begin_dispatch`].
-pub unsafe fn end_dispatch(ctx: *mut HContext_t) {
+pub(crate) unsafe fn end_dispatch(ctx: *mut HContext_t) {
     if !HAS_WORK.load(Ordering::Relaxed) {
         return;
     }
@@ -249,7 +249,7 @@ pub unsafe fn seam(ctx: *mut HContext_t, seam: GpuSeam) -> Option<IntervalGuard>
 /// Brackets a seam nested inside the enclosing dispatch's seams, such as the FSR resolve inside the
 /// post effects, with a GPU timestamp pair on the dispatch's own context. Returns `None` while
 /// disabled or outside a dispatch.
-pub fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
+pub(crate) fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
     if !enabled() {
         return None;
     }
@@ -268,7 +268,7 @@ pub fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
 
 /// Whether the per-pass and detail intervals should be recorded: while puffin collects, or while a
 /// benchmark run asks for them (`jc3vr_view::testing::benchmark::gpu_passes`).
-pub fn passes_wanted() -> bool {
+pub(crate) fn passes_wanted() -> bool {
     puffin::are_scopes_on() || jc3vr_view::testing::benchmark::gpu_passes::armed()
 }
 
@@ -280,7 +280,7 @@ pub fn passes_wanted() -> bool {
 /// dispatch was opened with, which is the same handle the seams run on. Returns `None` while
 /// disabled, outside a dispatch, or once the dispatch's pass budget
 /// ([`MAX_PASS_INTERVALS`]) is spent.
-pub fn pass_interval(scope: ScopeId, name: &'static str) -> Option<IntervalGuard> {
+pub(crate) fn pass_interval(scope: ScopeId, name: &'static str) -> Option<IntervalGuard> {
     interval(IntervalLabel::Pass(scope, name))
 }
 
@@ -335,7 +335,7 @@ pub struct PassScope {
 /// and a benchmark run that times passes totals it, but the work-and-holes subdivision does not
 /// count it. Returns `None` while the pass intervals are not wanted, outside a dispatch, or once
 /// the dispatch's budget is spent.
-pub fn detail_interval(name: &'static str) -> Option<IntervalGuard> {
+pub(crate) fn detail_interval(name: &'static str) -> Option<IntervalGuard> {
     if !passes_wanted() {
         return None;
     }

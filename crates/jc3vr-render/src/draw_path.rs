@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 /// A diagnostic counter bumped on the draw path with a plain load and store. The draw path runs its
 /// calls one at a time under the engine's context mutex, so that counts every call; were two threads
 /// ever to bump one counter at once, a count could be lost, which these counts tolerate.
-pub trait DrawPathCounter {
+pub(crate) trait DrawPathCounter {
     fn bump(&self);
 }
 

@@ -135,18 +135,18 @@ pub struct InstancedExposure {
     /// re-issued once per eye, so the parity no longer decides which eye they land in.
     pub handled: u32,
     /// The instances summed over the handled draws.
-    pub handled_instances: u64,
+    pub(crate) handled_instances: u64,
     /// Those the case applies to that were **not** re-issued -- the flag is off, or the re-issue could
     /// not run -- and so are still split between the eyes by their instance parity.
     pub affected: u32,
     /// Affected draws with a single instance -- rendered into the left eye only.
-    pub affected_single_instance: u32,
+    pub(crate) affected_single_instance: u32,
     /// Affected draws with more than one instance -- the batch split alternately between the eyes.
-    pub affected_multi_instance: u32,
+    pub(crate) affected_multi_instance: u32,
     /// The instances summed over the affected draws: how much geometry the split actually moves.
-    pub affected_instances: u64,
+    pub(crate) affected_instances: u64,
     /// The largest instance count seen on a draw the case applies to, handled or not.
-    pub max_instances: u32,
+    pub(crate) max_instances: u32,
     /// Draws with a patched vertex shader bound **outside** the G-buffer range (the shadow, reflection
     /// and post passes). Their `SV_InstanceID & 1` still writes `SV_ViewportArrayIndex`, but the pass
     /// binds no eye-half pair, so they depend on viewport slot 1 duplicating slot 0.
@@ -155,11 +155,11 @@ pub struct InstancedExposure {
     /// Draws with an unpatched vertex shader inside the range: no viewport index is written, so they
     /// rasterise to slot 0 -- the left eye's half while the split is bound.
     pub in_range_unpatched: u32,
-    pub in_range_unpatched_instances: u64,
+    pub(crate) in_range_unpatched_instances: u64,
     /// Draws with an unpatched vertex shader outside the range: unaffected by any of this, and the
     /// remainder that makes the four buckets sum to [`total`](Self::total).
     pub out_of_range_unpatched: u32,
-    pub out_of_range_unpatched_instances: u64,
+    pub(crate) out_of_range_unpatched_instances: u64,
 }
 
 /// The already-instanced draw exposure, as the debug UI and the diagnostic log report it: the most
@@ -175,7 +175,7 @@ pub struct InstancedExposureReport {
     pub mean_affected: f32,
     pub mean_affected_single_instance: f32,
     pub mean_affected_multi_instance: f32,
-    pub mean_affected_instances: f32,
+    pub(crate) mean_affected_instances: f32,
     pub mean_out_of_range_patched: f32,
     pub mean_out_of_range_patched_instances: f32,
     /// The largest instance count seen on an affected draw across all accumulated frames.

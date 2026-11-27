@@ -410,7 +410,7 @@ pub(super) unsafe extern "system" fn vs_set_shader_detour(
 /// shader reload, where the game drops the old shaders and their addresses become reusable). Also
 /// zeroes the `CreateVertexShader`-path tallies so [`substitution_stats`] reflects one clean pass over
 /// the reloaded shader set.
-pub fn reset_patched_vs() {
+pub(crate) fn reset_patched_vs() {
     for shader in std::mem::take(&mut *PATCHED_VS.lock()) {
         // SAFETY: every entry was `com_add_ref`'d exactly once when it was recorded.
         unsafe { com_release(shader as *mut c_void) };
@@ -437,7 +437,7 @@ pub fn reset_patched_vs() {
 /// Whether single-pass has substituted any patched vertex shaders this session (they are still held
 /// by the game). If so, eject must re-create the originals, else the game keeps rendering with the
 /// mod's `cb13`-reading shaders after the mod is gone.
-pub fn has_patched_shaders() -> bool {
+pub(crate) fn has_patched_shaders() -> bool {
     !PATCHED_VS.lock().is_empty()
 }
 
@@ -445,7 +445,7 @@ pub fn has_patched_shaders() -> bool {
 /// [`CVS_REACQ_CB13`]). The eject bounce cannot restore those: it re-creates from the resource's own
 /// bytecode, which in this case is the patched blob, and the rewriter has no inverse. Called from the
 /// eject restore so the condition is on the record instead of only in a live counter.
-pub fn warn_if_shaders_hold_patched_bytecode() {
+pub(crate) fn warn_if_shaders_hold_patched_bytecode() {
     let count = CVS_REACQ_CB13.load(Ordering::Relaxed);
     if count > 0 {
         tracing::warn!(
@@ -465,16 +465,16 @@ pub fn warn_if_shaders_hold_patched_bytecode() {
 pub struct SubstitutionStats {
     pub recorded_vs: usize,
     pub cvs_pending: usize,
-    pub cvs_decided_transformed: usize,
-    pub cvs_decided_pristine: usize,
+    pub(crate) cvs_decided_transformed: usize,
+    pub(crate) cvs_decided_pristine: usize,
     pub cvs_reacq_patched: usize,
     pub cvs_reacq_cb13: usize,
     pub cvs_reacq_no_refs: usize,
     pub cvs_reacq_err: usize,
-    pub census_patched: usize,
-    pub census_no_refs: usize,
-    pub census_deferred: usize,
-    pub census_errored: usize,
+    pub(crate) census_patched: usize,
+    pub(crate) census_no_refs: usize,
+    pub(crate) census_deferred: usize,
+    pub(crate) census_errored: usize,
 }
 
 /// Snapshot the current shader-substitution tallies. See [`SubstitutionStats`].

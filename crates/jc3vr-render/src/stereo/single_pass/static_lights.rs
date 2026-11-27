@@ -25,7 +25,7 @@ pub(super) const LIGHT_CONSTANT_ROWS: u32 = 4;
 const INVERSE_WIDTH_COMPONENT: usize = 1;
 
 /// The light type's constant upload held at one eye's width for the life of the guard.
-pub struct EyeLightWidth(());
+pub(crate) struct EyeLightWidth(());
 
 impl EyeLightWidth {
     /// Arm the substitution when the double-wide collapse is drawing its routed range; `None` leaves

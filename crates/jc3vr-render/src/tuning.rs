@@ -18,9 +18,9 @@ jc3vr_core::tuning_file! {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RenderTuning {
-    pub scope_lens: ScopeLensTuning,
+    pub(crate) scope_lens: ScopeLensTuning,
     pub taa: TaaTuning,
-    pub camera_cut: CameraCutTuning,
+    pub(crate) camera_cut: CameraCutTuning,
     pub culling: CullingTuning,
     pub terrain: TerrainTuning,
 }
@@ -65,11 +65,11 @@ impl Tuning for RenderTuning {
 /// The scope lens's source images (see [`crate::controllers::weapons::scope`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ScopeLensTuning {
+pub(crate) struct ScopeLensTuning {
     /// How old an eye's copy may be and still be read, milliseconds: a frame or two at any usable
     /// frame rate. The other eye's copy is the previous frame's when the first eye sights in
     /// two-pass stereo.
-    pub max_copy_age_ms: u64,
+    pub(crate) max_copy_age_ms: u64,
 }
 
 /// The temporal resolve's clipping and rejection (see [`crate::fsr::taa`]), short of the weights
@@ -79,20 +79,20 @@ pub struct ScopeLensTuning {
 pub struct TaaTuning {
     /// The half-size, in standard deviations, of the current neighbourhood's colour box the history
     /// is clipped to while the pixel moves.
-    pub clip_gamma: f32,
+    pub(crate) clip_gamma: f32,
     /// The relative slack of the depth test that rejects a disoccluded history.
-    pub depth_tolerance: f32,
+    pub(crate) depth_tolerance: f32,
 }
 
 /// When FSR and the temporal resolve call a frame a camera cut and drop their history (see
 /// [`crate::fsr::camera_cut`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CameraCutTuning {
+pub(crate) struct CameraCutTuning {
     /// How far, in NDC, the view centre may move between frames before it is a cut.
     pub ndc: f32,
     /// The view depth of the near probe, metres.
-    pub probe_depth_m: f32,
+    pub(crate) probe_depth_m: f32,
 }
 
 /// The visibility and spawn corrections for the headset's wider view (see
@@ -105,10 +105,10 @@ pub struct CullingTuning {
     /// falls below a threshold that scales with `tan(FOV/2)`, so the injected camera's wider field
     /// drops small and distant geometry and vehicle sub-meshes that flat JC3 draws; this restores
     /// flat-equivalent density.
-    pub size_cull_fov_deg: f32,
+    pub(crate) size_cull_fov_deg: f32,
     /// The factor every spawn budget is scaled by, so the wider field of view does not despawn the
     /// vehicles and characters in front of the player.
-    pub spawn_budget_scale: f32,
+    pub(crate) spawn_budget_scale: f32,
 }
 
 /// The terrain's detail budgets (see [`crate::hooks::graphics_engine::scene::terrain`]).
@@ -117,7 +117,7 @@ pub struct CullingTuning {
 pub struct TerrainTuning {
     /// The multiplier on the shipped detail-budget buffer sizes, enough for the headset's field of
     /// view.
-    pub detail_budget_scale: u32,
+    pub(crate) detail_budget_scale: u32,
 }
 
 #[cfg(test)]

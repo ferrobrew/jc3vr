@@ -36,7 +36,7 @@ pub struct EyeView {
 impl EyeView {
     /// The eye of a camera with world transform `transform`, view `view` (its inverse), and
     /// `projection`.
-    pub fn from_camera(transform: Mat4, view: Mat4, projection: Mat4) -> EyeView {
+    pub(crate) fn from_camera(transform: Mat4, view: Mat4, projection: Mat4) -> EyeView {
         let mut rotation = view;
         rotation.w_axis = Vec4::W;
         EyeView {
@@ -47,7 +47,7 @@ impl EyeView {
     }
 
     /// The eye with world transform `eye_world` and `projection`.
-    pub fn from_eye_world(eye_world: Mat4, projection: Mat4) -> EyeView {
+    pub(crate) fn from_eye_world(eye_world: Mat4, projection: Mat4) -> EyeView {
         let mut rotation = eye_world;
         rotation.w_axis = Vec4::W;
         EyeView {
@@ -58,12 +58,12 @@ impl EyeView {
     }
 
     /// The projection's z row `(A, B)`, for [`linear_depth`].
-    pub fn z_row(&self) -> (f32, f32) {
+    pub(crate) fn z_row(&self) -> (f32, f32) {
         (self.projection.z_axis.z, self.projection.w_axis.z)
     }
 
     /// The projection's horizontal scale: the NDC width of a unit at unit distance, halved.
-    pub fn x_scale(&self) -> f32 {
+    pub(crate) fn x_scale(&self) -> f32 {
         self.projection.x_axis.x
     }
 }

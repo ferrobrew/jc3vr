@@ -62,7 +62,7 @@ const DECODE_DXBC: &[u8] = include_bytes!(concat!(
 const GROUP: u32 = 8;
 
 /// The per-dispatch inputs to the decode: the engine buffers plus the correction terms.
-pub struct DecodeInputs<'a> {
+pub(crate) struct DecodeInputs<'a> {
     /// The engine's velocity buffer (the bias-encoded source).
     pub velocity: &'a Texture,
     /// The engine's main depth buffer, reconstructed from by the stereo reprojection correction.
@@ -73,7 +73,7 @@ pub struct DecodeInputs<'a> {
     /// exists for them.
     pub reprojection: Option<(Matrix4, Matrix4)>,
     /// Re-anchor the engine's vectors at the eye's own previous pose (the stereo correction).
-    pub correct_parallax: bool,
+    pub(crate) correct_parallax: bool,
     /// Give the pixels the velocity pass left undrawn, and those whose encoded motion saturated,
     /// the camera's motion from their depth (the hybrid decode).
     pub hybrid: bool,
@@ -84,20 +84,20 @@ pub struct DecodeInputs<'a> {
 /// The decode pass: the compute shader plus the per-eye output buffer (the MV target FSR reads) and a
 /// constant buffer for the size + sign convention. The velocity SRV is rebuilt per dispatch since the
 /// engine's velocity texture can change underneath us.
-pub struct VelocityDecode {
+pub(crate) struct VelocityDecode {
     shader: ID3D11ComputeShader,
     /// The R16G16F motion-vector buffer FSR consumes.
     pub output: ID3D11Texture2D,
     output_uav: ID3D11UnorderedAccessView,
     /// The R32F copy of the window's depth, when the pass was built to copy it.
-    pub depth_copy: Option<DepthCopy>,
+    pub(crate) depth_copy: Option<DepthCopy>,
     constants: ID3D11Buffer,
     width: u32,
     height: u32,
 }
 
 /// An eye-sized copy of the engine depth the decode writes alongside the motion vectors.
-pub struct DepthCopy {
+pub(crate) struct DepthCopy {
     pub texture: ID3D11Texture2D,
     uav: ID3D11UnorderedAccessView,
 }

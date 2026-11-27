@@ -47,7 +47,7 @@ use crate::{
 };
 
 /// Whether `pass` is the sun's render pass.
-pub fn is_sun_pass(pass: i16) -> bool {
+pub(crate) fn is_sun_pass(pass: i16) -> bool {
     pass == RenderPassId::RP_SUN as i16
 }
 

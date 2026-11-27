@@ -15,7 +15,7 @@ use jc3vr_view::stereo::layout::double_wide_active;
 use crate::stereo::single_pass::in_gbuffer_range;
 
 /// The render context's display width, held at one eye's for the life of the guard.
-pub struct EyeDisplayWidth {
+pub(crate) struct EyeDisplayWidth {
     rc: *mut RenderContext,
     saved: i32,
 }
