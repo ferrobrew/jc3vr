@@ -22,17 +22,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::{Vec2, Vec3};
-use jc3gi::character::character::Character;
+use jc3gi::{character::character::Character, physics::PhysicsSystem};
 use jc3vr_body::controllers::{
     aim::{ray::Ray, raycast, raycast::CastOptions},
     mode,
     mode::{Mode, OnFootVariant},
+    physics::proxy,
 };
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
     climb,
-    climb::engine as proxy,
     human_hull::{
         geometry::StepProfile,
         tuning::{HUMAN_HULL, StepUpTuning},
@@ -86,7 +86,7 @@ pub(crate) unsafe fn step(steps: Option<PlayerSteps>, step_s: f32) {
         state.finish();
         return;
     };
-    let (Ok(place), Ok(current)) = (unsafe { proxy::player_place() }, unsafe {
+    let (Ok(place), Ok(current)) = (unsafe { proxy::place() }, unsafe {
         proxy::proxy_velocity()
     }) else {
         state.finish();
@@ -229,7 +229,9 @@ impl State {
     ///
     /// As [`step`].
     unsafe fn apply(&mut self, current: Vec3, speed: f32) {
-        match unsafe { proxy::set_velocity(lifted(current, speed)) } {
+        match unsafe {
+            proxy::set_proxy_velocity(lifted(current, speed), PhysicsSystem::STEP_SECONDS)
+        } {
             Ok(()) => self.status.lifting = true,
             Err(error) => {
                 tracing::debug!(%error, "human hull: the step up could not lift the body");

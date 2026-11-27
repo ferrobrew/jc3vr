@@ -26,17 +26,19 @@
 //! on a car's hood with a moment's overshoot lifts nothing.
 //!
 //! The lift is given in the hand bodies' pre-simulation step, after the characters' proxy updates,
-//! as the climb gives its velocity ([`crate::controllers::physical_hands::climb::engine`]): the
+//! as the climb gives its velocity ([`jc3vr_body::controllers::physics::proxy`]): the
 //! proxy keeps its own horizontal velocity and rises at least at the lift. While a pressing hand
 //! reaches the static world, the proxy is written as supported on it, as the climb writes it, so
 //! the game keeps the player on foot rather than starting a fall.
 
 use glam::Vec3;
+use jc3gi::physics::PhysicsSystem;
+use jc3vr_body::controllers::physics::proxy;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 pub use crate::controllers::physical_hands::climb::tuning::VaultTuning;
-use crate::controllers::physical_hands::climb::{Hold, engine as proxy, tuning::CLIMB};
+use crate::controllers::physical_hands::climb::{Hold, tuning::CLIMB};
 
 /// The push-up's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -203,7 +205,7 @@ pub(crate) unsafe fn step(press: Press) -> bool {
         return false;
     }
     // SAFETY: forwarded from the caller.
-    let feet = unsafe { proxy::player_place() }.ok().map(|p| p.feet.y);
+    let feet = unsafe { proxy::place() }.ok().map(|p| p.feet.y);
     // SAFETY: forwarded from the caller.
     let current = unsafe { proxy::proxy_velocity() }.ok();
     let (Some(feet), Some(current)) = (feet, current) else {
@@ -265,8 +267,10 @@ pub(crate) unsafe fn step(press: Press) -> bool {
     let support = clear.into_iter().flatten().map(|(_, s)| s.body).next();
     // SAFETY: forwarded from the caller; a support is a static body the hand's reach found.
     let result = match support {
-        Some(ground) => unsafe { proxy::hold(velocity, ground, Vec3::ZERO) },
-        None => unsafe { proxy::set_velocity(velocity) },
+        Some(ground) => unsafe {
+            proxy::hold(velocity, PhysicsSystem::STEP_SECONDS, ground, Vec3::ZERO)
+        },
+        None => unsafe { proxy::set_proxy_velocity(velocity, PhysicsSystem::STEP_SECONDS) },
     };
     if let Err(e) = result {
         tracing::debug!(error = %e, "physical hands: the push up could not move the body");

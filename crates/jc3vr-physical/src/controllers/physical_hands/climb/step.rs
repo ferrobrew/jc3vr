@@ -4,6 +4,7 @@
 use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
+use jc3vr_body::controllers::physics::proxy;
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::{
     frame::Hand,
@@ -80,10 +81,10 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     }
 
     // SAFETY: forwarded from the caller.
-    let place = unsafe { engine::player_place() };
+    let place = unsafe { proxy::place() };
     // SAFETY: forwarded from the caller; the proxy's update ran before this callback, and found
     // this support afresh rather than the one the last step wrote.
-    let support = unsafe { engine::support() };
+    let support = unsafe { proxy::support() };
     let step_s = physics::step_seconds();
     let mantle_tuning = MantleTuning {
         start_m: climb.mantle_start_m,
@@ -220,7 +221,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
                 },
             );
             // SAFETY: forwarded from the caller.
-            match unsafe { engine::set_velocity(kept) } {
+            match unsafe { proxy::set_proxy_velocity(kept, step_s) } {
                 Ok(()) => {
                     state.status.last_fling_mps = Some(kept.length());
                     state.carry = Some(Carry { kept, steps: 0 });
@@ -248,7 +249,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
             } else {
                 let velocity = fling_carry(carry.kept, elapsed_s, GRAVITY_MPS2);
                 // SAFETY: forwarded from the caller.
-                match unsafe { engine::set_velocity(velocity) } {
+                match unsafe { proxy::set_proxy_velocity(velocity, step_s) } {
                     Ok(()) => {
                         state.carry = Some(Carry {
                             steps: carry.steps + 1,
@@ -396,7 +397,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         return [None; 2];
     };
     // SAFETY: forwarded from the caller; the ground is a body the step checked above.
-    if let Err(e) = unsafe { engine::hold(velocity, ground.body, carry) } {
+    if let Err(e) = unsafe { proxy::hold(velocity, physics::step_seconds(), ground.body, carry) } {
         state.status.last_error = Some(e.to_string());
         state.drop_all("the player could not be held");
         state.finish_climb();

@@ -6,7 +6,7 @@ use glam::Vec3;
 use jc3vr_body::controllers::{
     haptics, mode,
     mode::{Mode, OnFootVariant},
-    physics::rig::RigSample,
+    physics::{proxy, rig::RigSample},
 };
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_input::{
@@ -79,7 +79,7 @@ pub fn observe(observed: Observed) {
         body_rotation,
     } = observed;
     // SAFETY: the game thread outside the physics step (the palms' tick).
-    let player = unsafe { engine::player_place() }.ok();
+    let player = unsafe { proxy::place() }.ok();
     // SAFETY: as above.
     let in_air = unsafe { engine::in_air() };
     let mode = mode::current().mode;

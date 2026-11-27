@@ -1,5 +1,8 @@
-//! The climbing's engine side: the player's character proxy, its support, and its velocity
-//! (`docs/engine/character/hands-locomotion-and-state.md`, "The proxy's support and the fall").
+//! The climbing's engine side: the identity and motion of the bodies a hand grips, the ownership
+//! context the native gate copies, and whether the player is in the air. The player's proxy, its
+//! support, and its velocity are the physics substrate's
+//! ([`jc3vr_body::controllers::physics::proxy`];
+//! `docs/engine/character/hands-locomotion-and-state.md`, "The proxy's support and the fall").
 //!
 //! The game decides whether the player is on the ground from the proxy's support
 //! ([`jc3gi::physics::PfxCharacterInstance::m_GroundInformation`]), which the proxy's update
@@ -9,81 +12,24 @@
 //! state machines, the fall bookkeeping, and the ground raycasts see until the next proxy update:
 //! the player hanging from the hands stays on foot rather than falling. The proxy's update has
 //! already set the proxy's velocity for the step by then, so a velocity set there is the one the
-//! step integrates.
+//! step integrates. The climb holds the player up from that callback for both reasons.
 //!
 //! Every function here runs on the thread that steps the physics world, outside the step, except
 //! the reads marked otherwise.
 
-use std::{fmt, ptr};
+use std::ptr;
 
 use glam::{Quat, Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
-    physics::{PfxInstance, hknpBody, hknpCharacterSurfaceInfo, hknpWorld},
+    physics::{PfxInstance, hknpBody, hknpWorld},
 };
 use jc3vr_body::controllers::{
     facts::climb::{BodyFrame, BodyIdentity},
-    physics::{
-        bodies::slot,
-        characters::character_position,
-        error::PhysicsError,
-        havok::{affine as havok_affine, vector as havok_vector},
-        proxy,
-    },
+    physics::{bodies::slot, havok::affine as havok_affine},
 };
 
-use crate::controllers::physical_hands::{physics, world::World};
-
-/// Why the player could not be climbed with.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ClimbEngineError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
-    /// There is no local player character, or it has no proxy or proxy body.
-    NoPlayer,
-    /// The velocity to set is not finite.
-    BadVelocity,
-}
-
-impl fmt::Display for ClimbEngineError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let what = match self {
-            ClimbEngineError::NoPhysicsWorld => "the physics world does not exist",
-            ClimbEngineError::NoPlayer => "the player has no character proxy",
-            ClimbEngineError::BadVelocity => "the climbing velocity is not finite",
-        };
-        write!(f, "hand climbing: {what}")
-    }
-}
-
-impl std::error::Error for ClimbEngineError {}
-
-/// The player as the climb sees it: the proxy body's centre and the character's root, game space.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PlayerPlace {
-    pub body: Vec3,
-    pub feet: Vec3,
-}
-
-/// Where the local player's proxy body and root are.
-///
-/// # Safety
-///
-/// The game thread, outside the physics step.
-pub unsafe fn player_place() -> Result<PlayerPlace, ClimbEngineError> {
-    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
-        .ok_or(ClimbEngineError::NoPlayer)?;
-    let proxy =
-        unsafe { character.m_PfxCharacter.px.as_ref() }.ok_or(ClimbEngineError::NoPlayer)?;
-    let world = unsafe { World::get() }.ok_or(ClimbEngineError::NoPhysicsWorld)?;
-    let slot = unsafe { proxy::proxy_slot(world.world(), proxy) }.map_err(climb_error)?;
-    let body = Vec3::from_array(slot.m_transform.m_translation.data) + world.shift;
-    let feet = character_position(character);
-    if !(body.is_finite() && feet.is_finite()) {
-        return Err(ClimbEngineError::NoPlayer);
-    }
-    Ok(PlayerPlace { body, feet })
-}
+use crate::controllers::physical_hands::world::World;
 
 /// The current identity of an added body, checked before reading its engine instance.
 ///
@@ -215,63 +161,6 @@ pub fn climbable(frame: &BodyFrame, min_mass_kg: f32) -> bool {
     frame.is_static || frame.is_keyframed || frame.mass_kg.is_none_or(|m| m >= min_mass_kg.max(0.0))
 }
 
-/// The support the proxy's update found for this step, before anything else wrote it: the upward
-/// share of the normal of the surface the proxy stands on, or `None` when it stands on nothing.
-///
-/// # Safety
-///
-/// The thread that steps the physics world, outside the step, after the proxy's update.
-pub unsafe fn support() -> Option<f32> {
-    unsafe { proxy::support() }
-}
-
-/// Hold the player up: give the proxy `velocity` for the coming step, as its own update does, and
-/// write it as supported on the body `ground`, level, moving at `surface_velocity`: at rest on the
-/// static world, carried with a moving body.
-///
-/// # Safety
-///
-/// The thread that steps the physics world, outside the step, after the proxy's update; `ground`
-/// must be a body of the world.
-pub unsafe fn hold(
-    velocity: Vec3,
-    ground: u32,
-    surface_velocity: Vec3,
-) -> Result<(), ClimbEngineError> {
-    if !surface_velocity.is_finite() {
-        return Err(ClimbEngineError::BadVelocity);
-    }
-    unsafe { set_velocity(velocity) }?;
-    let proxy = unsafe { proxy::local_proxy() }.map_err(climb_error)?;
-    let info = &mut proxy.m_GroundInformation;
-    info.m_isSurfaceDynamic = surface_velocity != Vec3::ZERO;
-    info.m_supportedState = hknpCharacterSurfaceInfo::SUPPORTED;
-    info.m_surfaceDistanceExcess = 0.0;
-    info.m_surfaceNormal = havok_vector(Vec3::Y);
-    info.m_surfaceVelocity = havok_vector(surface_velocity);
-    proxy.m_GroundBodyId = ground;
-    proxy.m_LastValidGroundBodyId = ground;
-    Ok(())
-}
-
-/// Give the proxy `velocity` for the coming step, as its own update does.
-///
-/// # Safety
-///
-/// The thread that steps the physics world, outside the step, after the proxy's update.
-pub unsafe fn set_velocity(velocity: Vec3) -> Result<(), ClimbEngineError> {
-    unsafe { proxy::set_proxy_velocity(velocity, physics::step_seconds()) }.map_err(climb_error)
-}
-
-/// The velocity of the local player's proxy body, as its motion holds it.
-///
-/// # Safety
-///
-/// The thread that steps the physics world, outside the step.
-pub unsafe fn proxy_velocity() -> Result<Vec3, ClimbEngineError> {
-    unsafe { proxy::proxy_velocity() }.map_err(climb_error)
-}
-
 /// Whether the local player is in the air as the game judges it ([`Character::IsInAir`]).
 ///
 /// # Safety
@@ -281,16 +170,6 @@ pub unsafe fn in_air() -> Option<bool> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     unsafe { character.m_PfxCharacter.px.as_ref() }?;
     Some(unsafe { character.IsInAir() })
-}
-
-/// The climb's cause for a substrate error: a value that is not finite is the velocity's, and
-/// anything else but a missing world is the player's.
-fn climb_error(error: PhysicsError) -> ClimbEngineError {
-    match error {
-        PhysicsError::NoPhysicsWorld => ClimbEngineError::NoPhysicsWorld,
-        PhysicsError::BadMotion => ClimbEngineError::BadVelocity,
-        _ => ClimbEngineError::NoPlayer,
-    }
 }
 
 #[cfg(test)]
