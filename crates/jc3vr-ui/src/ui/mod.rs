@@ -206,9 +206,9 @@ pub fn startup_banner(ctx: &egui::Context) {
         });
 }
 
-/// The restart notice ([`jc3vr_view::vr::input::restart`]) on whatever surface the egui overlay renders
-/// to, for as long as it holds. The headset has its own panel for it
-/// ([`jc3vr_hud::hud::restart_notice`]); this is the desktop window's copy.
+/// The restart notice ([`jc3vr_view::vr::input::restart`]) on whatever surface the egui overlay
+/// renders to, for as long as it holds. The headset has its own panel for it (the HUD's
+/// `restart_notice`); this is the desktop window's copy.
 pub fn restart_banner(ctx: &egui::Context) {
     let Some(reason) = jc3vr_view::vr::input::restart::current() else {
         return;

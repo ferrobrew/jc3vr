@@ -15,7 +15,7 @@
 //! - [`controllers`]: the VR pages themselves ([`controllers::menu`]), their presets
 //!   ([`controllers::presets`]), and the body calibration page ([`controllers::body`]). The
 //!   controller subsystems they edit live in the gameplay crate.
-//! - [`profiler`]: the Performance tab's profiler panel, behind the `profiler` feature.
+//! - `profiler`: the Performance tab's profiler panel, behind the `profiler` feature.
 //!
 //! # The public surface
 //!
