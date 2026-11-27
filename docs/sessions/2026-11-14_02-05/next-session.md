@@ -171,6 +171,21 @@ One release for props and weapons. Props now throw like grenades: the controller
 132. Release: enter and leave a vehicle holding a prop (the view's hard steps): the hands do not swing the prop through the car.
 133. Release: die and respawn while holding a prop and a gun: nothing is flung on the respawn.
 
+The restructure of #77: the layer crates, the registration, the staged ticks, the physics substrate, and the fix wave after it. Nothing here should feel different; each check covers a seam that moved.
+
+134. Start, eject, and reinject: the mod starts with no missing-registration error, ejects without a pinned module, and comes back clean. Press the F-keys, F5 and F6 together included.
+135. Eject after a session that used only ambient occlusion, reflections, or the screen-door pass: the game's shaders come back pristine.
+136. Single-pass against multipass over the usual capture scenes: the eyes match, and the frame time at 3584×3561 holds against 8.33 ms.
+137. Switch anti-aliasing between FSR, TAA, and the engine's and back: no ghosting on the first frames after coming back.
+138. Load a second save in the same session: the view recenters once the pose settles. Pausing and resuming does not recenter. Note what fast travel and respawn do.
+139. Facing with the head rolled, and the IK and procedural transitions: the body faces where it did, and the HUD and hands sit where they did.
+140. Climb, open doors, and ride the vehicle rail: the same feel as before the step clock moved. Swim, ride the rail, and hang in the grapple lock: the movement is as before.
+141. Catch, hand over, dual pistols, the empty hand, aim down the sights with the foregrip, fire, grenades, the C4 detonator, holding a reload, pouches, and lockers all work as before.
+142. Let go of the foregrip and pull the offhand to extract the magazine at once: extraction starts without waiting for the hold to fade.
+143. Open and close the debug panel, the pause menu, and the map mid-hold; cancel a capture; switch to the gamepad; turn the controllers off; use a mounted gun; hang from a helicopter (the stunt row counts the hang); snatch with the grapple.
+144. Strike glass with a held prop and with a bullet: it breaks where it did.
+145. Spawn a few weapons and vehicles from the spawner: they spawn, and the weapons show their names.
+
 ## What was built for the deferred work
 
 Everything the earlier plans deferred was built on 15 November, untested in the headset; the checks above cover it. The commits are listed in the [README](README.md#the-deferred-work-built-on-15-november).
