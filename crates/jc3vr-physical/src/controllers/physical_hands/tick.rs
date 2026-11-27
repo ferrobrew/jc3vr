@@ -15,7 +15,7 @@ use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Mat4, Quat, Vec2, Vec3};
 use jc3vr_body::controllers::{
     aim::raycast::CastOptions,
-    body,
+    body, body_frame,
     clock::TimeScale,
     facts::{mounted, seat::rides_in_seat},
     fingers::{
@@ -29,10 +29,7 @@ use jc3vr_body::controllers::{
         tuning::FINGERS_TUNING,
     },
     hands,
-    hands::{
-        reach::{level_eyes, torso_heading},
-        tiers,
-    },
+    hands::reach::{level_eyes, torso_heading},
     haptics, held,
     held::HeldItem,
     mode,
@@ -762,20 +759,18 @@ fn joint_inputs() -> pickup::JointInputs {
 /// body left at its controller would fight the gun it holds.
 #[inline]
 pub fn free_hands() -> [bool; 2] {
-    let wielded = held::last_wielded_hands();
-    let foregrip = held::two_hand_holder().map(Hand::other);
-    let charge = held::throwing_hand();
-    let detonator = held::detonator_holder();
-    let weights = tiers::weights();
+    let contents = held::contents();
+    let weights = body_frame::tiers().weights;
     let mounted = mounted::holds();
     Hand::BOTH.map(|hand| {
-        let holds_item = held::item(hand).is_some_and(|kind| kind != HeldItem::Prop);
-        !wielded[hand.index()]
+        let holding = contents[hand.index()];
+        let holds_item = holding.item.is_some_and(|kind| kind != HeldItem::Prop);
+        !holding.wielded
             && !holds_item
-            && foregrip != Some(hand)
-            && !held::grenade_in(hand)
-            && charge != Some(hand)
-            && detonator != Some(hand)
+            && holding.braces.is_none()
+            && !holding.grenade
+            && !holding.charge
+            && !holding.detonator
             && !mounted[hand.index()]
             && weights[hand.index()] > 0.0
     })

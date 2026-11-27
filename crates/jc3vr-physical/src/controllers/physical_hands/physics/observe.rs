@@ -203,7 +203,10 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
 
 /// The holding hand of the engaged two-handed hold, whose bracing hand rides its offset.
 fn braced_by_hold() -> Option<Hand> {
-    held::two_hand_holder()
+    let contents = held::contents();
+    Hand::BOTH
+        .into_iter()
+        .find(|hand| contents[hand.other().index()].braces.is_some())
 }
 
 /// Freeze post-step presentation offsets against the published palms, in their transport frame.

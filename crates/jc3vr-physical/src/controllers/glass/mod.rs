@@ -256,7 +256,7 @@ pub unsafe fn main_thread_tick() {
 /// palm, and the muzzle end of the gun a hand holds.
 fn strikers(hands: &ActiveHands, tuning: &StrikeTuning) -> [Option<Vec3>; STRIKERS] {
     let free = physical_hands::free_hands();
-    let wielded = held::last_wielded_hands();
+    let contents = held::contents();
     let mut points = [None; STRIKERS];
     for hand in Hand::BOTH {
         let Some(pose) = hands.hands[hand.index()] else {
@@ -267,7 +267,8 @@ fn strikers(hands: &ActiveHands, tuning: &StrikeTuning) -> [Option<Vec3>; STRIKE
             points[Striker::new(hand, StrikerKind::Palm).index()] = Some(palm.centre);
             continue;
         }
-        let holds_gun = wielded[hand.index()] || held::item(hand) == Some(HeldItem::Weapon);
+        let holding = contents[hand.index()];
+        let holds_gun = holding.wielded || holding.item == Some(HeldItem::Weapon);
         if holds_gun {
             points[Striker::new(hand, StrikerKind::Weapon).index()] =
                 Some(muzzle(hand, pose, tuning.pistol_reach_m));
