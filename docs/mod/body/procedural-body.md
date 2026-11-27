@@ -60,7 +60,7 @@ The rotations are composed onto the animated bones, so no rest frame is assumed.
 
 ## The hips
 
-The idle clip stands bladed ([idle-stance.md](../../engine/character/idle-stance.md#the-idles-clip-variants)), and the yaw follow steers the root to the legs' heading ([rig.md](rig.md#the-yaw)), so the hips would face off the player. In the case `on foot` the gate measures the heading of the line across the clip's upper legs against the root and follows it over `hips.smoothing_s` (`procedural::hips`); the yaw follow subtracts it, so the clip's hips rather than its root face the legs' heading. Brief ground cases (a hit reaction, a one-off, a jump within the grace, a tick without the movement task) hold the followed heading; only leaving the ground resets it.
+The idle clip stands bladed ([animation-graph.md](../../engine/character/animation-graph.md#the-idles-clip-variants)), and the yaw follow steers the root to the legs' heading ([rig.md](rig.md#the-yaw)), so the hips would face off the player. In the case `on foot` the gate measures the heading of the line across the clip's upper legs against the root and follows it over `hips.smoothing_s` (`procedural::hips`); the yaw follow subtracts it, so the clip's hips rather than its root face the legs' heading. Brief ground cases (a hit reaction, a one-off, a jump within the grace, a tick without the movement task) hold the followed heading; only leaving the ground resets it.
 
 ## The stance
 

@@ -39,9 +39,8 @@
 - [weapon-attachment-and-arm-ik.md](engine/character/weapon-attachment-and-arm-ik.md): the weapon-to-hand attach, the dual-wield attach bones, muzzle effects, and the per-arm aim IK.
 - [root-motion-and-proxy.md](engine/character/root-motion-and-proxy.md): root motion, the collision proxy and its support, scene queries, teleports, and the seat pose.
 - [state-signals.md](engine/character/state-signals.md): the per-tick character state signals, the UI and pause signals, and hit reactions.
-- [idle-stance.md](engine/character/idle-stance.md): the on-foot idle variants and why every armed idle is a combat stance.
 - [animation-layers.md](engine/character/animation-layers.md): the animation layers, how the pose job stacks them, and the state tasks in pose finalization.
-- [animation-graph.md](engine/character/animation-graph.md): the decoded state-machine format and what Rico's graphs do with the weapon.
+- [animation-graph.md](engine/character/animation-graph.md): the decoded state-machine format, the on-foot idle and its modifier-chosen stance, and what Rico's graphs do with the weapon.
 - [ragdoll.md](engine/character/ragdoll.md): the ragdoll, entering and leaving it, and protected characters.
 
 ### gameplay/

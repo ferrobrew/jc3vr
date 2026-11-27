@@ -1,6 +1,6 @@
 # Animation layers and the pose job
 
-A character's animation is a stack of layers, each with a state machine and clips, blended into a local-space pose by the pose producer. The character's animation callback includes synchronous pose evaluation and an alternate time-only path. Producer-level asynchronous jobs are a separate mechanism. Rule systems, state tasks, and IK also contribute to the final pose. Related: [animation-graph.md](animation-graph.md) (the state machine format and weapon animation), [idle-stance.md](idle-stance.md) (the animation modifiers that select the base layer's clips), [humanik.md](humanik.md) (the IK passes), and [skeleton.md](skeleton.md) (the pose store).
+A character's animation is a stack of layers, each with a state machine and clips, blended into a local-space pose by the pose producer. The character's animation callback includes synchronous pose evaluation and an alternate time-only path. Producer-level asynchronous jobs are a separate mechanism. Rule systems, state tasks, and IK also contribute to the final pose. Related: [animation-graph.md](animation-graph.md) (the state machine format and weapon animation), [animation-graph.md, "The on-foot idle"](animation-graph.md#the-on-foot-idle) (the animation modifiers that select the base layer's clips), [humanik.md](humanik.md) (the IK passes), and [skeleton.md](skeleton.md) (the pose store).
 
 ## The layers
 
