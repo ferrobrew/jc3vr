@@ -45,6 +45,7 @@ impl Drop for DrawDetourScope {
 }
 
 /// Run a forwarding call into the runtime, timing it while armed.
+#[inline]
 pub fn forward(call: impl FnOnce()) {
     if !ARMED.load(Ordering::Relaxed) {
         call();
