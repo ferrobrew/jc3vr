@@ -124,7 +124,7 @@ pub(crate) fn mounted_tick(
 /// Fade the local player back in while they man a mounted gun under the controllers. The gun's
 /// start of use fades a local player user out and holds them transparent for as long as they man
 /// it, for the game's turret camera; in the headset the view is at the head, so a gunner's body,
-/// arms, and hands went undrawn (the gunner seat on the 14 November take, 536 to 550 s).
+/// arms, and hands go undrawn.
 fn keep_gunner_visible(game: &GameTick<'_>) {
     let Some(mut local_player) = LocalPlayer::get(game) else {
         return;

@@ -5,8 +5,7 @@
 //! angles come from the look input when the weapon turns from the stick for a player user
 //! ([`WeaponBase::m_MountedInputIsControlledByWeapon`]), and from the aim target otherwise
 //! ([`WeaponBase::UpdateMountedInput`] decides). The mod writes the hands' aim point as the aim
-//! target, so a gun that turns from the stick ignored the hands: in a jeep's gunner seat on the
-//! 14 November take the turret held straight ahead while the hands gripped its handles.
+//! target, so a gun that turns from the stick ignores the hands.
 //!
 //! While the hands hold a gun's handles and their aim point is fresh, the look-input path is
 //! refused, so the update aims the hinges at the hands' point at the gun's own turn speeds and

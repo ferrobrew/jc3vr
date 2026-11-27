@@ -220,8 +220,8 @@ pub(super) struct MountedHandWeight {
 /// How far a hand is drawn onto its mounted gun's handle, `0..=1`. Manning the gun, the anchored
 /// tier's weight scales the hand's share. Off the native mounted state, a hand that took a
 /// standalone gun's handle with its grip is drawn there by its grip's blend alone, since the tiers
-/// leave it free (on the 14 November take the hands floated at the controllers beside a tripod
-/// minigun they held). A grapple state's weights are the line's, never the handles'.
+/// leave it free, and without that blend the hands float at the controllers beside the gun they
+/// hold. A grapple state's weights are the line's, never the handles'.
 pub(super) fn mounted_hand_weight(inputs: MountedHandWeight) -> f32 {
     let weight = if inputs.grapple {
         0.0

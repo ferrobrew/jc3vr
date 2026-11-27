@@ -520,8 +520,8 @@ pub fn step(
         }
         let Some(kind) = inputs.grabs[i] else {
             // The handlebars keep a hand whose grip opens for a moment: an Index grip's fingers
-            // come off the handle as a rider rolls the throttle shut, and every one of the eleven
-            // lost grips on the 14 November take was that, the bars dropping from under the hand.
+            // come off the handle as a rider rolls the throttle shut, and the bars drop from under
+            // the hand.
             let bars = held.is_some_and(|h| h.kind == ControlKind::Handlebars);
             if held.is_some() && !inputs.held[i] {
                 let open_s = state.bars_grace[i].map_or(0.0, |s| s + dt);
