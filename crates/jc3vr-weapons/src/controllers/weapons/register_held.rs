@@ -1,13 +1,13 @@
 //! Registers the weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]): the
-//! query functions behind each hand's armed weapon, item kind, wielded gun, two-hand grip, grenade,
-//! C4, and long gun, the steal offer, rack and slide state, the reload's zones, and the rigid
+//! query functions behind each hand's contents, armed weapon, item kind, wielded gun, two-hand grip,
+//! grenade, C4, and long gun, the steal offer, rack and slide state, the reload's zones, and the rigid
 //! grip's placement reads, whose captures the loadout table's hand moves invalidate.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
     held,
     held::{
-        HeldItem, HeldSource, PlacementSource,
+        HeldContents, HeldItem, HeldSource, PlacementSource,
         zones::{GunZones, KnockZone, ReloadViews, ZoneAxis},
     },
 };
@@ -18,7 +18,7 @@ use crate::controllers::{
     loadout::{ItemKind, live},
     weapons,
     weapons::{
-        c4, collide,
+        c4, collide, contents,
         dual_wield::single,
         foregrip, grenade, hold,
         hold::{act, armed, rack::paired::stack_offset, take},
@@ -35,6 +35,7 @@ pub fn register() {
         armed_hand_of: armed::hand_of,
         armed_weapon: armed::weapon_of,
         owned_holder: hold::owned_holder,
+        contents: hand_contents,
         item,
         wielded_gun_hands,
         detonator_hand: c4::act_detonator_hand,
@@ -60,14 +61,35 @@ pub fn register() {
     });
 }
 
+/// What each hand holds, sampled now, with the wielded weapon as the last tick began: the readers
+/// below the weapon handling read between ticks, after the simulation's C4 update has moved the
+/// throw, and keep the gun hands through a stand-down, which the record published at the end of
+/// the input tick does neither of.
+fn hand_contents() -> [HeldContents; 2] {
+    let wielded = weapons::status().wielded.map(|readout| readout.weapon);
+    contents::sample(wielded.as_ref()).map(|hand| HeldContents {
+        item: hand.item.map(held_item),
+        wielded: hand.wielded,
+        armed: hand.armed,
+        grenade: hand.grenade.is_some(),
+        charge: hand.charge.is_some(),
+        detonator: hand.detonator,
+        braces: hand.braces,
+    })
+}
+
 /// The kind of the loadout table's item in `hand`.
 fn item(hand: Hand) -> Option<HeldItem> {
-    live::held_kind(hand).map(|kind| match kind {
+    live::held_kind(hand).map(held_item)
+}
+
+fn held_item(kind: ItemKind) -> HeldItem {
+    match kind {
         ItemKind::Weapon(_) => HeldItem::Weapon,
         ItemKind::Prop => HeldItem::Prop,
         ItemKind::Grenade => HeldItem::Grenade,
         ItemKind::Charge => HeldItem::Charge,
-    })
+    }
 }
 
 /// The hands holding a gun of the wielded weapon, from the weapon handling's last tick.

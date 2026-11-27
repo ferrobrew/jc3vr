@@ -17,6 +17,7 @@
 //! - [`armed_weapon`]: the weapon armed in a hand, as the native object a character holds;
 //! - [`owned_holder`]: the hand holding a weapon while the mod owns its attach bones;
 //! - [`holder`]: the hand a weapon is in by either of the two;
+//! - [`contents`]: what each hand holds, one record per hand ([`HeldContents`]);
 //! - [`item`]: the kind of item the loadout table has in a hand ([`HeldItem`]);
 //! - [`wielded_gun_hands`]: which hands hold a gun of the wielded weapon;
 //! - [`detonator_hand`]: the hand the C4 detonate act draws the detonator in;
@@ -72,6 +73,27 @@ pub enum HeldItem {
     Charge,
 }
 
+/// What one hand holds, as the weapon handling's per-hand contents record has it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct HeldContents {
+    /// The kind of item the loadout table has in the hand.
+    pub item: Option<HeldItem>,
+    /// Whether the hand holds a gun of the wielded weapon, as of the weapon handling's last tick
+    /// and kept while it is stood down. The C4 the game's planting mode wields is not a gun.
+    pub wielded: bool,
+    /// The weapon armed in the hand, by its address.
+    pub armed: Option<usize>,
+    /// Whether the hand holds a grenade: a safe one, the beacon, or one it caught.
+    pub grenade: bool,
+    /// Whether the hand holds the C4 throw, from the grab at the pouch until the charge leaves it.
+    pub charge: bool,
+    /// Whether the hand holds the C4 detonator.
+    pub detonator: bool,
+    /// The weapon whose foregrip the hand braces in the engaged two-hand grip, by its address,
+    /// held by the other hand.
+    pub braces: Option<usize>,
+}
+
 /// The weapon handling's query functions behind every read of this module. Weapons are named by
 /// the address of their native object, as the weapon handling names them.
 #[derive(Clone, Copy)]
@@ -88,6 +110,8 @@ pub struct HeldSource {
     pub armed_weapon: for<'a> unsafe fn(&'a Character, Hand) -> Option<&'a WeaponBase>,
     /// The hand holding a weapon, while the mod owns its attach bones.
     pub owned_holder: fn(usize) -> Option<Hand>,
+    /// What each hand holds now, by [`Hand::index`].
+    pub contents: fn() -> [HeldContents; 2],
     /// The kind of item the loadout table has in a hand.
     pub item: fn(Hand) -> Option<HeldItem>,
     /// Which hands hold a gun of the wielded weapon, as of the weapon handling's last tick, by
@@ -198,6 +222,13 @@ pub fn owned_holder(address: usize) -> Option<Hand> {
 /// bones, else the hand it is armed in.
 pub fn holder(address: usize) -> Option<Hand> {
     owned_holder(address).or_else(|| armed_hand_of(address))
+}
+
+/// What each hand holds now, by [`Hand::index`]: each part read from its source at the call, the
+/// wielded guns as the weapon handling's last tick began.
+#[inline]
+pub fn contents() -> [HeldContents; 2] {
+    (source().contents)()
 }
 
 /// The kind of item the loadout table has in `hand`.
