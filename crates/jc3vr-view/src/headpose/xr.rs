@@ -148,12 +148,12 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
         swimming,
         vehicle_transition,
         body_thrown,
+        take_off_heading,
+        swim_turn,
         dt,
     } = tick;
     let mut s = BODY_YAW.lock();
     let body = heading(body_rotation_raw());
-    // The strokes' turn is taken every tick, so a turn queued out of the water is dropped.
-    let stroke_turn = std::mem::take(&mut *SWIM_TURN.lock());
     if s.thrown != body_thrown {
         s.thrown = body_thrown;
         tracing::info!(
@@ -234,13 +234,13 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
         }
     }
 
-    if swimming && stroke_turn.is_finite() {
-        yaw = wrap(yaw - stroke_turn);
+    if swimming && swim_turn.is_finite() {
+        yaw = wrap(yaw - swim_turn);
     }
 
     let following = follow.enabled && on_foot && !swimming;
     // A take-off from the ground turns the body to the head's heading in place of the torso's.
-    let take_off = *TAKE_OFF_HEADING.lock();
+    let take_off = take_off_heading.filter(|h| h.is_finite());
     s.follow.tick(FollowTick {
         follow: following,
         heading: yaw,
@@ -285,6 +285,15 @@ pub struct YawTick {
     /// Whether a ragdoll, its get-up, or a death throws the body about, so the view holds its
     /// heading rather than riding the body ([`BodyFollow`]).
     pub body_thrown: bool,
+    /// The heading relative to the view that the body follows in place of the torso's while the
+    /// boost wingsuit takes off from the ground, from its owner
+    /// ([`HeadParticipants`](crate::headpose::HeadParticipants)). It acts only while the body
+    /// follows.
+    pub take_off_heading: Option<f32>,
+    /// The arm strokes' turn of the swimming body since the last input tick, radians to the
+    /// right, from its owner, added to the heading the turn input owns. Out of the water it is
+    /// dropped.
+    pub swim_turn: f32,
     /// The tick's length, seconds.
     pub dt: f32,
 }
@@ -326,28 +335,6 @@ pub fn follow_offset(current: bool) -> f32 {
 pub fn follow_turn(current: bool) -> Quat {
     Quat::from_rotation_y(-follow_offset(current))
 }
-
-/// Set the heading relative to the view that the body follows in place of the torso's while the
-/// boost wingsuit takes off from the ground ([`crate::controllers::vehicles::take_off`]), or clear
-/// it. It acts only while the body follows.
-pub fn set_take_off_heading(heading: Option<f32>) {
-    *TAKE_OFF_HEADING.lock() = heading.filter(|h| h.is_finite());
-}
-
-/// The heading of [`set_take_off_heading`].
-static TAKE_OFF_HEADING: Mutex<Option<f32>> = Mutex::new(None);
-
-/// Turn the swimming body's heading by `right` radians, positive to the right, on the next input
-/// tick: the arm strokes' turn ([`crate::controllers::locomotion::strokes`]), added to the heading
-/// the right stick owns. Out of the water the turn is dropped.
-pub fn add_swim_turn(right: f32) {
-    if right.is_finite() {
-        *SWIM_TURN.lock() += right;
-    }
-}
-
-/// The turn [`add_swim_turn`] queued since the last input tick, radians to the right.
-static SWIM_TURN: Mutex<f32> = Mutex::new(0.0);
 
 /// Whether the body is following the torso, and the body's target heading relative to the view,
 /// for the debug UI.

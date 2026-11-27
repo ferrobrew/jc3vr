@@ -1,5 +1,6 @@
 //! The gameplay participants of the head pose ([`jc3vr_view::headpose::HeadParticipants`]): the
-//! character's state the head composition reads. The grapple registers its comfort filter as the
+//! character's state the head composition reads, and the two inputs to the body's heading that
+//! systems above the head pose own: the wingsuit take-off's heading and the arm strokes' turn. The grapple registers its comfort filter as the
 //! head pose's body frame filter itself ([`jc3vr_grapple::register`]), and [`register`] reports it
 //! to the install's registration check when it is missing.
 
@@ -9,13 +10,16 @@ use jc3vr_body::{
             procedural::{authority::Case, published_status},
             rig::follow_settings,
         },
-        body_frame, mode,
+        body_frame,
+        locomotion::strokes,
+        mode,
         mode::Mode,
         roomscale::{frame_shared, seat::SeatPhase},
     },
     hooks::input::swim,
 };
 use jc3vr_core::{published::Stamp, registration::RegistrationCheck};
+use jc3vr_vehicles::controllers::vehicles::take_off;
 use jc3vr_view::headpose::{
     HeadParticipants, body_frame_filter_registered, register_head_participants,
 };
@@ -45,5 +49,7 @@ static PARTICIPANTS: HeadParticipants = HeadParticipants {
             Case::Ragdoll | Case::GettingUp | Case::Dead
         )
     },
+    take_off_heading: take_off::held_heading,
+    take_swim_turn: strokes::take_turn,
     ui_mode: || mode::current().mode == Mode::Ui,
 };

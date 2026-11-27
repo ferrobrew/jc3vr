@@ -17,8 +17,8 @@
 //!   [`model::propel`]), and the left stick's own crawl still wins when it is faster;
 //! - its turn about the head, the hands' offsets crossed with their pushes, is smoothed over about
 //!   half a second, so the alternate arms of a crawl cancel while a stroke on one side alone turns
-//!   the body away from it, and the turn is added to the heading the right stick owns
-//!   ([`jc3vr_view::headpose::add_swim_turn`]).
+//!   the body away from it, and the turn is queued here until the head pose takes it on its next
+//!   input tick ([`take_turn`]) and adds it to the heading the right stick owns.
 //!
 //! A hand is in the water when it is below the head by
 //! [`StrokeTuning::water_below_eyes_m`](model::StrokeTuning::water_below_eyes_m), or anywhere underwater. A hand holding a gun strokes
@@ -31,7 +31,6 @@ mod tests;
 use jc3gi::state::StateBitFlag;
 use jc3vr_core::published::Stamp;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
-use jc3vr_view::headpose;
 use parking_lot::Mutex;
 
 use crate::{
@@ -94,6 +93,13 @@ pub fn record_applied(core_mps: f32, written_mps: f32) {
     state.status.written_mps = written_mps;
 }
 
+/// Take the turn the strokes queued since the last call, radians to the right: the head pose's
+/// participant, called once per input tick, which turns the swimming body's heading by it and
+/// drops it out of the water.
+pub fn take_turn() -> f32 {
+    std::mem::take(&mut *TURN.lock())
+}
+
 /// Run the strokes for this input tick while the local player swims. `armed` is whether each hand
 /// holds a gun, and `dt` the real tick's length, seconds. Out of the water or without tracked
 /// hands, the strokes forget their motion and ask for nothing.
@@ -128,8 +134,8 @@ pub fn tick(active: Option<&ActiveHands>, armed: [bool; 2], dt: f32) {
         underwater,
         dt,
     });
-    if step.turn_right != 0.0 {
-        headpose::add_swim_turn(step.turn_right);
+    if step.turn_right != 0.0 && step.turn_right.is_finite() {
+        *TURN.lock() += step.turn_right;
     }
     for hand in Hand::BOTH {
         if let Some(strength) = step.caught[hand.index()] {
@@ -156,3 +162,8 @@ static STATE: Mutex<State> = Mutex::new(State {
         strokes: [0; 2],
     },
 });
+
+/// The turn [`tick`] queued since [`take_turn`] last took it, radians to the right. A lock of its
+/// own, apart from [`STATE`], so the head pose takes it on the input tick without contending with
+/// the strokes' state.
+static TURN: Mutex<f32> = Mutex::new(0.0);

@@ -51,8 +51,8 @@ pub use participants::{
 /// pose through this module rather than through either source's internals.
 pub use sim::{HeadMode, LatchState, latch_state, mode as head_mode};
 pub use xr::{
-    CockpitPose, FollowSettings, add_swim_turn, body_rotation, body_rotation_prev,
-    body_rotation_raw, cockpit_pose, follow_offset, follow_status, follow_turn,
+    CockpitPose, FollowSettings, body_rotation, body_rotation_prev, body_rotation_raw,
+    cockpit_pose, follow_offset, follow_status, follow_turn,
 };
 
 /// Which source currently owns the published headpose. The flatscreen [`sim`] and the VR [`xr`]

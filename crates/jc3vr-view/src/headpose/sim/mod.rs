@@ -144,6 +144,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
                 swimming,
                 vehicle_transition,
                 body_thrown,
+                take_off_heading: (participants.take_off_heading)(),
+                swim_turn: (participants.take_swim_turn)(),
                 dt,
             },
             &config,

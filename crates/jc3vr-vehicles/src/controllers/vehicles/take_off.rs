@@ -5,8 +5,8 @@
 //! the grounded rig puts it, under the view, not where the head looks, so the suit left off to one
 //! side of the player's gaze. A take-off is a movement action, so it may turn the body: the head's
 //! heading relative to the view stands in for the torso's as the body's follow target
-//! ([`jc3vr_view::headpose::xr::set_take_off_heading`]), and the game's own turn brings the body
-//! around under the view, so the view does not move.
+//! ([`held_heading`], which the head pose reads on each input tick), and the game's own turn
+//! brings the body around under the view, so the view does not move.
 //!
 //! The game turns the body only while its movement task runs, which it stops for the wind-up, so
 //! the turn starts with the hold that leads to it: once the use button (`OPEN_WINGSUIT`, with the
@@ -35,6 +35,12 @@ use parking_lot::Mutex;
 
 use crate::controllers::vehicles::tuning::VEHICLES;
 
+/// The head's heading relative to the view that the body follows in place of the torso's while
+/// the take-off holds it, or `None`: the head pose's participant. [`tick`] is its one writer.
+pub fn held_heading() -> Option<f32> {
+    *HEADING.lock()
+}
+
 /// Track the take-off for this game tick.
 ///
 /// # Safety
@@ -55,7 +61,7 @@ pub(crate) unsafe fn tick() {
     match (edge, phase) {
         (Some(Edge::Entered), _) => {
             let heading = head();
-            headpose::xr::set_take_off_heading(heading);
+            set_held_heading(heading);
             tracing::info!(
                 target: "controllers",
                 heading_deg = heading.map(f32::to_degrees),
@@ -63,10 +69,10 @@ pub(crate) unsafe fn tick() {
                 "wingsuit: the take-off from the ground holds the body on the head's heading"
             );
         }
-        (Some(Edge::Left | Edge::Released), _) => headpose::xr::set_take_off_heading(None),
+        (Some(Edge::Left | Edge::Released), _) => set_held_heading(None),
         (Some(Edge::Held), _) => {
             let heading = head();
-            headpose::xr::set_take_off_heading(heading);
+            set_held_heading(heading);
             tracing::info!(
                 target: "controllers",
                 heading_deg = heading.map(f32::to_degrees),
@@ -74,10 +80,18 @@ pub(crate) unsafe fn tick() {
                 "wingsuit: the use button held on the ground turns the body to the head's heading"
             );
         }
-        (None, Phase::Held) => headpose::xr::set_take_off_heading(head()),
+        (None, Phase::Held) => set_held_heading(head()),
         (None, _) => {}
     }
 }
+
+/// Set or clear [`held_heading`]; a heading that is not finite clears it.
+fn set_held_heading(heading: Option<f32>) {
+    *HEADING.lock() = heading.filter(|h| h.is_finite());
+}
+
+/// The heading of [`held_heading`].
+static HEADING: Mutex<Option<f32>> = Mutex::new(None);
 
 /// A change in the take-off's hold or in whether the take-off runs.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

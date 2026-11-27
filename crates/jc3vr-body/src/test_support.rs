@@ -17,6 +17,7 @@ use crate::{
             rig::follow_settings,
         },
         body_frame,
+        locomotion::strokes,
         mode::{self, Mode},
         roomscale::{frame_shared, seat::SeatPhase},
     },
@@ -46,5 +47,8 @@ static PARTICIPANTS: HeadParticipants = HeadParticipants {
             Case::Ragdoll | Case::GettingUp | Case::Dead
         )
     },
+    // The take-off is the vehicles crate's, which no body test starts.
+    take_off_heading: || None,
+    take_swim_turn: strokes::take_turn,
     ui_mode: || mode::current().mode == Mode::Ui,
 };

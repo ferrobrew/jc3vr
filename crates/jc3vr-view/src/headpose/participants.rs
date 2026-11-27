@@ -29,6 +29,12 @@ pub struct HeadParticipants {
     pub vehicle_transition: fn() -> bool,
     /// Whether the body is thrown: ragdolling, getting up, or dead.
     pub body_thrown: fn() -> bool,
+    /// The heading relative to the view the body follows while the boost wingsuit takes off from
+    /// the ground, owned by the take-off; `None` outside it. Read on every input tick under VR.
+    pub take_off_heading: fn() -> Option<f32>,
+    /// Take the arm strokes' turn of the swimming body queued since the last call, radians to the
+    /// right, owned by the strokes. Taken on every input tick under VR, in or out of the water.
+    pub take_swim_turn: fn() -> f32,
     /// Whether the controllers' mode is the UI rather than gameplay.
     pub ui_mode: fn() -> bool,
 }
