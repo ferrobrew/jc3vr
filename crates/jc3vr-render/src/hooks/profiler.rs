@@ -28,7 +28,7 @@ use jc3vr_core::profiler::{self, type_scope};
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::probes::armed_for_benchmark,
+    probes::armed_for_benchmark,
     profiler::gpu::{self, GpuSeam},
 };
 
@@ -99,13 +99,13 @@ fn change_render_block_type(
         }
     }
     if let Some(probes) = armed_for_benchmark() {
-        probes.before_block_type_switch();
+        probes.block_type_switch(None);
     }
     CHANGE_RENDER_BLOCK_TYPE
         .get()
         .unwrap()
         .call(this, ctx, prev, next, inout_count);
     if let Some(probes) = armed_for_benchmark() {
-        probes.after_block_type_switch(next);
+        probes.block_type_switch(Some(next));
     }
 }

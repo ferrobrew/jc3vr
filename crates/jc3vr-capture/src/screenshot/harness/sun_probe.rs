@@ -14,10 +14,10 @@ use std::{cell::RefCell, ffi::c_void, sync::atomic::Ordering};
 use jc3gi::graphics_engine::{graphics_engine::RenderContext, render_engine::RenderPassId};
 use jc3vr_render::{
     hooks::draw_count::DRAW_COUNTS,
+    probes::{Cb13Rows, PerEyePassProbe},
     stereo::single_pass::{
         STEREO_CB_TOTAL_ROWS, bound_vertex_shader_patched, cb13_buffer_ptr, consumed_far_bits,
         current_pass_id, far_depth_corrected, per_eye_reissue_eye, pinned_eye_rows,
-        probes::{Cb13Rows, SunPassProbe},
     },
 };
 use parking_lot::Mutex;
@@ -44,7 +44,7 @@ use crate::screenshot::{
 
 /// The probe for one re-driven sun pass, or `None` outside a capture that asks for the sun's inputs
 /// or once its budget is spent.
-pub(super) fn sun_pass(ctx: *const RenderContext) -> Option<Box<dyn SunPassProbe>> {
+pub(super) fn sun_pass(ctx: *const RenderContext) -> Option<Box<dyn PerEyePassProbe>> {
     probe_budget().map(|(capture_id, invocation)| {
         let (status, active_pass, frame) = unsafe { ctx.as_ref() }.map_or((0, 0, 0), |rc| {
             (
@@ -65,7 +65,7 @@ pub(super) fn sun_pass(ctx: *const RenderContext) -> Option<Box<dyn SunPassProbe
             probe,
             gpu_before: 0,
             armed: false,
-        }) as Box<dyn SunPassProbe>
+        }) as Box<dyn PerEyePassProbe>
     })
 }
 
@@ -77,7 +77,7 @@ struct SunPass {
     armed: bool,
 }
 
-impl SunPassProbe for SunPass {
+impl PerEyePassProbe for SunPass {
     fn begin_eye(&mut self, eye: usize, rows: &Cb13Rows, pinned: &Cb13Rows) {
         let probe = &self.probe;
         self.gpu_before = DRAW_COUNTS.draw.load(Ordering::Relaxed);

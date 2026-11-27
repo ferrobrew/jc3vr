@@ -1,6 +1,6 @@
 use std::{ffi::c_void, time::Duration};
 
-use jc3vr_render::stereo::single_pass::RawDrawKind;
+use jc3vr_render::probes::RawDrawKind;
 use jc3vr_view::stereo::engine_context::EngineContext;
 use windows::{
     Win32::{

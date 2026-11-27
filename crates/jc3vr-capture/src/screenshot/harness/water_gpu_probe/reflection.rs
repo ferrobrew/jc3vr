@@ -21,7 +21,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::RenderPassId;
-use jc3vr_render::stereo::single_pass::RawDrawKind;
+use jc3vr_render::probes::RawDrawKind;
 use jc3vr_view::stereo::{draw_index, engine_context::EngineContext};
 use windows::{
     Win32::Graphics::Direct3D11::{

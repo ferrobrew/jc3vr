@@ -36,7 +36,8 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::probes::{self, scoped},
+    probes,
+    probes::{BlockScope, PipelinePoint},
     stereo::single_pass::{BoundVsGate, EyeDisplayWidth, EyeLightWidth},
 };
 
@@ -133,13 +134,12 @@ fn proxy_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    scoped(
-        probes::armed(),
-        // SAFETY: `this` and `rc` are the live block and render context the engine passed into
-        // `Draw`.
-        |probes, body| unsafe { probes.reflection_proxy_scope(this, rc, body) },
-        || PROXY_DRAW.get().unwrap().call(this, rc, info),
-    );
+    let proxy = BlockScope::WaterReflectionProxy {
+        block: this,
+        rc: rc.cast_const(),
+    };
+    // SAFETY: `this` and `rc` are the live block and render context the engine passed into `Draw`.
+    unsafe { probes::block_scope(proxy, || PROXY_DRAW.get().unwrap().call(this, rc, info)) };
 }
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3.
@@ -307,6 +307,10 @@ fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const 
     if let Some(probes) = probes::armed()
         && let (Some(engine), Some(ctx)) = unsafe { (this.as_ref(), ctx.as_ref()) }
     {
-        probes.capture_constants(engine, ctx, cb13_uploaded);
+        probes.point(PipelinePoint::GlobalConstants {
+            engine,
+            ctx,
+            cb13_uploaded,
+        });
     }
 }

@@ -39,11 +39,9 @@ use re_utilities::hook_library::HookLibrary;
 use crate::profiler::gpu::seam;
 use crate::{
     debug::trace::{TraceEvent, TraceState, tracing_active},
-    hooks::graphics_engine::{
-        probes,
-        probes::{PipelinePoint, capture_point, scoped},
-        screen::reconstruction,
-    },
+    hooks::graphics_engine::screen::reconstruction,
+    probes,
+    probes::{PassScope, PipelinePoint},
     stereo::single_pass::{ao_volumes, config_flags, is_sun_pass, reissue_sun_pass},
 };
 
@@ -62,13 +60,13 @@ pub(super) fn hook_library() -> HookLibrary {
 // RenderPass::Draw -- the per-pass draw entry.
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::Draw_ADDRESS)]
 fn render_pass_draw(this: *mut RenderPass) {
-    let pass_id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
-    scoped(
-        probes::armed(),
-        // SAFETY: `this` is the live render pass the engine is drawing.
-        |probes, body| unsafe { probes.pass_draw_scope(this, pass_id, body) },
-        || RENDER_PASS_DRAW.get().unwrap().call(this),
-    );
+    let id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
+    // SAFETY: the scope carries no pointer.
+    unsafe {
+        probes::pass_scope(PassScope::Draw { id }, || {
+            RENDER_PASS_DRAW.get().unwrap().call(this)
+        })
+    };
 }
 
 // RenderPass::DoDraw -- one pass's walk over its sorted draw list.
@@ -84,37 +82,35 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
     let pass_id = unsafe { (*this).m_Index };
     let previous_pass = crate::stereo::single_pass::set_current_pass(pass_id);
-    scoped(
-        probes::armed(),
-        // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
-        |probes, body| unsafe { probes.pass_walk_scope(this, ctx, pass_id, body) },
-        || {
-            // Capture-gated producer diagnostic for the passes that feed the water's reflection
-            // inputs; inert for every other pass and for an unarmed capture.
-            let _reflection_producer =
-                crate::stereo::single_pass::reflection_producer(pass_id.into());
-            // The ambient-occlusion volumes' per-eye rows, bound for the walk of their pass.
-            // SAFETY: `ctx` is the live render context of this pass.
-            let _ao_volume_rows = (pass_id == RP_AO_VOLUMES as i16)
-                .then(|| unsafe { ao_volumes::bind_rows(ctx) })
-                .flatten();
-            let sun_pass = is_sun_pass(pass_id);
-            let result = if sun_pass {
-                reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
-                    .unwrap_or_else(|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
-            } else {
-                DO_DRAW.get().unwrap().call(this, ctx, color_mask)
-            };
-            crate::stereo::single_pass::restore_current_pass(previous_pass);
-            if sun_pass {
-                capture_point(PipelinePoint::AfterSun);
-            }
-            // Close the final render-block-type run's scope before the pass scope closes.
-            #[cfg(feature = "profiler")]
-            jc3vr_core::profiler::type_scope::clear();
-            result
-        },
-    )
+    let walk = PassScope::Walk {
+        pass: this,
+        ctx,
+        id: pass_id,
+    };
+    let draw = || {
+        // The ambient-occlusion volumes' per-eye rows, bound for the walk of their pass.
+        // SAFETY: `ctx` is the live render context of this pass.
+        let _ao_volume_rows = (pass_id == RP_AO_VOLUMES as i16)
+            .then(|| unsafe { ao_volumes::bind_rows(ctx) })
+            .flatten();
+        let sun_pass = is_sun_pass(pass_id);
+        let result = if sun_pass {
+            reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+                .unwrap_or_else(|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+        } else {
+            DO_DRAW.get().unwrap().call(this, ctx, color_mask)
+        };
+        crate::stereo::single_pass::restore_current_pass(previous_pass);
+        if sun_pass {
+            probes::point(PipelinePoint::AfterSun);
+        }
+        // Close the final render-block-type run's scope before the pass scope closes.
+        #[cfg(feature = "profiler")]
+        jc3vr_core::profiler::type_scope::clear();
+        result
+    };
+    // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
+    unsafe { probes::pass_scope(walk, draw) }
 }
 
 const RP_AO_VOLUMES: i32 = RenderPassId::RP_AO_VOLUMES as i32;
@@ -144,20 +140,12 @@ fn draw_render_pass_range(
         }
     };
 
-    let bracket = (first == RP_Z_OCCLUDERS && last == RenderPassId::RP_LAST_GBUFFER as i32)
-        .then(|| {
-            let probes = probes::armed()?;
-            Some((probes, probes.near_patch_bracket()?))
-        })
+    let gbuffer_probes = (first == RP_Z_OCCLUDERS && last == RenderPassId::RP_LAST_GBUFFER as i32)
+        .then(probes::armed)
         .flatten();
-    let draw = |lo, hi| {
-        if let Some((probes, bracket)) = bracket
-            && (lo..hi).contains(&bracket.pass)
-        {
-            probes.draw_near_patch_bracket(bracket, lo, hi, &draw_runs);
-        } else {
-            draw_runs(lo, hi);
-        }
+    let draw = |lo, hi| match gbuffer_probes {
+        Some(probes) => probes.draw_gbuffer_passes(lo, hi, &draw_runs),
+        None => draw_runs(lo, hi),
     };
 
     // Single-pass stereo: mark the camera-scene geometry range so the dual-eye cb13,
@@ -188,7 +176,7 @@ fn draw_render_pass_range(
 
 fn capture_geometry_range(first: i32, last: i32) {
     if first == RP_Z_OCCLUDERS && last == RenderPassId::RP_LAST_GBUFFER as i32 {
-        capture_point(PipelinePoint::Geometry);
+        probes::point(PipelinePoint::Geometry);
     }
 }
 

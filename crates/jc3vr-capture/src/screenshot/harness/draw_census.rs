@@ -22,9 +22,10 @@ use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use jc3gi::graphics_engine::render_engine::RenderPassId;
 use jc3vr_render::{
     hooks::graphics_engine::reconstruction::split_run_eye,
+    probes::RawDrawKind,
     stereo::single_pass::{
-        RawDrawKind, bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye,
-        shader_identity, shader_identity::IdentityResult, vertex_identity_lookup,
+        bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye, shader_identity,
+        shader_identity::IdentityResult, vertex_identity_lookup,
     },
 };
 use jc3vr_view::stereo::draw_index;

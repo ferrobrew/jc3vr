@@ -29,7 +29,7 @@ use std::{
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use jc3vr_render::{
-    capture_arming::{Arming, arm},
+    probes::{Arming, arm},
     screenshot::CaptureSource,
 };
 use jc3vr_view::stereo::{dispatch, dispatch::RenderMode, engine_context::EngineContext};

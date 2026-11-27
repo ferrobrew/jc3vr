@@ -25,10 +25,7 @@ use jc3gi::graphics_engine::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::hooks::graphics_engine::{
-    probes::{PipelinePoint, capture_point},
-    reconstruction,
-};
+use crate::{hooks::graphics_engine::reconstruction, probes, probes::PipelinePoint};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&ATMOSPHERIC_SCATTERING_DRAW_BINDER)
@@ -53,7 +50,7 @@ fn atmospheric_scattering_draw(
     let scene_pass =
         unsafe { rc.as_ref() }.is_some_and(|r| r.m_ActiveRenderPass == SCENE_COMPOSITE_PASS);
     if scene_pass {
-        capture_point(PipelinePoint::BeforeAtmosphere);
+        probes::point(PipelinePoint::BeforeAtmosphere);
     }
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
@@ -66,7 +63,7 @@ fn atmospheric_scattering_draw(
     }
 
     if scene_pass {
-        capture_point(PipelinePoint::AfterAtmosphere);
+        probes::point(PipelinePoint::AfterAtmosphere);
     }
 }
 

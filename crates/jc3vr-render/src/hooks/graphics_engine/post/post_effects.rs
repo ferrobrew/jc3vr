@@ -35,11 +35,9 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    hooks::graphics_engine::{
-        config::POST_FX_CONFIG,
-        probes,
-        probes::{AntiAliasingSide, PipelinePoint, capture_point, scoped},
-    },
+    hooks::graphics_engine::config::POST_FX_CONFIG,
+    probes,
+    probes::{BlockScope, PipelinePoint, PostEffect, scoped},
 };
 
 /// Whether the motion blur and the depth of field are forced off: while a VR session runs, whatever
@@ -168,7 +166,7 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
     if repeat {
         return 0;
     }
-    capture_point(PipelinePoint::MainColor);
+    probes::point(PipelinePoint::MainColor);
     #[cfg(feature = "profiler")]
     let _gpu = crate::profiler::gpu::detail_interval("post: world block");
     RENDER_BLOCK_POST_EFFECTS_DRAW
@@ -231,7 +229,8 @@ fn anti_aliasing_apply(
 ) -> u64 {
     if let Some(probes) = probes::armed() {
         // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
-        probes.capture_anti_aliasing_slot(AntiAliasingSide::Before, mgr, unsafe { *slot });
+        let slot = unsafe { *slot };
+        probes.point(PipelinePoint::BeforeAntiAliasing { mgr, slot });
     }
     let force_smaa_1x = stereo::active();
     let fsr = FSR_CONFIG.query(|fsr| match fsr.antialiasing {
@@ -263,7 +262,10 @@ fn anti_aliasing_apply(
 
     let r = scoped(
         probes::armed(),
-        |probes, body| probes.anti_aliasing_scope(unsafe { (*this).m_Mode }, body),
+        // SAFETY: `this` is the live effect, and the scope carries no pointer.
+        |probes, body| unsafe {
+            probes.block_scope(BlockScope::AntiAliasing((*this).m_Mode), body)
+        },
         || {
             #[cfg(feature = "profiler")]
             let gpu = crate::profiler::gpu::detail_interval("post: engine anti-aliasing");
@@ -275,7 +277,8 @@ fn anti_aliasing_apply(
             drop(gpu);
             if let Some(probes) = probes::armed() {
                 // SAFETY: the AA result updates the same live slot parameter.
-                probes.capture_anti_aliasing_slot(AntiAliasingSide::After, mgr, unsafe { *slot });
+                let slot = unsafe { *slot };
+                probes.point(PipelinePoint::AfterAntiAliasing { mgr, slot });
             }
             r
         },
@@ -385,7 +388,14 @@ fn dof_apply(
         slot
     };
     let slot = match probes::armed() {
-        Some(probes) => probes.depth_of_field_scope(pec, input, mgr, &mut apply),
+        Some(probes) => probes.post_effect_scope(
+            PostEffect::DepthOfField {
+                pec: pec.cast_const(),
+                input,
+                mgr,
+            },
+            &mut apply,
+        ),
         None => apply(),
     };
     capture_post_result(POST_STAGE_DOF, mgr, slot);

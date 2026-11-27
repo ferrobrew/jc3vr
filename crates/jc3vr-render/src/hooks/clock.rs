@@ -4,7 +4,7 @@ use detours_macro::detour;
 use jc3gi::clock::Clock;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::hooks::graphics_engine::probes;
+use crate::probes;
 
 /// Reset at the start of each real frame (in `game_update`). While stereo is active, the
 /// `CClock::Update` detour gates the clock to once per real frame, so a second `Draw` doesn't run

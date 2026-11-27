@@ -10,7 +10,7 @@
 //! for startup and ejection timing, so neither is reshuffled for grouping's sake.
 
 use jc3vr_body::hooks::{animation, character};
-use jc3vr_capture::screenshot::harness::{register_pipeline, register_single_pass};
+use jc3vr_capture::screenshot::harness::register_probes;
 use jc3vr_core::hooks::{self as core_hooks, online};
 use jc3vr_gameplay::{
     controllers,
@@ -51,10 +51,8 @@ pub(crate) fn install() {
     // camera hooks below them.
     debug::register_view::register();
     graphics_engine::register_vr_teardown::register();
-    // The capture harness's probes into the single-pass draw path.
-    register_single_pass::register();
-    // What the capture tooling observes at the graphics-engine pipeline's seams.
-    register_pipeline::register();
+    // What the capture tooling observes in the render hooks.
+    register_probes::register();
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     hud::pointer::register_pointer::register();
     recorder::register_mark::register();

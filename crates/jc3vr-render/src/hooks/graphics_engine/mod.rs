@@ -17,8 +17,6 @@ mod declaration_replay;
 // jc3gi (CGraphicsEngine in its own module), hence the module_inception allow.
 #[allow(clippy::module_inception)]
 pub mod graphics_engine;
-// What the capture tooling observes at the pipeline's seams, registered by the capture side.
-pub mod probes;
 // The VR runtime's teardown participant: the flip block and the far-field share pipeline.
 pub mod register_vr_teardown;
 mod render_pass;

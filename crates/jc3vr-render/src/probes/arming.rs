@@ -1,13 +1,12 @@
-//! The capture tooling's arming flags, which keep the render hooks' probe tables off the shipped
+//! The capture tooling's arming flags, which keep the render hooks' probe table off the shipped
 //! path.
 //!
-//! The single-pass draw path ([`crate::stereo::single_pass::probes`]) and the graphics-engine
-//! pipeline hooks ([`crate::hooks::graphics_engine::probes`]) call into tables the capture side
-//! registers at install. Each probe is inert until the capture side receives a request, so the hooks
-//! read these flags with one relaxed load and make no call into a table while nothing has asked for
-//! one. A flag rises at the first request of its kind and stays up for the session: a probe that
-//! brackets work (a guard taken before a submission and dropped after it, or a scope's two halves)
-//! then never sees its flag fall between the two.
+//! The render hooks call into the table the capture side registers at install
+//! ([`crate::probes::CaptureProbes`]). Each probe is inert until the capture side receives a request,
+//! so the hooks read these flags with one relaxed load and make no call into the table while nothing
+//! has asked for one. A flag rises at the first request of its kind and stays up for the session: a
+//! probe that brackets work (a guard taken before a submission and dropped after it, or a scope's
+//! two halves) then never sees its flag fall between the two.
 //!
 //! A benchmark arms only the probes it reads, so a run measures the draw path a capture-free session
 //! takes.

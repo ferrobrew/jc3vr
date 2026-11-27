@@ -8,8 +8,8 @@
 //! eye's half. The pass allowlist in `draw_detours` deliberately does not carry this pass: the fix is
 //! the pass's own ownership, not a claim that every environment draw is geometry.
 //!
-//! The capture harness brackets each re-driven eye through the single-pass probes
-//! ([`probes::SinglePassProbes::sun_pass`]) and reads this module's upload observation back
+//! The capture harness brackets each re-driven eye through the capture probes
+//! ([`crate::probes::CaptureProbes::per_eye_pass`]) and reads this module's upload observation back
 //! ([`consumed_far_bits`], [`far_depth_corrected`]).
 
 use std::{
@@ -28,16 +28,22 @@ use windows::{
     core::Interface,
 };
 
-use crate::stereo::single_pass::{
-    CB13, PATCHED_VS_NAMES,
-    cb13::{STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, preserve_reprojection_depth, write_cb13_rows},
-    eye_split_state, in_gbuffer_range,
-    per_eye_reissue::PerEyeReissue,
-    per_eye_reissue_eye, probes,
-    viewport::{
-        bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport, restore_viewport_slots,
+use crate::{
+    probes,
+    stereo::single_pass::{
+        CB13, PATCHED_VS_NAMES,
+        cb13::{
+            STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, preserve_reprojection_depth, write_cb13_rows,
+        },
+        eye_split_state, in_gbuffer_range,
+        per_eye_reissue::PerEyeReissue,
+        per_eye_reissue_eye,
+        viewport::{
+            bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport,
+            restore_viewport_slots,
+        },
+        viewport_record,
     },
-    viewport_record,
 };
 
 /// Whether `pass` is the sun's render pass.
@@ -65,7 +71,7 @@ pub(crate) fn reissue_sun_pass(ctx: *const RenderContext, draw: &dyn Fn() -> boo
     let d3d = EngineContext::get()?;
     let rows = CB13.lock().live_rows()?;
     let saved = capture_viewport_slots(d3d);
-    let mut probe = probes::armed().and_then(|probes| probes.sun_pass(ctx));
+    let mut probe = probes::armed().and_then(|probes| probes.per_eye_pass(ctx));
 
     let mut result = true;
     let mut submitted = 0;

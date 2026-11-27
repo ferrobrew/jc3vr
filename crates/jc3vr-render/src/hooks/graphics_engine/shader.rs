@@ -40,7 +40,8 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::{probes::registered, ss_decal},
+    hooks::graphics_engine::ss_decal,
+    probes::registered,
     stereo::{
         single_pass::{
             VsTransform, ambient_occlusion, ao_volumes, config_flags, eye_camera,

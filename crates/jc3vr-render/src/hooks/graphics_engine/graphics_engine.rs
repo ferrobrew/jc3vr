@@ -31,7 +31,8 @@ use windows::Win32::{
 
 use crate::{
     debug::trace::{TraceEvent, TraceState},
-    hooks::graphics_engine::{probes, probes::scoped},
+    probes,
+    probes::scoped,
     screenshot::CaptureSource,
     stereo::single_pass::set_collapse_ui_eye,
 };

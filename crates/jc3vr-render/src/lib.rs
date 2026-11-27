@@ -15,18 +15,17 @@
 //!   F12 screenshot, the image writer, the GPU dispatch records, and, with the `profiler` feature,
 //!   the GPU timestamp lane.
 //! - [`tuning`]: the render layer's tuning file.
-//! - [`capture_arming`] and the probe tables in [`stereo::single_pass::probes`] and
-//!   [`hooks::graphics_engine::probes`]: the seams the capture crate above fills at install, read
+//! - [`probes`]: the capture probes, the one table the capture crate above fills at install, read
 //!   with one relaxed load while nothing has asked for a capture or a benchmark.
 //!
 //! The layers above reach these modules by path.
 
-pub mod capture_arming;
 pub mod controllers;
 pub mod debug;
 pub mod fsr;
 pub mod hooks;
 pub mod image_writer;
+pub mod probes;
 pub mod profiler;
 pub mod screenshot;
 pub mod stereo;

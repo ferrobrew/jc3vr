@@ -8,8 +8,8 @@ use std::{
 use anyhow::Context as _;
 use jc3gi::{clock::Clock, graphics_engine::graphics_engine::GraphicsEngine};
 use jc3vr_render::{
-    capture_arming::{Arming, arm},
     hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
+    probes::{Arming, arm},
 };
 use jc3vr_view::{
     fsr::FSR_CONFIG,

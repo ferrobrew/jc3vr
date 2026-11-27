@@ -67,8 +67,6 @@ mod instanced_exposure;
 mod per_eye_reissue;
 mod pinned_eye;
 pub mod post_filters;
-// The capture harness's probes into the draw path.
-pub mod probes;
 // The ambient-occlusion volumes' pixel-shader rewrite and its per-eye rows; reached by the shader
 // creation detour and the volume pass's draw walk.
 pub(crate) mod ao_volumes;
@@ -105,8 +103,6 @@ use jc3vr_view::stereo::{
 };
 pub use per_eye_reissue::*;
 pub(crate) use pinned_eye::tag_pinned_eye;
-pub use probes::RawDrawKind;
-pub(crate) use probes::{WaterGpuProbe, begin_water_input_capture, reflection_producer};
 pub use shader_detours::*;
 pub use shader_policy::*;
 pub use static_lights::EyeLightWidth;

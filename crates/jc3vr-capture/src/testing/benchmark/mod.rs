@@ -32,20 +32,16 @@ use jc3vr_core::{
     frame_timing::Slot,
 };
 use jc3vr_render::{
-    capture_arming::{Arming, arm},
     hooks::{
         draw_count,
         graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
     },
+    probes::{Arming, arm, submission_total},
     profiler::{
         gpu_samples,
         gpu_samples::{GPU_SEAM_NAMES, GpuDispatchSample},
     },
-    stereo::{
-        single_pass,
-        single_pass::{detour_timing, probes::submission_total},
-        switches::ShaderBuild,
-    },
+    stereo::{single_pass, single_pass::detour_timing, switches::ShaderBuild},
 };
 use jc3vr_view::{
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},

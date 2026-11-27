@@ -13,17 +13,19 @@ use jc3gi::graphics_engine::{
 use jc3vr_view::stereo::config::SinglePassSwitch;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::hooks::graphics_engine::{
-    clustered_lighting::{
-        bounds::tile_bounds_from_projection,
-        split::{
-            LightView, SPLIT, SplitState, TileGrid, assignment_transform,
-            decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
+use crate::{
+    hooks::graphics_engine::{
+        clustered_lighting::{
+            bounds::tile_bounds_from_projection,
+            split::{
+                LightView, SPLIT, SplitState, TileGrid, assignment_transform,
+                decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
+            },
         },
+        reconstruction,
     },
     probes,
-    probes::{PipelinePoint, capture_point, scoped},
-    reconstruction,
+    probes::{BlockScope, PipelinePoint, scoped},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -113,7 +115,7 @@ fn draw_clustered(
     if unsafe { rc.as_ref() }
         .is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32)
     {
-        capture_point(PipelinePoint::AfterResolve);
+        probes::point(PipelinePoint::AfterResolve);
     }
 }
 
@@ -203,12 +205,10 @@ fn run_draw_clustered(
     scoped(
         probes::armed(),
         |probes, body| {
-            probes.resolve_scope(
-                rc_ref.is_some_and(|rc| {
-                    rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32
-                }),
-                body,
-            )
+            let deferred_lights = rc_ref
+                .is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32);
+            // SAFETY: the scope carries no pointer.
+            unsafe { probes.block_scope(BlockScope::DeferredResolve { deferred_lights }, body) }
         },
         || DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4),
     );

@@ -59,11 +59,11 @@ use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
-    hooks::graphics_engine::probes::{PipelinePoint, capture_point},
+    probes,
+    probes::{BlockScope, PipelinePoint},
     stereo::single_pass::{
-        WaterGpuProbe, begin_water_input_capture, begin_water_surface,
-        draw_per_eye_half_ignoring_bound_vs, eye_globals, screen_uv_cb_per_eye,
-        with_wave_simulation_viewports,
+        begin_water_surface, draw_per_eye_half_ignoring_bound_vs, eye_globals,
+        screen_uv_cb_per_eye, with_wave_simulation_viewports,
     },
 };
 
@@ -141,21 +141,16 @@ fn nv_water_high_end_draw(
         let pass = unsafe { (*rc).m_ActiveRenderPass };
         let water_surface = pass == RenderPassId::RP_WATER as i32;
         if water_surface {
-            capture_point(PipelinePoint::BeforeWater);
-        }
-        let probe = if water_surface {
-            WaterGpuProbe::begin(pass, draw_index())
+            probes::point(PipelinePoint::BeforeWater);
+            let surface = BlockScope::WaterSurface {
+                pass,
+                eye: draw_index(),
+            };
+            // SAFETY: the scope carries no pointer.
+            unsafe { probes::block_scope(surface, || detour.call(this, rc, info)) };
+            probes::point(PipelinePoint::AfterWater(draw_index()));
         } else {
-            None
-        };
-        let input_capture = water_surface.then(|| begin_water_input_capture(draw_index()));
-        detour.call(this, rc, info);
-        drop(input_capture);
-        if let Some(probe) = probe {
-            probe.finish();
-        }
-        if water_surface {
-            capture_point(PipelinePoint::AfterWater(draw_index()));
+            detour.call(this, rc, info);
         }
     }
 }
@@ -437,7 +432,7 @@ unsafe fn nv_water_per_eye(
     };
 
     if water_surface {
-        capture_point(PipelinePoint::BeforeWater);
+        probes::point(PipelinePoint::BeforeWater);
     }
     let replay = water_surface.then(begin_water_surface);
 
@@ -453,20 +448,13 @@ unsafe fn nv_water_per_eye(
             SUPPRESS_SIMULATION_STEP.store(eye != 0, Ordering::Relaxed);
             (*this).Setup(rc, 0, 0);
         }
-        let probe = if water_surface {
-            WaterGpuProbe::begin(pass, eye)
-        } else {
-            None
-        };
-        let input_capture = water_surface.then(|| begin_water_input_capture(eye));
         let _camera = EyeGlobals::stage(eye);
-        draw();
-        drop(input_capture);
-        if let Some(probe) = probe {
-            probe.finish();
-        }
         if water_surface {
-            capture_point(PipelinePoint::AfterWater(eye));
+            // SAFETY: the scope carries no pointer.
+            unsafe { probes::block_scope(BlockScope::WaterSurface { pass, eye }, &mut draw) };
+            probes::point(PipelinePoint::AfterWater(eye));
+        } else {
+            draw();
         }
     })
 }

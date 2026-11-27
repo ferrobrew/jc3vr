@@ -49,10 +49,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::{
-    stereo::single_pass::{probes, probes::FsrPlane},
-    tuning::RENDER,
-};
+use crate::{probes, probes::PipelinePoint, tuning::RENDER};
 
 /// How the post chain's textures hold the eyes one FSR resolve covers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -645,8 +642,11 @@ unsafe fn resolve_eye(
             },
             (Some(_), None) => return false,
         };
-        probes::fsr_plane(FsrPlane::Motion, eye, &mv_res);
-        probes::fsr_plane(FsrPlane::Depth, eye, &depth_res);
+        probes::point(PipelinePoint::FsrInputs {
+            eye,
+            motion: &mv_res,
+            depth: &depth_res,
+        });
 
         let info = DispatchInfo {
             context,

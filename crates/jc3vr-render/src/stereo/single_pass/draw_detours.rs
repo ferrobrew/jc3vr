@@ -9,15 +9,13 @@
 use jc3vr_view::stereo::layout::collapse_active;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometryShader};
 
-use crate::stereo::single_pass::{
-    detour_timing,
-    pinned_eye::Cb13EyePin,
+use crate::{
     probes,
-    probes::{RawDrawKind, SinglePassProbes},
-    sun::preserve_far_depth,
-    vegetation_once,
-    water_fragment_state::packed_water_context,
-    *,
+    probes::{CaptureProbes, DrawArgs, DrawScope, GameDraw, RawDrawKind, Route},
+    stereo::single_pass::{
+        detour_timing, pinned_eye::Cb13EyePin, sun::preserve_far_depth, vegetation_once,
+        water_fragment_state::packed_water_context, *,
+    },
 };
 
 /// `ID3D11DeviceContext` vtable slots for the two indexed-draw entry points (verified against
@@ -62,14 +60,23 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
 ) {
     let _timing = detour_timing::enter();
     let probes = probes::armed();
-    // SAFETY: `context` is the live immediate context this entry was called on.
+    let args = [
+        index_count.into(),
+        start_index.into(),
+        base_vertex.into(),
+        0,
+        0,
+    ];
+    let draw = GameDraw {
+        context,
+        entry: RawDrawKind::Indexed,
+        args: DrawArgs::Direct(args),
+    };
+    // SAFETY (all three calls): `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
-    let _lake = water
-        .filter(|_| _reflection.is_none())
-        .and_then(water_pixel_variants::bind);
-    // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { raw_entry(probes, RawDrawKind::Indexed, context) };
+    let scope = unsafe { probes::draw_scope(probes, &draw) };
+    let _lake = bind_water_variant(water, scope.as_ref());
+    let _bound = unsafe { probes::draw_bound(probes, &draw) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
     if vegetation_once::active()
         && vegetation_once::draw_indexed(context, index_count, start_index, base_vertex)
@@ -89,14 +96,15 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 probes::submit(
                     probes,
                     context,
-                    "indexed_promoted",
-                    [
+                    RawDrawKind::Indexed,
+                    Route::Promoted,
+                    DrawArgs::Direct([
                         index_count.into(),
                         2,
                         start_index.into(),
                         base_vertex.into(),
                         0,
-                    ],
+                    ]),
                     || unsafe {
                         instanced.call(context, index_count, 2, start_index, base_vertex, 0)
                     },
@@ -122,14 +130,9 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                     probes::submit(
                         probes,
                         context,
-                        "indexed",
-                        [
-                            index_count.into(),
-                            start_index.into(),
-                            base_vertex.into(),
-                            0,
-                            0,
-                        ],
+                        RawDrawKind::Indexed,
+                        Route::PerEye(eye),
+                        DrawArgs::Direct(args),
                         || unsafe { detour.call(context, index_count, start_index, base_vertex) },
                     );
                 }
@@ -142,14 +145,9 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     probes::submit(
         probes,
         context,
-        "indexed",
-        [
-            index_count.into(),
-            start_index.into(),
-            base_vertex.into(),
-            0,
-            0,
-        ],
+        RawDrawKind::Indexed,
+        Route::AsIssued,
+        DrawArgs::Direct(args),
         || unsafe { detour.call(context, index_count, start_index, base_vertex) },
     );
 }
@@ -166,25 +164,28 @@ pub(super) unsafe extern "system" fn draw_detour(
 ) {
     let _timing = detour_timing::enter();
     let probes = probes::armed();
-    // SAFETY: `context` is the live immediate context this entry was called on.
+    let args = DrawArgs::Direct([vertex_count.into(), start_vertex.into(), 0, 0, 0]);
+    let draw = GameDraw {
+        context,
+        entry: RawDrawKind::NonIndexed,
+        args,
+    };
+    // SAFETY (all four calls): `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
-    let _lake = water
-        .filter(|_| _reflection.is_none())
-        .and_then(water_pixel_variants::bind);
-    // SAFETY: `context` is the live immediate context this entry was called on.
+    let scope = unsafe { probes::draw_scope(probes, &draw) };
+    let _lake = bind_water_variant(water, scope.as_ref());
     let _glare = unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
         .and_then(post_filters::bind);
-    // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { raw_entry(probes, RawDrawKind::NonIndexed, context) };
+    let _bound = unsafe { probes::draw_bound(probes, &draw) };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let submit = || {
+    let submit = |route| {
         probes::submit(
             probes,
             context,
-            "draw",
-            [vertex_count.into(), start_vertex.into(), 0, 0, 0],
+            RawDrawKind::NonIndexed,
+            route,
+            args,
             || unsafe { detour.call(context, vertex_count, start_vertex) },
         )
     };
@@ -204,7 +205,9 @@ pub(super) unsafe extern "system" fn draw_detour(
             // Any other geometry on this entry point is not the fullscreen triangle the `Full`
             // reset below exists for, so give it the same per-eye treatment the indexed path gives
             // its unpatched draws.
-            if flags.has(SinglePassSwitch::Slot13PerEye) && instanced_per_eye(&submit) {
+            if flags.has(SinglePassSwitch::Slot13PerEye)
+                && instanced_per_eye(&|eye| submit(Route::PerEye(eye)))
+            {
                 return;
             }
         }
@@ -226,62 +229,10 @@ pub(super) unsafe extern "system" fn draw_detour(
         }
         ensure_collapse_viewport(context, CollapseViewport::Full);
     }
-    // SAFETY (every probe call below): `context` is the live immediate context this entry was
-    // called on.
-    if let Some(probes) = probes {
-        unsafe { probes.aa_observe(context, vertex_count, start_vertex) };
-    }
-    if probes.is_some_and(|probes| unsafe { probes.aa_with_color_edge(context, &submit) }) {
-        return;
-    }
-    if current_pass_id() == RenderPassId::RP_SUN as u8 {
-        let _sun_raster =
-            probes.and_then(|probes| unsafe { probes.sun_depth_clip_treatment(context) });
-        let _sun_depth = unsafe { preserve_far_depth(context) };
-        if let Some(probes) = probes {
-            unsafe { probes.sun_raw_draw(context, vertex_count, start_vertex) };
-        }
-        submit();
-        if let Some(probes) = probes {
-            // The query, if any, was begun on this live immediate context.
-            unsafe { probes.sun_after_raw_draw(context) };
-        }
-        return;
-    }
-    if current_pass_id() == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8
-        && vertex_count == 6
-        && start_vertex == 0
-        && probes.is_some_and(|probes| unsafe { probes.water_proxy_draw(context, &submit) })
-    {
-        return;
-    }
-    if current_pass_id() == RenderPassId::RP_POSTEFFECTS as u8
-        && (vertex_count, start_vertex) == (3, 0)
-        && probes.is_some_and(|probes| unsafe { probes.dof_draw(context, &submit) })
-    {
-        return;
-    }
-    if current_pass_id() == RenderPassId::RP_FOG_VOLUME_GENERATE as u8
-        && (vertex_count, start_vertex) == (3, 0)
-        && probes.is_some_and(|probes| unsafe { probes.fog_generation_draw(context, &submit) })
-    {
-        return;
-    }
-    if current_pass_id() == RenderPassId::RP_FOG_VOLUME_APPLY as u8
-        && (vertex_count, start_vertex) == (3, 0)
-        && let Some(probes) = probes
-    {
-        unsafe { probes.fog_inputs(context) };
-    }
-    let _cascade = probes
-        .and_then(|probes| unsafe { probes.resolve_draw(context, vertex_count, start_vertex) });
-    let ssr = probes
-        .and_then(|probes| unsafe { probes.ssr_before_draw(context, vertex_count, start_vertex) });
-    submit();
-    drop(ssr);
-    if let Some(probes) = probes {
-        unsafe { probes.ssr_after_draw(context, vertex_count, start_vertex) };
-    }
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    let _sun_depth = (current_pass_id() == RenderPassId::RP_SUN as u8)
+        .then(|| unsafe { preserve_far_depth(context) });
+    submit(Route::AsIssued);
 }
 
 /// Render passes whose non-indexed draws are **geometry**, not a viewport-covering triangle.
@@ -416,7 +367,7 @@ fn promotes_non_indexed(pass: u8) -> bool {
 /// land in the left eye's half. The tessellated particles (`particleeffecttess*`) are such a
 /// pipeline, with a vertex shader the `cb0` remap patches and clip built in the domain shader.
 fn promote_non_indexed(
-    probes: Option<&dyn SinglePassProbes>,
+    probes: Option<&'static dyn CaptureProbes>,
     context: *mut c_void,
     vertex_count: u32,
     start_vertex: u32,
@@ -434,8 +385,9 @@ fn promote_non_indexed(
     probes::submit(
         probes,
         context,
-        "draw_promoted",
-        [vertex_count.into(), 2, start_vertex.into(), 0, 0],
+        RawDrawKind::NonIndexed,
+        Route::Promoted,
+        DrawArgs::Direct([vertex_count.into(), 2, start_vertex.into(), 0, 0]),
         // SAFETY: `DrawInstanced` is not detoured, so the promotion is not seen again as a game draw;
         // the arguments are the caller's, with the instance count doubled.
         || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
@@ -482,39 +434,50 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
 ) {
     let _timing = detour_timing::enter();
     let probes = probes::armed();
-    // SAFETY: `context` is the live immediate context this entry was called on.
+    let args = DrawArgs::Indirect {
+        buffer: buffer_for_args,
+        offset: aligned_byte_offset,
+    };
+    let draw = GameDraw {
+        context,
+        entry: RawDrawKind::IndexedInstancedIndirect,
+        args,
+    };
+    // SAFETY (all three calls): `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
-    let _lake = water
-        .filter(|_| _reflection.is_none())
-        .and_then(water_pixel_variants::bind);
-    // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { raw_entry(probes, RawDrawKind::IndexedInstancedIndirect, context) };
+    let scope = unsafe { probes::draw_scope(probes, &draw) };
+    let _lake = bind_water_variant(water, scope.as_ref());
+    let _bound = unsafe { probes::draw_bound(probes, &draw) };
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
         .expect("set before enable");
     if vegetation_once::active()
-        && vegetation_once::draw_indexed_instanced_indirect(context, buffer_for_args, &|args| {
+        && vegetation_once::draw_indexed_instanced_indirect(context, buffer_for_args, &|doubled| {
             probes::submit(
                 probes,
                 context,
-                "indexed_instanced_indirect_promoted",
-                [aligned_byte_offset.into(), 0, 0, 0, 0],
+                RawDrawKind::IndexedInstancedIndirect,
+                Route::Promoted,
+                DrawArgs::Indirect {
+                    buffer: doubled,
+                    offset: aligned_byte_offset,
+                },
                 // SAFETY: the caller's draw against the doubled copy of its arguments, at the same
                 // offset, through the trampoline.
-                || unsafe { detour.call(context, args, aligned_byte_offset) },
+                || unsafe { detour.call(context, doubled, aligned_byte_offset) },
             )
         })
     {
         return;
     }
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let submit = |_| {
+    let submit = |eye: Option<usize>| {
         probes::submit(
             probes,
             context,
-            "indexed_instanced_indirect",
-            [aligned_byte_offset.into(), 0, 0, 0, 0],
+            RawDrawKind::IndexedInstancedIndirect,
+            eye.map_or(Route::AsIssued, Route::PerEye),
+            args,
             || unsafe { detour.call(context, buffer_for_args, aligned_byte_offset) },
         )
     };
@@ -530,44 +493,34 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 ) {
     let _timing = detour_timing::enter();
     let probes = probes::armed();
-    // SAFETY: `context` is the live immediate context this entry was called on.
+    let args = DrawArgs::Indirect {
+        buffer: buffer_for_args,
+        offset: aligned_byte_offset,
+    };
+    let draw = GameDraw {
+        context,
+        entry: RawDrawKind::InstancedIndirect,
+        args,
+    };
+    // SAFETY (all three calls): `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
-    let _lake = water
-        .filter(|_| _reflection.is_none())
-        .and_then(water_pixel_variants::bind);
-    // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { raw_entry(probes, RawDrawKind::InstancedIndirect, context) };
+    let scope = unsafe { probes::draw_scope(probes, &draw) };
+    let _lake = bind_water_variant(water, scope.as_ref());
+    let _bound = unsafe { probes::draw_bound(probes, &draw) };
     let detour = DRAW_INSTANCED_INDIRECT.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let trace = probes.and_then(|probes| probes.patch_draw_select());
-    let submit = |expected| unsafe {
-        let guard = probes.zip(trace).and_then(|(probes, secondary)| {
-            probes.patch_draw_observe(context, aligned_byte_offset, expected, secondary)
-        });
-        probes::submit_indirect(
+    let submit = |eye: Option<usize>| {
+        probes::submit(
             probes,
             context,
-            buffer_for_args,
-            aligned_byte_offset,
-            || detour.call(context, buffer_for_args, aligned_byte_offset),
-        );
-        drop(guard);
+            RawDrawKind::InstancedIndirect,
+            eye.map_or(Route::AsIssued, Route::PerEye),
+            args,
+            || unsafe { detour.call(context, buffer_for_args, aligned_byte_offset) },
+        )
     };
-    let bracket =
-        trace == Some(false) && probes.is_some_and(|probes| probes.patch_camera_experiment());
-    let owners = probes.is_some_and(|probes| probes.patch_owners_before(aligned_byte_offset));
-    if bracket && let Some(probes) = probes {
-        probes.capture_patch_submission(false);
-    }
     if !indirect_per_eye(context, &submit) {
         submit(None);
-    }
-    if owners && let Some(probes) = probes {
-        probes.patch_owners_after(aligned_byte_offset);
-    }
-    if bracket && let Some(probes) = probes {
-        probes.capture_patch_submission(true);
     }
 }
 
@@ -653,27 +606,31 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
 ) {
     let _timing = detour_timing::enter();
     let probes = probes::armed();
-    // SAFETY: `context` is the live immediate context this entry was called on.
+    let args = [
+        index_count_per_instance.into(),
+        instance_count.into(),
+        start_index.into(),
+        base_vertex.into(),
+        start_instance.into(),
+    ];
+    let draw = GameDraw {
+        context,
+        entry: RawDrawKind::IndexedInstanced,
+        args: DrawArgs::Direct(args),
+    };
+    // SAFETY (all three calls): `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
-    let _reflection = probes.and_then(|probes| unsafe { probes.reflection_treatment(context) });
-    let _lake = water
-        .filter(|_| _reflection.is_none())
-        .and_then(water_pixel_variants::bind);
-    // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { raw_entry(probes, RawDrawKind::IndexedInstanced, context) };
+    let scope = unsafe { probes::draw_scope(probes, &draw) };
+    let _lake = bind_water_variant(water, scope.as_ref());
+    let _bound = unsafe { probes::draw_bound(probes, &draw) };
     let detour = DRAW_INDEXED_INSTANCED.get().expect("set before enable");
-    let submit = || {
+    let submit = |route| {
         probes::submit(
             probes,
             context,
-            "indexed_instanced",
-            [
-                index_count_per_instance.into(),
-                instance_count.into(),
-                start_index.into(),
-                base_vertex.into(),
-                start_instance.into(),
-            ],
+            RawDrawKind::IndexedInstanced,
+            route,
+            DrawArgs::Direct(args),
             || {
                 // SAFETY: forwards the caller's arguments unchanged to the trampoline.
                 unsafe {
@@ -693,14 +650,15 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         probes::submit(
             probes,
             context,
-            "indexed_instanced_promoted",
-            [
+            RawDrawKind::IndexedInstanced,
+            Route::Promoted,
+            DrawArgs::Direct([
                 index_count_per_instance.into(),
                 doubled.into(),
                 start_index.into(),
                 base_vertex.into(),
                 start_instance.into(),
-            ],
+            ]),
             // SAFETY: the caller's arguments with the instance count doubled, through the
             // trampoline so the mod's own draw is not seen again as a game draw.
             || unsafe {
@@ -720,7 +678,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
             context,
             instance_count,
             &submit_promoted,
-            &submit,
+            &|eye| submit(Route::PerEye(eye)),
         )
     {
         return;
@@ -745,8 +703,8 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
                 record_instanced_case(instance_count, true);
                 return;
             }
-            let handled =
-                flags.has(SinglePassSwitch::InstancedPerEye) && instanced_per_eye(&submit);
+            let handled = flags.has(SinglePassSwitch::InstancedPerEye)
+                && instanced_per_eye(&|eye| submit(Route::PerEye(eye)));
             record_instanced_case(instance_count, handled);
             if handled {
                 return;
@@ -761,7 +719,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
             }
         }
     }
-    submit();
+    submit(Route::AsIssued);
 }
 
 /// Draw a hardware-instanced draw once for both eyes through its layout's step-rate-doubled twin
@@ -823,7 +781,7 @@ pub(super) fn hw_instanced_once(
 /// pinned would collapse the rest of the frame's geometry to one eye. The viewport is put back exactly
 /// as it was found rather than to the recorded full width, so a following draw that inherits the
 /// viewport (an indirect draw, which nothing detours) sees no trace of the pin.
-pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
+pub(super) fn instanced_per_eye(submit: &dyn Fn(usize)) -> bool {
     let Some(full) = viewport_record::scene_viewport() else {
         return false;
     };
@@ -844,7 +802,7 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
             break;
         }
         bind_both_viewport_slots(d3d, eye_half_viewport(full, eye));
-        submit();
+        submit(eye);
         submitted += 1;
     }
 
@@ -862,18 +820,13 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
     submitted > 0
 }
 
-/// Hand a submission arriving at a draw entry to the probes, while armed.
-///
-/// # Safety
-///
-/// `context` must be the live immediate context the detoured entry was called on.
-unsafe fn raw_entry(
-    probes: Option<&dyn SinglePassProbes>,
-    kind: RawDrawKind,
-    context: *mut c_void,
-) {
-    if let Some(probes) = probes {
-        // SAFETY: per this function's contract.
-        unsafe { probes.raw_entry(kind, context) };
-    }
+/// Bind the packed water's pixel-shader variant for a draw on `water`, unless a probe's `scope` binds
+/// the draw's pixel shader itself.
+fn bind_water_variant<'a>(
+    water: Option<&'a ID3D11DeviceContext>,
+    scope: Option<&DrawScope>,
+) -> Option<water_pixel_variants::Restore<'a>> {
+    water
+        .filter(|_| !scope.is_some_and(|scope| scope.binds_pixel_shader))
+        .and_then(water_pixel_variants::bind)
 }

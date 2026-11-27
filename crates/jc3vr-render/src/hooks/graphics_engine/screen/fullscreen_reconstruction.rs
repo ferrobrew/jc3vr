@@ -62,7 +62,9 @@ use jc3vr_view::stereo::config::SinglePassSwitch;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    hooks::graphics_engine::{probes, probes::scoped, reconstruction},
+    hooks::graphics_engine::reconstruction,
+    probes,
+    probes::BlockScope,
     stereo::single_pass::{ambient_occlusion, config_flags, screen_space_reflection},
 };
 
@@ -84,11 +86,12 @@ fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *co
     let enabled = config_flags().has(SinglePassSwitch::SsaoPerEye)
         && jc3vr_view::stereo::layout::collapse_active();
     let _rows = enabled.then(ambient_occlusion::bind_eye_rows).flatten();
-    scoped(
-        probes::armed(),
-        |probes, body| probes.ambient_occlusion_scope(body),
-        || SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info),
-    );
+    // SAFETY: the scope carries no pointer.
+    unsafe {
+        probes::block_scope(BlockScope::AmbientOcclusion, || {
+            SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info)
+        })
+    };
 }
 
 /// `CRenderBlockScreenSpaceReflection::Draw`, run once with each eye's rows bound for its rewritten
@@ -114,11 +117,12 @@ fn ssr_draw(
     let _rows = context
         .filter(|_| enabled)
         .and_then(screen_space_reflection::bind_eye_rows);
-    scoped(
-        probes::armed(),
-        |probes, body| probes.screen_space_reflection_scope(body),
-        || SSR_DRAW.get().unwrap().call(this, rc, info),
-    );
+    // SAFETY: the scope carries no pointer.
+    unsafe {
+        probes::block_scope(BlockScope::ScreenSpaceReflection, || {
+            SSR_DRAW.get().unwrap().call(this, rc, info)
+        })
+    };
 }
 
 /// `CRenderBlockScreenSpaceSubSurfaceSkin::Draw`, split per eye.

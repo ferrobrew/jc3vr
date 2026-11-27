@@ -41,10 +41,14 @@ use windows::{
     core::Interface,
 };
 
-use crate::stereo::single_pass::{
-    BOUND_VS, CollapseViewport, DRAW_INDEXED_INSTANCED, SinglePassSwitch, bind_both_viewport_slots,
-    config_flags, current_pass_id, ensure_collapse_viewport, eye_split_state, hw_instanced_once,
-    instanced_per_eye, probes,
+use crate::{
+    probes,
+    probes::{DrawArgs, RawDrawKind, Route},
+    stereo::single_pass::{
+        BOUND_VS, CollapseViewport, DRAW_INDEXED_INSTANCED, SinglePassSwitch,
+        bind_both_viewport_slots, config_flags, current_pass_id, ensure_collapse_viewport,
+        eye_split_state, hw_instanced_once, instanced_per_eye,
+    },
 };
 
 /// Draw a bark or foliage block once for both eyes, reporting whether it did; `false` leaves the
@@ -111,14 +115,15 @@ pub(super) fn draw_indexed(
     probes::submit(
         probes::armed(),
         context,
-        "indexed_promoted",
-        [
+        RawDrawKind::Indexed,
+        Route::Promoted,
+        DrawArgs::Direct([
             index_count.into(),
             2,
             start_index.into(),
             base_vertex.into(),
             0,
-        ],
+        ]),
         // SAFETY: the caller's arguments as two instances, through the trampoline so the mod's own
         // draw is not seen again as a game draw.
         || unsafe { instanced.call(context, index_count, 2, start_index, base_vertex, 0) },
@@ -129,13 +134,14 @@ pub(super) fn draw_indexed(
 /// Handle a hardware-instanced draw inside a single-drawn block: once through a layout twin when
 /// there is one, otherwise re-issued per eye with `cb13` pinned to each eye, with the variant bound
 /// either way. Without a variant it is still re-issued per eye, without parallax. `submit_doubled`
-/// submits the caller's draw with the instance count it is given; `submit` submits it unchanged.
+/// submits the caller's draw with the instance count it is given; `submit_eye` submits it unchanged
+/// for the eye it is given.
 #[inline]
 pub(super) fn draw_indexed_instanced(
     context: *mut c_void,
     instance_count: u32,
     submit_doubled: &dyn Fn(u32),
-    submit: &dyn Fn(),
+    submit_eye: &dyn Fn(usize),
 ) -> bool {
     // SAFETY: `context` is the live immediate context the detoured entry was called on.
     let Some(ctx) = (unsafe { ID3D11DeviceContext::from_raw_borrowed(&context) }) else {
@@ -148,7 +154,7 @@ pub(super) fn draw_indexed_instanced(
     let once = variant.is_some()
         && config_flags().has(SinglePassSwitch::HwInstancedOnce)
         && hw_instanced_once(context, instance_count, submit_doubled);
-    once || instanced_per_eye(submit)
+    once || instanced_per_eye(submit_eye)
 }
 
 /// Handle a GPU-indirect draw inside a single-drawn block: issued once against the copy of its

@@ -15,8 +15,7 @@ pub(crate) mod constants;
 pub(crate) mod draw_census;
 mod options;
 pub(crate) mod patch_draw;
-pub mod register_pipeline;
-pub mod register_single_pass;
+pub mod register_probes;
 pub(crate) mod resolve_probe;
 pub(crate) mod rewrites;
 mod sidecar;
@@ -28,9 +27,9 @@ pub(crate) mod water_gpu_probe;
 
 use jc3vr_core::config::engine::Snapshot;
 use jc3vr_render::{
-    capture_arming::{Arming, arm},
     image_writer,
     image_writer::{ImageTarget, WriteOutcome},
+    probes::{Arming, arm},
     screenshot::{CaptureSource, read_back},
 };
 use jc3vr_view::stereo::{dispatch, dispatch::RenderMode};
