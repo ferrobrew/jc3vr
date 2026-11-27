@@ -24,6 +24,8 @@
 //!
 //! The gameplay crate composes the registrations and the hook libraries:
 //!
+//! - [`contributions`]: what the crate reads from the crates above it, one record the vehicle
+//!   handling registers, which the install's registration check requires.
 //! - [`controllers::physical_hands::register_body::register`] fills the body crate's
 //!   registrations the physical hands contribute to, and the gameplay crate's install calls it.
 //! - The hook libraries, which the gameplay crate and the payload enable in their established
@@ -39,6 +41,7 @@
 //! The crate's own tests register a configuration root of their own (`test_config`), since the
 //! payload's aggregate is not there, and use the body crate's `test-support` fixtures.
 
+pub mod contributions;
 pub mod controllers;
 
 #[cfg(test)]
