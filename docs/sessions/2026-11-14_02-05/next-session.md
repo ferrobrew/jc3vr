@@ -186,6 +186,8 @@ The restructure of #77: the layer crates, the registration, the staged ticks, th
 144. Strike glass with a held prop and with a bullet: it breaks where it did.
 145. Spawn a few weapons and vehicles from the spawner: they spawn, and the weapons show their names.
 146. Acts, now decided in one place: starts and stops straighten and a standing turn plays the game's turn-in-place; in a vehicle Rico does not look back when reversing; no automatic holster, but a deliberate one works; a slide skips the wind-up starts; with the evade off the barrel roll is dropped; swapping the primary mid-draw aborts the clip.
+147. Wingsuit arm steering: bank and pitch with the arms: the suit turns and pitches the way the arms say, not mirrored, and the response is neither sluggish nor twitchy. Note the slowdown before a stall: it warns before the stall rather than dropping out of the air.
+148. Parachute handles: reach up for both handles: they sit where the hands find them, and the pull threshold neither fires early nor needs a yank. Pull both to brake: note whether the brake is strong enough to land softly.
 
 ## What was built for the deferred work
 
