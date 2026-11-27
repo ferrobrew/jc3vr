@@ -58,6 +58,9 @@ pub struct GrapplePermissions {
     pub release: bool,
     /// A hold starts tightening, or the current hold already tightens.
     pub tighten: bool,
+    /// The button is the lock's: the reel carries the character on a line the lock can hold, or
+    /// the lock already holds it. Never in a vehicle seat, where the lock does not run.
+    pub lock: bool,
 }
 
 /// One tick of the button, for [`GrappleButton::step`].
@@ -202,16 +205,28 @@ impl GrappleButton {
         if self.snatch_owned || self.traversal_spent {
             return GrapplePermissions::default();
         }
+        // While the reel is the lock's, a press locks rather than tightens, so a fresh press is
+        // offered the lock alone.
+        let lock_owns_press = context.reeling && !context.seated;
         let tighten = match self.phase {
             Phase::Idle | Phase::TapWaiting { .. } | Phase::Pressed { .. } => {
-                context.tethers && !context.aim_target
+                context.tethers && !context.aim_target && !lock_owns_press
             }
             Phase::Tightening { .. } => true,
             Phase::Firing | Phase::Spent | Phase::Passing | Phase::Locking { .. } => false,
         };
+        let lock = !context.seated
+            && match self.phase {
+                Phase::Locking { .. } => true,
+                Phase::Idle | Phase::TapWaiting { .. } | Phase::Passing => context.reeling,
+                Phase::Pressed { .. } | Phase::Firing | Phase::Tightening { .. } | Phase::Spent => {
+                    false
+                }
+            };
         GrapplePermissions {
             release: context.tethers,
             tighten,
+            lock,
         }
     }
 
@@ -710,6 +725,7 @@ mod tests {
                     let expected = GrapplePermissions {
                         release: tethers,
                         tighten: tethers && !aim_target,
+                        lock: false,
                     };
                     assert_eq!(g.current_permissions(context), expected);
                     assert_eq!(g.current_permissions(context), expected);
@@ -794,6 +810,7 @@ mod tests {
                 GrapplePermissions {
                     release: tethers,
                     tighten: true,
+                    lock: false,
                 }
             );
             assert!(apply(&mut g, HELD, context).tighten.is_some());
@@ -814,6 +831,7 @@ mod tests {
             GrapplePermissions {
                 release: true,
                 tighten: false,
+                lock: false,
             }
         );
         let out = apply(&mut g, HELD, TETHERS);
@@ -1322,5 +1340,51 @@ mod tests {
         assert!(!g.physical_button_held(true), "still spent while held");
         g.observe_spent_neutral(UP, true);
         assert!(g.physical_button_held(true));
+    }
+
+    #[test]
+    fn the_lock_owns_the_button_while_reeling_so_tighten_is_not_offered_beside_it() {
+        let reeling = GrappleContext {
+            tethers: true,
+            ..REELING
+        };
+        let mut g = GrappleButton::new();
+        assert_eq!(
+            g.current_permissions(reeling),
+            GrapplePermissions {
+                release: true,
+                tighten: false,
+                lock: true,
+            }
+        );
+        g.step(tick(PRESS, reeling));
+        assert_eq!(
+            g.current_permissions(reeling),
+            GrapplePermissions {
+                release: true,
+                tighten: false,
+                lock: true,
+            }
+        );
+        // The lock stays offered, as the way out, once the reel has ended under a held press.
+        let ended = GrappleContext {
+            reeling: false,
+            ..reeling
+        };
+        assert!(g.current_permissions(ended).lock);
+        g.step(tick(UP, ended));
+        let permissions = g.current_permissions(ended);
+        assert!(!permissions.lock);
+        assert!(permissions.tighten);
+    }
+
+    #[test]
+    fn the_lock_is_never_offered_in_a_seat() {
+        let seated = GrappleContext {
+            seated: true,
+            ..REELING
+        };
+        let g = GrappleButton::new();
+        assert!(!g.current_permissions(seated).lock);
     }
 }

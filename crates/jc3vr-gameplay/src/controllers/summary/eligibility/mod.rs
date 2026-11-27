@@ -42,6 +42,9 @@ pub(crate) struct Eligibility {
     pub tethers: bool,
     /// The grapple-button owner permits tightening in its current phase and aim context.
     pub tighten: bool,
+    /// The grapple-button owner permits the lock: the reel carries the character on a line the
+    /// lock can hold, or the lock already holds it.
+    pub lock: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -96,6 +99,7 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
                     | ModAction::MapZoom => true,
                     ModAction::ReleaseTethers => snapshot.tethers,
                     ModAction::TightenTethers => snapshot.tighten,
+                    ModAction::LockLine => snapshot.lock,
                     _ => snapshot.mechanics.iter().any(|mechanic| {
                         mechanic.control == row.control
                             && mechanic.gesture == row.gesture
@@ -135,6 +139,7 @@ pub(crate) fn resolve(rows: &[Row], snapshot: &Eligibility) -> EligibilityReport
         let permitted = match row.effect {
             Effect::Mod(ModAction::ReleaseTethers) => snapshot.tethers,
             Effect::Mod(ModAction::TightenTethers) => snapshot.tighten,
+            Effect::Mod(ModAction::LockLine) => snapshot.lock,
             Effect::Mod(_) => true,
             Effect::Actions(_) => false,
         };

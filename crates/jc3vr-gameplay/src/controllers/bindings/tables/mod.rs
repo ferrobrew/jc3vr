@@ -903,6 +903,7 @@ mod grapple_permission_tests {
         let expected = GrapplePermissions {
             release: true,
             tighten: true,
+            lock: false,
         };
         assert_eq!(bindings.grapple_permissions(context), expected);
         assert_eq!(bindings.grapple_permissions(context), expected);

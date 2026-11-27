@@ -351,6 +351,7 @@ fn capture_current(
         native_reload: reload_permissions.native_reload,
         held_holster: reload_permissions.held_holster,
         tighten: input.grapple.tighten,
+        lock: input.grapple.lock,
         tethers: input.grapple.release,
     }
 }

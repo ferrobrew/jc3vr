@@ -470,6 +470,24 @@ fn reload_permissions_do_not_restore_missing_or_trigger_blocked_routes() {
 }
 
 #[test]
+fn the_lock_row_shows_only_while_the_lock_is_permitted() {
+    let row = Row {
+        control: Control::B(Hand::Left),
+        gesture: Gesture::Hold,
+        effect: Effect::Mod(ModAction::LockLine),
+    };
+    for lock in [false, true] {
+        let mut snapshot = snapshot([true; 2], [TriggerUse::Free; 2]);
+        snapshot.lock = lock;
+        snapshot.mechanics = vec![row.clone()];
+        for described in [std::slice::from_ref(&row), &[][..]] {
+            let report = eligibility::resolve(described, &snapshot);
+            assert_eq!(report.context.usable.contains(&row), lock);
+        }
+    }
+}
+
+#[test]
 fn release_and_tighten_permissions_are_independent_even_for_exact_mechanic_rows() {
     let rows = [
         Row {

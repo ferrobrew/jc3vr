@@ -517,6 +517,7 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
                     modded(ModAction::ReleaseTethers),
                 );
                 add(control, Gesture::Hold, modded(ModAction::TightenTethers));
+                add(control, Gesture::Hold, modded(ModAction::LockLine));
             }
         }
     }

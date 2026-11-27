@@ -157,6 +157,8 @@ pub enum ModAction {
     ReleaseTethers,
     /// Tighten the tethers: the grapple held with nothing new under the aim.
     TightenTethers,
+    /// Lock the line's length while the hook reels the character in, and swing from it.
+    LockLine,
     /// Steady a two-handed weapon by its foregrip.
     Foregrip,
     /// Take a round from the belt pouch and push it into the gun's well.
