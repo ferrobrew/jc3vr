@@ -1,9 +1,7 @@
 //! The already-instanced draw exposure: how much geometry reaches the eye-split as an instanced draw
 //! the collapse cannot simply double, and which shaders it belongs to.
 //!
-//! Split out of the parent module because it is measurement rather than mechanism: nothing here
-//! changes what is drawn. It is the largest single resident of that module and the one whose absence
-//! makes the rest legible.
+//! Measurement rather than mechanism: nothing here changes what is drawn.
 
 use std::{
     collections::BTreeMap,
@@ -45,7 +43,7 @@ pub(super) fn record_instanced_case(instance_count: u32, handled: bool) {
 ///
 /// The out-of-range patched bucket is the one that matters: those draws route their odd-parity
 /// instances through viewport slot 1 in a pass that was never eye-split, so they depend entirely on
-/// slot 1 being a valid duplicate of slot 0 (see [`unify_viewport_slots`]).
+/// slot 1 being a valid duplicate of slot 0 (see `viewport::unify_viewport_slots`).
 pub(super) fn record_instanced_bystander(patched: bool, in_range: bool, instance_count: u32) {
     let (draws, instances) = match (patched, in_range) {
         (true, false) => (
@@ -122,11 +120,11 @@ impl InstancedOffender {
 
 /// The already-instanced draws issued with a patched vertex shader bound, attributed to that shader
 /// and keyed by its `ID3D11VertexShader` pointer. Cumulative over the [`diagnostic_frame`]s sampled
-/// (see [`attribute_instanced_draw`]), and cleared alongside [`PATCHED_VS`] (whose released pointers
-/// can be recycled).
+/// (see [`attribute_instanced_draw`]), and cleared alongside the patched-shader set (whose released
+/// pointers can be recycled).
 static INSTANCED_OFFENDERS: Mutex<BTreeMap<usize, InstancedOffender>> = Mutex::new(BTreeMap::new());
 
-/// One frame's already-instanced draw exposure. See [`draw_indexed_instanced_detour`].
+/// One frame's already-instanced draw exposure. See `draw_detours::draw_indexed_instanced_detour`.
 #[derive(Clone, Copy, Default, Debug, serde::Serialize)]
 pub struct InstancedExposure {
     /// Every `DrawIndexedInstanced` the game issued, anywhere in the frame.
@@ -271,10 +269,10 @@ static INSTANCED_HISTORY: Mutex<ExposureHistory> = Mutex::new(ExposureHistory {
 });
 
 /// Fold the frame's exposure counters into the history and clear them. Called once per frame from
-/// [`log_draw_split`], at the end of the G-buffer range -- so the out-of-range buckets carry the
-/// passes that ran *before* the range this frame (shadow, reflection) together with the ones that ran
-/// *after* it last frame (scene tail, post, UI). In steady state the totals are the frame's; a
-/// single frame's split is only approximately aligned with it.
+/// [`begin_frame`](crate::stereo::single_pass::begin_frame) on the game thread, which can run while
+/// the draw thread is still walking the previous frame's dispatch. In steady state the totals are a
+/// frame's worth; a single frame's window is only approximately aligned with the frame it is
+/// reported against.
 pub(super) fn accumulate_instanced_exposure() -> InstancedExposure {
     let frame = InstancedExposure {
         total: INSTANCED_TOTAL.swap(0, Ordering::Relaxed) as u32,
@@ -305,7 +303,8 @@ pub fn instanced_exposure() -> InstancedExposureReport {
 }
 
 /// Clear the accumulated exposure history and per-shader attribution, so the reported numbers cover
-/// one clean pass over the shader set (called from [`reset_patched_vs`], on a shader reload).
+/// one clean pass over the shader set (called from
+/// [`reset_patched_vs`](crate::stereo::single_pass::reset_patched_vs), on a shader reload).
 pub(super) fn reset_instanced_exposure() {
     *INSTANCED_HISTORY.lock() = ExposureHistory::default();
     INSTANCED_OFFENDERS.lock().clear();
@@ -360,7 +359,8 @@ pub fn instanced_offenders(limit: usize) -> Vec<InstancedOffenderReport> {
     offenders
 }
 
-/// Log the already-instanced draw handling, at the same 120-frame cadence as the draw split. Emitted
+/// Log the already-instanced draw handling, at the draw split's cadence
+/// ([`DIAGNOSTIC_FRAME_CADENCE`]). Emitted
 /// only once there is something to report, so a session where the case never arises stays quiet.
 pub(super) fn log_instanced_exposure(frame: InstancedExposure) {
     if frame.handled == 0 && frame.affected == 0 && frame.out_of_range_patched == 0 {

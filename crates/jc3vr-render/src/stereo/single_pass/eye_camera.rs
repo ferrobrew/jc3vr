@@ -33,9 +33,8 @@
 //! with both slots holding the staged rows when the camera rows are not moved per eye.
 //!
 //! [`dxbc_stereo::localize_velocity`] reads the same boundary, and two rows after it, to write the
-//! velocity pass's motion vectors in each eye's screen space: in an
-//! eye-split pass the rows map a pixel position to the clip space of the eye whose half it lies in,
-//! and carry each eye's map from the render camera's previous clip space to its own (the `M_eye` the
+//! velocity pass's motion vectors in each eye's screen space: in an eye-split pass the rows map a
+//! pixel position to the clip space of the eye whose half it lies in, and carry each eye's map from the render camera's previous clip space to its own (the `M_eye` the
 //! `cb13` reprojection reads, corrected for the camera's previous projection), which the previous
 //! position is taken through; everywhere else they are zero, which leaves the engine's vectors as
 //! they are.
@@ -185,8 +184,8 @@ pub fn velocity_counts() -> (usize, usize) {
 }
 
 /// Each eye's map from the render camera's previous clip space to its own, as the last eye-split
-/// pass published it to the velocity rewrite: what FSR's velocity
-/// decode needs to know which previous camera the motion vectors were encoded against.
+/// pass published it to the velocity rewrite: what FSR's velocity decode needs to know which
+/// previous camera the motion vectors were encoded against.
 pub(crate) fn velocity_maps() -> Option<[glam::Mat4; 2]> {
     *LAST_VELOCITY_MAPS.lock()
 }
@@ -493,7 +492,8 @@ fn compose(
 }
 
 /// The velocity rewrite's rows for the eye halves of `full` and each eye's map from the render
-/// camera's previous clip space to its own, or `None` for a degenerate viewport or a map that is not finite.
+/// camera's previous clip space to its own, or `None` for a degenerate viewport or a map that is not
+/// finite.
 ///
 /// The pixel row maps a pixel position to clip space in its eye's half, `x` from the eye's left edge
 /// over the eye's width and `y` from the target's top edge over its height, and its `.w` tells the

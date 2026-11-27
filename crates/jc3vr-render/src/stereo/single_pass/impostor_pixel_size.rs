@@ -4,9 +4,9 @@
 //! stages the impostor vertex shader's `PixelSize` as one over the render context's display width,
 //! which under the double-wide collapse is the width of both eyes. The shader measures each card's
 //! clip-space extent through a single eye's projection and divides by that pixel size to get the
-//! card's footprint in pixels, so the footprint came out twice as wide as in an eye-sized render, and
-//! the pixel shader's atlas-coordinate offset, which scales the coordinate derivatives by it, moved
-//! every card's alpha-tested silhouette. For the length of the call the display width is halved to
+//! card's footprint in pixels, so left alone the footprint comes out twice as wide as in an eye-sized
+//! render, and the pixel shader's atlas-coordinate offset, which scales the coordinate derivatives by
+//! it, moves every card's alpha-tested silhouette. For the length of the call the display width is halved to
 //! one eye's, then put back.
 
 use jc3gi::graphics_engine::graphics_engine::RenderContext;

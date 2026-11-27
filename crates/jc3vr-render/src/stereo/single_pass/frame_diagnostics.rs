@@ -32,7 +32,7 @@ pub struct EyeDiagnostics {
 }
 
 /// A serializable snapshot of the whole frame's single-pass matrix state, refreshed each time
-/// [`compute_dual_eye_rows`] runs and dumped alongside an F12 screenshot ([`last_frame_diagnostics`]).
+/// `cb13::compute_dual_eye_rows` runs and dumped alongside an F12 screenshot ([`last_frame_diagnostics`]).
 #[derive(Clone, serde::Serialize)]
 pub struct FrameDiagnostics {
     pub single_pass: bool,

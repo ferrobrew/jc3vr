@@ -64,7 +64,8 @@ pub fn registered_count() -> usize {
     REGISTERED.load(Ordering::Relaxed)
 }
 
-/// Marks the glare chain as running for its lifetime, when the collapse is live. Entered on the render thread around `GlareEffect::Apply`.
+/// Marks the glare chain as running for its lifetime, when the collapse is live. Entered on the
+/// render thread around `GlareEffect::Apply`.
 pub(crate) struct Scope {
     entered: bool,
 }

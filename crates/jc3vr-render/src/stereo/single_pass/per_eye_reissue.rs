@@ -18,8 +18,8 @@ use crate::{
     stereo::single_pass::{static_lights, *},
 };
 
-/// One eye's re-issue of a terrain-detail draw: the reprojected `cb1` (four float4 rows) to stage on
-/// vertex slot 1, and the eye-half viewport to render into.
+/// One eye's re-issue of a terrain-detail draw: the eye's `cb1` (four float4 rows) to stage on vertex
+/// slot 1.
 pub(super) struct TerrainDetailEyePass {
     cb1: [f32; 16],
 }
@@ -37,8 +37,8 @@ pub(super) struct TerrainDetailEyePass {
 /// view-projection and camera position), through the engine's own product, so it is the buffer an
 /// isolated render of the eye stages, bit for bit. Reprojecting the centre's buffer by `M_eye`
 /// instead is exact only in real arithmetic: in floats it moves one eye's terrain depth by up to
-/// about one part in ten thousand over the whole ground.
-/// `cb1[4]` (the LOD-fade position) is left untouched. `this` and `rc` are the
+/// about one part in ten thousand over the whole ground. `cb1[4]` (the LOD-fade position) is left
+/// untouched. `this` and `rc` are the
 /// [`RenderBlockTerrainDetail`] and [`RenderContext`] the block's `Draw` received.
 ///
 /// # Safety
@@ -221,7 +221,7 @@ pub(super) struct PerEyeReissue {
 
 impl PerEyeReissue {
     /// Saves and restores the previous marker rather than clearing it, the same shape
-    /// [`set_current_pass`] uses. Nothing today re-issues inside a re-issue -- no intercepted block's
+    /// [`set_current_pass`] uses. Nothing re-issues inside a re-issue -- no intercepted block's
     /// `Draw` reaches another intercepted block's `Draw` -- but nothing states or enforces that
     /// either, and clearing would un-guard the remainder of the outer loop the moment it stopped
     /// holding: this module's own draw detours would start splitting geometry the outer re-issue had
@@ -282,8 +282,7 @@ pub(crate) enum BoundVsGate {
     Checked,
     /// Run regardless. For a block whose shaders are declined at creation while its own flag is on
     /// ([`baked_cb_block_owns_vs`], a decline both creation paths honour), so none of them can be
-    /// patched — and where the check would be
-    /// wrong anyway: it reads the shader bound by the *previous* draw, since the block binds its own
+    /// patched -- and where the check would be wrong anyway: it reads the shader bound by the *previous* draw, since the block binds its own
     /// inside the `Draw` being wrapped. A bark block drawn between two patched model draws would stand
     /// down on the neighbour's shader and lose its parallax.
     Owned,
@@ -345,11 +344,10 @@ pub(super) fn eye_split_state() -> Option<([glam::Mat4; 2], D3D11_VIEWPORT, Engi
     Some((m_eye, full, d3d))
 }
 
-/// Re-issue a render block's `Draw` once per eye, reprojecting the four `float4` entries the block bakes
-/// on `rc`'s graphics context at (`cb_index`, `reg_offset`) by that eye's `M_eye` and binding the eye's
-/// half-viewport. Returns `false`
-/// when the intercept must not run (collapse inactive, or the dual-eye state not yet published), in which
-/// case the caller draws normally once.
+/// Re-issue a render block's `Draw` once per eye, reprojecting the four `float4` entries the block
+/// bakes on `rc`'s graphics context at (`cb_index`, `reg_offset`) by that eye's `M_eye` and binding
+/// the eye's half-viewport. Returns `false` when the intercept must not run (see
+/// [`baked_cb_intercept_ready`]), in which case the caller draws normally once.
 ///
 /// The block writes its view-projection into a constant buffer inside its own `Draw`, so rather than
 /// replicate that bake, this arms [`set_vertex_program_constants_detour`] to reproject the block's own
@@ -572,9 +570,9 @@ pub(super) static SET_VERTEX_PROGRAM_CONSTANTS: DetourSlot<SetVertexProgramConst
 /// The transform is applied entry-wise (`M_eye · cb[k]`) because the vertex shaders that consume these
 /// registers build clip with a multiply-add chain (`clip = Σ_i p_i · cb[k+i]`) rather than four `dp4`s:
 /// each register is a *column* of the baked matrix, not a row. Confirmed against the bundle's Bark,
-/// Foliage and Occluder vertex shaders; see `docs/mod/stereo/single-pass-render-blocks.md`. (`cb13`'s own
-/// `M_eye` block is the opposite convention -- the rewriter's epilogue *is* a `dp4` chain -- so
-/// [`write_meye`] stores rows there.)
+/// Foliage, and Occluder vertex shaders; see `docs/mod/stereo/single-pass-render-blocks.md`.
+/// (`cb13`'s own `M_eye` block is the opposite convention -- the rewriter's epilogue *is* a `dp4`
+/// chain -- so `cb13::write_meye` stores rows there.)
 pub(super) unsafe extern "system" fn set_vertex_program_constants_detour(
     ctx: *mut c_void,
     cb_index: i32,
