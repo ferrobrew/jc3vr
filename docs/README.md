@@ -129,8 +129,7 @@
 - [grapple-comfort.md](mod/body/grapple-comfort.md): the grapple's body-frame comfort filter.
 - [swim-yaw.md](mod/body/swim-yaw.md): the right stick owning the swim heading.
 - [swim-strokes.md](mod/body/swim-strokes.md): swimming with the arms.
-- [canopy-opening.md](mod/body/canopy-opening.md): skipping the canopy's opening roll out of a grapple reel.
-- [parachute-yaw.md](mod/body/parachute-yaw.md): keeping the head from steering the parachute.
+- [parachute.md](mod/body/parachute.md): keeping the head from steering the parachute, the turn toward a grapple line, and skipping the opening roll out of a reel.
 - [locomotion.md](mod/body/locomotion.md): stick locomotion and the steady on-foot view.
 - [act-arbiter.md](mod/body/act-arbiter.md): the one place that drops, replaces, and queues the local player's acts.
 - [procedural-body.md](mod/body/procedural-body.md): the procedural torso and arms.
