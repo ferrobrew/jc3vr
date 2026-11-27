@@ -1,3 +1,18 @@
+//! The water's second eye under the double-wide collapse: the pixel-stage state the engine binds
+//! once for a water surface's first draw, captured while the first eye's draws run and put back for
+//! the second eye's, whose draws find it unbound.
+//!
+//! [`begin_water_surface`] opens a replay for one water surface and [`WaterReplayGuard::begin_eye`]
+//! switches between capturing (eye 0) and restoring (eye 1). The draw detours reach it through
+//! [`packed_water_context`], once per draw, on the draw thread: the state is thread-local, and the
+//! guard is not `Send`.
+//!
+//! # Safety
+//!
+//! Every `unsafe fn` here takes the engine's immediate context, which the caller keeps live for the
+//! duration of the call by being the draw detour the engine called with it, on the draw thread. The
+//! interfaces the getters hand back are owned references, released when dropped.
+
 use std::{cell::RefCell, ffi::c_void, marker::PhantomData, rc::Rc};
 
 use windows::{
@@ -39,7 +54,17 @@ impl Drop for WaterReplayGuard {
     }
 }
 
+/// The immediate context behind `context` when a water draw runs under the double-wide collapse,
+/// after capturing or restoring the draw's state for the current eye; `None` outside a water
+/// surface or the collapse, or without a depth target bound.
+///
+/// # Safety
+///
+/// `context` is the live immediate-context pointer the detoured draw call received, on the draw
+/// thread.
 pub(crate) unsafe fn packed_water_context(context: &*mut c_void) -> Option<&ID3D11DeviceContext> {
+    // SAFETY: the function's contract (see the module docs and `# Safety`) makes `context` a live
+    // immediate context, and every call below is on it.
     let phase = STATE.with_borrow(|state| state.phase);
     if phase == Phase::Idle {
         return None;
@@ -172,6 +197,8 @@ struct ConstantRange {
 }
 
 unsafe fn capture_draw(ctx: &ID3D11DeviceContext) {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     if STATE.with_borrow(|state| state.snapshot.shadows.is_none()) {
         let shadows = unsafe { capture_shadows(ctx) };
         STATE.with_borrow_mut(|state| state.snapshot.shadows = Some(shadows));
@@ -204,6 +231,8 @@ unsafe fn capture_draw(ctx: &ID3D11DeviceContext) {
 }
 
 unsafe fn restore_draw(ctx: &ID3D11DeviceContext) {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     if STATE.with_borrow(State::shadow_restore_pending) {
         STATE.with_borrow(|state| {
             if let Some(shadows) = &state.snapshot.shadows {
@@ -240,6 +269,8 @@ unsafe fn restore_draw(ctx: &ID3D11DeviceContext) {
 }
 
 unsafe fn capture_shadows(ctx: &ID3D11DeviceContext) -> Shadows {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     Shadows {
         resources: std::array::from_fn(|index| unsafe {
             captured_resource(ctx, RESOURCE_SLOTS[index])
@@ -252,6 +283,8 @@ unsafe fn capture_shadows(ctx: &ID3D11DeviceContext) -> Shadows {
 }
 
 unsafe fn restore_shadows(ctx: &ID3D11DeviceContext, shadows: &Shadows) {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     for (index, slot) in RESOURCE_SLOTS.into_iter().enumerate() {
         let current = unsafe { captured_resource(ctx, slot) };
         let saved = shadows.resources[index].as_ref();
@@ -278,18 +311,24 @@ unsafe fn restore_shadows(ctx: &ID3D11DeviceContext, shadows: &Shadows) {
 }
 
 unsafe fn lighting_constants(ctx: &ID3D11DeviceContext) -> Option<ID3D11Buffer> {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     let mut buffers = [None];
     unsafe { ctx.PSGetConstantBuffers(LIGHTING_CONSTANT_SLOT, Some(&mut buffers)) };
     buffers[0].take()
 }
 
 unsafe fn bound_program(ctx: &ID3D11DeviceContext) -> Option<ID3D11PixelShader> {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     let mut shader = None;
     unsafe { ctx.PSGetShader(&mut shader, None, None) };
     shader
 }
 
 unsafe fn captured_buffer(ctx: &ID3D11DeviceContext) -> Option<CapturedBuffer> {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     if let Ok(ctx1) = ctx.cast::<ID3D11DeviceContext1>() {
         let mut buffers = [None];
         let mut first_constant = 0u32;
@@ -324,18 +363,24 @@ unsafe fn captured_resource(
     ctx: &ID3D11DeviceContext,
     slot: u32,
 ) -> Option<ID3D11ShaderResourceView> {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     let mut view = None;
     unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut view))) };
     view
 }
 
 unsafe fn captured_sampler(ctx: &ID3D11DeviceContext, slot: u32) -> Option<ID3D11SamplerState> {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     let mut sampler = None;
     unsafe { ctx.PSGetSamplers(slot, Some(std::slice::from_mut(&mut sampler))) };
     sampler
 }
 
 unsafe fn bind_buffer(ctx: &ID3D11DeviceContext, saved: &CapturedBuffer) {
+    // SAFETY: `ctx` is the live immediate context the draw detour was called with (see the module
+    // docs), which every call below needs.
     let buffers = [Some(saved.buffer.clone())];
     let mut desc = D3D11_BUFFER_DESC::default();
     unsafe { saved.buffer.GetDesc(&mut desc) };

@@ -22,6 +22,7 @@ use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
     render_block::{RBIInfo, RenderBlockAtmosphericScattering},
+    render_engine::RenderPassId,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -68,4 +69,4 @@ fn atmospheric_scattering_draw(
 }
 
 /// The render-pass id the atmosphere block's scene aerial-perspective composite draws in.
-const SCENE_COMPOSITE_PASS: i32 = 102;
+const SCENE_COMPOSITE_PASS: i32 = RenderPassId::RP_SKYBOX as i32;

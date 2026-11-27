@@ -179,6 +179,8 @@ pub(crate) unsafe fn begin_dispatch(ctx: *mut HContext_t) {
     if state.device.0.is_null() {
         state.device = SendPtr(device.cast());
     }
+    // SAFETY: `ctx` is the live immediate-context handle for this dispatch, per this function's
+    // contract.
     unsafe { state.begin_dispatch(ctx, lane) };
     HAS_WORK.store(true, Ordering::Relaxed);
 }
@@ -198,6 +200,7 @@ pub(crate) unsafe fn end_dispatch(ctx: *mut HContext_t) {
     let Some(state) = guard.as_mut() else {
         return;
     };
+    // SAFETY: `ctx` is the handle the dispatch was opened with, per this function's contract.
     unsafe { state.end_dispatch(ctx) };
     if state.current.is_none() && state.pending.is_empty() {
         HAS_WORK.store(false, Ordering::Relaxed);
@@ -238,6 +241,7 @@ pub unsafe fn seam(ctx: *mut HContext_t, seam: GpuSeam) -> Option<IntervalGuard>
     }
     let mut guard = STATE.lock();
     let state = guard.as_mut()?;
+    // SAFETY: `ctx` is the live handle of the enclosing dispatch, per this function's contract.
     let begin = unsafe { state.record_timestamp(ctx)? };
     Some(IntervalGuard {
         ctx: SendPtr(ctx),
@@ -301,7 +305,9 @@ pub unsafe fn pass_scope(pass: *mut RenderPass) -> Option<PassScope> {
     // `RenderPassId` enum: `m_Index` can hold an unnamed id (a pass id outside the named range)
     // that is not a valid enum discriminant, and transmuting such a value into the enum would be
     // undefined behaviour. The engine's lookup returns `"NONE"` for those.
-    // The engine's names are static strings in its image, which outlives the payload.
+    // SAFETY: `pass` is live per this function's contract, and the lookup is the engine's pass-name
+    // function, which takes an `i32` and returns a null pointer or a static string in the engine's
+    // image, which outlives the payload.
     let name: &'static str = unsafe {
         let index = i32::from((*pass).m_Index);
         let lookup: unsafe extern "system" fn(i32) -> *const u8 =
