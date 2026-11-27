@@ -1,8 +1,8 @@
 //! Validates the operand census against the game's real vertex shaders.
 //!
 //! The extracted shader bundle is game-derived content and git-ignored, so these tests read it from
-//! the local extract (`tools/shaders/Shaders_F.shaders/`) and skip cleanly when it is absent (e.g.
-//! in CI), so the crate still builds and its parser is exercised wherever the shaders exist.
+//! the local extract (`tools/shaders/Shaders_F.shaders/`), and fail when it is absent unless
+//! `JC3VR_ALLOW_MISSING_SHADER_CORPUS` is set (see `common`).
 
 use dxbc_stereo::{Dxbc, OperandKind, PerEyeRef, TokenStream, per_eye_refs};
 

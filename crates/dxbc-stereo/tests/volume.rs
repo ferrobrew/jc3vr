@@ -66,8 +66,8 @@ fn volume_pass_maps_each_depth_through_its_eye() {
     assert_eq!(count(&before, DP4), 0);
     assert_eq!(count(&after, DP4), 8);
 
-    // The buffer and position declarations, the five-instruction prologue, and per depth product the copy of the depth,
-    // four `dp4`s, the divide, and three matrix rows in place of the one.
+    // The buffer and position declarations, the five-instruction prologue, and per depth product the
+    // copy of the depth, four `dp4`s, the divide, and three matrix rows in place of the one.
     let products = 2;
     assert_eq!(
         after.len(),

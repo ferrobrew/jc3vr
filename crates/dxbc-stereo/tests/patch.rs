@@ -1,7 +1,7 @@
 //! Validates the single-pass stereo rewrite against the game's model vertex shader and against the
 //! fxc reference blob.
 //!
-//! The game shader is git-ignored local extract, so those tests skip when it is absent; the fxc
+//! The game shader is a git-ignored local extract (see `common` for when those tests skip); the fxc
 //! reference (`tests/data/ref_vs50.dxbc`, compiled from `tests/data/ref_vs.hlsl` with
 //! `scripts/dxbc.sh compile`) is our own output and rides with the crate, so the encoding
 //! byte-match tests always run.

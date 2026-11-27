@@ -183,7 +183,7 @@ fn blur_clamps_every_sample() {
     };
     assert_eq!(samples(&before), 5);
     assert_eq!(samples(&after), 5);
-    // Each sample gains the seven-instruction clamp in front of it.
+    // Each sample gains the eight-instruction clamp in front of it.
     let prologue = 2;
     assert_eq!(after.len() - before.len(), prologue + 8 * samples(&before));
 }

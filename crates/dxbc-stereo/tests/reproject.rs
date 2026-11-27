@@ -1,10 +1,10 @@
-//! Validates the reprojection rewrite ([`reproject_vertex_shader`]): the fallback for the baked-WVP /
-//! terrain / GPU-indirect families that have no per-eye `cb0` operands. It renames the shader's own
+//! Validates the reprojection rewrite ([`reproject_vertex_shader`]): the fallback for the baked-WVP
+//! and GPU-indirect families that have no per-eye `cb0` operands. It renames the shader's own
 //! `SV_Position` writes to a temp and post-multiplies by a per-eye `M_eye` before `ret`.
 //!
 //! The canonical target is the skinned-character VS `sh_0024`, the biggest visual case (NPCs): it
 //! reads a CPU-baked `WorldViewProj` from `cb1` and writes `o0 = skinnedPos·cb1[4..7]` with no `cb0`
-//! reference. The game shaders are a git-ignored local extract, so these tests skip when absent.
+//! reference. The game shaders are a git-ignored local extract (see `common` for when they skip).
 
 use dxbc_stereo::{
     Dxbc, DxbcError, MEYE_ROW_BASE, STEREO_REPROJ_CB_ROWS, ShaderStage, TokenStream,

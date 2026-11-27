@@ -13,7 +13,7 @@ use common::shader_dir;
 
 /// The terrain patch system's domain shaders: they build clip from the domain `cb1` offset
 /// view-projection, and their vertex shaders write all four `TEXCOORD3` components, so the eye-lane
-/// reprojection declines them.
+/// rewrite declines them.
 const PATCH_DOMAIN_SHADERS: [&str; 3] = [
     "sh_1514_00a8e340.dxbc", // volumetricterrain4
     "sh_1515_00a8f040.dxbc", // volumetricterrain4near
@@ -21,7 +21,7 @@ const PATCH_DOMAIN_SHADERS: [&str; 3] = [
 ];
 
 /// The terrain domain shaders whose vertex shaders leave `TEXCOORD3.z` free, which the eye-lane
-/// reprojection takes.
+/// rewrite takes.
 const LANE_DOMAIN_SHADERS: [&str; 3] = [
     "sh_1513_00a8d600.dxbc", // volumetricterrain2
     "sh_1518_00a94710.dxbc", // volumetricterrainpow2

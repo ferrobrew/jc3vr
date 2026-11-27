@@ -72,8 +72,9 @@ fn corpus_composite_bloom_covers_every_composite_permutation() {
     }
 }
 
-/// The chain's separable blur reads every tap through the eye's clamp: each of its samples
-/// (nine bilinear taps standing in for seventeen texels) is preceded by the measure-and-clamp sequence and reads the clamped coordinate.
+/// The chain's separable blur reads every tap through the eye's clamp: each of its samples (nine
+/// bilinear taps standing in for seventeen texels) is preceded by the measure-and-clamp sequence and
+/// reads the clamped coordinate.
 #[test]
 fn blur_reads_every_tap_inside_the_eye() {
     let Some(dir) = shader_dir() else {

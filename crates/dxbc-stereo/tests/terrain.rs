@@ -1,8 +1,7 @@
 //! Validates the terrain tessellation eye-lane rewrites, which ride the single-pass eye index through
 //! the `TEXCOORD3.z` lane VS -> HS -> DS: the VS originator ([`inject_eye_forward_vertex_shader`]),
 //! the hull forwarder ([`forward_eye_hull_shader`]), and the domain rewrite
-//! ([`rebase_domain_shader`]). The game shaders are a git-ignored local extract, so these tests
-//! skip when absent.
+//! ([`rebase_domain_shader`]). The game shaders are a git-ignored local extract; see `common`.
 
 use dxbc_stereo::{
     Dxbc, ShaderStage, TokenStream, forward_eye_hull_shader, inject_eye_forward_vertex_shader,
@@ -96,8 +95,8 @@ fn reprojected_terrain_ds() -> Option<Vec<u8>> {
 
 /// The rewritten DS must re-parse cleanly, and every instruction (including the injected prologue,
 /// the widened lane input, and the eye-row selection) must decode with a length that lands exactly on
-/// the chunk boundary -- the guard against the instruction-length miscount that made D3DDisassemble
-/// loop.
+/// the chunk boundary -- the guard against an instruction-length miscount, which makes
+/// D3DDisassemble loop.
 #[test]
 fn reprojected_ds_reparses_cleanly() {
     let Some(out) = reprojected_terrain_ds() else {
@@ -119,8 +118,8 @@ fn reprojected_ds_reparses_cleanly() {
         }
         last_end = insn.end;
     }
-    // The walk must consume the token stream exactly -- a miscounted instruction length (the bug that
-    // made D3DDisassemble loop) would leave the final instruction ending short of or past the count.
+    // The walk must consume the token stream exactly -- a miscounted instruction length (which makes
+    // D3DDisassemble loop) would leave the final instruction ending short of or past the count.
     assert_eq!(
         last_end, declared_len,
         "instructions must end exactly at the declared token length"

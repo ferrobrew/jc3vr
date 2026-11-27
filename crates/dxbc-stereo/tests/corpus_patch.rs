@@ -80,11 +80,11 @@ fn validate_patch(patched: &[u8]) -> Result<(), String> {
 }
 
 /// Run the full rewrite over every vertex shader in the bundle: every success must validate, and the
-/// only tolerated failures are the two documented deferrals -- `NoPerEyeReferences` (the baked-WVP /
-/// no-position families) and `InstanceIdAlreadyDeclared` (shaders that already consume
-/// `SV_InstanceID` for their own instancing, whose `>> 1` consumer rewrite is a later phase). Both
-/// are left double-drawn. Any *other* error, or any structurally-invalid output, fails the test with
-/// the offending shader named.
+/// only tolerated failures are the two expected declines -- `NoPerEyeReferences` (the baked-WVP and
+/// no-position families, which the reprojection takes where it applies) and
+/// `InstanceIdAlreadyDeclared` (shaders that already consume `SV_InstanceID` for their own
+/// instancing, which the instanced reprojection takes by halving the id). Any *other* error, or any
+/// structurally-invalid output, fails the test with the offending shader named.
 #[test]
 fn corpus_patch_is_sound() {
     let Some(dir) = shader_dir() else {
@@ -227,9 +227,10 @@ fn corpus_vegetation_reads_the_camera_position_but_never_the_view_projection() {
             !reads_global_view_projection(&blob).expect("parse vegetation blob"),
             "{name} reads the global view-projection"
         );
-        // A permutation that consumes `SV_InstanceID` for its own instancing is deferred by the
-        // rewriter rather than claimed, so the decline is a no-op for it -- but it is still declined,
-        // because whether a permutation is claimed is not something the name prefix can tell.
+        // A permutation that consumes `SV_InstanceID` for its own instancing is refused by the remap
+        // itself rather than claimed, so the payload's decline is a no-op for it -- but the payload
+        // still declines it, because whether a permutation is claimed is not something the name
+        // prefix can tell.
         assert!(
             matches!(
                 patch_vertex_shader(&blob),
@@ -402,8 +403,8 @@ enum CameraRowUse {
 /// for a view vector, a distance fade, or to turn a camera-relative position back into a world one,
 /// while taking its clip from somewhere else entirely. Only [`ClipSource::BakedConstantBuffer`] and
 /// [`ClipSource::GlobalViewProjection`] families are reprojectable, and only the ones the payload
-/// allowlists by name are actually reprojected -- see
-/// `stereo::single_pass::should_reproject_camera_only`.
+/// allowlists by name are actually reprojected -- see the render crate's
+/// `stereo::single_pass::shader_policy::should_reproject_camera_only`.
 #[rustfmt::skip]
 const CAMERA_ONLY_POPULATION: &[(&str, &str, ClipSource, CameraRowUse)] = &[
     // The allowlisted model families: baked `cb1[0..3]`, `cb0[4]` for a distance fade only.

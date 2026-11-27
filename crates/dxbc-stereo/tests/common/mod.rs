@@ -7,10 +7,9 @@ use std::path::PathBuf;
 
 /// Set this to `1` to turn a missing shader extract into a skip instead of a failure.
 ///
-/// The default is to fail. A silent skip made the whole corpus suite vacuously green on any machine
-/// without the extract -- including a fresh clone and CI -- so an assertion as load-bearing as "all
-/// 455 vertex shaders round-trip" never ran, and a real regression in the rewriter went unnoticed
-/// until it was found by inspection.
+/// The default is to fail: a silent skip would make the whole corpus suite vacuously green on any
+/// machine without the extract, including a fresh clone and CI, so an assertion as load-bearing as
+/// "every vertex shader round-trips" would never run.
 pub const ALLOW_MISSING: &str = "JC3VR_ALLOW_MISSING_SHADER_CORPUS";
 
 /// The local extracted-shader directory. Panics with instructions when it is absent, unless

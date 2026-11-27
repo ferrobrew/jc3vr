@@ -76,8 +76,8 @@ fn lane_rebase_is_sound_on_the_lane_shaders() {
     }
 }
 
-/// The lane rebase declines the patch shaders for want of a lane, as the lane reprojection does, so
-/// the payload falls through to the pinned path for them.
+/// The lane rebase declines the patch shaders for want of a lane, so the payload falls through to
+/// the pinned path for them.
 #[test]
 fn lane_rebase_declines_the_patch_shaders() {
     let Some(dir) = shader_dir() else {
