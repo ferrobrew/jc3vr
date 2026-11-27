@@ -36,7 +36,7 @@ use crate::controllers::weapons::{
         LAUNCH, PlannedLaunch, Release, TickInputs, catch, hold_local, native::LaunchScope,
         primed_explosive, report_native_throw, safe, throw_release, tuning::GRENADE,
     },
-    inventory::engine::weapon_of,
+    inventory::{engine::weapon_of, slots},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -192,7 +192,8 @@ pub(super) unsafe fn render_frame() {
         Character::GetLocalPlayerCharacter()
             .as_ref()
             .is_some_and(|owner| {
-                owner.m_Inventory.m_Weapons[WeaponSlot::E_SLOT_BEACON as usize].px == base
+                slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_BEACON)
+                    .is_some_and(|weapon| weapon.as_ptr() == base)
                     && (*base).m_IsUserLocalPlayer
             })
     });
@@ -291,10 +292,11 @@ unsafe fn observe_selection() {
         STATE.lock().selection = None;
         return;
     }
-    let base = owner.m_Inventory.m_Weapons[WeaponSlot::E_SLOT_BEACON as usize].px;
-    let Some(weapon) = (unsafe { base.as_ref() }) else {
+    let Some(base) = slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_BEACON) else {
         return;
     };
+    // SAFETY: the slot's strong reference keeps its weapon alive.
+    let weapon = unsafe { base.as_ref() };
     let hand = STATE.lock().hand;
     let fresh = STATE
         .lock()
@@ -312,7 +314,7 @@ unsafe fn observe_selection() {
             });
         }
     }
-    unsafe { observe(base.cast()) };
+    unsafe { observe(base.as_ptr().cast()) };
 }
 
 unsafe fn queue_release(explosive: &mut Explosive, world: Mat4, release: Release) {

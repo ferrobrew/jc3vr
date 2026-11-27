@@ -47,6 +47,7 @@ pub mod reconcile;
 mod reset;
 pub mod restore;
 pub mod sidecar;
+pub(crate) mod slots;
 pub mod sockets;
 pub mod spawn_safety;
 pub mod traversal;
@@ -386,12 +387,8 @@ pub(crate) unsafe fn input_tick(
         )
     };
     unsafe { reconcile::apply(owner) };
-    let slot_objects: Vec<usize> = owner
-        .m_Inventory
-        .m_Weapons
-        .iter()
-        .map(|slot| slot.px as usize)
-        .filter(|&object| object != 0)
+    let slot_objects: Vec<usize> = slots::occupied(&owner.m_Inventory)
+        .map(|(_, weapon)| weapon.as_ptr() as usize)
         .collect();
     // SAFETY: the slots were read live this tick.
     unsafe { ammo::publish(&slot_objects) };

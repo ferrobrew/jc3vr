@@ -27,7 +27,7 @@ use crate::controllers::{
         dual_wield::single,
         engine as weapons_engine,
         engine::slot_from_raw,
-        inventory::{carry, traversal},
+        inventory::{carry, slots, traversal},
     },
 };
 
@@ -114,7 +114,8 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
     let slots = std::array::from_fn(|index| {
         let slot = slot_from_raw(index as i32).unwrap_or(WeaponSlot::E_NONE);
         // SAFETY: a slot's strong reference keeps its weapon alive.
-        let weapon = unsafe { inventory.m_Weapons[index].px.as_ref() }.and_then(read);
+        let weapon =
+            slots::weapon(inventory, slot).and_then(|weapon| read(unsafe { weapon.as_ref() }));
         GameSlot {
             slot,
             weapon,

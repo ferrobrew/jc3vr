@@ -4,14 +4,9 @@
 //! Everything here runs in the game stage, on the game thread before the world update, unless a
 //! function says otherwise.
 
-use std::ptr::NonNull;
-
 use glam::Vec3;
 use jc3gi::{
-    character::{
-        character::Character,
-        inventory::{Inventory, WeaponSlot},
-    },
+    character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
     spawn_system::SpawnSystem,
     types::shared_ptr::SharedPtr,
@@ -27,7 +22,10 @@ use jc3vr_body::controllers::{
 
 use crate::controllers::{
     loadout::{ObjectAddress, Restored, Socket, WeaponType},
-    weapons::engine::{gun_position, slot_of},
+    weapons::{
+        engine::{gun_position, slot_of},
+        inventory::slots as inventory_slots,
+    },
 };
 
 /// A live weapon object's address, the key the inventory's stores keep it by.
@@ -81,16 +79,6 @@ pub(crate) fn tracks(slot: WeaponSlot) -> bool {
 /// The slots the inventory tracks now.
 pub(crate) fn tracked_slots() -> impl Iterator<Item = WeaponSlot> {
     TRACKED_SLOTS.into_iter().filter(|&slot| tracks(slot))
-}
-
-/// The original native slot pointer matching an identity, without a pointee borrow.
-/// The caller must retain the slot source and serialize native access while using the handle.
-pub(crate) fn slot_handle(inventory: &Inventory, object: ObjectKey) -> Option<NonNull<WeaponBase>> {
-    inventory
-        .m_Weapons
-        .iter()
-        .find(|slot| slot.px as usize == object)
-        .and_then(|slot| NonNull::new(slot.px))
 }
 
 /// The weapon `strong` refers to, which it keeps alive.
@@ -179,7 +167,8 @@ pub(crate) unsafe fn weapon_type(weapon: &WeaponBase) -> Option<WeaponType> {
 pub(crate) unsafe fn slots(owner: &Character) -> Vec<(Seen, &'static WeaponBase)> {
     tracked_slots()
         .filter_map(|slot| {
-            let weapon = unsafe { owner.m_Inventory.m_Weapons.get(slot as usize)?.px.as_ref() }?;
+            // SAFETY: the slot's strong reference keeps its weapon alive.
+            let weapon = unsafe { inventory_slots::weapon(&owner.m_Inventory, slot)?.as_ref() };
             // A mounted gun in the heavy slot is the game's while the player mans it.
             if weapon.m_State == WeaponState::E_WS_MOUNTED {
                 return None;

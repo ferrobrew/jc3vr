@@ -55,7 +55,7 @@ use crate::controllers::weapons::{
     engine,
     engine::{HeldWeapon, Wielded, skip_interpolation, slot_of},
     hold::layout,
-    inventory::{carry, engine as inventory_engine},
+    inventory::{carry, slots as inventory_slots},
 };
 
 /// Why a weapon was not armed.
@@ -257,11 +257,7 @@ pub(crate) unsafe fn carried_for(inventory: &Inventory) -> Vec<&WeaponBase> {
         .into_iter()
         .filter_map(in_hand)
         .filter(|&address| {
-            !inventory
-                .m_Weapons
-                .iter()
-                .any(|slot| slot.px as usize == address)
-                && carry::contains(address)
+            !inventory_slots::contains(inventory, address) && carry::contains(address)
         })
         // SAFETY: the carry set keeps a carried weapon alive.
         .filter_map(|address| unsafe { (address as *const WeaponBase).as_ref() })
@@ -394,8 +390,7 @@ pub(crate) unsafe fn weapon_in(
     if local == 0 || inventory.m_Character as usize != local {
         return None;
     }
-    inventory_engine::slot_handle(inventory, address)
-        .or_else(|| unsafe { carry::weapon_handle(address) })
+    inventory_slots::handle(inventory, address).or_else(|| unsafe { carry::weapon_handle(address) })
 }
 
 /// Write `hand`'s attach bone into `weapon`'s holstered entries.

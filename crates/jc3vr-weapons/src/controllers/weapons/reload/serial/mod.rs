@@ -21,7 +21,7 @@ use crate::controllers::{
         capabilities::{Capabilities, GunHand, gun_owners_now},
         config::WEAPONS_CONFIG,
         hold::armed,
-        inventory::engine::strong_to,
+        inventory::{engine::strong_to, slots},
         reload::{
             engine,
             engine::DetachOutcome,
@@ -330,14 +330,14 @@ unsafe fn resolve(character: *mut Character, id: MagazineId) -> Option<(Identity
     if !owner.m_IsLocalCharacter || owner.m_Inventory.m_Character != character {
         return None;
     }
-    let inventory = owner
-        .m_Inventory
-        .m_Weapons
-        .iter()
-        .enumerate()
+    let inventory = slots::entries(&owner.m_Inventory)
         .find(|(_, p)| p.px as usize == id.weapon && !p.px.is_null() && !p.pn.is_null());
     let (slot, weapon, weapon_control) = if let Some((slot, shared)) = inventory {
-        (slot, unsafe { shared.px.as_ref() }?, shared.pn as usize)
+        (
+            slot as usize,
+            unsafe { shared.px.as_ref() }?,
+            shared.pn as usize,
+        )
     } else {
         let weapon = unsafe { armed::weapon_of(owner, id.holder) }?;
         if weapon as *const WeaponBase as usize != id.weapon {

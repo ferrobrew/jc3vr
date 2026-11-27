@@ -43,7 +43,7 @@ use crate::controllers::weapons::{
     engine::{FULL_WEIGHT, credit_reserve, gun_at, gun_at_mut, limited_ammo, reserve},
     fire,
     hold::armed,
-    inventory::{carry, engine as inventory_engine},
+    inventory::{carry, slots as inventory_slots},
     reload::{
         ammo,
         ammo::{Ammo, NativeAmmo},
@@ -223,7 +223,7 @@ pub(super) fn physical_detach_available() -> bool {
 /// The caller's input or owner-update phase must retain that source and serialize native access.
 unsafe fn owned_handle(address: usize) -> Option<NonNull<WeaponBase>> {
     let owner = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
-    inventory_engine::slot_handle(&owner.m_Inventory, address)
+    inventory_slots::handle(&owner.m_Inventory, address)
         .or_else(|| unsafe { carry::weapon_handle(address) })
 }
 

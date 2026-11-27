@@ -51,7 +51,7 @@ use crate::controllers::weapons::{
         carry, engine as inventory_engine,
         engine::kind_of,
         persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
-        sidecar, spawn_safety,
+        sidecar, slots as inventory_slots, spawn_safety,
         spawn_safety::RequestKind,
         tuning::INVENTORY,
     },
@@ -492,14 +492,12 @@ unsafe fn character_of(save_data: *const PlayerSaveData) -> Option<&'static Char
 /// heavy slot and an empty slot), and every reserve.
 unsafe fn stored_fingerprint(character: &Character) -> Fingerprint {
     let mut slots = [0; SLOTS];
-    for (index, slot) in slots.iter_mut().enumerate() {
-        if index == WeaponSlot::E_SLOT_HEAVY as usize {
+    for (slot, weapon) in inventory_slots::occupied(&character.m_Inventory) {
+        if slot == WeaponSlot::E_SLOT_HEAVY {
             continue;
         }
-        let Some(weapon) = (unsafe { character.m_Inventory.m_Weapons[index].px.as_ref() }) else {
-            continue;
-        };
-        *slot = unsafe { kind_of(weapon) }.map_or(0, |k| k.tag_hash);
+        // SAFETY: the slot's strong reference keeps its weapon alive.
+        slots[slot as usize] = unsafe { kind_of(weapon.as_ref()) }.map_or(0, |k| k.tag_hash);
     }
     let mut reserves = [0; RESERVES];
     reserves.copy_from_slice(&character.m_Inventory.m_Ammunition);

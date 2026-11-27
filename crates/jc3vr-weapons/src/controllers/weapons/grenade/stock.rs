@@ -30,7 +30,7 @@ use jc3vr_body::controllers::{
 use jc3vr_core::game_tick::GameTick;
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::engine;
+use crate::controllers::weapons::{engine, inventory::slots};
 
 /// The local player's grenades as the game counts them.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -313,24 +313,22 @@ fn apply(owner: &mut LocalPlayer<'_>, change: Change) {
 
 /// `owner`'s hand-grenade weapon.
 fn grenade_weapon<'a>(owner: &'a LocalPlayer<'_>) -> Option<&'a WeaponBase> {
-    let weapon = owner
-        .character()
-        .m_Inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;
+    let weapon = slots::weapon(
+        &owner.character().m_Inventory,
+        WeaponSlot::E_SLOT_HAND_GRENADE,
+    )?;
     // SAFETY: the inventory owns its weapons for as long as the owner lives.
-    unsafe { weapon.px.as_ref() }
+    Some(unsafe { weapon.as_ref() })
 }
 
 /// `owner`'s hand-grenade weapon, mutable.
 fn grenade_weapon_mut<'a>(owner: &'a mut LocalPlayer<'_>) -> Option<&'a mut WeaponBase> {
-    let weapon = owner
-        .character_mut()
-        .m_Inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;
+    let mut weapon = slots::weapon(
+        &owner.character_mut().m_Inventory,
+        WeaponSlot::E_SLOT_HAND_GRENADE,
+    )?;
     // SAFETY: as above.
-    unsafe { weapon.px.as_mut() }
+    Some(unsafe { weapon.as_mut() })
 }
 
 /// Whether the game's own pickup of `weapon` for `activator` is held back: a hand grenade, for the

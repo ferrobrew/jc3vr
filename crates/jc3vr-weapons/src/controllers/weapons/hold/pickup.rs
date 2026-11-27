@@ -59,7 +59,7 @@ use crate::controllers::{
         hold,
         hold::{act, equip, use_item},
         inventory,
-        inventory::{carry, engine as inventory_engine},
+        inventory::{carry, engine as inventory_engine, slots as inventory_slots},
     },
 };
 
@@ -255,19 +255,14 @@ unsafe fn take_by_game(
     options: TakeOptions,
 ) -> Result<WeaponSlot, Refusal> {
     let address = weapon as *mut WeaponBase as usize;
-    let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
+    let replaced = inventory_slots::object(&owner.m_Inventory, slot)
+        .is_some_and(|occupant| occupant != address);
     // The weapon the pickup replaces stays where the loadout table has it on the body, out of the
     // slot the pickup takes.
-    let carried = occupant != 0
-        && occupant != address
-        && unsafe { inventory::reconcile::vacate(owner, slot) };
+    let carried = replaced && unsafe { inventory::reconcile::vacate(owner, slot) };
     // On the game's pickup, a weapon already in the slot that the table does not keep is dropped to
     // the ground first, rather than dropped or despawned by the game's inventory add.
-    if !carried
-        && occupant != 0
-        && occupant != address
-        && unsafe { equip::drop_occupant(owner, slot) }
-    {
+    if !carried && replaced && unsafe { equip::drop_occupant(owner, slot) } {
         tracing::info!(
             target: "controllers",
             slot = slot_label(slot),
@@ -328,11 +323,7 @@ unsafe fn displaced_by_take(
         .filter(|&weapon| weapon != address)
         .filter(|&weapon| live::hand_of(weapon).is_none())?;
     let primary = live::snapshot_now().is_some_and(|snapshot| snapshot.primary == Some(hand));
-    let in_slot = owner
-        .m_Inventory
-        .m_Weapons
-        .get(slot as usize)
-        .is_some_and(|weapon| weapon.px as usize == address);
+    let in_slot = inventory_slots::holds(&owner.m_Inventory, slot, address);
     if !primary || !in_slot {
         return None;
     }
@@ -345,7 +336,7 @@ unsafe fn displaced_by_take(
     // Selecting the take's slot while the displaced weapon still wields would leave that weapon
     // wielded in no selected slot, which the reconcile never unequips: let go of it first.
     if unsafe { owner.m_Inventory.GetAnimationAllowsHolstering() } {
-        let weapon = inventory_engine::slot_handle(&owner.m_Inventory, stale)
+        let weapon = inventory_slots::handle(&owner.m_Inventory, stale)
             .or_else(|| unsafe { carry::weapon_handle(stale) });
         if let Some(mut weapon) = weapon {
             unsafe { weapon.as_mut().OnUnequip() };

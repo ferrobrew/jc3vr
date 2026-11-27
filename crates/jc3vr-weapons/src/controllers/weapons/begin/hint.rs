@@ -12,10 +12,13 @@ use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     loadout::{ItemView, LoadoutSnapshot, Socket},
-    weapons::hud_feed::{
-        grab_hint,
-        grab_hint::{Hint, Place},
-        icon::IconId,
+    weapons::{
+        hud_feed::{
+            grab_hint,
+            grab_hint::{Hint, Place},
+            icon::IconId,
+        },
+        inventory::slots,
     },
 };
 
@@ -117,7 +120,7 @@ unsafe fn item_icon(item: &ItemView) -> Option<IconId> {
 ///
 /// As [`publish`].
 unsafe fn slot_icon(owner: &Character, slot: WeaponSlot) -> Option<IconId> {
-    let weapon = owner.m_Inventory.m_Weapons.get(slot as usize)?.px;
+    let weapon = slots::weapon(&owner.m_Inventory, slot)?.as_ptr();
     // SAFETY: the inventory's slots hold live weapons or null; forwarded from the caller.
     unsafe { weapon_icon(weapon) }
 }

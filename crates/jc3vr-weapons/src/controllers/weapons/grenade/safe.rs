@@ -38,13 +38,16 @@ use crate::controllers::{
         Departure, ItemId, Place, Socket, live,
         safe_items::{ItemLeaseId, SafeItemView},
     },
-    weapons::grenade::{
-        Release,
-        catch::body_of,
-        hold_local, native,
-        native::{Actor, PinPull},
-        throw_release,
-        tuning::GrenadeTuning,
+    weapons::{
+        grenade::{
+            Release,
+            catch::body_of,
+            hold_local, native,
+            native::{Actor, PinPull},
+            throw_release,
+            tuning::GrenadeTuning,
+        },
+        inventory::slots,
     },
 };
 
@@ -631,12 +634,9 @@ fn loose_distance(grip: Vec3, world: Vec3, frames: &Frames, radius_m: f32) -> Op
 }
 
 fn grenade_weapon(owner: &mut Character) -> Option<&mut ThrownGrenadeWeapon> {
-    let weapon = owner
-        .m_Inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)?;
+    let weapon = slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_HAND_GRENADE)?;
     // SAFETY: the inventory owns its weapons for as long as the owner lives.
-    unsafe { weapon.px.cast::<ThrownGrenadeWeapon>().as_mut() }
+    Some(unsafe { weapon.cast::<ThrownGrenadeWeapon>().as_mut() })
 }
 
 fn position(model: ItemLeaseId) -> Option<Mat4> {

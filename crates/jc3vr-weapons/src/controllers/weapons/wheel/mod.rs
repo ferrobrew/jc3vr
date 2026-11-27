@@ -50,7 +50,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::weapons::{
     config::WEAPONS_CONFIG,
     engine, gameplay,
-    inventory::tuning::INVENTORY,
+    inventory::{slots, tuning::INVENTORY},
     wheel::select::{Close, HandPose, Wheel, WheelInput, WheelPress, WheelSlot, resting},
 };
 
@@ -257,12 +257,7 @@ fn read_game(owner: &LocalPlayer<'_>) -> GameState {
                 p.m_PlantedExplosiveIsValid,
             ]
         }
-        None => WheelSlot::ALL.map(|arm| {
-            inventory
-                .m_Weapons
-                .get(arm.inventory_slot() as usize)
-                .is_some_and(|w| !w.px.is_null())
-        }),
+        None => WheelSlot::ALL.map(|arm| slots::weapon(inventory, arm.inventory_slot()).is_some()),
     };
     // Read as the raw value: the slot can be out of the enum's range.
     // SAFETY: the character is live; the field is plain data.

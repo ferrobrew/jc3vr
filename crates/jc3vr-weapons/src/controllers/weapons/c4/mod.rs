@@ -125,6 +125,7 @@ use crate::controllers::{
         },
         engine,
         grenade::{Release, catch::body_of, throw_release},
+        inventory::slots,
         pouch_return,
     },
 };
@@ -1347,8 +1348,8 @@ unsafe fn primed_charge(weapon: &PlantedExplosiveWeapon) -> Option<*mut PlantedE
 ///
 /// `owner` must be the live local player character, on the game thread.
 unsafe fn slot_c4(owner: &mut Character) -> Option<&mut PlantedExplosiveWeapon> {
-    let slot = WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE as usize;
-    let weapon = unsafe { owner.m_Inventory.m_Weapons.get(slot)?.px.as_mut() }?;
+    let mut weapon = slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE)?;
+    let weapon = unsafe { weapon.as_mut() };
     if !unsafe { (*object_of(weapon)).IsType(PlantedExplosiveWeapon::TYPE_ID()) } {
         return None;
     }

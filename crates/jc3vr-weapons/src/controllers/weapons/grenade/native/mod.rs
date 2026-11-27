@@ -95,6 +95,7 @@ use crate::controllers::{
         grenade::{
             LAUNCH, PlannedLaunch, Release, fuse_log, primed_explosive, report_native_throw, safe,
         },
+        inventory::slots,
     },
 };
 
@@ -252,11 +253,9 @@ unsafe fn give_trail_resources(explosive: &mut Explosive) -> bool {
     let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
         return false;
     };
-    let Some(weapon) = owner
-        .m_Inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)
-        .and_then(|weapon| unsafe { weapon.px.as_ref() })
+    let Some(weapon) = slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_HAND_GRENADE)
+        // SAFETY: the slot's strong reference keeps its weapon alive.
+        .map(|weapon| unsafe { weapon.as_ref() })
         .filter(|weapon| unsafe { is_hand_grenade(weapon) })
     else {
         return false;

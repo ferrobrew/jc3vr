@@ -62,6 +62,7 @@ use serde::Deserialize;
 use crate::controllers::weapons::{
     c4::detonator::trigger_model,
     hold::tuning::HOLD,
+    inventory::slots,
     mirror::pouches_rendered,
     pouch_models::{
         attachments::{RenderSample, Sample, placement},
@@ -793,7 +794,7 @@ unsafe fn game_model(owner: &Character, prop: Prop) -> Option<*const SharedPtr<M
 
 /// The weapon in `owner`'s `slot`.
 unsafe fn slot_weapon(owner: &Character, slot: WeaponSlot) -> Option<&WeaponBase> {
-    unsafe { owner.m_Inventory.m_Weapons.get(slot as usize)?.px.as_ref() }
+    Some(unsafe { slots::weapon(&owner.m_Inventory, slot)?.as_ref() })
 }
 
 #[cfg(test)]

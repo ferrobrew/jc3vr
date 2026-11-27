@@ -65,7 +65,7 @@ use crate::controllers::{
         inventory::{
             engine,
             gives::authority::{Authority, Identity},
-            reconcile,
+            reconcile, slots,
         },
     },
 };
@@ -339,8 +339,8 @@ unsafe fn hand_over(game: &GameTick<'_>, owner: &mut Character, arrival: Arrival
         return;
     }
     let object = engine::weapon_of(&weapon) as usize;
-    let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
-    if occupant != 0 && occupant != object {
+    let occupant = slots::object(&owner.m_Inventory, slot);
+    if occupant.is_some_and(|occupant| occupant != object) {
         // The give's add would drop or despawn it; it stays where the table has it.
         unsafe { reconcile::vacate(owner, slot) };
     }
@@ -358,7 +358,7 @@ unsafe fn hand_over(game: &GameTick<'_>, owner: &mut Character, arrival: Arrival
     } else {
         equipped
     };
-    if owner.m_Inventory.m_Weapons[slot as usize].px as usize != object {
+    if !slots::holds(&owner.m_Inventory, slot, object) {
         tracing::info!(target: "controllers", slot = slot_label(slot), "inventory: the game's give did not arrive in its slot");
         return;
     }
@@ -396,8 +396,10 @@ unsafe fn stage_member(
         unsafe { (*engine::weapon_of(&weapon)).Despawn() };
         return;
     }
-    let occupant = owner.m_Inventory.m_Weapons[slot as usize].px as usize;
-    if occupant != 0 && occupant != object && !unsafe { reconcile::vacate(owner, slot) } {
+    let occupant = slots::object(&owner.m_Inventory, slot);
+    if occupant.is_some_and(|occupant| occupant != object)
+        && !unsafe { reconcile::vacate(owner, slot) }
+    {
         unsafe { (*engine::weapon_of(&weapon)).Despawn() };
         tracing::warn!(target: "controllers", "rack: cannot preserve the slot occupant while staging a source member");
         return;
@@ -416,7 +418,7 @@ unsafe fn stage_member(
     } else {
         equipped
     };
-    let initialized = owner.m_Inventory.m_Weapons[slot as usize].px as usize == object;
+    let initialized = slots::holds(&owner.m_Inventory, slot, object);
     if initialized {
         unsafe { owner.m_Inventory.RemoveWeapon(slot) };
     }

@@ -71,6 +71,7 @@ use crate::controllers::{
             world,
             world::{TargetKind, WorldTarget},
         },
+        inventory::slots,
     },
 };
 
@@ -401,14 +402,8 @@ unsafe fn wielded(character: &Character) -> Option<(*mut WeaponBase, WeaponSlot)
 /// with its first gun's grips and pose.
 unsafe fn holstered(character: &Character) -> [Option<Holstered>; HOLSTER_SLOTS.len()] {
     HOLSTER_SLOTS.map(|slot| {
-        let weapon = unsafe {
-            character
-                .m_Inventory
-                .m_Weapons
-                .get(slot as usize)?
-                .px
-                .as_ref()
-        }?;
+        // SAFETY: the slot's strong reference keeps its weapon alive; forwarded from the caller.
+        let weapon = unsafe { slots::weapon(&character.m_Inventory, slot)?.as_ref() };
         // Read as the raw value, so that a state the enum does not name is not misread.
         let state = unsafe { (&raw const weapon.m_State).cast::<i32>().read() };
         if state != WeaponState::E_WS_HOLSTERED as i32 {

@@ -51,7 +51,7 @@ use crate::controllers::{
         engine::{grip_points, slot_of},
         grenade,
         hold::{act, armed},
-        inventory::{carry, engine::ObjectKey, sockets, sockets::Offsets},
+        inventory::{carry, engine::ObjectKey, slots, sockets, sockets::Offsets},
     },
 };
 
@@ -471,11 +471,7 @@ pub(crate) unsafe fn socket_weapons(
                 return None;
             };
             let object = item.binding.address()?.get();
-            let in_slot = owner
-                .m_Inventory
-                .m_Weapons
-                .iter()
-                .any(|slot| slot.px as usize == object);
+            let in_slot = slots::contains(&owner.m_Inventory, object);
             if !(in_slot || carry::contains(object)) || armed::is(object) {
                 return None;
             }

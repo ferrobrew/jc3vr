@@ -38,7 +38,7 @@ use crate::controllers::{
     loadout::{CacheKind, live},
     weapons::{
         dual_wield::single,
-        inventory::{carry, reconcile, restore},
+        inventory::{carry, reconcile, restore, slots},
     },
 };
 
@@ -125,9 +125,7 @@ fn cache_all_weapon_slots(cache: *mut NodeWeaponCache, inventory: *mut Inventory
     // The pistol slot is read before the cache forces it out.
     let pistol = unsafe { inventory.as_ref() }
         .filter(|_| ours && remove)
-        .and_then(|i| i.m_Weapons.get(WeaponSlot::E_SLOT_DUAL_WIELD as usize))
-        .map(|slot| slot.px as usize)
-        .filter(|&object| object != 0);
+        .and_then(|i| slots::object(i, WeaponSlot::E_SLOT_DUAL_WIELD));
     if ours && let Some(store) = live::mission_caching() {
         // SAFETY: the graph script runs on the game thread before the world update.
         unsafe { reconcile::store(&store) };

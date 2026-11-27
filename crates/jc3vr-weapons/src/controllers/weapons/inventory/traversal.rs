@@ -51,7 +51,10 @@ use jc3gi::{
 use jc3vr_body::hooks::input::locomotion::character_from_context;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{loadout::live, weapons::inventory::engine};
+use crate::controllers::{
+    loadout::live,
+    weapons::inventory::{engine, slots},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -159,12 +162,9 @@ fn refuses_heavy_drop(occupant: HeavyOccupant) -> bool {
 /// `context` must be the state context the task was given.
 unsafe fn heavy_occupant(context: *mut StateContext) -> HeavyOccupant {
     let Some(weapon) = (unsafe { character_from_context(context) })
-        .and_then(|c| {
-            c.m_Inventory
-                .m_Weapons
-                .get(WeaponSlot::E_SLOT_HEAVY as usize)
-        })
-        .and_then(|w| unsafe { w.px.as_ref() })
+        .and_then(|c| slots::weapon(&c.m_Inventory, WeaponSlot::E_SLOT_HEAVY))
+        // SAFETY: the slot's strong reference keeps its weapon alive.
+        .map(|weapon| unsafe { weapon.as_ref() })
     else {
         return HeavyOccupant::Empty;
     };

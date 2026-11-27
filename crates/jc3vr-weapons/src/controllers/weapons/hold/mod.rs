@@ -102,6 +102,7 @@ use crate::controllers::{
         docks,
         engine::{gun_at_mut, slot_of},
         inventory,
+        inventory::slots,
     },
 };
 
@@ -483,9 +484,9 @@ unsafe fn held_in(inventory: *mut Inventory) -> impl Iterator<Item = NonNull<Wea
     };
     weapons
         .into_iter()
-        .flat_map(|inventory| inventory.m_Weapons.iter())
-        .filter(move |slot| hands.contains(&Some(slot.px as usize)))
-        .filter_map(|slot| NonNull::new(slot.px))
+        .flat_map(slots::occupied)
+        .map(|(_, weapon)| weapon)
+        .filter(move |weapon| hands.contains(&Some(weapon.as_ptr() as usize)))
 }
 
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateAttachmentTransforms_ADDRESS)]

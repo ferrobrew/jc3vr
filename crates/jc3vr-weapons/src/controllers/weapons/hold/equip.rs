@@ -7,7 +7,7 @@
 //! - A drop runs the weapon's drop at once while the inventory still holds it
 //!   ([`WeaponBase::OnDrop`], as a swimming character's pickup does to a slot's occupant), gives
 //!   its body the copied release-time hand and rig motion, and then clears the slot
-//!   ([`Inventory::DropWeapon`]). A strong reference retains a heavy weapon through the slot
+//!   ([`Inventory::DropWeapon`](jc3gi::character::inventory::Inventory::DropWeapon)). A strong reference retains a heavy weapon through the slot
 //!   removal its unequip can perform inside `OnDrop`. The immediate drop fulfils any deferred
 //!   drop queued by that recursive unequip.
 //!
@@ -20,7 +20,7 @@ use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{
         character::{Character, SafeBoneIndex},
-        inventory::{Inventory, WeaponSlot},
+        inventory::WeaponSlot,
     },
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
 };
@@ -29,9 +29,9 @@ use jc3vr_input::frame::Pose;
 
 use crate::controllers::weapons::{
     dual_wield::single,
-    engine::{skip_interpolation, slot_of},
+    engine::{skip_interpolation, slot_from_raw, slot_of},
     hold::release_diagnostics::{DropObservation, NativeWrite, ReleaseMotion, SampleStage},
-    inventory::{carry, engine::strong_to},
+    inventory::{carry, engine::strong_to, slots},
 };
 
 /// Why a dock or a drop was not done.
@@ -142,7 +142,7 @@ pub(crate) unsafe fn drop_held(
     // OnDrop can unequip a heavy weapon through its slot, so retain it through the write.
     let strong = unsafe { strong_to(weapon) }.ok_or(DockRefusal::NotDone)?;
     let mut thrown = unsafe { throw(weapon, max_speed_mps, diagnostic, release) };
-    if slot_holds(owner, slot, address) {
+    if slots::holds(&owner.m_Inventory, slot, address) {
         unsafe { owner.m_Inventory.DropWeapon(slot, false) };
     }
     thrown.diagnostic.slot_clear_returned = true;
@@ -255,22 +255,13 @@ pub(crate) unsafe fn drop_carried(
     let mut thrown = unsafe { release_loose(weapon, max_speed_mps, release) };
     let slot = unsafe { slot_of(weapon) };
     thrown.diagnostic.slot = slot;
-    if let Some(slot) = slot.filter(|&slot| slot_holds(owner, slot, object)) {
+    if let Some(slot) = slot.filter(|&slot| slots::holds(&owner.m_Inventory, slot, object)) {
         unsafe { owner.m_Inventory.DropWeapon(slot, false) };
         thrown.diagnostic.slot_clear_returned = true;
     }
     drop(carried);
     drop(strong);
     thrown
-}
-
-/// Whether `owner`'s `slot` holds the weapon at `object`.
-fn slot_holds(owner: &Character, slot: WeaponSlot, object: usize) -> bool {
-    owner
-        .m_Inventory
-        .m_Weapons
-        .get(slot as usize)
-        .is_some_and(|entry| entry.px as usize == object)
 }
 
 /// Drop the weapon in `slot` onto the ground before another weapon replaces it there, so that it
@@ -280,7 +271,7 @@ fn slot_holds(owner: &Character, slot: WeaponSlot, object: usize) -> bool {
 ///
 /// As [`holster`].
 pub(crate) unsafe fn drop_occupant(owner: &mut Character, slot: WeaponSlot) -> bool {
-    let Some(mut handle) = slot_weapon(&owner.m_Inventory, slot) else {
+    let Some(mut handle) = slots::weapon(&owner.m_Inventory, slot) else {
         return false;
     };
     // SAFETY: the input phase retains this source until DropWeapon and serializes mutation.
@@ -315,8 +306,7 @@ pub(crate) unsafe fn pose_on_bone(
 /// The weapon `owner` wields, to act on.
 unsafe fn wielded_mut(owner: &Character) -> Option<NonNull<WeaponBase>> {
     let slot = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
-    let slot = usize::try_from(slot).ok()?;
-    let handle = NonNull::new(owner.m_Inventory.m_Weapons.get(slot)?.px)?;
+    let handle = slots::weapon(&owner.m_Inventory, slot_from_raw(slot)?)?;
     // SAFETY: the input phase retains the slot source; validation ends before callers mutate it.
     let weapon = unsafe { handle.as_ref() };
     let owned = std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
@@ -325,11 +315,6 @@ unsafe fn wielded_mut(owner: &Character) -> Option<NonNull<WeaponBase>> {
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
     );
     (owned && wielded).then_some(handle)
-}
-
-/// The weapon in `slot`.
-fn slot_weapon(inventory: &Inventory, slot: WeaponSlot) -> Option<NonNull<WeaponBase>> {
-    NonNull::new(inventory.m_Weapons.get(slot as usize)?.px)
 }
 
 /// The gun's body id.

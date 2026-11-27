@@ -70,7 +70,7 @@ use crate::controllers::{
         engine::{credit_reserve, credit_stored, gun_at, hide_gun, slot_of},
         hold,
         hold::rack::paired,
-        inventory::{carry, engine as inventory_engine, engine::ObjectKey, restore},
+        inventory::{carry, engine as inventory_engine, engine::ObjectKey, restore, slots},
         reload,
     },
 };
@@ -719,13 +719,7 @@ fn note(count: impl FnOnce(&mut State), what: String) {
 
 /// The original native pointer in `owner`'s dual-wield slot, without a pointee borrow.
 fn slot_handle(owner: &Character) -> Option<std::ptr::NonNull<WeaponBase>> {
-    std::ptr::NonNull::new(
-        owner
-            .m_Inventory
-            .m_Weapons
-            .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)?
-            .px,
-    )
+    slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_DUAL_WIELD)
 }
 
 /// Revalidate a grant's identity against the current original slot pointer.
@@ -738,11 +732,8 @@ fn matching_inventory_slot(
     inventory: &Inventory,
     object: ObjectKey,
 ) -> Option<std::ptr::NonNull<WeaponBase>> {
-    let source = inventory
-        .m_Weapons
-        .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)?
-        .px;
-    std::ptr::NonNull::new(source).filter(|handle| handle.as_ptr() as ObjectKey == object)
+    slots::weapon(inventory, WeaponSlot::E_SLOT_DUAL_WIELD)
+        .filter(|handle| handle.as_ptr() as ObjectKey == object)
 }
 
 #[cfg(test)]
@@ -751,14 +742,7 @@ mod tests;
 /// The weapon in `owner`'s dual-wield slot.
 /// The input phase must retain the slot source without native mutation for this shared borrow.
 unsafe fn slot_weapon(owner: &Character) -> Option<&WeaponBase> {
-    unsafe {
-        owner
-            .m_Inventory
-            .m_Weapons
-            .get(WeaponSlot::E_SLOT_DUAL_WIELD as usize)?
-            .px
-            .as_ref()
-    }
+    Some(unsafe { slot_handle(owner)?.as_ref() })
 }
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::SetVisibleBase_ADDRESS)]

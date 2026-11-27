@@ -24,7 +24,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     loadout::{CacheKind, live},
-    weapons::inventory::{engine as inventory_engine, missions, reconcile},
+    weapons::inventory::{engine as inventory_engine, missions, reconcile, slots},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -44,7 +44,7 @@ fn slots_now() -> Option<([usize; 8], [bool; 8])> {
     let mut objects = [0; 8];
     let mut marked = [false; 8];
     for slot in inventory_engine::tracked_slots() {
-        objects[slot as usize] = inventory.m_Weapons[slot as usize].px as usize;
+        objects[slot as usize] = slots::object(inventory, slot).unwrap_or(0);
         marked[slot as usize] = inventory.m_WeaponToRemove[slot as usize];
     }
     Some((objects, marked))

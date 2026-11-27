@@ -73,7 +73,7 @@ use crate::controllers::{
             engine::{ObjectKey, Seen, kind_of, refresh_hud, strong_to},
             lost,
             persist::Record,
-            sockets,
+            slots, sockets,
         },
     },
 };
@@ -545,11 +545,10 @@ unsafe fn at_own_dock(weapon: &WeaponBase, socket: Socket) -> bool {
 
 /// The weapons of `inventory`'s slots the table has on a socket other than their slot's own dock.
 unsafe fn off_dock(inventory: &Inventory) -> Vec<(&'static mut WeaponBase, Socket)> {
-    inventory
-        .m_Weapons
-        .iter()
-        .filter_map(|slot| {
-            let weapon = unsafe { slot.px.as_mut() }?;
+    slots::occupied(inventory)
+        .filter_map(|(_, mut weapon)| {
+            // SAFETY: the slot's strong reference keeps its weapon alive; forwarded from the caller.
+            let weapon = unsafe { weapon.as_mut() };
             if weapon.m_State != WeaponState::E_WS_HOLSTERED {
                 return None;
             }
