@@ -87,9 +87,11 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
     if !is_local_model(model) || barrel_roll_id() != Some(act) {
         return false;
     }
-    let wanted = headpose::is_active()
-        && headpose::source() == Source::Vr
-        && !WINGSUIT_EVADE_CONFIG.query(|evade| evade.enabled);
+    let wanted = barrel_roll_dropped(
+        headpose::is_active(),
+        headpose::source() == Source::Vr,
+        WINGSUIT_EVADE_CONFIG.query(|evade| evade.enabled),
+    );
     if wanted {
         BARREL_ROLLS_DROPPED.bump();
         tracing::info!(
@@ -98,6 +100,16 @@ pub(crate) fn drops_act(model: *const AnimatedModel, act: i32) -> bool {
         );
     }
     wanted
+}
+
+/// Whether the local player's barrel roll is dropped: the head pose is live and comes from the
+/// headset, and the evade is switched off.
+pub(crate) const fn barrel_roll_dropped(
+    headpose_active: bool,
+    vr: bool,
+    evade_enabled: bool,
+) -> bool {
+    headpose_active && vr && !evade_enabled
 }
 
 /// Apply or revert the patch to match the head pose's source. Called once per

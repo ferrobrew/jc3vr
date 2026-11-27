@@ -260,8 +260,27 @@ pub(crate) fn deliberate_holster_holds(relaxed: bool, drawing_or_holstering: boo
     relaxed && !drawing_or_holstering
 }
 
-/// The `QueueAct` filter for the local player's acts, called by the detour in
-/// [`crate::hooks::character`]. Returns whether to swallow the act.
+/// Decide a local player's act `act` (`None` for an act the cuts do not watch): the gates in front
+/// of [`act_verdict`]. `controllers` is whether the cuts act. Outside the weapon-handling scope
+/// nothing is swallowed unless the cuts act; inside it a holster needs no second gate, and the slow
+/// unequip does.
+pub(crate) fn local_verdict(
+    act: Option<WatchedAct>,
+    in_weapon_handling: bool,
+    controllers: bool,
+    deliberate: bool,
+) -> ActVerdict {
+    let Some(act) = act else {
+        return ActVerdict::Pass;
+    };
+    if !controllers && (!in_weapon_handling || act == WatchedAct::UnequipSlow) {
+        return ActVerdict::Pass;
+    }
+    act_verdict(act, in_weapon_handling, deliberate)
+}
+
+/// The mental-state cuts' filter for the local player's acts, asked by the act arbiter
+/// ([`crate::controllers::acts`]). Returns whether to swallow the act.
 pub(crate) fn swallow_local_act(id: i32) -> bool {
     let in_weapon_handling = IN_LOCAL_WEAPON_HANDLING.with(Cell::get);
     // The weapon-handling scope is set only while the cuts act. Outside it, nothing is swallowed
@@ -273,13 +292,10 @@ pub(crate) fn swallow_local_act(id: i32) -> bool {
     let Some(act) = watched_act(id) else {
         return false;
     };
-    // A holster inside the scope needs no second gate; the slow unequip does.
-    if in_weapon_handling && act == WatchedAct::UnequipSlow && !controllers() {
-        return false;
-    }
-    let verdict = act_verdict(
-        act,
+    let verdict = local_verdict(
+        Some(act),
         in_weapon_handling,
+        controllers(),
         DELIBERATE_HOLSTER.load(Ordering::Relaxed),
     );
     let mut status = STATUS.lock();
@@ -783,32 +799,6 @@ mod tests {
     fn a_vertical_forward_is_used_as_it_is() {
         let point = neutral_aim_point(Vec3::ZERO, Vec3::Y, 10.0);
         assert_eq!(point, Vec3::new(0.0, 10.0, 0.0));
-    }
-
-    #[test]
-    fn the_slow_unequip_is_always_swallowed() {
-        for (inside, deliberate) in [(false, false), (true, false), (true, true)] {
-            assert_eq!(
-                act_verdict(WatchedAct::UnequipSlow, inside, deliberate),
-                ActVerdict::Swallow
-            );
-        }
-    }
-
-    #[test]
-    fn only_the_relaxed_branch_holster_is_swallowed() {
-        assert_eq!(
-            act_verdict(WatchedAct::Holster, false, false),
-            ActVerdict::Pass
-        );
-        assert_eq!(
-            act_verdict(WatchedAct::Holster, true, false),
-            ActVerdict::Swallow
-        );
-        assert_eq!(
-            act_verdict(WatchedAct::Holster, true, true),
-            ActVerdict::PassDeliberate
-        );
     }
 
     #[test]

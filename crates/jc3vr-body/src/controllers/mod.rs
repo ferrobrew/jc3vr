@@ -41,6 +41,7 @@
 //! contributions record ([`crate::contributions`]); the payload's composition registers it and
 //! enables these subsystems' hook libraries with theirs.
 
+pub mod acts;
 pub mod aim;
 pub mod aim_state;
 pub mod body;

@@ -128,24 +128,31 @@ pub(crate) unsafe fn filter(
     let Some((wanted, scope)) = table.decide(id) else {
         return ActDecision::Pass;
     };
+    let gates = ActGates::now(controllers_enabled);
     let applies = match scope {
-        ActScope::OnFoot => locomotion.stick.enabled && applies_on_foot(controllers_enabled),
-        // SAFETY: the caller's contract: the local character, on the thread queuing its act.
-        ActScope::StuntArea => unsafe { applies_in_stunt_area(character, controllers_enabled) },
+        ActScope::OnFoot => {
+            let detection = current_mode();
+            gates.applies_on_foot(
+                locomotion.stick.enabled,
+                detection.mode == Mode::OnFoot(OnFootVariant::Ground)
+                    && detection.traversal.is_none(),
+            )
+        }
+        // SAFETY: the caller's contract: the local character, on the thread queuing its act. The
+        // game's own input task calls it on this thread for this character just before it queues
+        // the act.
+        ActScope::StuntArea => gates.open() && unsafe { character.ShouldApplyStuntModification() },
     };
     if !applies {
         return ActDecision::Pass;
     }
-    // The body rig turns a standing Rico through the game's own turn-in-place: the view does not
-    // ride the body while it follows the head, so the clip's turn of the root is only the body's.
-    // While the IK body plants the feet, it turns them with steps of its own, so the clip's turn
-    // stays dropped.
-    if scope == ActScope::OnFoot
-        && wanted == ActDecision::Drop
-        && grounded::turning()
-        && body_frame::locomotion().standing_still()
-        && !ik_body::owns_idle()
-    {
+    if body_turn_passes(
+        scope,
+        wanted,
+        grounded::turning(),
+        body_frame::locomotion().standing_still(),
+        ik_body::owns_idle(),
+    ) {
         return ActDecision::Pass;
     }
     let mut state = STATE.lock();
@@ -443,32 +450,54 @@ const STUNT_TURNS: [&CStr; 3] = [
     EventIdSymbolTable::ACT_STUNT_TURN_120L,
 ];
 
-/// Whether the on-foot scope applies: the headset drives the view, gameplay owns the character,
-/// and the player is on foot on the ground.
-fn applies_on_foot(controllers_enabled: bool) -> bool {
-    let detection = current_mode();
-    source() == Source::Vr
-        && in_gameplay()
-        && controllers_enabled
-        && detection.mode == Mode::OnFoot(OnFootVariant::Ground)
-        && detection.traversal.is_none()
+/// The gates both scopes share: the headset drives the view, gameplay owns the character, and the
+/// controllers' master switch is on.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct ActGates {
+    pub vr: bool,
+    pub in_gameplay: bool,
+    pub controllers: bool,
 }
 
-/// Whether the stunt area's scope applies: the headset drives the view, gameplay owns the
-/// character, and the game applies its stunt modification to it
-/// ([`Character::ShouldApplyStuntModification`]), as its input tasks test just before they queue a
-/// stunt turn.
-///
-/// # Safety
-///
-/// `character` must be the live local character, on the thread queuing its act.
-unsafe fn applies_in_stunt_area(character: &Character, controllers_enabled: bool) -> bool {
-    source() == Source::Vr
-        && in_gameplay()
-        && controllers_enabled
-        // SAFETY: the caller's contract; the game's own input task calls it on this thread for this
-        // character just before it queues the act.
-        && unsafe { character.ShouldApplyStuntModification() }
+impl ActGates {
+    fn now(controllers: bool) -> Self {
+        Self {
+            vr: source() == Source::Vr,
+            in_gameplay: in_gameplay(),
+            controllers,
+        }
+    }
+
+    pub(crate) const fn open(self) -> bool {
+        self.vr && self.in_gameplay && self.controllers
+    }
+
+    /// Whether the on-foot scope applies: the gates are open, the stick drives the body, and the
+    /// player is on foot on the ground with no traversal. The stunt area's scope applies where the
+    /// gates are open and the game applies its stunt modification to the character
+    /// ([`Character::ShouldApplyStuntModification`]), as its input tasks test just before they
+    /// queue a stunt turn.
+    pub(crate) const fn applies_on_foot(self, stick_enabled: bool, on_ground: bool) -> bool {
+        stick_enabled && self.open() && on_ground
+    }
+}
+
+/// Whether a dropped turn-in-place act passes after all: the body rig turns a standing Rico through
+/// the game's own turn-in-place, since the view does not ride the body while it follows the head,
+/// so the clip's turn of the root is only the body's. While the IK body plants the feet, it turns
+/// them with steps of its own, so the clip's turn stays dropped.
+pub(crate) fn body_turn_passes(
+    scope: ActScope,
+    wanted: ActDecision,
+    rig_turning: bool,
+    standing_still: bool,
+    ik_owns_idle: bool,
+) -> bool {
+    scope == ActScope::OnFoot
+        && wanted == ActDecision::Drop
+        && rig_turning
+        && standing_still
+        && !ik_owns_idle
 }
 
 /// The resolved table, once every name in it resolves. The names are the `NCharacter` act ids the

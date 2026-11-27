@@ -31,3 +31,4 @@ toml = "1.1.6"
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
 # The tests build the OpenXR poses and times the published tracking carries.
 openxr = "0.21"
+test-case = "3.3.1"

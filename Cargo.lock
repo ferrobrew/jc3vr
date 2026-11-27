@@ -2319,6 +2319,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol_str",
+ "test-case",
  "toml 1.1.6+spec-1.1.0",
  "tracing",
  "tracking-format",
