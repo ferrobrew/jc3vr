@@ -1,9 +1,10 @@
-//! Detour lifecycle: the `DetourSlot` wrapper, the COM-vtable install/uninstall lock, and the
-//! `ensure_viewport_detours` installer that patches the D3D11 immediate-context and device vtables.
+//! Detour lifecycle: the `DetourSlot` wrapper, the COM-vtable install/uninstall lock, the
+//! `ensure_viewport_detours` installer that patches the D3D11 immediate-context and device vtables,
+//! and the separately installed `CreatePixelShader` detour ([`ensure_pixel_shader_detour`]).
 //!
 //! The per-detour statics and detour functions live in their owning leaf modules (`viewport.rs`,
-//! `draw_detours.rs`, `shader_detours.rs`, `per_eye_reissue.rs`); this module owns the install
-//! orchestration that publishes and enables them as a batch.
+//! `draw_detours.rs`, `shader_detours.rs`, `per_eye_reissue.rs`, `shader_identity.rs`); this module
+//! owns the install orchestration that publishes and enables them as a batch.
 
 use std::{
     ffi::c_void,
@@ -36,10 +37,10 @@ use crate::stereo::single_pass::{
 /// detour is never moved after install: `GenericDetour` owns the trampoline, and the slot owns the
 /// `GenericDetour` via a `Box` whose address never changes.
 ///
-/// -- Rust statics are not dropped, and a detour's trampoline lives in a `VirtualAlloc` region that
-/// outlives the unmapped payload, so every inject/eject cycle strands one page per detour. An
-/// `AtomicPtr` keeps the read on the hot path down to a single load while still allowing
-/// [`take`](Self::take) to hand ownership back on eject.
+/// The slot can be emptied because Rust statics are not dropped, and a detour's trampoline lives in a
+/// `VirtualAlloc` region that outlives the unmapped payload, so a detour held in a plain static would
+/// strand one page per detour on every inject/eject cycle. [`take`](Self::take) hands ownership back
+/// on eject.
 pub(super) struct DetourSlot<T: Function>(AtomicPtr<GenericDetour<T>>);
 
 impl<T: Function> DetourSlot<T> {
@@ -110,34 +111,36 @@ unsafe extern "system" fn rs_set_scissor_rects_detour(
     }
 }
 
-/// Install the single-pass COM-vtable detours on the immediate-context (and device) vtables, once.
-/// Patching runs under a thread suspender, which narrows the window in which another thread can be
-/// executing a target's prologue while it is rewritten -- it does not close it: `SuspendThread` is
-/// asynchronous, and no instruction pointer is inspected, so a thread already inside the bytes being
-/// overwritten stays there. Called from the active render path and from the
-/// `CreateVertexProgram` hook -- the latter so the `CreateVertexShader` detour that records a patched
-/// shader into [`PATCHED_VS`] exists *before* the shader is created, not lazily on the first rendered
-/// frame (a shader created in between, e.g. a character shader loaded at level start, would otherwise
-/// be patched at the blob level but never recorded, so `BOUND_VS_PATCHED` stays false and its draw is
-/// never doubled). A normal (single-pass-off) session never installs it.
 /// Whether the draw-path COM detours are installed. Once a session has run single-pass they stay
 /// installed until eject, and every draw then passes through them, single-pass or not.
 pub fn com_detours_installed() -> bool {
     RS_SET_VIEWPORTS.get().is_some()
 }
 
+/// Install the single-pass COM-vtable detours on the immediate-context (and device) vtables, once.
+/// Patching runs under a thread suspender, which narrows the window in which another thread can be
+/// executing a target's prologue while it is rewritten -- it does not close it: `SuspendThread` is
+/// asynchronous, and no instruction pointer is inspected, so a thread already inside the bytes being
+/// overwritten stays there. Called from the active render path and from the
+/// `CreateVertexProgram` hook -- the latter so the `CreateVertexShader` detour that records a patched
+/// shader into the patched set exists *before* the shader is created, not lazily on the first
+/// rendered frame (a shader created in between, e.g. a character shader loaded at level start, would
+/// otherwise be patched at the blob level but never recorded, so `BOUND_VS_PATCHED` stays false and
+/// its draw is never doubled). A session without single-pass never installs them.
 pub fn ensure_viewport_detours() {
     // The whole body is serialized, not just the published-yet check: the callers are on different
     // threads (the render thread's cb13 mirror and the shader-creation thread's `CreateVertexProgram`),
-    // and the publish happens only after seven `GenericDetour::new` calls. Two threads could otherwise
-    // both pass an unpublished check and both reach `jc3vr_core::hooks::suspend::for_block`, each suspending the
-    // other -- a silent, permanent hang. `uninstall_com_detours` takes the same lock so an eject cannot
-    // interleave with an install.
+    // and the publish happens only after every `GenericDetour::new` call. Two threads could otherwise
+    // both pass an unpublished check and both reach `jc3vr_core::hooks::suspend::for_block`, each
+    // suspending the other -- a silent, permanent hang. `uninstall_com_detours` takes the same lock so
+    // an eject cannot interleave with an install.
     let _install = DETOUR_INSTALL.lock();
     if RS_SET_VIEWPORTS.get().is_some() || com_detours_failed() || jc3vr_core::is_shutting_down() {
-        return; // already installed, failed, or tearing down -- never (re)install during eject
+        // Already installed, failed, or tearing down: never (re)install during eject.
+        return;
     }
-    // SAFETY: reads the live immediate-context vtable; the two slots are the standard D3D11 layout.
+    // SAFETY: reads the live immediate-context and device vtables; the slots are the standard D3D11
+    // layout.
     unsafe {
         let Some(ge) = GraphicsEngine::get() else {
             return;

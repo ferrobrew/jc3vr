@@ -144,7 +144,7 @@ pub(super) fn reissue_viewport(
 }
 
 /// If single-pass is active, duplicate the immediate context's current viewport (and scissor) into
-/// slot 1. Called right after the engine binds a render setup ([`SetRenderSetup`]), which is where
+/// slot 1. Called right after the engine binds a render setup (`SetRenderSetup`), which is where
 /// the viewport is (re)set -- including per-cascade in the shadow passes, so slot 1 tracks whatever
 /// region is currently bound rather than going stale between binds.
 pub(crate) fn duplicate_current_viewport() {
@@ -270,13 +270,12 @@ pub(super) fn unify_viewport_slots() {
 /// Duplicate the current (single) viewport into viewport slots 0 **and** 1, both covering the same
 /// region.
 ///
-/// A patched shader writes `SV_ViewportArrayIndex = SV_InstanceID & 1`. With divergence off nothing
-/// doubles instances or sets up per-eye viewports, so an instanced draw's odd-`SV_InstanceID`
-/// primitives would route to viewport 1 -- which the engine never bound -- and be discarded, dropping
-/// half of every instanced object (the flicker, since VR head-motion re-sorts which instance ids are
-/// odd). Binding a second, identical viewport makes index 1 valid and render the same as index 0.
-/// When the eyes diverge, the two identical viewports become the left/right halves of the double-wide
-/// target instead.
+/// A patched shader writes `SV_ViewportArrayIndex = SV_InstanceID & 1`. Where nothing doubles
+/// instances or sets up per-eye viewports, an instanced draw's odd-`SV_InstanceID` primitives would
+/// route to viewport 1 -- which the engine never bound -- and be discarded, dropping half of every
+/// instanced object (the flicker, since VR head-motion re-sorts which instance ids are odd). Binding
+/// a second, identical viewport makes index 1 valid and render the same as index 0. Where the eyes
+/// are routed, the per-draw split binds the left/right halves of the double-wide target instead.
 pub(super) unsafe fn duplicate_viewport(context: &ID3D11DeviceContext) {
     unsafe {
         let mut count = 1u32;
@@ -335,7 +334,7 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
         }
         if collapse_active() {
             // Collapse: record the full viewport and bind both slots to it unsplit. The eye-split is
-            // applied per-draw in `draw_indexed_detour` via `ensure_collapse_viewport`, so the
+            // applied per draw in the draw detours via `ensure_collapse_viewport`, so the
             // interleaved fullscreen lighting/post passes (which do not route to an eye) keep the full
             // width while patched geometry gets the L/R halves. Binding both slots keeps a patched
             // shader that writes `SV_ViewportArrayIndex` valid before the first split of a pass.
@@ -366,7 +365,8 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             right.TopLeftX = vp.TopLeftX + half;
             (left, right)
         } else {
-            // Not diverging: both slots identical, so a patched shader routes anywhere validly.
+            // Outside the routed range: both slots identical, so a patched shader routes anywhere
+            // validly.
             VIEWPORT_DUP.fetch_add(1, Ordering::Relaxed);
             (vp, vp)
         };
@@ -404,7 +404,7 @@ pub(super) enum CollapseViewport {
 /// no-op until the scene's first viewport bind records it.
 pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseViewport) {
     // Split the viewport of whatever target is actually bound, not the scene's. They are the same
-    // everywhere except the reduced-resolution off-screen passes -- see [`CURRENT_ENGINE_VIEWPORT`].
+    // everywhere except the reduced-resolution off-screen passes -- see `viewport_record`.
     let flags = config_flags();
     let (Some(full), bound) =
         viewport_record::base_and_bound(flags.has(SinglePassSwitch::CollapseViewportFollowsTarget))

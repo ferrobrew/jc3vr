@@ -18,8 +18,8 @@
 //! on the immediate context passes through `rs_set_viewports_detour`, which records what it binds,
 //! and the mod's own binds through the trampoline record theirs. What could still change the slots
 //! unseen is a state reset (`ClearState`), which nothing calls inside a dispatch; the pair is
-//! forgotten at every dispatch and pass boundary all the same, so a missed change cannot outlive the
-//! pass it happened in.
+//! forgotten at every pass boundary all the same, so a missed change cannot outlive the pass it
+//! happened in.
 
 use std::sync::atomic::{AtomicU32, Ordering, fence};
 

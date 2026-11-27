@@ -3,19 +3,24 @@
 //! double-wide render target, instead of the double-draw (two full `game.Draw` walks, one per eye).
 //! See `docs/mod/stereo/single-pass-stereo.md` for the design.
 //!
-//! This module owns the mod-side state that the double-draw path does not need:
-//! - the DXVK viewport-routing **capability probe** ([`probe`] / [`capability`]);
-//! - the vertex-shader rewrite **census** ([`record_patch_outcome`] and the `*_count` getters), which
-//!   the `CreateVertexProgram` hook feeds so the debug UI can report how the rewriter fared against
-//!   the game's real shader set;
+//! The submodules hold the shader rewrites and the per-eye constant buffers they read, the draw and
+//! viewport detours, the per-eye re-issue of draws that cannot be instanced, and the diagnostics.
+//! This module holds the state they share:
+//! - whether the path runs this frame ([`active`]), from the frame's config snapshot and the view
+//!   crate's viewport-routing [`capability`];
+//! - the G-buffer range guard ([`enter_gbuffer_range`]) and the pass being walked
+//!   ([`set_current_pass`]);
+//! - the set of patched vertex shaders, and the vertex-shader rewrite **census**
+//!   ([`record_patch_outcome`] and the `*_count` getters), which the `CreateVertexProgram` hook feeds
+//!   so the debug UI can report how the rewriter fared against the game's real shader set;
 //! - which **transform** each vertex shader gets ([`decide_vs_transform`]), decided from its engine
 //!   name at `CreateVertexProgram` time and remembered against its bytecode ([`remember_vs_transform`])
 //!   so the D3D-level re-create path, which sees no name, applies the same decision instead of
-//!   guessing a different one.
+//!   guessing a different one;
+//! - the eject-time removal of the COM detours ([`uninstall_com_detours`]).
 //!
-//! The rest of the pipeline (cb13 dual-eye upload, the double-wide render-setup re-init, the
-//! draw-doubling) runs under [`jc3vr_view::stereo::config::StereoConfig::single_pass`] and the per-step flags
-//! beside it.
+//! The pipeline runs under the master switch and the per-step switches of
+//! [`SinglePassConfig`](jc3vr_view::stereo::config::SinglePassConfig).
 
 use std::{
     cell::Cell,
@@ -161,15 +166,14 @@ pub fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS a
 }
 
 /// Whether single-pass rendering should actually run this frame: the master switch is on, a VR
-/// session is running, the census-only dry-run is off, the device supports viewport routing, and the
-/// draw-path COM detours did not fail to install.
-/// The VS-substitution and cb13 paths gate on this; when it is false the double-draw path is left
+/// session is running, the device supports viewport routing, and the draw-path COM detours did not
+/// fail to install. The VS-substitution and cb13 paths gate on this; when it is false the double-draw path is left
 /// untouched. The shader set follows it: the frame driver re-creates the shaders whenever it
 /// changes ([`crate::hooks::graphics_engine::shader::reconcile_single_pass`]).
 pub fn active() -> bool {
     // Go inert the instant eject begins: the render thread keeps running through the whole teardown,
-    // so an ungated single-pass path would race the hook uninstall and the D3D-resource release (the
-    // same crash-on-uninject class already fixed for `vr::update` -- see `jc3vr_core::is_shutting_down`).
+    // so an ungated single-pass path would race the hook uninstall and the D3D-resource release (see
+    // `jc3vr_core::is_shutting_down`).
     if jc3vr_core::is_shutting_down() {
         return false;
     }
@@ -224,8 +228,9 @@ pub(crate) fn nv_water_per_eye() -> bool {
 }
 
 /// Vertex-shader name prefixes whose draws a baked-view-projection block intercept owns end to end,
-/// and whether the intercept is the WaveWorks water's, which [`nv_water_per_eye`] gates. Names come from `CreateVertexProgramParams.m_Name`; matched by
-/// prefix to cover each family's permutations, all of which are issued by the block's `Draw`/`DrawZ`.
+/// and whether the intercept is the WaveWorks water's, which [`nv_water_per_eye`] gates. Names come
+/// from `CreateVertexProgramParams.m_Name`; matched by prefix to cover each family's permutations,
+/// all of which are issued by the block's `Draw`/`DrawZ`.
 ///
 /// The occluder is deliberately absent: its shader has no `cb0[4]` reference, so the remap never
 /// claims it and there is nothing to decline.
@@ -366,8 +371,8 @@ impl Drop for GBufferRange {
         // The collapse's per-draw split ([`ensure_collapse_viewport`]) leaves the two slots holding
         // different eye halves, and that state outlives the range: everything drawn between here and
         // the next engine viewport bind would route its odd-parity instances into the other eye's half.
-        // Put the slots back to a single region now, which also covers the draws nothing detours (the
-        // GPU-indirect ones) -- the per-draw repair cannot see those.
+        // Put the slots back to a single region now, which also covers the draws no per-draw repair
+        // handles (the GPU-indirect ones, which outside the range are submitted as issued).
         if collapse_active() {
             unify_viewport_slots();
         }
@@ -377,7 +382,7 @@ impl Drop for GBufferRange {
 }
 
 /// Force the range closed, whether or not a guard is live, so a range left open by a torn-down or
-/// interrupted dispatch cannot bleed into the next one. See [`begin_frame`] for the caller.
+/// interrupted dispatch cannot bleed into the next one. See [`begin_dispatch`] for the caller.
 fn clear_gbuffer_range() {
     IN_GBUFFER_RANGE.store(false, Ordering::Relaxed);
     eye_camera::range_ended();
@@ -454,8 +459,8 @@ fn drain_slot13_census() -> Vec<(u8, u32)> {
 /// [`RenderPassId::RP_Z_OCCLUDERS`]..[`RenderPassId::RP_LAST_GBUFFER`], `Draw`
 /// [`RenderPassId::RP_REFLECTIVE_WATER_PLANES`]..[`RenderPassId::RP_POSTEFFECTS`],
 /// `DrawPosteffects` [`RenderPassId::RP_POSTEFFECTS`]..[`RenderPassId::RP_LAST_MAIN`]; see
-/// `docs/mod/stereo/single-pass-stereo.md`). Folding them at a range boundary therefore cut the frame into
-/// three unequal windows and reported each as if it were a frame; the fold belongs here, where a
+/// `docs/mod/stereo/single-pass-stereo.md`). Folding them at a range boundary would cut the frame
+/// into three unequal windows and report each as if it were a frame; the fold belongs here, where a
 /// frame actually begins.
 pub fn begin_frame() {
     // The leaked-range clear deliberately does *not* happen here: it belongs to the thread that
@@ -731,7 +736,7 @@ static RANGE_TORN_TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 thread_local! {
     /// Set by the `CreateVertexProgram` hook right before the engine creates the D3D shader from a
-    /// substituted (patched) blob, so [`create_vertex_shader_detour`] knows the next shader is patched.
+    /// substituted (patched) blob, so `shader_detours::create_vertex_shader_detour` knows the next shader is patched.
     ///
     /// Thread-local, not a global: `ID3D11Device` is free-threaded and JC3 streams resources off the
     /// render thread, so a loader thread's flag would otherwise tag whatever shader a *different*
@@ -741,13 +746,13 @@ thread_local! {
     static PATCH_PENDING: Cell<bool> = const { Cell::new(false) };
 
     /// The engine name of the shader [`PATCH_PENDING`] refers to, carried alongside it so
-    /// [`create_vertex_shader_detour`] can record the name against the `ID3D11VertexShader` it gets
+    /// `shader_detours::create_vertex_shader_detour` can record the name against the `ID3D11VertexShader` it gets
     /// back. The D3D layer never sees the name, and the shader pointer is the only identity the
     /// draw-time paths have, so this is the one point where the two can be joined.
     static PATCH_PENDING_NAME: Cell<Option<String>> = const { Cell::new(None) };
 
     /// Set by the `CreateVertexProgram` hook right before the engine creates the D3D shader from a
-    /// pinned-eye rewrite, so [`create_vertex_shader_detour`] tags it instead of recording it as
+    /// pinned-eye rewrite, so `shader_detours::create_vertex_shader_detour` tags it instead of recording it as
     /// patched: its draws must keep their per-eye submission. Thread-local for the same reason as
     /// [`PATCH_PENDING`].
     static PIN_PENDING: Cell<bool> = const { Cell::new(false) };

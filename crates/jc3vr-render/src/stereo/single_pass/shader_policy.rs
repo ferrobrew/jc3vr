@@ -23,8 +23,9 @@ use crate::stereo::single_pass::{
 /// models, roads). NDC writers -- sky, UI, post, particles, water -- are deliberately absent, so they
 /// stay double-drawn; `M_eye` would corrupt them and the bytecode can't tell them apart. Terrain and
 /// vegetation are absent too: the terrain VS writes no position (its clip is built in the domain
-/// shader) and vegetation is GPU-indirect, both separate phases. Names come from
-/// `CreateVertexProgramParams.m_Name`; matched by prefix to cover each family's permutations.
+/// shader, and the terrain path eye-injects it) and vegetation is GPU-indirect, which the vegetation
+/// paths handle. Names come from `CreateVertexProgramParams.m_Name`; matched by prefix to cover each
+/// family's permutations.
 const REPROJECT_NAME_PREFIXES: &[&str] = &[
     // Skinned and rigid characters, creatures (the NPCs).
     "character",
@@ -56,27 +57,28 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
 /// The cloud layers' vertex shaders, gated by the
 /// [`clouds_per_eye`](jc3vr_view::stereo::config::SinglePassConfig::clouds_per_eye) flag. Each takes its
 /// clip position from the full view-projection (`cb0[0..3]`), which the remap leaves alone, so under
-/// the collapse both eyes drew the clouds through the centred render camera. Matched by exact name,
+/// the collapse both eyes would draw the clouds through the centred render camera. Matched by exact name,
 /// because the `cloud` name space also holds the cloud-shadow pass. `clouds` and `cirrusclouds` also
 /// read the camera position (`cb0[4]`) for their shading, which claims them for the remap, so they
 /// reach the reprojection through [`should_reproject_camera_only`]; `softclouds` reads no other
 /// per-eye row and reaches it directly.
 const CLOUD_REPROJECT_NAMES: &[&str] = &["clouds", "cirrusclouds", "cloudflythrough", "softclouds"];
 
-/// The stars' vertex shader: a billboard per star, placed by a baked view-projection at vertex `cb1` with its clip depth pinned to the far
-/// plane, which the promoted draw keeps through the reprojection.
+/// The stars' vertex shader: a billboard per star, placed by a baked view-projection at vertex `cb1`
+/// with its clip depth pinned to the far plane, which the promoted draw keeps through the
+/// reprojection.
 const STARS_REPROJECT_NAME: &str = "starsshader";
 
-/// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`). The impostor VS writes `SV_Position` from the global billboard view-projection and draws a
-/// single non-instanced `DrawIndexed` -- no GPU-indirect path shares it -- so the same reprojection
+/// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`). The impostor
+/// VS writes `SV_Position` from the global billboard view-projection and draws a single non-instanced `DrawIndexed` -- no GPU-indirect path shares it -- so the same reprojection
 /// rewrite the scene families take covers it completely. The other vegetation families
 /// (`vegetationfoliage*`, `vegetationbark*`, `grass`, `leaves`) are deliberately absent: their dominant
 /// draw is GPU-indirect and shares the VS, so reprojecting it would break the indirect path -- they need
 /// the coordinated indirect handling (see `docs/mod/stereo/single-pass-render-blocks.md`).
 const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 
-/// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`). Unlike the other screen-space effects, `lightsource` and `lightsource_fakelight` project a
-/// world position through the scene view-projection and only then expand the sprite in clip space, by
+/// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`). Unlike the
+/// other screen-space effects, `lightsource` and `lightsource_fakelight` project a world position through the scene view-projection and only then expand the sprite in clip space, by
 /// a size scaled by the clip `w`; post-multiplying that clip position by `M_eye` moves the whole
 /// sprite into the eye, offset included, because `M_eye` is linear. Their draw is non-indexed, which
 /// the draw path promotes to two instances for a patched shader (`draw_detour`).
@@ -138,8 +140,7 @@ pub(crate) fn should_reproject(name: Option<&str>) -> bool {
 ///
 /// Reprojection fixes it, and this check routes such a shader to it even though the remap's
 /// candidacy test claims it, which would otherwise keep [`should_reproject`] from being consulted.
-/// Routing it there costs nothing extra --
-/// the shader still resolves its eye from `SV_InstanceID & 1` and the draw is still the one
+/// Routing it there costs nothing extra -- the shader still resolves its eye from `SV_InstanceID & 1` and the draw is still the one
 /// instance-doubled submission.
 ///
 /// Gated on the family also being on [`REPROJECT_NAME_PREFIXES`], so this only ever moves a shader
@@ -163,7 +164,8 @@ pub(crate) fn should_reproject_camera_only(name: Option<&str>, code: &[u8]) -> b
 /// eye index on the free `TEXCOORD3.z` lane (it writes no `SV_Position`, so it takes neither the `cb0`
 /// remap nor the reprojection). The hull and domain shaders that pair with these are transformed
 /// structurally -- gated on the transform succeeding, not by name -- since they are created through
-/// separate calls that do not carry a paired-VS identity. Names come from `CreateVertexProgramParams.m_Name`.
+/// separate calls that do not carry a paired-VS identity. Names come from
+/// `CreateVertexProgramParams.m_Name`.
 const TERRAIN_VS_NAME_PREFIXES: &[&str] = &[
     "volumetricterrain",
     "terrainscroller",
@@ -175,7 +177,7 @@ const TERRAIN_VS_NAME_PREFIXES: &[&str] = &[
 ];
 
 /// Whether a no-`cb0` vertex shader named `name` should be eye-injected for the single-pass terrain
-/// path: the `single_pass_terrain` config flag is on and the name is on [`TERRAIN_VS_NAME_PREFIXES`].
+/// path: the `single_pass.terrain` switch is on and the name is on [`TERRAIN_VS_NAME_PREFIXES`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands and the name is not a reprojection candidate.
 pub(crate) fn should_eye_inject(name: Option<&str>) -> bool {
@@ -189,7 +191,7 @@ pub(crate) fn should_eye_inject(name: Option<&str>) -> bool {
 
 /// Whether a terrain shader named `name` takes the pinned-eye reprojection
 /// (`dxbc_stereo::reproject_pinned_eye`) when the per-eye transforms decline it: the
-/// `single_pass_terrain` and `single_pass_terrain_patch_per_eye` flags are on, the name is a terrain
+/// `single_pass.terrain` and `single_pass.terrain_patch_per_eye` switches are on, the name is a terrain
 /// family, and it is not a shadow pass. The vertex hook applies it to a terrain shader that already
 /// reads `SV_InstanceID` (the GPU-indirect basemesh permutations), and the domain hook to a terrain
 /// domain shader with no free eye lane (the patch system's tessellated permutations, whose vertex
@@ -234,8 +236,8 @@ pub(crate) fn is_terrain_shadow_pass(name: Option<&str>) -> bool {
     name.is_none_or(|n| n.contains("shadow"))
 }
 
-/// Whether the single-pass terrain path is live: single-pass is [`active`] and the `single_pass_terrain`
-/// flag is on. Gates the hull-forward and domain-reproject substitutions in the shader-creation hooks.
+/// Whether the single-pass terrain path is live: single-pass is [`active`] and the
+/// `single_pass.terrain` switch is on. Gates the hull-forward and domain-reproject substitutions in the shader-creation hooks.
 pub(crate) fn terrain_active() -> bool {
     active() && config_flags().has(SinglePassSwitch::Terrain)
 }
@@ -289,7 +291,7 @@ pub(crate) enum VsTransform {
     /// out of the patched set, so its draws keep that per-eye submission.
     Pinned,
     /// Leave the shader pristine. Either no transform applies to it, or a render-block intercept owns
-    /// its draws ([`baked_cb_block_owns_vs`]) and the two mechanisms must not both claim the same
+    /// its draws ([`baked_cb_block_owns_vs`](crate::stereo::single_pass::baked_cb_block_owns_vs)) and the two mechanisms must not both claim the same
     /// geometry.
     None,
 }
@@ -337,9 +339,8 @@ pub(crate) fn report_malformed(rewrite: &'static str, error: DxbcError) {
 /// outcome of the `cb0` remap on its bytecode. Callers that a block intercept owns must pass
 /// [`VsTransform::None`] to [`remember_vs_transform`] instead of consulting this.
 ///
-/// Decided independently of [`active`], so the decision is on record for the D3D layer even in the
-/// census-only dry-run: enabling single-pass afterwards creates no new shader *programs*, so the
-/// dry-run pass is the only chance to record a name-derived decision for the shaders already loaded.
+/// Decided independently of [`active`]: the `CreateVertexProgram` hook decides for every shader while
+/// the master switch is configured, session or not, alongside the census.
 pub(crate) fn decide_vs_transform(
     name: Option<&str>,
     code: &[u8],
@@ -423,7 +424,7 @@ pub(crate) fn apply_vs_transform(
     }
 }
 
-/// Record the transform decided for the pristine blob `code`, so [`create_vertex_shader_detour`] can
+/// Record the transform decided for the pristine blob `code`, so the `CreateVertexShader` detour can
 /// apply the same decision to a shader that reaches D3D without passing the `CreateVertexProgram`
 /// hook. Overwrites any previous decision for the same blob, so a re-created program re-decides under
 /// the current config rather than being pinned by the first pass.
@@ -447,7 +448,7 @@ pub(crate) fn remember_vs_transform(code: &[u8], transform: VsTransform) {
 /// substitutes a shader at all. So a shader that passes the hook and is then created unsubstituted --
 /// the declined families -- hits its own entry on the very next call, on the same thread.
 ///
-/// **Shared across threads, unlike [`PATCH_PENDING`].** That flag has to be thread-local because it
+/// **Shared across threads, unlike `PATCH_PENDING`.** That flag has to be thread-local because it
 /// carries no identity: a free-threaded `ID3D11Device` and a streaming loader mean a process-global
 /// flag can be consumed by whatever shader another thread creates next. This map is the opposite --
 /// the key *is* the identity, so a concurrent creation on another thread can only ever match its own
@@ -455,7 +456,8 @@ pub(crate) fn remember_vs_transform(code: &[u8], transform: VsTransform) {
 /// not be the same one. Both sides are shader-creation paths (load time), never a draw path, so the
 /// lock is uncontended in practice.
 ///
-/// Cleared with the patched-shader set in [`reset_patched_vs`], which is also where a bundle bounce
+/// Cleared with the patched-shader set in
+/// [`reset_patched_vs`](crate::stereo::single_pass::reset_patched_vs), which is also where a bundle bounce
 /// re-creates every shader through the hook and so repopulates it; that bounds the map at one entry
 /// per distinct vertex shader in a bundle (a few hundred).
 pub(super) static VS_TRANSFORM_CACHE: Mutex<BTreeMap<(usize, u64), VsTransform>> =
@@ -473,9 +475,8 @@ pub(super) fn cached_vs_transform(code: &[u8]) -> Option<VsTransform> {
 /// comparison is exact.
 ///
 /// FNV-1a has no collision resistance, but with ~455 shaders and 64-bit hashes the birthday-bound
-/// collision probability is negligible (~1e-15). The length is part of the key to make the cheap half
-/// exact, so a collision would require two shaders of the same length with identical hash —
-/// astronomically unlikely for this corpus.
+/// collision probability is negligible (~1e-15), and a collision would also need the two shaders to
+/// have the same length.
 pub(super) fn vs_blob_key(code: &[u8]) -> (usize, u64) {
     const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
@@ -490,9 +491,10 @@ pub(super) fn vs_blob_key(code: &[u8]) -> (usize, u64) {
 /// Record the outcome of running [`dxbc_stereo::patch_vertex_shader`] on one vertex shader, for the
 /// census the debug UI reports. Classifies into four buckets: successfully patched; no per-eye
 /// references (the baked-WVP / no-position families -- expected; this also covers the families
-/// declined in favour of a block intercept, see [`baked_cb_block_owns_vs`]); the
-/// `SV_InstanceID`-already-declared deferral (shaders that instance themselves, whose `>> 1` consumer
-/// rewrite is a later phase -- also expected, left double-drawn); and genuinely errored (an
+/// declined in favour of a block intercept, see
+/// [`baked_cb_block_owns_vs`](crate::stereo::single_pass::baked_cb_block_owns_vs)); the
+/// `SV_InstanceID`-already-declared deferral (shaders that instance themselves, whose instance-id
+/// consumers the rewriter does not split into instance and eye -- also expected, left double-drawn); and genuinely errored (an
 /// unexpected shape the rewriter could not handle -- worth investigating, should be zero).
 pub(crate) fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>) {
     let counter = match outcome {
@@ -518,14 +520,14 @@ pub fn no_refs_count() -> usize {
     NO_REFS.load(Ordering::Relaxed)
 }
 
-/// Vertex shaders left double-drawn because they already declare an `SV_InstanceID` input; their
-/// `>> 1` consumer rewrite is a later phase. Expected, not a failure.
+/// Vertex shaders left double-drawn because they already declare an `SV_InstanceID` input, whose
+/// consumers the rewriter does not split into instance and eye. Expected, not a failure.
 pub fn deferred_count() -> usize {
     DEFERRED.load(Ordering::Relaxed)
 }
 
-/// Vertex shaders the rewriter could not handle for an unexpected reason (a shape it does not yet
-/// support). A non-zero count flags shaders to investigate -- the offline corpus reports zero.
+/// Vertex shaders the rewriter could not handle, for a reason other than the expected declines. A
+/// non-zero count flags shaders to investigate -- the offline corpus reports zero.
 pub fn errored_count() -> usize {
     ERRORED.load(Ordering::Relaxed)
 }

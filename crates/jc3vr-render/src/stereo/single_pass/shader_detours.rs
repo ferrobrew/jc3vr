@@ -5,6 +5,10 @@
 //! The draw path needs to know, per draw, whether the bound shader renders both eyes by itself. That
 //! question is answered here and read there, which is why the patched-shader set and the bound-shader
 //! flag live with the detours that maintain them rather than with the draws that consult them.
+//!
+//! The `CreateVertexShader` detour also feeds the vertex identity registry, which the capture probes
+//! arm to map a bound shader back to its engine name and the SHA-256 of the bytecode it was created
+//! from.
 
 use std::{
     cell::Cell,
@@ -51,7 +55,8 @@ pub(super) static VS_SET_SHADER: DetourSlot<VsSetShaderFn> = DetourSlot::new();
 /// What [`create_vertex_shader_detour`] made of a blob that did not arrive pre-substituted from the
 /// `CreateVertexProgram` hook.
 pub(super) enum Reacquired {
-    /// The hook did see this blob and decided its transform by name ([`remember_vs_transform`]); that
+    /// The hook did see this blob and decided its transform by name
+    /// ([`remember_vs_transform`](crate::stereo::single_pass::remember_vs_transform)); that
     /// decision was re-applied here. `None` when the decision was to leave the shader pristine, or
     /// when the rewrites it allows all bowed out.
     Decided(VsTransform, Option<Vec<u8>>),
@@ -102,8 +107,8 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
         .then(|| {
             let code = unsafe { std::slice::from_raw_parts(bytecode.cast::<u8>(), length) };
             match cached_vs_transform(code) {
-                // No remap output to hand on (this path did not run one) and no name (the whole reason the
-                // decision had to be made elsewhere), so the terrain log line here is unnamed.
+                // No remap output to hand on (this path did not run one) and no name (the whole reason
+                // the decision had to be made elsewhere), so the terrain log line here is unnamed.
                 Some(transform) => {
                     Reacquired::Decided(transform, apply_vs_transform(transform, code, None, None))
                 }
@@ -407,7 +412,7 @@ pub(crate) fn vertex_identity_lookup(
     Ok(state.entries.get(&shader).cloned())
 }
 
-/// Cache whether the vertex shader now bound is a patched one, so [`draw_indexed_detour`] can gate
+/// Cache whether the vertex shader now bound is a patched one, so the draw detours can gate
 /// without a per-draw set lookup, and its pointer, so the already-instanced exposure measurement can
 /// attribute a draw to the shader that issued it.
 pub(super) unsafe extern "system" fn vs_set_shader_detour(
@@ -473,11 +478,12 @@ pub(crate) fn warn_if_shaders_hold_patched_bytecode() {
     }
 }
 
-/// A snapshot of the shader-substitution tallies, for the bring-up log and the screenshot JSON sidecar.
-/// `recorded_vs` is the live size of [`PATCHED_VS`] (patched shaders the draw gating will double); the
-/// `cvs_*` fields are the [`create_vertex_shader_detour`] outcome buckets; the `census_*` fields are the
-/// [`record_patch_outcome`] buckets from the `CreateVertexProgram` hook. Comparing the two paths shows
-/// whether the re-create path (which skips `CreateVertexProgram`) is reaching the D3D-level substitution.
+/// A snapshot of the shader-substitution tallies, for the bring-up log and the screenshot JSON
+/// sidecar. `recorded_vs` is the live size of [`PATCHED_VS`] (patched shaders the draw gating will
+/// double); the `cvs_*` fields are the [`create_vertex_shader_detour`] outcome buckets; the `census_*`
+/// fields are the [`record_patch_outcome`](crate::stereo::single_pass::record_patch_outcome) buckets
+/// from the `CreateVertexProgram` hook. Comparing the two paths shows whether the re-create path
+/// (which skips `CreateVertexProgram`) is reaching the D3D-level substitution.
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 pub struct SubstitutionStats {
     pub recorded_vs: usize,

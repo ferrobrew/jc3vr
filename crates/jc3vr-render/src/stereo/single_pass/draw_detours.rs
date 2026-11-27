@@ -18,8 +18,9 @@ use crate::{
     },
 };
 
-/// `ID3D11DeviceContext` vtable slots for the two indexed-draw entry points (verified against
-/// `windows`'s `ID3D11DeviceContext_Vtbl`: field 6 → slot 12, field 14 → slot 20).
+/// `ID3D11DeviceContext` vtable slots for `DrawIndexed`, `Draw`, and `DrawIndexedInstanced`
+/// (verified against `windows`'s `ID3D11DeviceContext_Vtbl`: field 6 → slot 12, field 7 → slot 13,
+/// field 14 → slot 20).
 pub(super) const DRAW_INDEXED_SLOT: usize = 12;
 pub(super) const DRAW_SLOT: usize = 13;
 pub(super) const DRAW_INDEXED_INSTANCED_SLOT: usize = 20;
@@ -152,11 +153,13 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     );
 }
 
-/// Handle a non-indexed `DrawIndexed` sibling -- `Draw` (vtable slot 13). The fullscreen passes
-/// (deferred lighting, screen-space effects, post) draw a fullscreen triangle this way, and under
-/// collapse they must cover the **full** target, not the eye-half the previous patched geometry draw
-/// left the viewport split to. Reset the viewport to full before the draw. Outside collapse (or the
-/// camera scene) this is a straight pass-through.
+/// Handle a non-indexed `Draw` (vtable slot 13). The fullscreen passes (deferred lighting,
+/// screen-space effects, post) draw a fullscreen triangle this way, and under collapse they must
+/// cover the **full** target, not the eye-half the previous patched geometry draw left the viewport
+/// split to, so the viewport is reset to full before the draw. The geometry passes
+/// ([`is_geometry_slot13_pass`]), the static light sprites, the water reflection planes, and the sky
+/// bodies are promoted or re-issued per eye instead. Outside the collapse's G-buffer range the draw
+/// is submitted as issued.
 pub(super) unsafe extern "system" fn draw_detour(
     context: *mut c_void,
     vertex_count: u32,
@@ -530,12 +533,11 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 /// An indirect draw carries its vertex/instance counts in a GPU buffer, so it can be neither
 /// instance-doubled (the promotion [`draw_indexed_detour`] applies to a patched shader) nor rewritten
 /// -- the arguments are submitted verbatim, twice. What the mod controls is the viewport, and that is
-/// the whole defect: nothing detoured these entry points, so the draw inherited whatever the previous
-/// draw left bound, which under the collapse is dominated by [`CollapseViewport::Full`]. Rasterising
+/// the whole defect: left alone, the draw inherits whatever the previous draw left bound, which under the collapse is dominated by [`CollapseViewport::Full`]. Rasterising
 /// `cb0`'s per-eye off-axis projection into the full double-wide viewport stretches the geometry 2x
 /// horizontally about the target centre, and a 2x horizontal stretch is a 2x horizontal *motion* gain
 /// -- the near terrain patches and foliage sliding across the screen as the camera turns. Pinning each
-/// submission to its eye's half is the same deal the unpatched `DrawIndexed` path already takes:
+/// submission to its eye's half is the same deal the unpatched `DrawIndexed` path takes:
 /// present and correctly sized in both eyes, with no parallax, since `cb0` stays eye 0's. The
 /// exception is a pipeline carrying a pinned-eye shader (the terrain patch system's): for it `cb13` is
 /// pinned to each eye in turn ([`Cb13EyePin`]), which gives each submission that eye's view.
@@ -544,7 +546,7 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 /// inside a block-level per-eye re-issue (which has already pinned the viewport for this eye
 /// deliberately -- the [`PER_EYE_REISSUE`] marker), and when the bound vertex shader is patched (it
 /// writes `SV_ViewportArrayIndex` itself and would have to be routed, not pinned; that includes the
-/// tessellated terrain families once `single_pass_terrain` transforms them).
+/// tessellated terrain families when `single_pass.terrain` transforms them).
 ///
 /// The re-issue does not raise [`PER_EYE_REISSUE`] itself -- it drives no engine code, only the
 /// trampolines, so nothing it calls can re-enter this module's detours.
@@ -780,7 +782,7 @@ pub(super) fn hw_instanced_once(
 /// `cb13` is shared by every patched shader in the pass, so its restore is unconditional: leaving it
 /// pinned would collapse the rest of the frame's geometry to one eye. The viewport is put back exactly
 /// as it was found rather than to the recorded full width, so a following draw that inherits the
-/// viewport (an indirect draw, which nothing detours) sees no trace of the pin.
+/// viewport (an indirect draw that [`indirect_per_eye`] forwards) sees no trace of the pin.
 pub(super) fn instanced_per_eye(submit: &dyn Fn(usize)) -> bool {
     let Some(full) = viewport_record::scene_viewport() else {
         return false;

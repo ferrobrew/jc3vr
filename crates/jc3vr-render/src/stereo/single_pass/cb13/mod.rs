@@ -23,13 +23,13 @@ const STEREO_CB_REGISTER: u32 = 13;
 const STEREO_CB_ROWS: usize = 10;
 /// The row where the reprojection `M_eye` block begins (`dxbc_stereo::MEYE_ROW_BASE`).
 const MEYE_ROW_BASE: usize = 10;
-/// The row of eye 0's copy of the render camera's position (`dxbc_stereo::CLIP_ORIGIN_ROW_BASE`), after
-/// the `M_eye` block; eye `e`'s copy is five rows on per eye, at the stride of the remap block.
+/// The row of eye 0's copy of the render camera's position (`dxbc_stereo::CLIP_ORIGIN_ROW_BASE`),
+/// after the `M_eye` block; eye `e`'s copy is five rows on per eye, at the stride of the remap block.
 const CLIP_ORIGIN_ROW_BASE: usize = 18;
 /// The `cb0` row the clip-origin copies mirror (`dxbc_stereo::CLIP_ORIGIN_CB0_ROW`).
 const CLIP_ORIGIN_SOURCE_ROW: usize = 9;
-/// The row whose `.x` says the eye slots hold distinct per-eye rows (`dxbc_stereo::EYE_ROWS_SELECT_ROW`):
-/// one in a dual-eye upload, zero in a mirror. The terrain domain shaders that read their camera rows
+/// The row whose `.x` says the eye slots hold distinct per-eye rows
+/// (`dxbc_stereo::EYE_ROWS_SELECT_ROW`): one in a dual-eye upload, zero in a mirror. The terrain domain shaders that read their camera rows
 /// from an eye's slot choose by it.
 const EYE_ROWS_SELECT_ROW: usize = 24;
 /// The row where eye 0's copy of the full view-projection (`cb0[0..3]`) begins
@@ -66,7 +66,7 @@ pub(super) const PER_EYE_ROW_COUNT: usize = PER_EYE_SOURCE_ROWS.len();
 
 /// Mirror the current view's per-eye `cb0` rows into the mod-owned `cb13` and bind it at `b13`.
 ///
-/// Outside the diverging case both eye slots get the **same** (current-view) rows, so a patched
+/// Outside the G-buffer range both eye slots get the **same** (current-view) rows, so a patched
 /// vertex shader -- which reads its position from `cb13` instead of `cb0` -- renders exactly what it
 /// would have from `cb0`, in *every* pass (the G-buffer, but also the shadow and reflection passes
 /// that reuse the same model shaders under a different view). That shadow-safety is why `cb13` tracks
@@ -80,7 +80,7 @@ pub(crate) fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
 
     // During the main-scene G-buffer range, fill the two eye slots with *distinct* per-eye
     // view-projections so the eyes diverge. Everywhere else (the shadow and reflection passes, and
-    // whenever divergence is off) mirror the current view into both slots -- diverging those would be
+    // whenever single-pass is not active) mirror the current view into both slots -- diverging those would be
     // wrong, since they render from the sun or reflection camera, not the eye camera.
     let dual = (active() && in_gbuffer_range())
         .then(|| compute_dual_eye_rows(engine))
@@ -111,7 +111,7 @@ pub(crate) fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
 }
 
 /// Mirror the current view's per-eye `cb0` rows into both `cb13` eye slots (the non-scene passes, and
-/// any frame where divergence is off): a patched shader then renders exactly what it would from
+/// any frame where single-pass is not active or the dual-eye rows are unavailable): a patched shader then renders exactly what it would from
 /// `cb0`. The `M_eye` reprojection block is left at identity, so a reprojected shader is a no-op here
 /// too.
 fn mirror_rows(engine: &RenderEngine) -> [Vector4; STEREO_CB_TOTAL_ROWS] {
@@ -156,7 +156,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 
 /// Compute distinct per-eye `cb13` rows from the pristine center render-camera transform and the
 /// per-eye [`EyeRenderParams`](jc3vr_view::vr::frame::EyeRenderParams), replicating the double-draw's
-/// per-eye camera math (`hooks/camera.rs`) purely in mod code -- so the single walk produces both
+/// per-eye camera math (the view crate's `hooks::camera`) purely in mod code -- so the single walk produces both
 /// eyes. Returns `None` (falling back to the mirror) if the center transform or per-eye params are
 /// not available this frame.
 ///
@@ -257,8 +257,9 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
         write_meye(&mut rows, eye, m_eye);
         m_eyes[eye] = m_eye;
     }
-    // Publish the per-eye reprojection matrices for the render-block-level intercepts (terrain detail),
-    // which apply `M_eye` on the CPU to a per-draw constant buffer rather than through a rewritten shader.
+    // Publish the per-eye reprojection matrices for the render-block-level intercepts (terrain
+    // detail), which apply `M_eye` on the CPU to a per-draw constant buffer rather than through a
+    // rewritten shader.
     *CURRENT_M_EYE.lock() = Some(m_eyes);
 
     // Diagnostic (rate-limited): the angle between the two eyes' forward vectors. A stereo pair should
@@ -410,8 +411,8 @@ impl Cb13Buffer {
     }
 }
 
-/// Copy eye `eye`'s view-projection rows, camera position, `M_eye` block, and clip origin over **both** eye slots of
-/// a `cb13` row set. A patched shader then reads the same eye whichever parity it computes.
+/// Copy eye `eye`'s view-projection rows, camera position, `M_eye` block, clip origin, and full
+/// view-projection over **both** eye slots of a `cb13` row set. A patched shader then reads the same eye whichever parity it computes.
 pub(super) fn pin_rows_to_eye(
     rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
     eye: usize,
