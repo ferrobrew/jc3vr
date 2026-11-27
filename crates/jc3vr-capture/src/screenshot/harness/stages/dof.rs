@@ -6,7 +6,7 @@ use jc3gi::graphics_engine::{
     post_effects::{PostEffectContext, PostEffectsManager},
     texture::Texture,
 };
-use jc3vr_render::stereo::single_pass::{shader_identity, vertex_identity_lookup};
+use jc3vr_render::{probes::state::vertex_identity_lookup, stereo::single_pass::shader_identity};
 use jc3vr_view::stereo::draw_index;
 use windows::{
     Win32::Graphics::{Direct3D::D3D_SRV_DIMENSION_TEXTURE2D, Direct3D11::*},
@@ -17,7 +17,7 @@ use crate::screenshot::{
     harness,
     harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        rewrites,
+        kept_shaders, rewrites,
         stages::{
             STATE, Stage, StageArtifact, StageImage, StageRecord, capture, capture_raster_state,
             empty_stage_record, read_texture,
@@ -203,7 +203,7 @@ pub(crate) unsafe fn on_draw(context: *mut c_void, draw: &dyn Fn()) -> bool {
                         36, 144, 175, 160, 219, 84, 239, 223, 87, 100, 193, 225, 215, 152, 72, 191,
                         159, 241, 127, 141, 175, 35, 151, 179, 36, 89, 58, 94, 83, 26, 94, 68
                     ]
-                    && matches!(&ps,shader_identity::IdentityResult::Mapped{identity} if identity.actual_sha256==shader_identity::DOF_PS && identity.pristine_sha256==shader_identity::DOF_PS)
+                    && matches!(&ps,shader_identity::IdentityResult::Mapped{identity} if identity.actual_sha256==kept_shaders::DOF_PS && identity.pristine_sha256==kept_shaders::DOF_PS)
                     && rows.len() == 68
                     && rows[13 * 4 + 2] == 0.
                     && rows[2 * 4 + 1] == 1.
@@ -214,7 +214,7 @@ pub(crate) unsafe fn on_draw(context: *mut c_void, draw: &dyn Fn()) -> bool {
                 "DoF edge: unexpected program, branch or t9 binding"
             );
             let bytes = rewrites::local_dof_edge(
-                &shader_identity::dof_bytecode().context("DoF edge: no bytecode")?,
+                &kept_shaders::dof_bytecode().context("DoF edge: no bytecode")?,
             )?;
             let mut shader = None;
             unsafe {

@@ -273,13 +273,13 @@ pub(super) fn com_detours_failed() -> bool {
     COM_DETOURS_FAILED.load(Ordering::Acquire)
 }
 
-pub fn vertex_identity_detour_ready() -> bool {
+pub(crate) fn vertex_identity_detour_ready() -> bool {
     CREATE_VERTEX_SHADER
         .get()
         .is_some_and(|detour| detour.is_enabled())
 }
 
-pub fn ensure_pixel_shader_detour() -> bool {
+pub(crate) fn ensure_pixel_shader_detour() -> bool {
     let _install = DETOUR_INSTALL.lock();
     if let Some(detour) = CREATE_PIXEL_SHADER.get() {
         return detour.is_enabled();

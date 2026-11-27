@@ -21,12 +21,14 @@ use std::{
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use jc3gi::graphics_engine::render_engine::RenderPassId;
 use jc3vr_render::{
-    hooks::graphics_engine::reconstruction::split_run_eye,
-    probes::RawDrawKind,
-    stereo::single_pass::{
-        bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye, shader_identity,
-        shader_identity::IdentityResult, vertex_identity_lookup,
+    probes::{
+        RawDrawKind,
+        state::{
+            bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye, split_run_eye,
+            vertex_identity_lookup,
+        },
     },
+    stereo::single_pass::{shader_identity, shader_identity::IdentityResult},
 };
 use jc3vr_view::stereo::draw_index;
 use parking_lot::Mutex;

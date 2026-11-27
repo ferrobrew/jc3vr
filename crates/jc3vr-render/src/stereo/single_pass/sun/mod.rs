@@ -254,7 +254,7 @@ pub(super) unsafe fn observe_vertex_upload(
 }
 
 /// The far-plane bits this thread's re-driven sun draw consumed from the observed `cb1` upload.
-pub fn consumed_far_bits() -> Option<u32> {
+pub(crate) fn consumed_far_bits() -> Option<u32> {
     UPLOAD_OBSERVATION.with(|slot| {
         slot.borrow()
             .as_ref()
@@ -263,7 +263,7 @@ pub fn consumed_far_bits() -> Option<u32> {
 }
 
 /// Whether this thread's re-driven sun draw took the far-depth correction.
-pub fn far_depth_corrected() -> bool {
+pub(crate) fn far_depth_corrected() -> bool {
     UPLOAD_OBSERVATION.with(|slot| {
         slot.borrow()
             .as_ref()

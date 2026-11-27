@@ -17,6 +17,7 @@
 
 mod arming;
 mod events;
+pub mod state;
 
 use std::{
     ffi::c_void,

@@ -1,8 +1,10 @@
 use anyhow::{Context as _, ensure};
-use jc3vr_render::stereo::single_pass::{shader_identity, shader_identity::IdentityResult};
+use jc3vr_render::stereo::single_pass::shader_identity::IdentityResult;
 use windows::Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader};
 
-use crate::screenshot::harness::{resolve_probe::Observation, rewrites, stages::LakeSampleTargets};
+use crate::screenshot::harness::{
+    kept_shaders, resolve_probe::Observation, rewrites, stages::LakeSampleTargets,
+};
 
 pub(crate) struct Guard {
     ctx: ID3D11DeviceContext,
@@ -20,11 +22,11 @@ impl Guard {
         eye: usize,
     ) -> anyhow::Result<Self> {
         ensure!(
-            matches!(&obs.pixel_shader.identity, Some(IdentityResult::Mapped{identity}) if identity.pristine_sha256 == shader_identity::RESOLVE_PRISTINE && [shader_identity::RESOLVE_ACTUAL, shader_identity::RESOLVE_EYE_CAMERA, shader_identity::RESOLVE_EYE_LIGHTS].contains(&identity.actual_sha256.as_str())),
+            matches!(&obs.pixel_shader.identity, Some(IdentityResult::Mapped{identity}) if identity.pristine_sha256 == kept_shaders::RESOLVE_PRISTINE && [kept_shaders::RESOLVE_ACTUAL, kept_shaders::RESOLVE_EYE_CAMERA, kept_shaders::RESOLVE_EYE_LIGHTS].contains(&identity.actual_sha256.as_str())),
             "resolve samples: unexpected shader"
         );
         let bytes =
-            shader_identity::resolve_bytecode().context("resolve samples: missing executable")?;
+            kept_shaders::resolve_bytecode().context("resolve samples: missing executable")?;
         let shadow = crate::screenshot::harness::resolve_shadow_requested(frame);
         let traced = rewrites::trace_deferred_samples(&bytes, shadow)?;
         let mut shader = None;

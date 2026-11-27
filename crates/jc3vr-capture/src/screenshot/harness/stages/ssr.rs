@@ -17,7 +17,7 @@ use windows::{
 use crate::screenshot::{
     harness,
     harness::{
-        rewrites,
+        kept_shaders, rewrites,
         stages::{
             LakeSampleTargets, STATE, Stage, StageImage, capture_raster_state, empty_stage_record,
             read_texture,
@@ -149,10 +149,10 @@ fn bind_ray(
     let shader = shader.context("missing ray shader")?;
     ensure!(
         count == 0
-            && matches!(shader_identity::lookup(&shader),shader_identity::IdentityResult::Mapped{identity} if identity.actual_sha256==shader_identity::SSR_RAY && identity.pristine_sha256==shader_identity::SSR_RAY),
+            && matches!(shader_identity::lookup(&shader),shader_identity::IdentityResult::Mapped{identity} if identity.actual_sha256==kept_shaders::SSR_RAY && identity.pristine_sha256==kept_shaders::SSR_RAY),
         "unexpected ray shader"
     );
-    let bytes = shader_identity::ssr_bytecode().context("missing ray bytecode")?;
+    let bytes = kept_shaders::ssr_bytecode().context("missing ray bytecode")?;
     let march_eye = harness::march_eye(frame);
     let veto_eye = harness::veto_eye(frame);
     let grid_eye = harness::grid_eye(frame);

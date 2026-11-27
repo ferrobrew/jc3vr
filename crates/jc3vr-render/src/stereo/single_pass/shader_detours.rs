@@ -377,7 +377,9 @@ mod vertex_identity_tests {
     }
 }
 
-pub fn vertex_identity_lookup(shader: usize) -> Result<Option<VertexIdentity>, &'static str> {
+pub(crate) fn vertex_identity_lookup(
+    shader: usize,
+) -> Result<Option<VertexIdentity>, &'static str> {
     let state = VERTEX_IDENTITIES.lock();
     if !state.armed {
         return Err("unarmed");

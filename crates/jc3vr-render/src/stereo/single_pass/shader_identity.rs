@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
     ffi::c_void,
     sync::{
-        LazyLock,
+        LazyLock, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -32,15 +32,7 @@ static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| {
     Mutex::new(Registry {
         generation: 0,
         shaders: HashMap::new(),
-        lake: None,
-        resolve: None,
-        aa: None,
-        dof: None,
-        fog: None,
-        impostor: None,
-        color_bark: None,
-        bark: None,
-        ssr: None,
+        kept: HashMap::new(),
         overflow: 0,
         invalid: 0,
         install_error: false,
@@ -79,15 +71,8 @@ pub struct CensusStatus {
 struct Registry {
     generation: u64,
     shaders: HashMap<usize, Identity>,
-    lake: Option<Vec<u8>>,
-    resolve: Option<Vec<u8>>,
-    aa: Option<Vec<u8>>,
-    dof: Option<Vec<u8>>,
-    fog: Option<Vec<u8>>,
-    impostor: Option<Vec<u8>>,
-    color_bark: Option<Vec<u8>>,
-    bark: Option<Vec<u8>>,
-    ssr: Option<Vec<u8>>,
+    /// The bytecode of the shaders in [`KEPT`] created this generation, by pristine hash.
+    kept: HashMap<&'static str, Vec<u8>>,
     overflow: usize,
     invalid: usize,
     install_error: bool,
@@ -98,15 +83,7 @@ impl Registry {
         self.generation = self.generation.wrapping_add(1);
         self.overflow = 0;
         self.invalid = 0;
-        self.lake = None;
-        self.resolve = None;
-        self.aa = None;
-        self.dof = None;
-        self.fog = None;
-        self.impostor = None;
-        self.color_bark = None;
-        self.bark = None;
-        self.ssr = None;
+        self.kept.clear();
         self.install_error = false;
         std::mem::take(&mut self.shaders)
     }
@@ -212,7 +189,24 @@ pub fn lookup(shader: &ID3D11PixelShader) -> IdentityResult {
         })
 }
 
-pub fn arm() -> bool {
+/// Arm the census and install the vertex- and pixel-shader creation detours it records through:
+/// `Ok(true)` when this call armed it, `Ok(false)` when it already was. When a detour does not
+/// install, the census is marked failed and the error names the detour.
+pub fn arm_with_detours() -> Result<bool, &'static str> {
+    let newly = arm();
+    crate::stereo::single_pass::ensure_viewport_detours();
+    if !crate::stereo::single_pass::vertex_identity_detour_ready() {
+        mark_install_failed();
+        return Err("vertex shader detour installation failed");
+    }
+    if !crate::stereo::single_pass::ensure_pixel_shader_detour() {
+        mark_install_failed();
+        return Err("pixel shader detour installation failed");
+    }
+    Ok(newly)
+}
+
+fn arm() -> bool {
     if ARMED.load(Ordering::Acquire) {
         return false;
     }
@@ -239,7 +233,7 @@ pub(crate) fn reset() {
     }
 }
 
-pub fn mark_install_failed() {
+fn mark_install_failed() {
     REGISTRY.lock().install_error = true;
 }
 
@@ -362,60 +356,11 @@ pub(super) unsafe extern "system" fn create_pixel_shader_detour(
         {
             return;
         }
-        if identity.actual_sha256 == LAKE_PS
-            && identity.pristine_sha256 == LAKE_PS
-            && length == 21568
-        {
-            state.lake =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == AA_PS && identity.pristine_sha256 == AA_PS && length == 2296 {
-            state.aa =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == DOF_PS && identity.pristine_sha256 == DOF_PS && length == 2944
-        {
-            state.dof =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == FOG_PS && identity.pristine_sha256 == FOG_PS && length == 10364
-        {
-            state.fog =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == IMPOSTOR_PS
-            && identity.pristine_sha256 == IMPOSTOR_PS
-            && length == 5628
-        {
-            state.impostor =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == BARK_COLOR_PS
-            && identity.pristine_sha256 == BARK_COLOR_PS
-            && length == 6020
-        {
-            state.color_bark =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == BARK_PS
-            && identity.pristine_sha256 == BARK_PS
-            && length == 1204
-        {
-            state.bark =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.actual_sha256 == SSR_RAY
-            && identity.pristine_sha256 == SSR_RAY
-            && length == 8036
-        {
-            state.ssr =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
-        }
-        if identity.pristine_sha256 == RESOLVE_PRISTINE
-            && is_resolve_executable(&identity.actual_sha256, length)
-        {
-            state.resolve =
-                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        if let Some(kept) = kept_as(&identity, length) {
+            state.kept.insert(
+                kept.pristine,
+                unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec(),
+            );
         }
         unsafe { com_add_ref(shader) };
         state.shaders.insert(key, identity);
@@ -423,73 +368,44 @@ pub(super) unsafe extern "system" fn create_pixel_shader_detour(
     result
 }
 
-pub const AA_PS: &str = "a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765";
-pub fn aa_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().aa.clone()
+/// A shader whose bytecode the census keeps as it is created: the hash of the pristine bytecode the
+/// engine creates it from, and the executables (the hash and byte length of the bytecode the device
+/// is handed) that count as it.
+#[derive(Clone, Copy, Debug)]
+pub struct Kept {
+    pub pristine: &'static str,
+    pub executables: &'static [(&'static str, usize)],
 }
 
-pub const DOF_PS: &str = "72acf8f41c94e5b9733f6c25643a3c91c21b51abd607c98b6cecaf034577a64f";
-pub fn dof_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().dof.clone()
-}
-
-pub const FOG_PS: &str = "a10dbcd176ceeaa9b289a3c6ae0ea5935e75d0685e22fabc9aaa0b7042a6db4e";
-pub fn fog_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().fog.clone()
-}
-
-pub const IMPOSTOR_PS: &str = "2c157723bbe071f6ad1c67e2279281dfcb997bc5ae10eceb5704dafbf6597b2d";
-pub fn impostor_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().impostor.clone()
-}
-
-pub const BARK_COLOR_PS: &str = "409571499dedebe97d1dba4e7ad782e5f2a91494d0e157c849e6ef66324e3b0d";
-pub const BARK_PS: &str = "7109e8678eee33b96df29f0bf195a7be083a0aafb93f41abdf91739a8bb67ad3";
-pub fn bark_bytecode(color: bool) -> Option<Vec<u8>> {
-    let r = REGISTRY.lock();
-    if color {
-        r.color_bark.clone()
-    } else {
-        r.bark.clone()
+/// Registers the shaders whose bytecode the census keeps. Once, at startup; a second registration is
+/// refused with an error log.
+pub fn keep(shaders: &'static [Kept]) {
+    if KEPT.set(shaders).is_err() {
+        tracing::error!(
+            "shader identity: kept shaders already registered; the second list is ignored"
+        );
     }
 }
 
-pub const SSR_RAY: &str = "94981ae62a33b4bb214f62501f088a365774700d655534783f1d1aed076127e4";
-pub fn ssr_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().ssr.clone()
+/// The bytecode the census kept this generation for the shader created from `pristine`.
+pub fn kept_bytecode(pristine: &str) -> Option<Vec<u8>> {
+    REGISTRY.lock().kept.get(pristine).cloned()
 }
 
-pub const RESOLVE_PRISTINE: &str =
-    "06f43db0887b0038147e273a3879a9b7f48c3b630955a94d695898fd7d0e52fc";
-pub const RESOLVE_ACTUAL: &str = "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b";
-/// The deferred resolve's executable with each eye's camera rows selected per pixel
-/// (`dxbc_stereo::localize_eye_camera` over [`RESOLVE_ACTUAL`] with the local lights unchanged), which
-/// the engine creates while `single_pass.pixel_camera_per_eye` applies without
-/// `single_pass.local_lights_per_eye`.
-pub const RESOLVE_EYE_CAMERA: &str =
-    "3d6a81d184a090a7f50b48e79c59c78a82a16d0445b54ae7547694fcee8fc834";
-/// The same with the local lights measured from each eye as well, which the engine creates while both
-/// switches apply.
-pub const RESOLVE_EYE_LIGHTS: &str =
-    "7b28420a68fdf35d8907b7c61289e16fa44ab39ae95afd78b0be08ee51dd4d4b";
-
-/// Whether `actual` and `length` describe one of the deferred resolve's executables: the engine's own
-/// with the shadow rotation patched, that with each eye's camera rows, or that with each eye's camera
-/// rows and local lights.
-pub(crate) fn is_resolve_executable(actual: &str, length: usize) -> bool {
-    (actual == RESOLVE_ACTUAL && length == 35028)
-        || (actual == RESOLVE_EYE_CAMERA && length == 35120)
-        || (actual == RESOLVE_EYE_LIGHTS && length == 35392)
-}
-
-pub fn resolve_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().resolve.clone()
-}
-
+/// The lake surface's pixel shader, whose pristine hash the shipped water path also matches.
 pub const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
 
-pub fn lake_bytecode() -> Option<Vec<u8>> {
-    REGISTRY.lock().lake.clone()
+static KEPT: OnceLock<&'static [Kept]> = OnceLock::new();
+
+/// The registered shader `identity` (of an executable `length` bytes long) counts as, if any.
+fn kept_as(identity: &Identity, length: usize) -> Option<&'static Kept> {
+    KEPT.get()?.iter().find(|kept| {
+        kept.pristine == identity.pristine_sha256
+            && kept
+                .executables
+                .iter()
+                .any(|&(actual, size)| actual == identity.actual_sha256 && size == length)
+    })
 }
 
 fn mark_invalid(generation: u64) {
@@ -516,15 +432,7 @@ mod tests {
         let mut state = Registry {
             generation: 7,
             shaders: HashMap::new(),
-            lake: None,
-            resolve: None,
-            aa: None,
-            dof: None,
-            fog: None,
-            impostor: None,
-            color_bark: None,
-            bark: None,
-            ssr: None,
+            kept: HashMap::new(),
             overflow: 1,
             invalid: 2,
             install_error: true,
@@ -553,15 +461,7 @@ mod tests {
         let mut state = Registry {
             generation: 4,
             shaders: HashMap::new(),
-            lake: None,
-            resolve: None,
-            aa: None,
-            dof: None,
-            fog: None,
-            impostor: None,
-            color_bark: None,
-            bark: None,
-            ssr: None,
+            kept: HashMap::new(),
             overflow: 0,
             invalid: 0,
             install_error: false,
@@ -581,15 +481,7 @@ mod tests {
         let mut state = Registry {
             generation: 7,
             shaders: HashMap::new(),
-            lake: None,
-            resolve: None,
-            aa: None,
-            dof: None,
-            fog: None,
-            impostor: None,
-            color_bark: None,
-            bark: None,
-            ssr: None,
+            kept: HashMap::new(),
             overflow: 0,
             invalid: 0,
             install_error: false,

@@ -1,8 +1,9 @@
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::{Context as _, Result, ensure};
-use jc3vr_render::stereo::single_pass::{
-    patch_camera_sources, shader_identity, vertex_identity_lookup,
+use jc3vr_render::{
+    probes::state::{patch_camera_sources, vertex_identity_lookup},
+    stereo::single_pass::shader_identity,
 };
 use jc3vr_view::stereo::draw_index;
 use sha2::{Digest, Sha256};
@@ -502,7 +503,7 @@ fn other_b1(ctx: &ID3D11DeviceContext) -> [usize; 5] {
 }
 
 pub(crate) fn water_mvp(eye: usize) -> Result<[u32; 16]> {
-    let vp = jc3vr_render::stereo::single_pass::full_eye_view_projection(eye)
+    let vp = jc3vr_render::probes::state::full_eye_view_projection(eye)
         .context("lake MVP: missing physical VP")?
         .data;
     ensure!(

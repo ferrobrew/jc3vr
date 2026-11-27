@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 pub(crate) mod bound_buffer;
 pub(crate) mod constants;
 pub(crate) mod draw_census;
+mod kept_shaders;
 mod options;
 pub(crate) mod patch_draw;
 pub mod register_probes;

@@ -7,7 +7,7 @@ use jc3gi::{
     },
     water_patch_manager::WaterPatchManager,
 };
-use jc3vr_render::stereo::single_pass::vertex_identity_lookup;
+use jc3vr_render::probes::state::vertex_identity_lookup;
 use jc3vr_view::stereo::draw_index;
 use parking_lot::Mutex;
 use serde::Serialize;

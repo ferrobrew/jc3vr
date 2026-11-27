@@ -199,7 +199,7 @@ pub(super) struct ReprojectUpload {
 pub(super) static PER_EYE_REISSUE: AtomicUsize = AtomicUsize::new(0);
 
 /// The eye whose per-eye re-issue is currently in flight, or `None` outside one.
-pub fn per_eye_reissue_eye() -> Option<usize> {
+pub(crate) fn per_eye_reissue_eye() -> Option<usize> {
     match PER_EYE_REISSUE.load(Ordering::Acquire) {
         0 => None,
         marker => Some(marker - 1),

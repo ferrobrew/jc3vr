@@ -57,6 +57,6 @@ pub(super) static LAST_FRAME_DIAG: Mutex<Option<FrameDiagnostics>> = Mutex::new(
 
 /// The most recent frame's single-pass matrix diagnostics, for the F12 screenshot JSON sidecar.
 /// `None` until the dual-eye path has run at least once this session.
-pub fn last_frame_diagnostics() -> Option<FrameDiagnostics> {
+pub(crate) fn last_frame_diagnostics() -> Option<FrameDiagnostics> {
     LAST_FRAME_DIAG.lock().clone()
 }

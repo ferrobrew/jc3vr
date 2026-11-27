@@ -8,9 +8,9 @@ use jc3gi::{
     },
     types::math::Matrix4,
 };
-use jc3vr_render::stereo::single_pass::{
-    last_frame_diagnostics, shader_identity, shader_identity::IdentityResult,
-    vertex_identity_lookup,
+use jc3vr_render::{
+    probes::state::{last_frame_diagnostics, vertex_identity_lookup},
+    stereo::single_pass::{shader_identity, shader_identity::IdentityResult},
 };
 use windows::{
     Win32::Graphics::{Direct3D11::*, Dxgi::Common::DXGI_FORMAT_R32_FLOAT},

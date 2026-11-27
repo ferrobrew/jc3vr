@@ -9,7 +9,7 @@ use windows::{Win32::Graphics::Direct3D11::*, core::Interface};
 use crate::screenshot::{
     harness,
     harness::{
-        rewrites,
+        kept_shaders, rewrites,
         stages::{STATE, Stage},
     },
 };
@@ -97,7 +97,7 @@ pub(crate) unsafe fn observe(context: *mut c_void, vertices: u32, start: u32) {
             ctx.PSGetSamplers(0, Some(&mut samplers));
             ctx.OMGetRenderTargets(Some(std::slice::from_mut(&mut target)), None);
         }
-        if harness::aa_weights_requested(obs.frame) && obs.mode == AAMode::AA_SMAA as i32 && (vertices,start)==(3,0) && jc3vr_render::stereo::single_pass::current_pass_id()==RenderPassId::RP_POSTEFFECTS as u8 && obs.draws.len()==2 && matches!(ps.as_ref().map(shader_identity::lookup), Some(shader_identity::IdentityResult::Mapped {identity}) if identity.actual_sha256=="a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765") {
+        if harness::aa_weights_requested(obs.frame) && obs.mode == AAMode::AA_SMAA as i32 && (vertices,start)==(3,0) && jc3vr_render::probes::state::current_pass_id()==RenderPassId::RP_POSTEFFECTS as u8 && obs.draws.len()==2 && matches!(ps.as_ref().map(shader_identity::lookup), Some(shader_identity::IdentityResult::Mapped {identity}) if identity.actual_sha256=="a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765") {
             let mut record=crate::screenshot::harness::stages::empty_stage_record(obs.frame,obs.eye,Stage::AaWeights);
             let result=(|| -> anyhow::Result<_> {
                 let view=views[1].as_ref().ok_or_else(|| anyhow::anyhow!("missing weights"))?;
@@ -136,7 +136,7 @@ pub(crate) unsafe fn observe(context: *mut c_void, vertices: u32, start: u32) {
             })
             .collect();
         obs.draws.push(Draw {
-            pass: jc3vr_render::stereo::single_pass::current_pass_id(),
+            pass: jc3vr_render::probes::state::current_pass_id(),
             vertices,
             start,
             ps: ps.as_ref().map(shader_identity::lookup),
@@ -155,12 +155,12 @@ pub(crate) unsafe fn with_color_edge(context: *mut c_void, submit: &dyn Fn()) ->
         let Some(treated) = harness::aa_color_edge(obs.frame) else {return false};
         if obs.draws.len()!=3 || obs.eye!=0 || obs.mode!=AAMode::AA_SMAA as i32 || obs.overflow {return false}
         let d=&obs.draws[2];
-        if (d.pass,d.vertices,d.start)!=(RenderPassId::RP_POSTEFFECTS as u8,3,0) || !matches!(&d.ps,Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==shader_identity::AA_PS && identity.pristine_sha256==shader_identity::AA_PS) || !d.resources.iter().any(|&(s,_,w,h,f)| (s,w,h,f)==(0,640,360,29)) || !d.resources.iter().any(|&(s,_,w,h,f)| (s,w,h,f)==(1,640,360,28)) || !d.samplers.contains(&(0,20,3,3)) {return false}
+        if (d.pass,d.vertices,d.start)!=(RenderPassId::RP_POSTEFFECTS as u8,3,0) || !matches!(&d.ps,Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==kept_shaders::AA_PS && identity.pristine_sha256==kept_shaders::AA_PS) || !d.resources.iter().any(|&(s,_,w,h,f)| (s,w,h,f)==(0,640,360,29)) || !d.resources.iter().any(|&(s,_,w,h,f)| (s,w,h,f)==(1,640,360,28)) || !d.samplers.contains(&(0,20,3,3)) {return false}
         let result=(|| -> anyhow::Result<()> {
             let ctx=unsafe {ID3D11DeviceContext::from_raw_borrowed(&context)}.ok_or_else(|| anyhow::anyhow!("AA: missing context"))?;
             let mut original=None;unsafe{ctx.PSGetShader(&mut original,None,None)};
             let original=original.ok_or_else(|| anyhow::anyhow!("AA: missing original shader"))?;
-            let mut bytes=shader_identity::aa_bytecode().ok_or_else(|| anyhow::anyhow!("AA: missing original bytes"))?;
+            let mut bytes=kept_shaders::aa_bytecode().ok_or_else(|| anyhow::anyhow!("AA: missing original bytes"))?;
             if treated {bytes=rewrites::local_aa_neighbor(&bytes)?;}
             let mut ps=None;unsafe{ctx.GetDevice()?.CreatePixelShader(&bytes,None,Some(&mut ps))?};
             let replacement=ps.ok_or_else(|| anyhow::anyhow!("AA: missing shader"))?;

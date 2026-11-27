@@ -260,7 +260,7 @@ pub(crate) unsafe fn on_draw(
     let metadata = visual::metadata();
     let frame = vr::capture_views()?.predicted_display_time_ns;
     let eye = if dispatch::mode() == dispatch::RenderMode::SinglePass {
-        jc3vr_render::hooks::graphics_engine::reconstruction::masked_eye()?
+        jc3vr_render::probes::state::masked_eye()?
     } else {
         draw_index()
     };

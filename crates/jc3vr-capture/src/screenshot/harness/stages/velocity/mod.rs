@@ -8,8 +8,8 @@ use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 #[cfg(feature = "profiler")]
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
 use jc3vr_render::{
-    screenshot::create_staging,
-    stereo::single_pass::{shader_identity, vertex_identity_lookup},
+    probes::state::vertex_identity_lookup, screenshot::create_staging,
+    stereo::single_pass::shader_identity,
 };
 use jc3vr_view::stereo::{dispatch::RenderMode, draw_index};
 use serde::Serialize;
@@ -25,7 +25,7 @@ use crate::screenshot::{
     harness,
     harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        patch_draw, rewrites,
+        kept_shaders, patch_draw, rewrites,
         stages::{
             STATE, Stage, empty_stage_record,
             velocity::impostor::{ImpostorInputs, impostor_inputs},
@@ -367,11 +367,11 @@ fn submit_impl(
         let Some(t) = active.as_mut().filter(|t| t.error.is_none()) else {
             return;
         };
-        if t.group_sources && jc3vr_render::stereo::single_pass::current_pass_id()!=jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATIONGROUP2 as u8 {return;}
+        if t.group_sources && jc3vr_render::probes::state::current_pass_id()!=jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATIONGROUP2 as u8 {return;}
         if t.color
             && !(t.block == Some("VegetationBark")
                 && kind == "indexed_instanced_indirect"
-                && (matches!(args[0], 36660 | 37960 | 36860) || (t.residual_bark && jc3vr_render::stereo::single_pass::current_pass_id()==jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATION_OPAQUE as u8)))
+                && (matches!(args[0], 36660 | 37960 | 36860) || (t.residual_bark && jc3vr_render::probes::state::current_pass_id()==jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATION_OPAQUE as u8)))
         {
             return;
         }
@@ -589,7 +589,7 @@ impl Trace {
                 "876a34b985389badefb0df0b5318799a4465e18c38c4e371fb552882ad9497b8"
             };
             ensure!(
-                jc3vr_render::stereo::single_pass::current_pass_id()
+                jc3vr_render::probes::state::current_pass_id()
                     == jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATIONGROUP2
                         as u8
                     && bound.as_ref() == Some(&main)
@@ -603,7 +603,7 @@ impl Trace {
                         "{:x}",
                         sha2::digest::Output::<sha2::Sha256>::from(v.actual_sha256)
                     ) == expected)
-                    && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==shader_identity::IMPOSTOR_PS && identity.pristine_sha256==shader_identity::IMPOSTOR_PS),
+                    && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==kept_shaders::IMPOSTOR_PS && identity.pristine_sha256==kept_shaders::IMPOSTOR_PS),
                 "impostor inputs: unexpected draw"
             );
             Some(impostor_inputs(ctx, args[0] as u32)?)
@@ -639,7 +639,7 @@ impl Trace {
             }
             let generated = if self.evidence.packed {
                 Some(
-                    jc3vr_render::stereo::single_pass::full_eye_view_projection(eye)
+                    jc3vr_render::probes::state::full_eye_view_projection(eye)
                         .context("base projection: missing eye VP")?
                         .data
                         .map(f32::to_bits),
@@ -792,7 +792,7 @@ impl Trace {
                 };
             ensure!(self.evidence.packed && self.tess_writer && t.camera.is_none() && !t.gs && args == [offset,0,0,0,0] && t.indirect == Some([vertices,1,0,0]) &&
                 selector.range_known && selector.range_error.is_none() && selector.first_constant == 0 && selector.values.is_some_and(|v| v.into_iter().map(f32::to_bits).eq([patch,2,0,0])) &&
-                self.block==Some("VolumetricTerrainPatch") && jc3vr_render::stereo::single_pass::current_pass_id()==jc3gi::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR as u8 &&
+                self.block==Some("VolumetricTerrainPatch") && jc3vr_render::probes::state::current_pass_id()==jc3gi::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR as u8 &&
                 n==2 && v[0]==v[1] && bound.as_ref()==Some(&main) && ds_desc.DepthEnable.as_bool() && ds_desc.DepthFunc==D3D11_COMPARISON_GREATER_EQUAL && ds_desc.DepthWriteMask==D3D11_DEPTH_WRITE_MASK_ALL &&
                 vs.as_ref().is_some_and(|v|format!("{:x}",sha2::digest::Output::<sha2::Sha256>::from(v.actual_sha256))=="f55b68229567994446a0f9c3f13074e125e3237e75b3c2956286b86f7265e43b") && t.hs.as_deref()==Some("50607f399ea4023cdc6ad3f942d52728dc622de7a454d393501a9ae83a5143a1") && t.ds.as_deref()==Some("a58152c0cdef733943e99b2d4f9ac82eacaa89484e5c093668962b5379f6a5ba") && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256=="38987576f35ad34008eb3321ebe4e531a75f840d8b40eb25081d287c0cd19470"), "terrain writer: unexpected domain treatment pipeline");
             let domain = patch_draw::WriterDomainGuard::bind(
@@ -824,7 +824,7 @@ impl Trace {
             (None, None)
         };
         let camera_guard = if let Some(t) = terrain.as_ref().filter(|t| t.camera.is_some()) {
-            ensure!(self.evidence.packed && self.eye == 0 && n == 2 && v[0] == v[1] && self.block == Some("VolumetricTerrainPatch") && jc3vr_render::stereo::single_pass::current_pass_id() == jc3gi::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR as u8 && matches!((t.ordinal,args), (2,[448,0,0,0,0])|(4,[480,0,0,0,0])) && bound.as_ref()==Some(&main) && ds_desc.DepthEnable.as_bool() && ds_desc.DepthFunc==D3D11_COMPARISON_GREATER_EQUAL && ds_desc.DepthWriteMask==D3D11_DEPTH_WRITE_MASK_ALL && vs.as_ref().is_some_and(|v| format!("{:x}", sha2::digest::Output::<sha2::Sha256>::from(v.actual_sha256)) == "f55b68229567994446a0f9c3f13074e125e3237e75b3c2956286b86f7265e43b") && t.hs.as_deref() == Some("50607f399ea4023cdc6ad3f942d52728dc622de7a454d393501a9ae83a5143a1") && t.ds.as_deref() == Some("a58152c0cdef733943e99b2d4f9ac82eacaa89484e5c093668962b5379f6a5ba") && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256=="38987576f35ad34008eb3321ebe4e531a75f840d8b40eb25081d287c0cd19470"), "terrain camera: submission identity mismatch");
+            ensure!(self.evidence.packed && self.eye == 0 && n == 2 && v[0] == v[1] && self.block == Some("VolumetricTerrainPatch") && jc3vr_render::probes::state::current_pass_id() == jc3gi::graphics_engine::render_engine::RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR as u8 && matches!((t.ordinal,args), (2,[448,0,0,0,0])|(4,[480,0,0,0,0])) && bound.as_ref()==Some(&main) && ds_desc.DepthEnable.as_bool() && ds_desc.DepthFunc==D3D11_COMPARISON_GREATER_EQUAL && ds_desc.DepthWriteMask==D3D11_DEPTH_WRITE_MASK_ALL && vs.as_ref().is_some_and(|v| format!("{:x}", sha2::digest::Output::<sha2::Sha256>::from(v.actual_sha256)) == "f55b68229567994446a0f9c3f13074e125e3237e75b3c2956286b86f7265e43b") && t.hs.as_deref() == Some("50607f399ea4023cdc6ad3f942d52728dc622de7a454d393501a9ae83a5143a1") && t.ds.as_deref() == Some("a58152c0cdef733943e99b2d4f9ac82eacaa89484e5c093668962b5379f6a5ba") && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256=="38987576f35ad34008eb3321ebe4e531a75f840d8b40eb25081d287c0cd19470"), "terrain camera: submission identity mismatch");
             Some(patch_draw::TerrainCameraGuard::bind(
                 ctx,
                 &self.evidence.id,
@@ -893,7 +893,7 @@ impl Trace {
                 "impostor scale: unexpected viewport or depth state"
             );
             let original =
-                shader_identity::impostor_bytecode().context("impostor trial: missing bytecode")?;
+                kept_shaders::impostor_bytecode().context("impostor trial: missing bytecode")?;
             let bytes = if let Some(physical) = card_atlas {
                 if physical {
                     rewrites::impostor_atlas_scale(&original, v[1].TopLeftX, true)?
@@ -934,16 +934,16 @@ impl Trace {
             let (expected_vs, expected_ps) = if self.color {
                 (
                     "148aa95ac4cbcf214e6a4882959f6ec8ea133e2d0b2ddc5523c635acbddb0d85",
-                    shader_identity::BARK_COLOR_PS,
+                    kept_shaders::BARK_COLOR_PS,
                 )
             } else {
                 (
                     "4a50f1e36c27de7b0d1e6da719a0bc159768c44b692b63853c45f4e7683d31ee",
-                    shader_identity::BARK_PS,
+                    kept_shaders::BARK_PS,
                 )
             };
             ensure!(
-                bound.as_ref()==Some(&main) && (!self.color || (rt_src.as_ref()==Some(src) && jc3vr_render::stereo::single_pass::current_pass_id()==jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATION_OPAQUE as u8 && ds_desc.DepthFunc==D3D11_COMPARISON_EQUAL))
+                bound.as_ref()==Some(&main) && (!self.color || (rt_src.as_ref()==Some(src) && jc3vr_render::probes::state::current_pass_id()==jc3gi::graphics_engine::render_engine::RenderPassId::RP_VEGETATION_OPAQUE as u8 && ds_desc.DepthFunc==D3D11_COMPARISON_EQUAL))
                     && n == 2
                     && v[0] == v[1]
                     && v[0].TopLeftX == 320.
@@ -959,7 +959,7 @@ impl Trace {
                 "bark trial: unexpected submission"
             );
             let bytes = rewrites::local_bark_dither(
-                &shader_identity::bark_bytecode(self.color).context("missing bark bytecode")?,
+                &kept_shaders::bark_bytecode(self.color).context("missing bark bytecode")?,
                 v[0].TopLeftX,
                 self.color,
             )?;
@@ -1091,7 +1091,7 @@ impl Trace {
             left_atlas_scale,
             local_dither: candidate && replacement.is_some(),
             block_run: self.block,
-            pass: jc3vr_render::stereo::single_pass::current_pass_id(),
+            pass: jc3vr_render::probes::state::current_pass_id(),
             rtv0_is_source: rt_src.as_ref() == Some(src),
             depth_state: [
                 ds_desc.DepthEnable.0,

@@ -14,10 +14,12 @@ use std::{cell::RefCell, ffi::c_void, sync::atomic::Ordering};
 use jc3gi::graphics_engine::{graphics_engine::RenderContext, render_engine::RenderPassId};
 use jc3vr_render::{
     hooks::draw_count::DRAW_COUNTS,
-    probes::{Cb13Rows, PerEyePassProbe},
-    stereo::single_pass::{
-        STEREO_CB_TOTAL_ROWS, bound_vertex_shader_patched, cb13_buffer_ptr, consumed_far_bits,
-        current_pass_id, far_depth_corrected, per_eye_reissue_eye, pinned_eye_rows,
+    probes::{
+        Cb13Rows, PerEyePassProbe,
+        state::{
+            STEREO_CB_TOTAL_ROWS, bound_vertex_shader_patched, cb13_buffer_ptr, consumed_far_bits,
+            current_pass_id, far_depth_corrected, per_eye_reissue_eye, pinned_eye_rows,
+        },
     },
 };
 use parking_lot::Mutex;
@@ -387,8 +389,7 @@ fn log_draw_inputs(ctx: &ID3D11DeviceContext, capture: &Capture) {
     let (identity_status, identity_name, identity_hash) = match vs.as_ref() {
         None => ("unbound", None, None),
         Some(shader) => {
-            match jc3vr_render::stereo::single_pass::vertex_identity_lookup(shader.as_raw() as usize)
-            {
+            match jc3vr_render::probes::state::vertex_identity_lookup(shader.as_raw() as usize) {
                 Ok(Some(identity)) => (
                     "mapped",
                     identity.name,

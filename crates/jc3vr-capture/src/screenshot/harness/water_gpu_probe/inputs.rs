@@ -20,9 +20,9 @@ use windows::{
 };
 
 use crate::screenshot::harness::{
-    WaterReflection, diagnostic_capture_id, frame_identity, lake_displacement_requested,
-    lake_ds_mvp, lake_gradients_requested, lake_inner_edge, lake_normals_requested,
-    lake_waves_requested,
+    WaterReflection, diagnostic_capture_id, frame_identity, kept_shaders,
+    lake_displacement_requested, lake_ds_mvp, lake_gradients_requested, lake_inner_edge,
+    lake_normals_requested, lake_waves_requested,
     patch_draw::LakeMvpGuard,
     rewrites,
     stages::{LakeSampleTargets, capture_water_inputs, record_water_treatment},
@@ -209,7 +209,7 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
                     | WaterReflection::LakeSkyBuffer
                     | WaterReflection::LakeResponse
             ))
-            || (packed && jc3vr_render::stereo::single_pass::per_eye_reissue_eye() != Some(eye))
+            || (packed && jc3vr_render::probes::state::per_eye_reissue_eye() != Some(eye))
         {
             return None;
         }
@@ -395,7 +395,7 @@ impl LakeShaderGuard {
         id: &str,
         treatment: WaterReflection,
     ) -> anyhow::Result<Self> {
-        let blob = shader_identity::lake_bytecode()
+        let blob = kept_shaders::lake_bytecode()
             .ok_or_else(|| anyhow::anyhow!("missing lake bytecode"))?;
         let displacement = treatment == WaterReflection::LakeResponse
             && frame_identity().is_some_and(lake_displacement_requested);
@@ -537,8 +537,8 @@ impl LakeShaderGuard {
                         && eye < 2
                         && water_tess_draw() == Some(7)
                         && jc3vr_view::stereo::layout::collapse_active()
-                        && jc3vr_render::stereo::single_pass::per_eye_reissue_eye() == Some(eye)
-                        && jc3vr_render::stereo::single_pass::current_pass_id()
+                        && jc3vr_render::probes::state::per_eye_reissue_eye() == Some(eye)
+                        && jc3vr_render::probes::state::current_pass_id()
                             == jc3gi::graphics_engine::render_engine::RenderPassId::RP_WATER as u8,
                     "lake MVP: submission outside selected draw"
                 );

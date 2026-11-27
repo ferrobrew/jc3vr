@@ -26,7 +26,7 @@ use std::{
 };
 
 use jc3gi::graphics_engine::render_engine::RenderBlockTypeBase;
-use jc3vr_render::stereo::single_pass::{current_pass_id, per_eye_reissue_eye};
+use jc3vr_render::probes::state::{current_pass_id, per_eye_reissue_eye};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::Win32::{

@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use anyhow::{Context, Result, ensure};
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, render_engine::RenderPassId};
-use jc3vr_render::stereo::single_pass::{shader_identity, vertex_identity_lookup};
+use jc3vr_render::{probes::state::vertex_identity_lookup, stereo::single_pass::shader_identity};
 use jc3vr_view::stereo::draw_index;
 use windows::{
     Win32::Graphics::{Direct3D::D3D_SRV_DIMENSION_TEXTURE2D, Direct3D11::*},
@@ -13,7 +13,7 @@ use crate::screenshot::{
     harness,
     harness::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        late_sky_stages_requested, rewrites,
+        kept_shaders, late_sky_stages_requested, rewrites,
         stages::{
             HdrStage, STATE, Stage, StageArtifact, StageImage, StageRecord, capture_hdr,
             capture_raster_state, empty_stage_record, read_texture,
@@ -184,11 +184,11 @@ pub(crate) unsafe fn capture_fog_generation(context: *mut c_void, draw: &dyn Fn(
                     && input.scissor_enabled == Some(false)
                     && (desc.Width, desc.Height, desc.Format.0) == (320, 180, 28)
                     && view.Format.0 == 21
-                    && matches!(&ps,Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==shader_identity::FOG_PS && identity.pristine_sha256==shader_identity::FOG_PS),
+                    && matches!(&ps,Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==kept_shaders::FOG_PS && identity.pristine_sha256==kept_shaders::FOG_PS),
                 "fog UV: unexpected producer"
             );
             let bytes = rewrites::local_fog_reconstruction(
-                &shader_identity::fog_bytecode().context("fog UV: missing bytecode")?,
+                &kept_shaders::fog_bytecode().context("fog UV: missing bytecode")?,
             )?;
             let mut shader = None;
             unsafe {

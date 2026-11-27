@@ -29,7 +29,8 @@ use crate::{
     screenshot::{
         harness,
         harness::{
-            WaterReflection, constants, draw_census, patch_draw, resolve_probe, snapshot,
+            WaterReflection, constants, draw_census, kept_shaders, patch_draw, resolve_probe,
+            snapshot,
             snapshot::Plane,
             stages,
             stages::{Stage, aa, capture_prefix_depth, dof, patch_owners, proxy, ssr, velocity},
@@ -39,10 +40,11 @@ use crate::{
     testing::{benchmark, visual},
 };
 
-/// Registers the capture tooling's probes, and the benchmark as the GPU timestamp lane's dispatch
-/// sink. Once, at startup, before the hooks install.
+/// Registers the capture tooling's probes, the shaders the census keeps for the trials, and the
+/// benchmark as the GPU timestamp lane's dispatch sink. Once, at startup, before the hooks install.
 pub fn register() {
     probes::register(&HARNESS_PROBES);
+    kept_shaders::register();
     #[cfg(feature = "profiler")]
     register_dispatch_sink(GpuDispatchSink {
         record: benchmark::record_gpu_dispatch,

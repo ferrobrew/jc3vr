@@ -483,7 +483,7 @@ pub(super) fn preserve_reprojection_depth(rows: &mut [Vector4; STEREO_CB_TOTAL_R
 
 /// The four view-projection rows and four `M_eye` rows a per-eye pin places in the first `cb13` slot
 /// for `eye`, for the draw-state diagnostic.
-pub fn pinned_eye_rows(
+pub(crate) fn pinned_eye_rows(
     rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
     eye: usize,
 ) -> ([[f32; 4]; 4], [[f32; 4]; 4]) {
@@ -495,7 +495,7 @@ pub fn pinned_eye_rows(
 }
 
 /// The live `cb13` buffer's interface pointer, for comparing with what a draw has bound.
-pub fn cb13_buffer_ptr() -> Option<usize> {
+pub(crate) fn cb13_buffer_ptr() -> Option<usize> {
     CB13.lock().buffer_ptr()
 }
 

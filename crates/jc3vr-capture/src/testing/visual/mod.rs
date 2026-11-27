@@ -328,23 +328,13 @@ pub fn process_pending() {
                 pose_control::pin_full_camera(anchor.values());
             }
             let newly_armed = if shader_identity {
-                let newly = single_pass::shader_identity::arm();
-                single_pass::ensure_viewport_detours();
-                if !single_pass::vertex_identity_detour_ready() {
-                    single_pass::shader_identity::mark_install_failed();
-                    state.fail(
-                        "shader identity: vertex shader detour installation failed".to_owned(),
-                    );
-                    return;
+                match single_pass::shader_identity::arm_with_detours() {
+                    Ok(newly) => newly,
+                    Err(why) => {
+                        state.fail(format!("shader identity: {why}"));
+                        return;
+                    }
                 }
-                if !single_pass::ensure_pixel_shader_detour() {
-                    single_pass::shader_identity::mark_install_failed();
-                    state.fail(
-                        "shader identity: pixel shader detour installation failed".to_owned(),
-                    );
-                    return;
-                }
-                newly
             } else {
                 single_pass::shader_identity::disarm();
                 false
