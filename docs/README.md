@@ -124,6 +124,7 @@
 - [canopy-opening.md](mod/body/canopy-opening.md): skipping the canopy's opening roll out of a grapple reel.
 - [parachute-yaw.md](mod/body/parachute-yaw.md): keeping the head from steering the parachute.
 - [locomotion.md](mod/body/locomotion.md): stick locomotion and the steady on-foot view.
+- [act-arbiter.md](mod/body/act-arbiter.md): the one place that drops, replaces, and queues the local player's acts.
 - [procedural-body.md](mod/body/procedural-body.md): the procedural torso and arms.
 - [procedural-states.md](mod/body/procedural-states.md): the procedural torso in seats, the wingsuit, the parachute, and water.
 - [physics-substrate.md](mod/body/physics-substrate.md): the physics layer the hands, weapons, grapple, and vehicles share.
