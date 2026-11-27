@@ -30,6 +30,7 @@ pub fn hook_library() -> HookLibrary {
 /// Publish the bodies the physical hands hold this tick.
 ///
 /// # Safety
+///
 /// The game thread, outside the world update.
 pub unsafe fn publish(held: [Option<(NonZeroUsize, u32)>; 2]) {
     let now = Stamp::now();

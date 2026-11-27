@@ -125,7 +125,7 @@ pub struct GlassStatus {
     pub strikes: u64,
     /// Panes brought down.
     pub shatters: u64,
-    /// Shatters refused, by why.
+    /// Shatters refused because the pane's model draws more than glass.
     pub shared_models: u64,
     pub last: Option<LastStrike>,
     pub last_error: Option<RaycastError>,
@@ -321,6 +321,9 @@ unsafe fn cast_for_glass(
     })
 }
 
+/// Cast along `sweep` with `cast`, stepping past hits on panes already brought down, and return the
+/// first other hit's point and value. A pane brought down keeps its shapes, so without the steps
+/// it would shield intact glass behind it.
 fn visible_hit<T>(
     sweep: &strike::Sweep,
     mut cast: impl FnMut(&Ray, f32) -> Result<Option<(Vec3, bool, Option<T>)>, RaycastError>,

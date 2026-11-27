@@ -13,8 +13,9 @@ pub static PHYSICAL_HANDS_CONFIG: ConfigSlot<PhysicalHandsConfig> =
     ConfigSlot::new("controllers.physical_hands");
 
 /// The physical hands (see [`crate::controllers::physical_hands`]). They act only under the
-/// controller scheme, on foot on the ground, and for a hand that holds nothing. Their tuning is
-/// the shipped [`PHYSICAL_HANDS`](crate::controllers::physical_hands::tuning::PHYSICAL_HANDS).
+/// controller scheme, on foot on the ground or falling, and for a hand that holds nothing. Their
+/// tuning is the shipped
+/// [`PHYSICAL_HANDS`](crate::controllers::physical_hands::tuning::PHYSICAL_HANDS).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PhysicalHandsConfig {

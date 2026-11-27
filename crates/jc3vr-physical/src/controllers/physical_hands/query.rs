@@ -1,4 +1,5 @@
-//! Physical hand ray queries with pane-local glass continuation.
+//! The physical hands' ray queries: casts on the query layer that continue past glass, either
+//! every pane or only the panes the glass brought down, whose shapes still answer queries.
 
 use std::num::NonZeroUsize;
 
@@ -18,6 +19,8 @@ use crate::controllers::{
     },
 };
 
+/// The first hit from `from` to `to`, passing through the panes the glass brought down.
+///
 /// # Safety
 ///
 /// Run on the simulation thread outside the physics step. Ignored objects must be live or zero.
@@ -29,6 +32,8 @@ pub(crate) unsafe fn cast(
     unsafe { cast_with_policy(from, to, options, GlassPolicy::Hidden) }
 }
 
+/// The first hit from `from` to `to`, passing through all glass.
+///
 /// # Safety
 ///
 /// Run on the simulation thread outside the physics step. Ignored objects must be live or zero.
@@ -138,6 +143,8 @@ fn surface_owner(surface: Surface) -> Option<NonZeroUsize> {
     }
 }
 
+/// The first hit of `cast` from `from` to `to` that it does not skip, recasting from just past
+/// each skipped hit, up to [`MAX_CASTS`] casts.
 fn continue_cast(
     from: Vec3,
     to: Vec3,

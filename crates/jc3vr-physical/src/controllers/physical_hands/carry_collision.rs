@@ -1,3 +1,9 @@
+//! Keeping what the hands carry off the player: while a hand holds a body, a vehicle's assembly
+//! of bodies, or a character, the pair collision filter disables collisions between each held body
+//! and each of the player's bodies, as a lease per pair. A lease ends, and the pair collides again,
+//! once the hand lets go and the bodies have separated or the release grace has run out; at once on
+//! shutdown or when either body is destroyed.
+
 use std::{collections::HashSet, num::NonZeroUsize};
 
 use jc3gi::{
@@ -115,8 +121,8 @@ pub(super) unsafe fn step() {
         let owner = unsafe { bodies::body_owner(world.world(), body) };
         // The player proxy shares a vehicle's system group while standing in its stunt area, so
         // the group alone also takes in the vehicle's chassis and parts: those are never the
-        // player's. Counted as the player's on the 14 November take, a jeep's deck let a yanked
-        // gunner's ragdoll fall straight through it.
+        // player's: counted as the player's, a vehicle's deck lets a yanked gunner's ragdoll fall
+        // straight through it.
         let player_body = player_owner.is_some() && owner == player_owner
             || player_group.is_some_and(|group| {
                 slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT == group

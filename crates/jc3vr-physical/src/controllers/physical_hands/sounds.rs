@@ -1,12 +1,12 @@
 //! Impact sounds: a hand that meets something hard enough makes the sound the game's own melee hit
 //! makes there (`docs/mod/input/impact-sounds.md`).
 //!
-//! The player character's melee impact usage
-//! ([`AttachedEffectContainer::MELEE_IMPACT_USAGE`]) resolves, for the struck surface's material,
-//! to the effect and sound the game plays where a punch or a kick lands
-//! ([`AttachedEffectContainer::GetDynamicAttachedEffects`]); the mod plays only its sound
-//! ([`EffectAndSoundPair::PlayOneOffs`] with the effect culled), at the contact, facing back along
-//! the hand's travel. A palm's touch plays against the material its cast read, a hand body's contact
+//! The player character's melee impact usage ([`AttachedEffectContainer::MELEE_IMPACT_USAGE`])
+//! resolves, for the struck surface's material, to the effect and sound the game plays where a
+//! punch or a kick lands ([`AttachedEffectContainer::GetDynamicAttachedEffects`]); the mod plays
+//! only its sound ([`EffectAndSoundPair::PlayOneOffs`] with the effect culled), at the contact,
+//! facing back along the hand's travel. A palm's touch plays against the material its cast read; a
+//! hand body's contact, or a held object's ([`crate::controllers::physical_hands::impacts`]), plays
 //! against flesh when it struck a character and against the default material otherwise.
 //!
 //! The game's sound events take no loudness, so a meeting's strength only gates whether it sounds:
@@ -17,8 +17,10 @@
 //! palm's cast and the hand body may both report, and a hand resting against a wall make one
 //! sound.
 //!
-//! Both callers run on the game thread outside the physics step: the palms' tick and the hand
-//! bodies' frame tick.
+//! Every caller runs on the game thread outside the physics step: the palms' tick, the hand bodies'
+//! frame tick, and the held objects' impact delivery.
+//!
+//! [`EffectAndSoundPair::PlayOneOffs`]: jc3gi::equipment::attached_effects::EffectAndSoundPair::PlayOneOffs
 
 use std::ptr;
 

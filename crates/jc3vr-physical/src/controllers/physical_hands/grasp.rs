@@ -1,5 +1,5 @@
-//! Holding a loose object, pure: which reachable object a hand would take, where on the object the
-//! hand holds it, whether the hands holding it can lift it, and the palm's motion.
+//! Holding a loose object, pure: which reachable object a hand would take and whether it may, where
+//! on the object the hand holds it, when the hold is torn away, and the palm's motion.
 //!
 //! A hand holds an object at the point it touched ([`Grip`]): the point is fixed in the body's
 //! frame and in the palm's, and so is the body's orientation in the palm's frame. The hold then
@@ -99,8 +99,8 @@ impl Grip {
 /// hinge's limit), or at once past [`PickupTuning::tear_distance_m`], further than the hand
 /// could reach. Closing is judged against the hand's own motion, from both velocities, so a door
 /// held while riding a fast car follows the hand however fast the two move together. An object
-/// the hands cannot lift is measured across the ground only: its sag
-/// below the hand is its weight resting on what supports it, not a snag. A grab point held back by
+/// the hands cannot lift is measured across the ground only: its sag below the hand is its weight
+/// resting on what supports it, not a snag. A grab point held back by
 /// the player's own body ([`StrainSample::own_body`]) is not caught either: the player can move it
 /// clear, and tearing the object from the hand for it would drop what is held against the chest.
 ///

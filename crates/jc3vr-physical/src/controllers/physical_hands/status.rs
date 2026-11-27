@@ -93,7 +93,7 @@ pub struct PhysicalHandsStatus {
     /// The last cast or engine failure.
     pub last_error: Option<String>,
     pub pickup: PickupStatus,
-    /// The human-hull adapter and clearance policy availability.
+    /// Whether the human-hull adapter and its clearance policy are available.
     pub human_hull: HumanHullStatus,
 }
 

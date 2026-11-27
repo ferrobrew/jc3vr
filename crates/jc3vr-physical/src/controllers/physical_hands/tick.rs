@@ -202,7 +202,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         .collect();
     let floor_radius = (pickup_tuning.reach_m + palms_tuning.palm_half_extents_m.abs().length())
         * active.world_scale;
-    // SAFETY: this input phase runs outside the world step, before holding the hand-state lock.
+    // SAFETY: the game tick, outside the world step, before holding the hand-state lock.
     let floor_weapons = unsafe { pickup::floor_weapons(&floor_hands, floor_radius) };
 
     let mut state = STATE.lock();
@@ -257,7 +257,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             .filter(|h| free[h.index()])
             .filter_map(|h| active.hands[h.index()].map(|c| compose(c.wrist).position))
             .collect();
-        // SAFETY: the simulation phase outside the physics step, on the aim update's thread.
+        // SAFETY: the game tick, outside the physics step.
         unsafe { doors::scan::near(&near, active.world_scale) }
     };
     let mut climb_palms = [None; 2];
@@ -381,7 +381,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
                     half_extents: palm.half_extents,
                 });
             let mut hit_vehicles = Vec::new();
-            // SAFETY: the simulation phase outside the physics step.
+            // SAFETY: the game tick, outside the physics step.
             let reach = unsafe {
                 pickup::reach(
                     &body_palm,
@@ -397,7 +397,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
                     },
                 )
             };
-            // SAFETY: the simulation phase outside the physics step; the vehicles are this tick's.
+            // SAFETY: the game tick, outside the physics step; the vehicles are this tick's.
             let door = unsafe {
                 doors::scan::handle_reach(
                     body_palm.centre,
@@ -420,7 +420,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             climb_pressing[i] = physics::pressing(hand);
             // A loose object in reach wins over the world it rests on.
             climb_reaches[i] = if reach.is_none() {
-                // SAFETY: the simulation phase outside the physics step.
+                // SAFETY: the game tick, outside the physics step.
                 unsafe {
                     climb::reach(
                         &body_palm,
@@ -460,7 +460,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         state.pressed[i] = pressed;
         let shove = match contact.press {
             Some((hit, depth)) => {
-                // SAFETY: the simulation phase outside the physics step; the hit was found by
+                // SAFETY: the game tick, outside the physics step; the hit was found by
                 // this tick's casts.
                 unsafe {
                     state.shove(
@@ -487,7 +487,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
         let offset = contact.clamp_offset();
         clamp[i] = xf.offset_to_cockpit(offset);
         let mut hit_vehicles = Vec::new();
-        // SAFETY: the simulation phase outside the physics step.
+        // SAFETY: the game tick, outside the physics step.
         let reach = unsafe {
             pickup::reach(
                 &palm,
@@ -503,7 +503,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
                 },
             )
         };
-        // SAFETY: the simulation phase outside the physics step; the vehicles are this tick's.
+        // SAFETY: the game tick, outside the physics step; the vehicles are this tick's.
         let door = unsafe {
             doors::scan::handle_reach(
                 palm.centre,
@@ -561,7 +561,7 @@ fn run(player: &LocalPlayer<'_>, dt: f32) {
             orientation: body_rotation,
         }),
     };
-    // SAFETY: the simulation phase outside the physics step.
+    // SAFETY: the game tick, outside the physics step.
     let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, pickup_tuning) };
     let joined = outcome.joints;
     let pins = outcome.pins;

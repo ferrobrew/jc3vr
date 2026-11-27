@@ -62,8 +62,9 @@ impl Pane {
 }
 
 /// The window panes a glass hit names: through the hit object, as a bullet looks them up, or,
-/// when that names none, the world's panes within a centimetre of `at`. Panes already hidden
-/// ([`VISIBLE`](ModelInstanceFlags::VISIBLE) clear) are left out: there is no glass there to strike.
+/// when that names none, the world's panes within [`WORLD_PANE_HALF_EXTENT_M`] of `at`, as the
+/// bullet looks them up. Panes already hidden ([`VISIBLE`](ModelInstanceFlags::VISIBLE) clear) are
+/// left out: there is no glass there to strike.
 ///
 /// # Safety
 ///

@@ -49,8 +49,8 @@ impl State {
     ///
     /// # Safety
     ///
-    /// As [`crate::controllers::physical_hands::main_thread_tick`], with the touch's object found by this
-    /// tick's casts.
+    /// As [`crate::controllers::physical_hands::main_thread_tick`], with the touch's object found
+    /// by this tick's casts.
     pub(super) unsafe fn touch(&mut self, touch: Touch, melee_impulse: Option<f32>) {
         let Touch {
             hand,
@@ -109,8 +109,8 @@ impl State {
     ///
     /// # Safety
     ///
-    /// As [`crate::controllers::physical_hands::main_thread_tick`], with the hit found by this tick's
-    /// casts.
+    /// As [`crate::controllers::physical_hands::main_thread_tick`], with the hit found by this
+    /// tick's casts.
     pub(super) unsafe fn shove(
         &mut self,
         hand: Hand,

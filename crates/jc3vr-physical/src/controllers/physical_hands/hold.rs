@@ -76,9 +76,9 @@ impl HoldTuning {
     /// real second, and its strength (an impulse over the tick, so an acceleration's worth) is
     /// raised by the square: a held body follows the hand in slow motion as it does at full speed,
     /// rather than falling behind as far as the world is slowed and being torn away
-    /// ([`Strain`](crate::controllers::physical_hands::grasp::Strain)). Gravity is the world's, on the world's clock, so in slow
-    /// motion a heavy body is easier to hold up, as it falls slower. A `time_scale` that is not
-    /// finite and positive is taken as real time.
+    /// ([`Strain`](crate::controllers::physical_hands::grasp::Strain)). Gravity is the world's, on
+    /// the world's clock, so in slow motion a heavy body is easier to hold up, as it falls slower. A
+    /// `time_scale` that is not finite and positive is taken as real time.
     pub(crate) fn in_real_time(self, time_scale: f32) -> Self {
         let rate = 1.0 / TimeScale::new(time_scale).get();
         Self {

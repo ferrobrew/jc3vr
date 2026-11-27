@@ -21,7 +21,9 @@ use crate::controllers::physical_hands::{
     targets::{door_offer_current_in, provided_reach},
 };
 
-/// An isolated source for the production provider and final validation helpers.
+/// A palms' state of its own, apart from the live one, for testing the door offers the grip
+/// targets make and their revalidation: each method reaches, claims, latches, holds, or ages the
+/// state as the palms' tick would, and the offers are made and checked by the crate's own code.
 pub struct DoorProvider {
     state: State,
     now: Stamp,

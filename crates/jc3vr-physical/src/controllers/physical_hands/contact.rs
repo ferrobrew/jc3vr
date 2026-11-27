@@ -2,13 +2,13 @@
 //! was last in the open, and how deep.
 //!
 //! Each tick a cast runs from the last position the point held in the open to where it is now, as
-//! the head probe does ([`jc3vr_body::controllers::body::rig::collision::probe`]): a hit means the point crossed a
-//! surface. Against a solid surface (world geometry or an object), the point is pressed in by its
-//! depth behind the surface, and its last open position stays where it was until the hand comes
-//! back out. A second cast from an anchor the body keeps in the open (the shoulder) forgives a stale
-//! open position, so that a hand carried around an obstacle counts as clear again. A character is
-//! passed through: it is never pressed against, so the point counts as in the open at once, and the
-//! next tick's cast starts from inside the character, which it does not hit.
+//! the head probe does ([`jc3vr_body::controllers::body::rig::collision::probe`]): a hit means the
+//! point crossed a surface. Against a solid surface (world geometry or an object), the point is
+//! pressed in by its depth behind the surface, and its last open position stays where it was until
+//! the hand comes back out. A second cast from an anchor the body keeps in the open (the shoulder)
+//! forgives a stale open position, so that a hand carried around an obstacle counts as clear again.
+//! A character is passed through: it is never pressed against, so the point counts as in the open
+//! at once, and the next tick's cast starts from inside the character, which it does not hit.
 
 use std::num::NonZeroUsize;
 

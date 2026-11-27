@@ -1,3 +1,8 @@
+//! The palms' tick while the player sits in a vehicle: each free hand's palm presses on the
+//! occupied vehicle's doors to unlatch them, and the pickup reaches and holds only those doors.
+//! Every grab, latch, or hold on anything else is dropped, and the palms neither push the body nor
+//! drive the hand bodies' holds.
+
 use std::num::NonZeroUsize;
 
 use glam::{Vec2, Vec3};

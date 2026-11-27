@@ -1,4 +1,15 @@
 //! Solver-contact feedback and supplemental native damage for game-owned held bodies.
+//!
+//! While a hand holds a body, the body is leased its contact impulse events
+//! ([`HavokCollisionListener::onContactImpulseEvent`](jc3gi::physics::HavokCollisionListener::onContactImpulseEvent)),
+//! which the solver raises only for bodies whose event flag is set; the flag calls the game makes
+//! meanwhile keep their intent and leave the leased bit set. Each contact the held body makes with
+//! something other than the player is recorded during the step, and delivered after it once both
+//! participants are proven live: a haptic strike on the holding hand, the impact sound, and, for a
+//! character struck, the calibrated strike on the character and the held object's own impact
+//! damage when the native hit reaction
+//! ([`PhysicsGameObject::DoReactToHit`](jc3gi::physics::PhysicsGameObject::DoReactToHit)) did not
+//! act on it.
 
 mod hooks;
 mod policy;
@@ -79,6 +90,7 @@ pub(super) fn obstruction(body: u32, owner: NonZeroUsize, lag: Vec3) -> Vec3 {
 /// Refresh motion and event leases immediately before the world step.
 ///
 /// # Safety
+///
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn step() {
     unsafe { carry_collision::step() };
@@ -127,6 +139,7 @@ pub(crate) unsafe fn step() {
 /// Release leases and pending feedback before hook removal.
 ///
 /// # Safety
+///
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn clear() {
     unsafe { carry_collision::clear() };
@@ -392,6 +405,7 @@ unsafe fn observe_contacts(
 /// Record a native collision conversion before supplemental delivery.
 ///
 /// # Safety
+///
 /// The native caller keeps `recipient` alive through the collision conversion.
 pub(super) unsafe fn native_hit(recipient: *mut PhysicsGameObject) {
     if !HAS_LEASES.load(Ordering::Acquire) {
@@ -508,13 +522,12 @@ unsafe fn damage(
         return;
     }
     // A character always takes the calibrated strike. Its capsule turns every contact into a
-    // native hit reaction call, so deferring to that call skipped nearly every held prop's blow,
-    // while the native reaction does nothing visible for a hand-held prop: on the 14 November take
-    // a roof panel swung at 7 to 11 m/s through a soldier moved nobody.
+    // native hit reaction call, and the native reaction does nothing visible for a hand-held prop,
+    // so deferring to that call would leave nearly every held prop's blow without effect.
     if contact.character && unsafe { engine::is_character(target_identity.owner) } {
         let victim = unsafe { &mut *(target_identity.owner.get() as *mut Character) };
-        // A native reaction that also acted is told, so that a take shows any blow the character
-        // took twice.
+        // A native reaction that also acted is logged, so that a session shows any blow the
+        // character took twice.
         if native[1] {
             tracing::info!(
                 target: "controllers",
@@ -538,8 +551,8 @@ unsafe fn damage(
     {
         return;
     }
-    // Object-object contacts also feed the separate native damage-controller listener.
-    // Its queued damage is not observable through DoReactToHit, so those contacts stay native.
+    // Object-object contacts also feed the separate native damage-controller listener, whose
+    // queued damage `PhysicsGameObject::DoReactToHit` does not show, so those contacts stay native.
     if !native[0]
         && contact.character
         && let Some(amount) = object_damage(impulse, tuning)

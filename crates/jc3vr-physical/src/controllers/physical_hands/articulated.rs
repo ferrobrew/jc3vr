@@ -14,8 +14,8 @@
 //!
 //! While a hand holds one, the bodies its constraints join it to (its [`assembly`]) are damped
 //! within themselves as a held ragdoll is ([`damp_assembly`]): the hand drives the body it holds
-//! alone, and its neighbours, hung off it on their own constraints, kept their momentum and rang
-//! against the hand (a gas cylinder in a rack on the 14 November take spasmed for five seconds).
+//! alone, so its neighbours, hung off it on their own constraints, would otherwise keep their
+//! momentum and ring against the hand.
 //!
 //! [`PickupTuning::max_articulated_mass_kg`]: crate::controllers::physical_hands::pickup::PickupTuning::max_articulated_mass_kg
 

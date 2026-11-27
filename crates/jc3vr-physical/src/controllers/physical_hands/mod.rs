@@ -1,5 +1,6 @@
 //! Physical hands: each empty hand's palm collides with the world. The design is in
-//! `docs/mod/input/physical-hands.md`, the engine side in `docs/engine/gameplay/melee-and-damage.md`.
+//! `docs/mod/input/physical-hands.md`, the engine side in
+//! `docs/engine/gameplay/melee-and-damage.md`.
 //!
 //! - [`palm`]: the palm box at the tracked wrist, and the points its contacts are probed from;
 //! - [`contact`]: whether each probe point has passed into a surface, and how deep;
@@ -7,9 +8,10 @@
 //! - [`shove`]: a palm's soft contact with a loose body, and how much the body gives;
 //! - [`pickup`]: taking hold of loose objects and picking up weapons with the grip, with the pure
 //!   grip in [`grasp`] and the solver that carries what the hands hold in [`hold`];
-//! - [`rigid`](jc3vr_body::controllers::physics::rigid): a rigid body's response to impulses (in [`jc3vr_body::controllers::physics`]);
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
+//! - [`sounds`]: the impact sounds of a hand or a held object meeting something;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
+//! - [`impacts`]: what a held object's contacts do: haptics, sounds, and damage;
 //! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door
 //!   or a broken window;
 //! - [`articulated`]: whether a body hangs from the world or another body by a constraint;
@@ -17,23 +19,30 @@
 //! - [`vault`]: pushing the body up with the hands pressed down on a surface;
 //! - [`stunt`]: stunt positions on vehicles, entered and let go of with the grip;
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
-//! - [`grab_view`]: the grab view, a diagnostic of what the grip and the reach saw;
-//! - [`world`]: the Havok world, lent out for one call at a time (in
-//!   [`jc3vr_body::controllers::physics`]);
+//! - [`remote`]: the hands' side of the grapple snatch;
+//! - [`lifetime`]: pausing the game's delayed removal of what the hands hold;
+//! - [`human_hull`]: the human characters' narrowed proxy shapes;
+//! - [`grab_view`] and [`collider_view`]: the diagnostic views of what the grip and the reach saw,
+//!   and of the physics world's bodies near the player, with their tuning in [`views`];
 //! - [`config`]: the settings, and [`tuning`] the tuning read from the shipped `hands.toml`.
+//!
+//! The physics substrate the hands build on (the Havok world lent out for one call at a time,
+//! [`world`], and a rigid body's response to impulses,
+//! [`rigid`](jc3vr_body::controllers::physics::rigid)) is the body crate's
+//! ([`jc3vr_body::controllers::physics`]).
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
 //! palms are probed rather than simulated: no body is added to the physics world. Each simulation
 //! tick, once the player aim control's post-simulation update has run ([`tick::after_aim`]), the
 //! palms' tick runs on the game thread at the start of the frame's render update
-//! ([`tick::main_thread_tick`]), and each probe point of each acting palm is cast
-//! from where it last was in the open to where it is now, through the player aim's ray filter,
-//! which never hits the player. Characters are passed through. What the casts find drives these:
+//! ([`tick::main_thread_tick`]), and each probe point of each acting palm is cast from where it
+//! last was in the open to where it is now, through the player aim's ray filter, which never hits
+//! the player. Characters are passed through. What the casts find drives these:
 //!
 //! 1. A press into a solid surface pushes the body away from it ([`push`]), as movement added to
 //!    the on-foot locomotion task's own ([`palm_push`], composed by the body rig's simulation
 //!    half), so that the view moves with the body as it does for stick movement.
-//! 2. The rendered hand is held at the surface ([`apply`], from [`jc3vr_body::controllers::hands`]).
+//! 2. The rendered hand is held at the surface ([`apply`], a stage of the hand composition).
 //! 3. A press into a dynamic object shoves it every tick, within the hand's strength ([`shove`]);
 //!    the share it does not give pushes the body away, as a wall does. A fast hit also knocks it.
 //! 4. An object within reach of a palm can be taken with the grip ([`pickup`]), held at the point
@@ -42,14 +51,15 @@
 //!
 //! A palm acts only on foot, on the ground or falling ([`tick::mode_acts`]), for a tracked hand the
 //! controller drives that holds nothing: not a gun, not the foregrip, not a grenade or a charge
-//! being thrown.
+//! being thrown. Seated in a vehicle, the palms reach only that vehicle's doors (`seated`).
 //!
 //! The knocks, the shoves, and the holds change engine state that is the main thread's, so they
 //! are made only from the palms' tick on the game thread, outside its frame scopes
 //! ([`tick::main_thread_tick`]); a tick anywhere else stands down and the readout says why.
 //!
-//! The module is split by concern: [`status`] holds the readout types, [`state`] the palms' state
-//! across ticks and its stand-down, and [`tick`] the simulation tick that drives it all.
+//! The module is split by concern: [`status`](mod@status) holds the readout types, [`state`] the
+//! palms' state across ticks and its stand-down, and [`tick`] the simulation tick that drives it
+//! all.
 
 pub mod articulated;
 mod bodies;
@@ -149,8 +159,8 @@ pub fn held_bodies() -> [Option<HeldBody>; 2] {
 use jc3vr_body::controllers::hands::DrawTime;
 
 /// Hold each pressed hand at the surface it presses into, in the cockpit frame, and draw each hand
-/// body's hand at its body, for `at`. Called by [`jc3vr_body::controllers::hands::active_hands`] and
-/// its `active_hands_from_frame`.
+/// body's hand at its body, for `at`. The gameplay crate runs it as the hand composition's
+/// hand-bodies stage.
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
     match at {
         DrawTime::Tick => physics::apply(cockpit, palm_centre_m()),

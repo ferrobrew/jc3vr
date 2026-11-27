@@ -1,6 +1,6 @@
 //! What a reached object is to a hand: a weapon lying in the world, a loose body, or something a
-//! hand does not carry, and why. The body accessors this reads are in
-//! [`jc3vr_body::controllers::physics::bodies`], re-exported here for the physical hands.
+//! hand does not carry, and why. The body accessors this reads are
+//! [`jc3vr_body::controllers::physics::bodies`]'s.
 
 use std::{fmt, num::NonZeroUsize};
 

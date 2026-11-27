@@ -22,7 +22,7 @@ use crate::controllers::physical_hands::{
     tuning::PHYSICAL_HANDS,
 };
 
-/// Stop: forget the probes and the push, and say why.
+/// Stop: forget the probes, the push, and every hold, and say why.
 pub(super) fn stand_down(idle: Idle) {
     let mut state = STATE.lock();
     if idle == Idle::OffThread {

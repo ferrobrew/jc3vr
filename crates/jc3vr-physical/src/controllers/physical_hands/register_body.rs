@@ -1,6 +1,6 @@
 //! The physical hands' contributions to the body, the grip model, and the character hooks below
 //! them ([`BodyContributions`]): the climb's readers ([`jc3vr_body::controllers::facts::climb`]),
-//! the palms' push in the rig's simulation half, the observer of a body destruction, and the palm
+//! the palms' push in the rig's simulation half, the observer of a body destruction, the palm
 //! summary logged with each grip press, the hand bodies' post-step sample taken before each
 //! rendered frame's hand composition, and the hold a snatched prop is handed to
 //! ([`jc3vr_body::controllers::held::handover`]). The climb's refusal of the automatic entry into

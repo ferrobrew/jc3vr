@@ -1,8 +1,8 @@
-//! The physical hands' tuning, read from the shipped `tuning/hands.toml` ([`PHYSICAL_HANDS`]): the palm box,
-//! the push off surfaces and the knock of a fast hit, how long a tick's results stay current, the
-//! soft contact with loose bodies, the impact sounds, the hold's solver, the strain's acquisition,
-//! the pressure haptics, the carried bodies' collision, the snatch's side, the articulated
-//! assemblies, and the held marker.
+//! The physical hands' tuning, read from the shipped `tuning/hands.toml` ([`PHYSICAL_HANDS`]): the
+//! palm box, the push off surfaces and the knock of a fast hit, how long a tick's results stay
+//! current, the soft contact with loose bodies, the impact sounds, the hold's solver, the strain's
+//! acquisition, the pressure haptics, the carried bodies' collision, the snatch's side, the
+//! articulated assemblies, and the held marker.
 
 use glam::Vec3;
 use jc3vr_core::{

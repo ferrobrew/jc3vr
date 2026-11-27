@@ -1,9 +1,9 @@
-//! The physical hands' grip targets ([`jc3vr_body::controllers::grab`]): what each empty hand's reach
-//! found in the world (an object, a weapon, a vehicle's door, or a character), the object a hand
-//! holds, the surface a hand could climb, and the helicopter the player hangs from.
+//! The physical hands' grip targets ([`jc3vr_body::controllers::grab`]): what each empty hand's
+//! reach found in the world (an object, a weapon, a vehicle's door, or a character), the object a
+//! hand holds, the surface a hand could climb, and the helicopter the player hangs from.
 //!
-//! The reach runs on the simulation tick and is read here on the input tick, measured: the reach's
-//! own casts found each target, so its distance is the reach's. The markers lie on what was found,
+//! The reach runs in the palms' tick and is read here on the input tick, measured: the reach's own
+//! casts found each target, so its distance is the reach's. The markers lie on what was found,
 //! in the world, on its surface where the reach knows the surface's normal.
 
 use jc3vr_body::controllers::grab::{

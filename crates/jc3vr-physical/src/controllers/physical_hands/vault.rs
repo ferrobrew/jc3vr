@@ -11,11 +11,12 @@
 //! other reason, such as the rig carrying the goals down faster than the bodies follow while the
 //! player falls, lags downward too. So a hand's lag counts only while its reach finds a static
 //! surface facing up under it ([`supported_press_lift`]), a push starts only while the player
-//! stands on the ground, and nothing lifts a player moving down ([`may_lift`]). The lift lifts the rig with the player, the controller with it, so the
-//! press shallows as the player rises and settles with the hands resting on the surface: the
-//! player is held up for as long as the hands press, and rises no further than the press is deep.
-//! It is bounded by [`VaultTuning::max_lift_mps`], and the feet rise at most
-//! [`VaultTuning::max_rise_m`] above where the push started.
+//! stands on the ground, and nothing lifts a player moving down ([`may_lift`]). The lift lifts the
+//! rig with the player, the controller with it, so the press shallows as the player rises and
+//! settles with the hands resting on the surface: the player is held up for as long as the hands
+//! press, and rises no further than the press is deep. It is bounded by
+//! [`VaultTuning::max_lift_mps`], and the feet rise at most [`VaultTuning::max_rise_m`] above where
+//! the push started.
 //!
 //! A push is a deliberate act on something above the ground. A surface less than
 //! [`VaultTuning::min_height_m`] above the feet takes no press ([`clear_of_the_feet`]): the ground

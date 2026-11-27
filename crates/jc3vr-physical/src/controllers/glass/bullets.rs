@@ -166,7 +166,7 @@ pub(crate) unsafe fn names_hidden_pane(info: &mut CastRayInfoBase) -> bool {
     // SAFETY: one past the end of the buffer.
     array.m_Last = unsafe { base.add(MAX_PANES) };
     array.m_Flags = ModelInstanceArray::USER_ALLOCATED;
-    // SAFETY: as the bullet's glass handling calls it, from the bullet's worker.
+    // SAFETY: forwarded from the caller; the bullet's glass handling makes the same call.
     unsafe { GetModelInstancesHit(info, &mut array, ptr::null_mut()) };
     // SAFETY: the call appends within the buffer.
     let count = usize::try_from(unsafe { array.m_End.offset_from(array.m_Begin) }).unwrap_or(0);
