@@ -22,12 +22,9 @@
 //! [`decide`] is the pure rule; [`hide_game_reticles`] reads the mode, the settings, and the aim's
 //! latest results, and holds the reticle clips hidden through [`crate::hud::scaleform`].
 
-use std::time::Instant;
-
-use jc3vr_body::controllers::{aim, mode, mode::Mode, scheme};
+use jc3vr_body::controllers::{body_frame, mode, mode::Mode, scheme};
 use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_vehicles::controllers::vehicles;
-use parking_lot::Mutex;
 
 use crate::hud::tuning::HUD;
 
@@ -111,39 +108,20 @@ pub fn decide(inputs: ReticleInputs) -> HiddenReticles {
 pub(crate) unsafe fn hide_game_reticles() {
     let enabled = CONTROLLERS_CONFIG.query(|controllers| controllers.enabled);
     let hidden = if enabled {
-        let status = aim::status();
+        let aim = body_frame::fresh_aim(HUD.get().game_reticle.aim_window());
         decide(ReticleInputs {
             enabled,
             controllers_scheme: scheme::is_controllers(),
             place: AimPlace::of(mode::current().mode),
             mounted_by_hand: vehicles::mounted_aim_point().is_some(),
-            aim_fresh: aim_fresh(status.updates),
-            weapon_aimed: status.weapon.is_some(),
+            aim_fresh: aim.is_some(),
+            weapon_aimed: aim.is_some_and(|aim| aim.weapon.is_some()),
         })
     } else {
         HiddenReticles::default()
     };
     // SAFETY: forwarded from the caller.
     unsafe { crate::hud::scaleform::apply_reticle_suppression(hidden.weapon, hidden.grapple) };
-}
-
-/// The aim's update count when it was last seen to change, and when.
-static LAST_AIM_UPDATE: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
-
-/// Whether the aim's update count `updates` has moved within the tuning's
-/// `game_reticle.aim_max_age_ms`.
-fn aim_fresh(updates: u64) -> bool {
-    let now = Instant::now();
-    let mut last = LAST_AIM_UPDATE.lock();
-    match *last {
-        Some((seen, at)) if seen == updates => {
-            now.duration_since(at) < HUD.get().game_reticle.aim_max_age()
-        }
-        _ => {
-            *last = Some((updates, now));
-            true
-        }
-    }
 }
 
 #[cfg(test)]

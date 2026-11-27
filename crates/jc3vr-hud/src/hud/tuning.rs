@@ -9,6 +9,7 @@ use std::time::Duration;
 use glam::Vec3;
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range, vec3},
+    published::Window,
     tuning::Tuning,
 };
 use jc3vr_gameplay::controllers::summary::config::{GlanceConfig, WristPlacement};
@@ -645,14 +646,14 @@ impl GrabHintTuning {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GameReticleTuning {
-    /// How long the aim's results count as recent after its update count last moved, milliseconds.
+    /// How long the aim's results count as recent after the aim's last update, milliseconds.
     pub aim_max_age_ms: u64,
 }
 
 impl GameReticleTuning {
-    /// [`GameReticleTuning::aim_max_age_ms`] as a duration.
-    pub fn aim_max_age(&self) -> Duration {
-        Duration::from_millis(self.aim_max_age_ms)
+    /// [`GameReticleTuning::aim_max_age_ms`] as a freshness window.
+    pub fn aim_window(&self) -> Window {
+        Window::from_millis(self.aim_max_age_ms)
     }
 }
 

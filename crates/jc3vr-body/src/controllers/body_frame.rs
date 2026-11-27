@@ -20,7 +20,7 @@
 //! are built from these sections plus their writers' counts and diagnostics; code that acts on the
 //! body's decisions reads the frame.
 
-use jc3vr_core::published::{Published, Stage, Stamp};
+use jc3vr_core::published::{Published, Stage, Stamp, Window};
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -127,6 +127,12 @@ pub fn aim() -> AimFrame {
         .latest()
         .map(|stamped| stamped.value)
         .unwrap_or_default()
+}
+
+/// The aim's section, if the aim control's update last published it within `window`. A section
+/// older than that belongs to an update that no longer runs, and says nothing about what aims now.
+pub fn fresh_aim(window: Window) -> Option<AimFrame> {
+    AIM_FRAME.fresh(window)
 }
 
 /// The locomotion's section.
