@@ -4,11 +4,13 @@
 //! - [`engine`]: the gun's own body, whose shape and mass the gun body takes;
 //! - [`step`]: the gun bodies' lifecycle in the pre-simulation step: made, joined, kept on their
 //!   seats, kicked by the shots, and destroyed;
-//! - [`math`]: the pure parts: the mass, the seat and the deviation from it, the axes, and the shot.
+//! - [`math`]: the pure parts: the mass, the seat and the deviation from it, the axes, and the
+//!   shot;
+//! - [`targets`]: the support and weight targets the physical drive shares with the drawn hands.
 //!
 //! The guns in the hands, the shots, and what each step reports back to the hands, the rigid grip,
 //! and the foregrip are the store the weapon handling publishes into
-//! ([`jc3vr_body::controllers::held::guns`]); this module re-exports the readout's types.
+//! ([`jc3vr_body::controllers::held::guns`]).
 //!
 //! A gun's own body is in the world only while the weapon lies dropped or is mounted
 //! ([`WeaponData::m_PfxInstance`]), and it belongs to the weapon, which the game may destroy at any

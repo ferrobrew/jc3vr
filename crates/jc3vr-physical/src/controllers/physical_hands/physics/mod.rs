@@ -5,6 +5,9 @@
 //! - [`body`]: one hand body in the physics world, made and destroyed as the engine's own free
 //!   bodies are;
 //! - [`callback`]: the physics system's pre-simulation callback that drives the bodies;
+//! - [`observe`](mod@observe) and [`step`](mod@step): the tick's post-simulation and pre-simulation
+//!   halves, below;
+//! - [`drawn_body`]: the collision capsules on Rico's drawn torso, for what the hands hold to meet;
 //! - [`lifecycle`]: the bodies' own state across steps, and the transitions that make, add, drive,
 //!   park, join, and destroy them;
 //! - [`contact`]: the contacts each body starts, as the physics system's collision listener
@@ -17,7 +20,7 @@
 //!   held gun's body;
 //! - [`guns`]: a held gun as a body of its own, joined to the hand bodies that hold it;
 //! - [`state`]: the shared state the tick's two halves and the rest of the controllers read, and
-//!   the small readers over it;
+//!   the small readers over it, with the readout's types in [`types`];
 //! - [`config`]: the settings;
 //! - [`tuning`]: the tuning ([`PHYSICS`]).
 //!

@@ -1,8 +1,9 @@
-//! Presentation offsets measured between a published controller palm and its post-step body.
+//! The offsets that draw each hand where its body is, measured between the palm a step drove the
+//! body toward and the body after the step, pure.
 //!
-//! Offsets are expressed in the palm publication's transport frame before the render head pair
-//! carries them into the world. They are not interpolated across physics steps: doing so mixes
-//! an old collision response with the current tracking and transport frame.
+//! The offsets are expressed in the cockpit frame the palms are posed in, and the draw carries them
+//! into the world with the hands. They are not interpolated across physics steps: doing so would
+//! mix an old collision response with the current tracking and cockpit frame.
 
 use body_rig::math::rotation::shortest;
 use glam::{Quat, Vec3};
@@ -25,8 +26,8 @@ impl RenderOffset {
         turn: Quat::IDENTITY,
     };
 
-    /// Measure the body against the palm at the same sample time, in world space.
-    /// The shift and turn are capped; a small free-hand turn stays inside the deadband.
+    /// Measure the body against the palm at the same sample time, in world space. The shift and
+    /// the turn are capped, and a turn within `deadband_rad` is not drawn.
     pub fn between(
         palm: Pose,
         body: Pose,
@@ -51,7 +52,8 @@ impl RenderOffset {
         }
     }
 
-    /// Express the world offset in the transport frame of the published palm.
+    /// The world offset in the cockpit frame, which turns with the body's rotation and scales
+    /// with the world scale.
     pub fn to_cockpit(self, body_rotation: Quat, world_scale: f32) -> Self {
         let inverse = body_rotation.inverse();
         Self {
@@ -105,7 +107,7 @@ pub(crate) fn apply_offsets(
     }
 }
 
-/// The latest pre-step offset, retained as a fallback when a post-step body read fails.
+/// The last step's offsets, kept for when the post-step read of a body fails.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct OffsetTimeline {
     current: Option<([RenderOffset; 2], Stamp)>,
@@ -122,7 +124,8 @@ impl OffsetTimeline {
         *self = Self::EMPTY;
     }
 
-    /// Keep the latest result instead of introducing another step of presentation delay.
+    /// The last step's offsets, whatever `now` is: blending between steps would draw the hands a
+    /// step behind their bodies.
     pub fn at(&self, _now: Stamp) -> Option<[RenderOffset; 2]> {
         self.current.map(|(offsets, _)| offsets)
     }

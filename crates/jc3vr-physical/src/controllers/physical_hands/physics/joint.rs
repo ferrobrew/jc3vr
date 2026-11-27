@@ -8,12 +8,12 @@
 //! is constructed with one reference, the joint's, and is given the two bodies' frames: the
 //! constraint frame is the hand body's own frame, and the same frame in the object's body space,
 //! so the two bodies are held in the pose they had when the joint was made, or at a supplied palm
-//! frame on the object for an anatomical regrip. The world's
-//! constraint takes a reference of its own ([`hknpWorld::createConstraint`]), and the joint
-//! releases its reference at once, so destroying the constraint ([`hknpWorld::destroyConstraints`])
-//! frees the data. The joint keeps only the constraint's id, and checks that the world's slot for
-//! it still holds its constraint (its two bodies and its data) before it destroys it, so a slot the
-//! world has since reused is never touched.
+//! frame on the object for an anatomical regrip. The world's constraint takes a reference of its
+//! own ([`hknpWorld::createConstraint`]), and the joint releases its reference at once, so
+//! destroying the constraint ([`hknpWorld::destroyConstraints`]) frees the data. The joint keeps
+//! only the constraint's id, and checks that the world's slot for it still holds its constraint
+//! (its two bodies and its data) before it destroys it, so a slot the world has since reused is
+//! never touched.
 //!
 //! Every function here changes the physics world, so it runs only on the thread that steps it,
 //! outside the step: from the pre-simulation callback, or from the shutdown cleanup on the game
@@ -76,8 +76,8 @@ pub enum JointKind {
     /// The two bodies held in a fixed pose: the hand turns the object.
     Fixed,
     /// The contact point held on the palm, the rotation free: for an object that hangs on
-    /// constraints of its own, two hands on one ragdoll, where each hand's fixed pose fought the
-    /// other's and the ragdoll's joint limits and the body rang between them.
+    /// constraints of its own, two hands on one ragdoll, where each hand's fixed pose would fight
+    /// the other's and the ragdoll's joint limits, and the body would ring between them.
     Point,
 }
 
@@ -218,8 +218,7 @@ impl Joint {
     ///
     /// # Safety
     ///
-    /// The thread that steps the physics world, outside the step; `hand` must be a live hand body
-    /// in the simulation.
+    /// The thread that steps the physics world, outside the step.
     pub unsafe fn intact(&self) -> bool {
         let Some(world) = (unsafe { World::get() }) else {
             return false;
@@ -234,8 +233,7 @@ impl Joint {
     ///
     /// # Safety
     ///
-    /// The thread that steps the physics world, outside the step; `hand` must be a live hand body
-    /// in the simulation.
+    /// The thread that steps the physics world, outside the step.
     pub unsafe fn destroy(self) -> bool {
         let Some(mut world) = (unsafe { World::get() }) else {
             return false;

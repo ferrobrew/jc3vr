@@ -7,13 +7,18 @@
 //! gun's reach strikes only with a deliberate swing, and a closing one never. The character reacts
 //! through its own hit reaction ([`Character::HitReaction`]) as to a melee blow
 //! ([`DamageFlags::DMG_TYPE_MELEE`]) of the contact's impulse along the hand's swing, which
-//! staggers it or knocks it down against its own
-//! thresholds and carries the blow's momentum into the ragdoll it falls as. A blow hard enough to
-//! deal damage is a melee damage message ([`DamageMsg`]) to the character's damage virtual
-//! ([`PhysicsGameObject::OnDamage`]) instead, which takes the health and runs the same hit reaction
-//! from the message's impulse. Every character is struck alike, whatever its relation to the
-//! player's faction ([`GetRelation`], read for the log): a civilian, a guard, and an ally take the
-//! same blow, and the game's own reactions to it (the alarm, the heat) follow.
+//! staggers it or knocks it down against its own thresholds and carries the blow's momentum into
+//! the ragdoll it falls as. A blow hard enough to deal damage is a melee damage message
+//! ([`DamageMsg`]) to the character's damage virtual ([`PhysicsGameObject::OnDamage`]) instead,
+//! which takes the health and runs the same hit reaction from the message's impulse. Every
+//! character is struck alike, whatever its relation to the player's faction ([`GetRelation`], read
+//! for the log): a civilian, a guard, and an ally take the same blow, and the game's own reactions
+//! to it (the alarm, the heat) follow. A knockdown blow on an exposed vehicle occupant (a
+//! motorcycle rider, or one behind a window the glass brought down) also queues the occupant's
+//! full-ragdoll act, which takes it out of the seat.
+//!
+//! The same strike serves a held prop's blow ([`held_strike`]), and the shoves the pickup tick
+//! queues ([`queue_shove`]) are dealt here as blows without damage.
 //!
 //! The character is found again from the contact's body when the blow is dealt: the body's engine
 //! instance must still be the one the event named, and its owner the same object, so a character
@@ -127,7 +132,7 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
     for contact in contacts {
         // The player's own body, the hands, and the other gun are in the player's group, which
         // the gun body never collides with; a contact with one is none.
-        // SAFETY: forwarded from the caller.
+        // SAFETY: the game tick holds the game thread, outside the game's update.
         if contact.gun && unsafe { body::in_player_group(contact.other_body) } {
             continue;
         }
@@ -163,11 +168,11 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
         if pulse {
             haptics::play_scaled(contact.hand, Event::HandStrike, share);
         }
-        // SAFETY: forwarded from the caller.
+        // SAFETY: as above.
         let victim = attacker
             .as_deref()
             .and_then(|attacker| unsafe { contact_victim(&contact, attacker) });
-        // SAFETY: forwarded from the caller: the game thread, outside the game's update.
+        // SAFETY: as above.
         unsafe {
             sounds::play(Impact {
                 hand: contact.hand,
@@ -239,7 +244,7 @@ pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
         let direction = blow_direction(swung, victim_at - contact.hand_position);
         // Read before the strike, which may free the character's tuning with its ragdoll.
         let stagger_threshold = victim.m_HitReaction_ImpulseStumbleThreshold;
-        // SAFETY: forwarded from the caller; both characters are live.
+        // SAFETY: as above; both characters are live.
         let dealt = unsafe { strike(attacker, victim, contact.hand_position, direction, &plan) };
         // Native damage can change the contact body's ownership or destroy its instance.
         let rider_reaction_queued =
@@ -404,7 +409,7 @@ pub(crate) struct ShovesDelivered {
     pub knockdowns: u64,
 }
 
-/// Queue `shove` for the next frame tick. Called from the palms' tick.
+/// Queue `shove` for the next frame tick. Called from the pickup tick.
 pub(crate) fn queue_shove(shove: Shove) {
     let mut shoves = SHOVES.lock();
     if shoves.len() < MAX_SHOVES {
@@ -426,7 +431,8 @@ pub(super) fn deliver_shoves(game: &GameTick<'_>) -> ShovesDelivered {
         ..PHYSICS.get().hand_bodies.hits
     };
     for shove in shoves {
-        // SAFETY: forwarded from the caller; the body's owner proves the character alive.
+        // SAFETY: the game tick holds the game thread, outside the game's update; the body's owner
+        // proves the character alive.
         let alive = unsafe { owner_of(shove.body) } == Some(shove.character)
             && unsafe { engine::is_character(shove.character) };
         if !alive || shove.character.get() == attacker as *const Character as usize {
@@ -447,7 +453,7 @@ pub(super) fn deliver_shoves(game: &GameTick<'_>) -> ShovesDelivered {
         let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
         plan.damage = None;
         let yank = matches!(shove.force, ShoveForce::Yank { .. });
-        // SAFETY: forwarded from the caller; both characters are live.
+        // SAFETY: as above; both characters are live.
         unsafe { strike(attacker, victim, shove.at, shove.direction, &plan) };
         tracing::info!(
             hand = shove.hand.label(),

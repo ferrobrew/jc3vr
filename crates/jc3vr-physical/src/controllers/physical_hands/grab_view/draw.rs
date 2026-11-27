@@ -1,12 +1,13 @@
-//! The grab view's primitives for one input tick, within a budget: the refused grabs, the reach rays and the door handles near the palms, a line from each hand to the
-//! grip targets near it, and the candidates' boxes, in that order, so that the budget leaves out
-//! the candidates first.
+//! The grab view's primitives for one input tick, within a budget: the refused grabs, the reach
+//! rays, and the door handles near the palms, which are always drawn, then a line from each hand to
+//! the grip targets near it, a held gun's grab and knock zones, and the candidates' boxes, in that
+//! order, so that the budget leaves out the candidates first.
 //!
 //! Everything is anchored at render time (`docs/mod/rendering/render-time-anchoring.md`): the hands'
-//! ends of the lines to the hands' render-time poses, a target's end where
-//! its grip marker is, the reach rays (placed by the palms' tick, which rides with the player) to
-//! the render-time head at their offset from the tick's head, and only what lies in the world (the
-//! door handles, the candidates, a refusal's point) to the world.
+//! ends of the lines to the hands' render-time poses, a target's end where its grip marker is, the
+//! reach rays (placed by the palms' tick, which rides with the player) to the render-time head at
+//! their offset from the tick's head, and only what lies in the world (the door handles, the
+//! candidates, a refusal's point) to the world.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -42,7 +43,7 @@ pub struct Drawn {
     pub flashes: usize,
     /// The held guns whose grab zones were drawn.
     pub zones: usize,
-    /// The candidates and lines the budget left out.
+    /// The target lines, gun zones, and candidates that the budget or the candidate cap left out.
     pub dropped: usize,
 }
 
@@ -241,9 +242,9 @@ fn target_lines(inputs: &DrawInputs) -> Vec<TargetLine> {
     out
 }
 
-/// How far a hand with its drawn grip at `grip` is from `target`'s grab point, and how near it must come, metres at
-/// the player's scale; `in_reach` is the resolver's distance when the hand is within reach. A
-/// target the provider measured is only offered within reach.
+/// How far a hand with its drawn grip at `grip` is from `target`'s grab point, and how near it
+/// must come, metres at the player's scale; `in_reach` is the resolver's distance when the hand is
+/// within reach. A target the provider measured is only offered within reach.
 fn distance_to(
     target: &GripTarget,
     grip: Option<Vec3>,

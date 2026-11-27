@@ -130,6 +130,10 @@ unsafe extern "system" fn pre_simulation(
     // The payload aborts on a panic, so the step must not panic: its paths handle a missing body,
     // joint, or grip as a lost one.
     let _timing = jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::HandBodies);
+    // The hull narrows the human bodies' shapes and shares nothing with the rest. The drawn
+    // torso's capsules are made before the hand step and the impacts, which leave them out by id;
+    // the rail's carry runs before the hand step, so a gripping hand's carry is the one the proxy
+    // keeps; and the impacts run last, refreshing their leases immediately before the world step.
     // SAFETY: the engine calls this before a step, on the thread that steps the world.
     unsafe {
         {
@@ -138,7 +142,6 @@ unsafe extern "system" fn pre_simulation(
             crate::controllers::physical_hands::human_hull::step(_world);
         }
         crate::controllers::physical_hands::physics::drawn_body::step();
-        // Before the hand step, so a gripping hand's carry is the one the proxy keeps.
         if let Some(contributions) = contributions::get() {
             (contributions.rail_step)();
         }

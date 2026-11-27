@@ -21,10 +21,10 @@ jc3vr_core::tuning_file! {
 #[serde(deny_unknown_fields)]
 pub struct PhysicsTuning {
     /// The hand bodies. Each hand draws where its body is, so that a hand stops at what stops its
-    /// body, and holds what its grip takes by joining its body to it with a fixed constraint, so
-    /// that a held object has mass and the hand's strength carries it. The world does not end a
-    /// constraint whose body is destroyed, so an object broken apart inside a step leaves the
-    /// joint on a dead body until the next pre-simulation step ends it.
+    /// body, and holds what its grip takes by joining its body to it with a constraint, so that a
+    /// held object has mass and the hand's strength carries it. The world does not end a constraint
+    /// whose body is destroyed, so an object broken apart inside a step leaves the joint on a dead
+    /// body until the next pre-simulation step ends it.
     pub hand_bodies: HandBodyTuning,
     pub step: StepTuning,
     pub render: HandRenderTuning,
@@ -625,15 +625,12 @@ impl RigTuning {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LifecycleTuning {
-    /// How many steps a body put somewhere, rather than moved there, ignores its contacts, at the
-    /// game's tick ([`contact::mute_for`] scales it at another sim rate).
+    /// How many physics steps a body put somewhere, rather than moved there, ignores its contacts
+    /// ([`contact::mute_for`]).
     ///
     /// [`contact::mute_for`]: crate::controllers::physical_hands::physics::contact::mute_for
     pub(crate) placed_mute_steps: u64,
-    /// How many steps a body the rig carried ignores its contacts, at the game's tick
-    /// ([`contact::mute_for`] scales it at another sim rate).
-    ///
-    /// [`contact::mute_for`]: crate::controllers::physical_hands::physics::contact::mute_for
+    /// How many physics steps a body the rig carried ignores its contacts.
     pub(crate) rig_mute_steps: u64,
     /// The relative change in a body's size or mass that remakes it.
     pub(crate) spec_tolerance: f32,

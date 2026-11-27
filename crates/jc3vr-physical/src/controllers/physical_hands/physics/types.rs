@@ -49,7 +49,7 @@ pub struct HandBodiesStatus {
     pub steps: u64,
     /// The player's collision system group the bodies share.
     pub system_group: Option<u32>,
-    /// Indexed by [`Hand::index`].
+    /// Indexed by [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub hands: [HandBodyStatus; 2],
     /// The push the hands give the player, world `(x, z)` metres per second.
     pub push: Vec2,
@@ -81,7 +81,8 @@ pub struct CallbackStatus {
     pub game_thread: u32,
     /// The id of the thread the callback last fired on; zero before it first fired.
     pub firing_thread: u32,
-    /// Whether each hand's body has contact events on, indexed by [`Hand::index`].
+    /// Whether each hand's body has contact events on, indexed by
+    /// [`Hand::index`](jc3vr_input::frame::Hand::index).
     pub listening: [bool; 2],
 }
 

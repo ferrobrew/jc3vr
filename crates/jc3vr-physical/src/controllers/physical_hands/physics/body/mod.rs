@@ -137,7 +137,8 @@ pub(crate) struct HandBody {
 unsafe impl Send for HandBody {}
 
 impl HandBody {
-    /// Make a hand body at the game-space pose `position`, `orientation`, out of the simulation.
+    /// Make a hand body or a held gun's body at the game-space pose `position`, `orientation`, out
+    /// of the simulation.
     ///
     /// # Safety
     ///

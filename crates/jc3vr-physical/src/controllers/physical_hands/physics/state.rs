@@ -137,9 +137,9 @@ impl Target {
     ///
     /// The carrier's part of the motion is led by `carrier_lead_s` and the hand's own by `lead_s`.
     /// The carrier moves only with the simulation's steps, so its lead counts the steps since the
-    /// palm was published; led by the time since instead, a frame that ran no step put the palm a
-    /// frame's travel of a moving car ahead of where the car was, and the hand snapped back and
-    /// forth (510 to 519 s of the 14 November take).
+    /// palm was published; led by the time since instead, a frame that runs no step would put the
+    /// palm a frame's travel of a moving car ahead of where the car is, and the hand would snap
+    /// back and forth (510 to 519 s of the 14 November take).
     pub(super) fn led(&self, lead_s: f32, carrier_lead_s: f32) -> Goal {
         let carrier = if self.carrier.is_finite() {
             self.carrier
@@ -158,7 +158,7 @@ pub(super) struct Shared {
     /// Each hand's palm, as last published; `None` for a hand that does not act.
     pub(super) targets: [Option<Target>; 2],
     /// Each hand on a gun's tracked palm centre, as last published, before the two-handed pose
-    /// moved it onto the gun.
+    /// moves it onto the gun.
     pub(super) tracked: [Option<Vec3>; 2],
     /// Which hands stopped acting on purpose, and park at once, and the step that was published
     /// at.
@@ -347,9 +347,9 @@ pub(super) struct ActingPalms {
 /// The drive of a hand that holds an object through a joint: a holding hand's pull and twist
 /// (`hold`'s [`HoldTarget::hand_force_n`], the pull a carry of the object would have, and the
 /// twist of a hand at a strength of one, [`HandStrength::full`], in the same proportion), no
-/// stronger than the hand's own, and with both hands on the
-/// object, the twist at [`PickupTuning::two_hand_angular_share`], so the hands lift what they
-/// would carry and the two grab points set the object's line. The combined hand and carried mass
+/// stronger than the hand's own, and with both hands on the object, the twist at
+/// [`PickupTuning::two_hand_angular_share`], so the hands lift what they would carry and the two
+/// grab points set the object's line. The combined hand and carried mass
 /// sets the requested impulse; the joined drive applies that impulse through the hand's own mass.
 /// A ragdoll's carried mass is the bone the hand holds, and the rest of the body hangs from it.
 /// A hand joined to a ragdoll or an articulated object pulls with `constrained_gain_share` of the
@@ -381,8 +381,8 @@ pub(super) fn holding_tuning(
     };
     let torque_nm = full.torque_nm.max(0.0) * (pull / full.force_n).max(0.0) * twist_share;
     // A ragdoll or an articulated object hangs most of its mass on its own constraints, which the
-    // dead-beat drive does not see: closing the bone's lag in one step, the hand overshot and the
-    // body orbited the palm at 2 to 4 Hz, even held still (2659, 2672, and 3270 s of the 14
+    // dead-beat drive does not see: closing the bone's lag in one step, the hand overshoots and
+    // the body orbits the palm at 2 to 4 Hz, even held still (2659, 2672, and 3270 s of the 14
     // November take). It is pulled softly instead, and with both hands on it, each pulls half as
     // hard, since each drive assumes it alone moves the assembly.
     let gain_share = match (hold.constrained, hold.shared) {
@@ -402,9 +402,9 @@ pub(super) fn holding_tuning(
 
 /// The drive of a hand on a gun: the hand's full strength, unlike a hand lifting a loose object,
 /// against the hand's mass and what it carries together (`gun_kg`, the gun body's mass and a
-/// bracing hand's riding on it, when the hand holds a gun). The gun body moves with the hand's body as one rigid body, so the gun stays where
-/// the hand holds it, and its mass shows only where the strength runs out: a slight lag in a fast
-/// swing.
+/// bracing hand's riding on it, when the hand holds a gun). The gun body moves with the hand's
+/// body as one rigid body, so the gun stays where the hand holds it, and its mass shows only where
+/// the strength runs out: a slight lag in a fast swing.
 pub(super) fn gun_tuning(tuning: &DriveTuning, gun_kg: Option<f32>) -> DriveTuning {
     let gun_kg = gun_kg.filter(|m| m.is_finite() && *m > 0.0).unwrap_or(0.0);
     DriveTuning {

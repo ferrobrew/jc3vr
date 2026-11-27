@@ -475,14 +475,15 @@ pub(crate) fn physical_locomotion_allowed(
     !climbing && !native_owns_movement && !grapple_traversal
 }
 
-/// The step the physics world takes, seconds: the engine's 30 Hz constant, to which the physics
-/// update pins whatever time it is given. Read by the drives, the climb, and the proxy's velocity.
+/// The step the physics world takes, seconds: the engine's fixed step
+/// ([`PhysicsSystem::STEP_SECONDS`]), to which the physics update pins whatever time it is given.
+/// Read by the drives, the climb, and the proxy's velocity.
 pub const fn step_seconds() -> f32 {
     PhysicsSystem::STEP_SECONDS
 }
 
 /// Whether nothing solid lies between `from` and `to`, game space, for the aim's ray filter, which
-/// never hits the player nor the hand bodies; `held` is an object a hand holds, also passed
+/// never hits the player or the hand bodies; `held` is an object a hand holds, also passed
 /// through, or zero. A cast that fails counts as blocked.
 ///
 /// # Safety
@@ -492,9 +493,10 @@ unsafe fn path_clear(from: Vec3, to: Vec3, held: usize) -> bool {
     let Some(ray) = Ray::new(from, to - from) else {
         return true;
     };
+    // SAFETY: the ignored objects are the live player and a held object the pickups checked this
+    // tick, or zero.
     let options = unsafe { CastOptions::ignoring_player(held) };
-    // SAFETY: forwarded from the caller; the ignored objects are the live player and a held
-    // object the pickups checked this tick, or zero.
+    // SAFETY: forwarded from the caller.
     matches!(
         unsafe { raycast::cast(&ray, from.distance(to), &options) },
         Ok(None)

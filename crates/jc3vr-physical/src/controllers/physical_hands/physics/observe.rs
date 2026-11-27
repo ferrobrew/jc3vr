@@ -28,8 +28,9 @@ use crate::controllers::physical_hands::{
     tuning::PHYSICAL_HANDS,
 };
 
-/// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
-/// removes it. Called once per frame in a game tick ahead of the game's update.
+/// Deliver the impacts, shoves, and blows queued since the last tick, and register the
+/// pre-simulation callback and the cleanup that removes it. Called once per frame in a game tick
+/// ahead of the game's update.
 pub fn frame_tick(game: &GameTick<'_>) {
     if jc3vr_core::is_shutting_down() {
         blows::discard();
@@ -207,8 +208,9 @@ fn braced_by_hold() -> Option<Hand> {
         .find(|hand| contents[hand.other().index()].braces.is_some())
 }
 
-/// Freeze post-step presentation offsets against the published palms, in their transport frame.
-/// This reads bodies but never drives or places them.
+/// Measure each drawn hand's body against the palm the last step sent it to, and publish the
+/// offsets in the cockpit frame for the render-time draw. It reads the bodies but never drives or
+/// places them.
 ///
 /// # Safety
 ///
@@ -248,8 +250,8 @@ pub unsafe fn sample_render_offsets() {
         // (`Target::led`), so the body leads the published palm by that motion even with nothing
         // in its way: a hand moving fast, or a player running, would be drawn ahead of its
         // controller by it. Measured against the led palm, the offset is only what holds the body
-        // back. The led palm comes from `acting_palms`' support/weight-adjusted target, so the
-        // residual does not cancel that target when it is applied.
+        // back. The led palm comes from the palm `acting_palms` published, after the two-handed
+        // gun pose moved it, so the offset does not undo that move when it is applied.
         let palm = hands.sent_palm(hand)?;
         let offset = RenderOffset::between(
             Pose {
@@ -274,7 +276,9 @@ pub unsafe fn sample_render_offsets() {
     RENDER_OFFSETS.publish_at(offsets, now);
 }
 
-/// Apply the frame's post-step offsets without adding another physics-step interpolation delay.
+/// Draw each driven hand at its body with the offsets [`sample_render_offsets`] measured this
+/// frame, so the draw does not trail the bodies by a step, or with the last step's offsets
+/// ([`apply`]) when those are stale.
 pub fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
     match RENDER_OFFSETS.fresh(PHYSICS.get().step.stale_after()) {
         Some(offsets) => apply_offsets(cockpit, offsets, palm_offset, braced_by_hold()),
@@ -293,9 +297,11 @@ unsafe fn shutdown() {
     crate::controllers::physical_hands::climb::native::clear();
     // SAFETY: shutdown runs outside the world update before hooks are removed.
     unsafe { crate::controllers::physical_hands::impacts::clear() };
+    // SAFETY: as above.
     unsafe { callback::unregister() };
     // SAFETY: as above.
     unsafe { drawn_body::clear() };
+    // SAFETY: as above.
     let destroyed = unsafe { HANDS.lock().destroy_all("the payload is unloading") };
     let mut shared = SHARED.lock();
     shared.status.registered = false;

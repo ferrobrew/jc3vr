@@ -178,6 +178,8 @@ pub(super) unsafe fn enter(
     if !unsafe { character.IsThisVehicleBelow(vehicle.get() as *const Vehicle) } {
         return Err(StuntError::Refused);
     }
+    // The automatic entry below passes through the climb's attachment gate, which `deliberate`
+    // opens for this one call.
     if crate::controllers::physical_hands::climb::native::deliberate(character, || unsafe {
         character.AutoAttachToStuntAreaOnVehicleBelow()
     }) {

@@ -163,7 +163,8 @@ pub enum CandidateKind {
     Prop,
     /// A loose object too heavy for a hand.
     TooHeavy,
-    /// A vehicle or a part loosened from one, whose doors are offered by their handles.
+    /// A vehicle, or a part loosened from one that still hangs on it, whose doors are offered by
+    /// their handles.
     Vehicle,
 }
 

@@ -95,8 +95,8 @@ pub(super) unsafe fn scan(
 }
 
 /// What the object `object`, owning the body `body`, is as a candidate, or `None` when it is no
-/// candidate: a weapon that is not lying dropped, a body without a mass, or what the player
-/// stands on.
+/// candidate: what the player stands on, or anything the reach does not classify, such as a weapon
+/// that is not lying dropped or a body without a mass.
 ///
 /// # Safety
 ///

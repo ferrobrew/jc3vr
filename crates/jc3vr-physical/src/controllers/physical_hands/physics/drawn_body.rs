@@ -2,8 +2,9 @@
 //!
 //! Rico has no physics bodies for his limbs while animated: his ragdoll exists only while a preset
 //! is wanted, and its keyframed bodies would follow the animated pose before the mod's IK and sit
-//! on a layer that props do not collide with. A held prop passed through the torso (a barrel swung
-//! through Rico at 1438.8 s on the 14 November take), and a held ragdoll filled the camera.
+//! on a layer that props do not collide with. Without a body of the mod's own, a held prop passes
+//! through the torso (a barrel swung through Rico at 1438.8 s on the 14 November take), and a held
+//! ragdoll fills the camera.
 //!
 //! Two capsules follow the procedural torso's keep-out, the chest and the abdomen, slimmer than the
 //! drawn body so the holsters and the pouches stay in reach and no head capsule meets the camera.
@@ -61,9 +62,9 @@ pub(crate) fn note_contact(body: u32) {
 
 /// Whether the held body `body` rests against the torso's capsules: it met one since it last came
 /// clear of them ([`note_contact`]), and its box still reaches one within the tuning's
-/// `drawn_body.reach_margin_m` ([`DrawnBodyTuning::reach_margin_m`]). A
-/// contact alone is not enough, since a resting contact is reported only as it starts; the box
-/// alone is not either, since a long prop's box reaches the torso well before the prop does.
+/// `drawn_body.reach_margin_m` ([`DrawnBodyTuning::reach_margin_m`]). A contact alone is not
+/// enough, since a resting contact is reported only as it starts; the box alone is not either,
+/// since a long prop's box reaches the torso well before the prop does.
 ///
 /// # Safety
 ///

@@ -1,14 +1,17 @@
-//! Deliberate roof-mantle handoff and grip input in the game's existing helicopter hang.
-//! Physical grips remain at their actual points through the moving climb. A completed mantle
-//! can enter the same vehicle's stunt area, while the normal grapple still enters a hang. Standing
-//! on a roof needs no grip. The design is in `docs/mod/input/stunt-positions.md`, the engine side
-//! in `docs/engine/gameplay/stunt-positions.md`.
+//! Stunt positions on vehicles: a completed roof mantle hands the player to the same vehicle's
+//! stunt area, and opening every grip lets go of the game's own helicopter hang. Physical grips
+//! stay at their actual points through the moving climb and never request the hang, which the
+//! grapple still enters. Standing on a roof needs no grip. The design is in
+//! `docs/mod/input/stunt-positions.md`, the engine side in
+//! `docs/engine/gameplay/stunt-positions.md`.
 //!
 //! - [`solve`]: when to enter a stunt position and when to let go, pure;
-//! - [`engine`]: the game's stunt position, the vehicle a grip holds, and the entry.
+//! - [`engine`]: the game's stunt position, the vehicle a grip holds, and the entry;
+//! - `observation`: whether the game owns the player's movement, as the last input tick read it.
 //!
-//! It builds on the hand climbing's grips on moving bodies ([`crate::controllers::physical_hands::climb`]),
-//! which carry the player on the vehicle until the game takes over. While the game holds the
+//! It builds on the hand climbing's grips on moving bodies
+//! ([`crate::controllers::physical_hands::climb`]), which carry the player on the vehicle until the
+//! game takes over. While the game holds the
 //! player in a stunt position ([`game_holds`]), the climb's grips hold the hands on the vehicle
 //! and move nothing: the game moves the player with the vehicle.
 //!
@@ -57,7 +60,7 @@ pub struct StuntStatus {
     pub holding: [bool; 2],
     /// Which hands' climbing grips hold a helicopter, indexed by [`Hand::index`].
     pub on_helicopter: [bool; 2],
-    /// Legacy recorder counter. Physical grips never request native hang entry, so it stays zero.
+    /// The hangs the mod entered. Physical grips never request the game's hang, so it stays zero.
     pub hang_entries: u64,
     /// The stunt areas the mantles entered.
     pub roof_entries: u64,

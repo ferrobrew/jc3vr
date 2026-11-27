@@ -1,7 +1,7 @@
 //! The reads the tracking recorder's near set makes of the physics world beyond the substrate's
 //! walk of the body slots ([`jc3vr_body::controllers::physics::scan::walk_dynamic`]): one dynamic
-//! body's pose and velocities, and a body's identity and shape for its introduction. The set itself, and what it
-//! records, is `jc3vr_body::controllers::telemetry`'s.
+//! body's pose and velocities, and a body's identity and shape for its introduction. The set
+//! itself, and what it records, is `jc3vr_body::controllers::telemetry`'s.
 //!
 //! A walk of every slot up to the world's peak streams the whole body array, so the recorder walks
 //! a slice per step and reads only the bodies it keeps on the other steps.

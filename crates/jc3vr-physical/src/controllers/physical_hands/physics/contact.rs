@@ -187,10 +187,11 @@ pub(super) fn listening(source: impl Into<Source>) -> bool {
     WRAPPERS[source.into().index()].load(Ordering::Acquire) != 0
 }
 
-/// Ignore `hand`'s contacts for the next `steps` physics steps ([`Step`]): after its body is put
+/// Ignore `source`'s contacts for the next `steps` physics steps ([`Step`]): after its body is put
 /// somewhere rather than moved there (made, added, placed, or carried by the rig), where it may
 /// start inside what it meets and the contact would be a blow it never swung, and while it is held
-/// in place. `steps` counts steps at the game's 30 Hz tick.
+/// in place. `steps` counts the physics world's fixed steps
+/// ([`PhysicsSystem::STEP_SECONDS`](jc3gi::physics::PhysicsSystem::STEP_SECONDS)).
 pub(super) fn mute_for(source: impl Into<Source>, steps: u64) {
     let until = Step::now().count().saturating_add(steps);
     MUTED_UNTIL[source.into().index()].fetch_max(until, Ordering::Relaxed);

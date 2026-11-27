@@ -11,7 +11,7 @@
 //!
 //! The palms' simulation tick records what its reach cast ([`record`]) and reads the candidates
 //! from the world a few times a second ([`scan_candidates`]); a grab that a subsystem refuses is
-//! noted as it is refused ([`refused`]). The game stage draws it all with the grip model's
+//! noted as it is refused ([`refused`]). The input tick draws it all with the grip model's
 //! resolution of the same tick ([`submit`]). Everything here runs in the game stage, on the game
 //! thread; the view's state is a leaf lock, with the overlay store's and the readout's leaf locks
 //! briefly under it, and the readout may be read from any thread.
@@ -104,7 +104,7 @@ pub(crate) fn record(recorded: Recorded) {
 ///
 /// # Safety
 ///
-/// The game thread, before the world update.
+/// The game thread, outside the physics step.
 pub(crate) unsafe fn scan_candidates(hands: [Option<Vec3>; 2], standing_on: Option<u32>) {
     let tuning = &VIEWS.get().grab_view;
     let now = Stamp::now();
@@ -176,8 +176,8 @@ pub fn refused(hand: Hand, at: Option<Vec3>, why: &str) {
 }
 
 /// Draw the view for the input tick `tick`, placed by `frame`, or take it down when `frame` is
-/// `None` (the overlay is off, or a menu is up). Called by the input tick after the grip model's
-/// own finish.
+/// `None` (the hands are not active, or a menu is up). Called by the input tick after the grip
+/// model's own finish.
 pub fn submit(tick: &Tick, frame: Option<&MarkerFrame>) {
     let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.grab_view.enabled);
     let Some(frame) = frame.filter(|_| enabled) else {

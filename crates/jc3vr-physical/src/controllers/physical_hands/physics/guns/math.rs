@@ -398,7 +398,8 @@ mod tests {
             gun_mass(f32::NAN, HeftClass::Sidearm, 1, &config).1,
             MassSource::Class
         );
-        // Held within the bounds: a rifle's pickup mass of ten kilograms is held to the rifle's.
+        // Held within the bounds: a near-weightless body is held to the lightest, and a rifle's
+        // pickup mass of ten kilograms to the rifle's heaviest.
         assert_eq!(
             gun_mass(1000.0, HeftClass::Rifle, 1, &config).0,
             config.min_mass_kg

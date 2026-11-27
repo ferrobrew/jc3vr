@@ -2,9 +2,9 @@
 //! two reads, the mod's joints, the contact flashes, the player's ground, and the gazed body, within
 //! a primitive budget that keeps whole bodies, the nearest first.
 //!
-//! Every point is a world anchor. The live view supplies a current render-time body sample without
-//! a previous snapshot, so actual collision geometry is not displaced to match an interpolated mesh.
-//! Paired snapshots remain supported for pure snapshot consumers and regression checks.
+//! Every point is a world anchor. The live view passes its render-time body sample without a
+//! previous snapshot, so the collision geometry is not displaced to match an interpolated mesh; only
+//! the tests pass a previous snapshot.
 
 use std::collections::HashMap;
 

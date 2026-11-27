@@ -1,4 +1,6 @@
-//! Checked native movement observation and its bounded input-tick publication.
+//! Whether the game's vehicle attachment or stunt traversal owns the player's movement, as the
+//! input tick last read it. The reading holds only while it is fresh and its lifecycle context
+//! matches the current one; otherwise the owner is unavailable and physical movement yields.
 
 use jc3gi::character::character::Character;
 use jc3vr_body::hooks::animation::active_state_type_id;

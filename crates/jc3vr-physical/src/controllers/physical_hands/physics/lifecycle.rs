@@ -63,8 +63,8 @@ pub(super) struct Acted {
     pub status: HandBodyStatus,
     /// How far the body was short of where it was last sent, world space.
     pub lag: Vec3,
-    /// The offset from the controller's palm, as the last step was sent it, to where the body is
-    /// now: what draws the hand at its body.
+    /// The offset from the palm the last step drove the body toward to where the body is now:
+    /// what draws the hand at its body.
     pub render: RenderOffset,
     pub created: bool,
     pub destroyed: bool,
@@ -336,8 +336,8 @@ impl Hands {
         let Some(body) = self.bodies[i].as_ref().filter(|_| self.added[i]) else {
             return true;
         };
-        // SAFETY: forwarded from the caller; the body is in the simulation.
         let kind = kind.unwrap_or(JointKind::Fixed);
+        // SAFETY: forwarded from the caller; the body is in the simulation.
         match unsafe {
             Joint::create_at(
                 body.body_id(),

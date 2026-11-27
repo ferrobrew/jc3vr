@@ -8,18 +8,17 @@
 //! [`HandHitsTuning::min_approach_speed_mps`], so a hand resting on a character, or a character
 //! walking into a still hand, strikes nothing. A hand reaching for the gun in a character's hands
 //! ([`Intent`]) strikes that character only with a deliberate swing, and a hand closing on it never
-//! does: the grab takes the gun instead. The
-//! blow's impulse is the momentum of an arm of [`HandHitsTuning::blow_mass_kg`] at the hand's own
-//! share of that closing speed ([`blow_impulse`]), not the solver's contact impulse, which grows
-//! with the hand body's own mass and with how fast the character moves into the hand. The character
-//! reacts through its own hit reaction, which scales the impulse it is given by the blow type's
-//! factor and compares the result against the character's stagger and knockdown thresholds. The
-//! blow is calibrated against the character's own thresholds ([`blow`]): a blow of
-//! [`HandHitsTuning::stagger_impulse_ns`] (a solid punch) reaches its stagger threshold, a harder
-//! one rises toward its knockdown threshold, and a blow of
-//! [`HandHitsTuning::knockdown_impulse_ns`] (a hard swing) reaches the knockdown and ragdolls it;
-//! a weaker blow than a solid punch flinches it in proportion. Every character is struck alike,
-//! whatever its faction: the game's own reactions to being hit (alarm, heat) follow.
+//! does: the grab takes the gun instead. The blow's impulse is the momentum of an arm of
+//! [`HandHitsTuning::blow_mass_kg`] at the hand's own share of that closing speed
+//! ([`blow_impulse`]), not the solver's contact impulse, which grows with the hand body's own mass
+//! and with how fast the character moves into the hand. The character reacts through its own hit
+//! reaction, which scales the impulse it is given by the blow type's factor and compares the result
+//! against the character's stagger and knockdown thresholds. The blow is calibrated against the
+//! character's own thresholds ([`blow`]): a blow of [`HandHitsTuning::stagger_impulse_ns`] (a solid
+//! punch) reaches its stagger threshold, a harder one rises toward its knockdown threshold, and a
+//! blow of [`HandHitsTuning::knockdown_impulse_ns`] (a hard swing) reaches the knockdown and
+//! ragdolls it; a weaker blow than a solid punch flinches it in proportion. Every character is
+//! struck alike, whatever its faction: the game's own reactions to being hit (alarm, heat) follow.
 
 use glam::Vec3;
 use jc3vr_body::controllers::{
@@ -82,9 +81,8 @@ impl Intent {
     /// The intent of a hand whose grip is `latch`, holding a gun already when `holds_gun`, with
     /// `gun_in_reach` whether the gun in the struck character's hands is offered to it. A hand
     /// holding a gun takes nothing more, so it swings: its latch stays the grab that took the gun
-    /// for as long as it holds it, and read as a take, no gun swung into a character ever struck
-    /// (one gun blow in the whole 14 November take). A grip still closing on a weapon in the world
-    /// takes, whatever was offered after.
+    /// for as long as it holds it, and read as a take, no gun swung into a character would strike.
+    /// A grip still closing on a weapon in the world takes, whatever was offered after.
     pub fn of(latch: GripLatch, holds_gun: bool, gun_in_reach: bool) -> Self {
         if holds_gun {
             return Intent::Swing;
@@ -433,7 +431,7 @@ mod tests {
         assert!(!RIDER.permits(&punch, 0));
         assert!(!RIDER.permits(&punch, -1));
         assert!(RIDER.permits(&punch, 1));
-        // The existing damage cooldown removes damage while retaining a calibrated reaction.
+        // The damage cooldown removes damage while retaining a calibrated reaction.
         assert!(RIDER.permits(
             &BlowPlan {
                 damage: None,

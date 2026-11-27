@@ -8,12 +8,12 @@
 //! capped by the hand's force and twist over the step. The speed cap applies to the body's motion
 //! relative to the frame that carries the hand (the player, on a moving platform or falling), whose
 //! velocity is fed forward, so a hand keeps up with a fast carrier while a tracking glitch still
-//! cannot fling it. The physics step then integrates the
-//! velocities and resolves the body's contacts, so a hand that meets a wall stops at it, and the
-//! next step asks again, no harder than its strength. A light hand body meets a light prop without
-//! throwing it, since the solver shares a contact's impulse by mass, while the force cap still lets
-//! it shove a heavy one over a few steps; a hand held back by what it meets is driven more softly
-//! ([`contact_gain`]), so it rests on a wall rather than pounding it every step.
+//! cannot fling it. The physics step then integrates the velocities and resolves the body's
+//! contacts, so a hand that meets a wall stops at it, and the next step asks again, no harder than
+//! its strength. A light hand body meets a light prop without throwing it, since the solver shares
+//! a contact's impulse by mass, while the force cap still lets it shove a heavy one over a few
+//! steps; a hand held back by what it meets is driven more softly ([`contact_gain`]), so it rests
+//! on a wall rather than pounding it every step.
 
 use body_rig::math::{rotation::rotation_error, smooth::follow_factor};
 use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
@@ -121,8 +121,8 @@ pub fn drive(
     }
 }
 
-/// The physical hand and gravity for a joined assembly. [`DriveTuning::mass_kg`] includes
-/// the hand and the carried share; only the carried share has gravity enabled.
+/// The hand's own mass and gravity for a joined assembly. [`DriveTuning::mass_kg`] includes the
+/// hand and the carried share; only the carried share has gravity enabled.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct JoinedLoad {
     pub(crate) hand_mass_kg: f32,
@@ -132,8 +132,8 @@ pub(crate) struct JoinedLoad {
 /// Drive a joined assembly by injecting a finite impulse through its hand body. The assembly's
 /// mass determines the requested momentum change, but the actual hand mass converts the capped
 /// impulse into a hand velocity. The constraint solver shares that momentum with the assembly.
-/// Gravity compensation consumes the same force budget and covers only the carried mass.
-/// The speed cap limits the desired assembly velocity, not the hand's pre-solver velocity.
+/// Gravity compensation consumes the same force budget and covers only the carried mass. The speed
+/// cap limits the desired assembly velocity, not the hand's pre-solver velocity.
 pub(crate) fn drive_joined(
     body: &BodyMotion,
     goal: &Goal,
@@ -243,8 +243,8 @@ pub(crate) struct PushTuning {
 /// freely has no lag; one that a wall or an object too heavy to move stops falls behind its
 /// controller, and it pushes the player the other way as hard as the spring between the body and
 /// the controller pulls (independent of the hand body's own mass), within the hand's strength,
-/// over a step of `step_s` seconds. A lag that is
-/// mostly vertical (pressing down on a table or the floor) does not push.
+/// over a step of `step_s` seconds. A lag that is mostly vertical (pressing down on a table or the
+/// floor) does not push.
 pub(crate) fn lag_push(lag: Vec3, tuning: &PushTuning, step_s: f32) -> Vec2 {
     if !(lag.is_finite() && step_s.is_finite() && step_s > 0.0 && tuning.body_mass_kg > 0.0) {
         return Vec2::ZERO;
