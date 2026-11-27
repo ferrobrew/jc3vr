@@ -29,8 +29,8 @@ pub(crate) const MAX_JOBS: usize = 96;
 pub(crate) struct Job<'a> {
     pub a: &'a PlaneTexture,
     pub b: &'a PlaneTexture,
-    pub origin_a: [u32; 2],
-    pub origin_b: [u32; 2],
+    pub(crate) origin_a: [u32; 2],
+    pub(crate) origin_b: [u32; 2],
     pub size: [u32; 2],
     pub threshold: f32,
     /// [`Kind::Unorm8`]: how many channels count.

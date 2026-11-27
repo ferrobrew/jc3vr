@@ -227,7 +227,7 @@ pub(crate) struct Totals {
     pub largest: f32,
     /// The differing pixels' bounding box as `[left, top, right, bottom]`, inclusive, or `None` when
     /// nothing differs.
-    pub bbox: Option<[u32; 4]>,
+    pub(crate) bbox: Option<[u32; 4]>,
     /// The heat map's cells across and down.
     pub grid: [u32; 2],
     /// The differing pixel count per cell, row by row.

@@ -19,8 +19,8 @@ use crate::{screenshot::harness::screenshot_wants_eyes, testing::visual};
 #[derive(Clone, Default, Serialize)]
 pub(crate) struct CapturedConstants {
     pub records: Vec<ConstantRecord>,
-    pub lighting_records: Vec<LightingConstantRecord>,
-    pub unscoped_uploads: u32,
+    pub(crate) lighting_records: Vec<LightingConstantRecord>,
+    pub(crate) unscoped_uploads: u32,
 }
 
 #[derive(Clone, Serialize)]
@@ -28,10 +28,10 @@ pub(crate) struct ConstantRecord {
     pub frame: i64,
     pub generation: u64,
     pub mode: RenderMode,
-    pub physical_eye: PhysicalEye,
+    pub(crate) physical_eye: PhysicalEye,
     pub pass: GeometryPass,
     pub render_context: ContextInputs,
-    pub time_inputs: RenderTimeInputs,
+    pub(crate) time_inputs: RenderTimeInputs,
     pub constants: ShaderConstants,
 }
 
@@ -40,12 +40,12 @@ pub(crate) struct LightingConstantRecord {
     pub frame: i64,
     pub generation: u64,
     pub mode: RenderMode,
-    pub physical_eye: PhysicalEye,
+    pub(crate) physical_eye: PhysicalEye,
     pub pass: DeferredLightsPass,
     pub render_context: ContextInputs,
-    pub time_inputs: RenderTimeInputs,
-    pub vertex_globals: Vec<F32s<4>>,
-    pub fragment_globals: Vec<F32s<4>>,
+    pub(crate) time_inputs: RenderTimeInputs,
+    pub(crate) vertex_globals: Vec<F32s<4>>,
+    pub(crate) fragment_globals: Vec<F32s<4>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -81,7 +81,7 @@ pub(crate) struct RenderTimeInputs {
 pub(crate) struct RenderFrameCountersInputs {
     pub counter: u32,
     pub frame_index: u32,
-    pub ring_index: u32,
+    pub(crate) ring_index: u32,
 }
 
 impl RenderFrameCountersInputs {
@@ -107,18 +107,18 @@ impl RenderFrameCountersInputs {
 
 #[derive(Clone, Serialize)]
 pub(crate) struct EngineTimeInputs {
-    pub time_of_day: F32s<1>,
+    pub(crate) time_of_day: F32s<1>,
     pub dt: F32s<1>,
-    pub wind_animation: F32s<1>,
-    pub acc_frame_time: u32,
-    pub render_frame_counters: RenderFrameCountersInputs,
+    pub(crate) wind_animation: F32s<1>,
+    pub(crate) acc_frame_time: u32,
+    pub(crate) render_frame_counters: RenderFrameCountersInputs,
 }
 
 #[derive(Clone, Serialize)]
 pub(crate) struct ContextTimeInputs {
-    pub time_of_day: F32s<1>,
+    pub(crate) time_of_day: F32s<1>,
     pub dt: F32s<1>,
-    pub wind_animation: F32s<1>,
+    pub(crate) wind_animation: F32s<1>,
 }
 
 #[derive(Clone, Serialize)]

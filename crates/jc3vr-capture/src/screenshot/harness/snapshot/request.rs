@@ -142,14 +142,14 @@ pub struct SnapshotRequest {
     pub label: String,
     /// The motion phase to take the snapshot at, under a motion configuration.
     pub phase: Option<u32>,
-    pub planes: Vec<Plane>,
+    pub(crate) planes: Vec<Plane>,
     pub keep: bool,
     pub compare: Vec<String>,
-    pub pixel_threshold: f32,
-    pub depth_ulps: u32,
+    pub(crate) pixel_threshold: f32,
+    pub(crate) depth_ulps: u32,
     pub limits: FailLimits,
     pub dump: DumpPolicy,
-    pub dump_crop: bool,
+    pub(crate) dump_crop: bool,
     pub save: bool,
     /// The FSR jitter index the snapshot's frame must have, while the jitter runs.
     pub jitter_phase: Option<u32>,

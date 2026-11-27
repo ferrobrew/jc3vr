@@ -263,54 +263,54 @@ pub(crate) struct StageRecord {
     pub source: Option<Source>,
     pub viewports: Vec<Viewport>,
     pub scissors: Vec<Scissor>,
-    pub scissor_enabled: Option<bool>,
+    pub(crate) scissor_enabled: Option<bool>,
     pub means: Option<SplitMean>,
     pub png: Option<PathBuf>,
     pub raw: Option<PathBuf>,
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub water_input: Option<WaterInputMetadata>,
+    pub(crate) water_input: Option<WaterInputMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub aa: Option<aa::Observation>,
+    pub(crate) aa: Option<aa::Observation>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sun_input: Option<SunInputMetadata>,
+    pub(crate) sun_input: Option<SunInputMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub velocity: Option<velocity::Evidence>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SunInputMetadata {
-    pub capture_id: String,
+    pub(crate) capture_id: String,
     pub view: usize,
     pub resource: usize,
-    pub view_format: Option<i32>,
-    pub view_dimension: Option<i32>,
+    pub(crate) view_format: Option<i32>,
+    pub(crate) view_dimension: Option<i32>,
     pub mip: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct WaterInputMetadata {
-    pub capture_id: String,
+    pub(crate) capture_id: String,
     pub slot: WaterInputSlot,
-    pub shader_slot: u32,
-    pub treatment_draws: u32,
+    pub(crate) shader_slot: u32,
+    pub(crate) treatment_draws: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub projection: Option<lake_projection::LakeProjection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampler: Option<[i32; 5]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wave_footprint: Option<water_inputs::WaveFootprint>,
+    pub(crate) wave_footprint: Option<water_inputs::WaveFootprint>,
     pub pixel_shader: usize,
     pub shader_identity: jc3vr_render::stereo::single_pass::shader_identity::IdentityResult,
     pub draw_index: usize,
     pub tessellated: bool,
-    pub tess_index: Option<usize>,
-    pub view_format: Option<i32>,
-    pub view_dimension: Option<i32>,
-    pub most_detailed_mip: Option<u32>,
-    pub mip_levels: Option<u32>,
+    pub(crate) tess_index: Option<usize>,
+    pub(crate) view_format: Option<i32>,
+    pub(crate) view_dimension: Option<i32>,
+    pub(crate) most_detailed_mip: Option<u32>,
+    pub(crate) mip_levels: Option<u32>,
     pub resource: Option<usize>,
-    pub resource_format: Option<i32>,
+    pub(crate) resource_format: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -318,8 +318,8 @@ pub(crate) struct Source {
     pub width: u32,
     pub height: u32,
     pub format: String,
-    pub format_id: i32,
-    pub bytes_per_pixel: Option<usize>,
+    pub(crate) format_id: i32,
+    pub(crate) bytes_per_pixel: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -328,8 +328,8 @@ pub(crate) struct Viewport {
     pub y: f32,
     pub width: f32,
     pub height: f32,
-    pub min_depth: f32,
-    pub max_depth: f32,
+    pub(crate) min_depth: f32,
+    pub(crate) max_depth: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -458,12 +458,12 @@ pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
     });
 }
 
-pub struct StageImage {
+pub(crate) struct StageImage {
     pub record: usize,
     pub artifact: StageArtifact,
 }
 
-pub enum StageArtifact {
+pub(crate) enum StageArtifact {
     Png(Image),
     Raw(Vec<u8>),
 }

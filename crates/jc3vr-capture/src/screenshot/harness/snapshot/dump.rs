@@ -120,7 +120,7 @@ pub(crate) struct DumpRecord {
     pub height: u32,
     /// The stored DXGI format and bytes per pixel, for decoding a raw dump.
     pub format: i32,
-    pub pixel_bytes: u32,
+    pub(crate) pixel_bytes: u32,
     pub error: Option<String>,
 }
 
@@ -177,7 +177,7 @@ pub(crate) struct SavedRecord {
     pub height: u32,
     /// The stored DXGI format and bytes per pixel, for decoding a raw file.
     pub format: i32,
-    pub pixel_bytes: u32,
+    pub(crate) pixel_bytes: u32,
     pub error: Option<String>,
 }
 

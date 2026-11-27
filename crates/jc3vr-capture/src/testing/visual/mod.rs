@@ -78,17 +78,17 @@ pub(crate) struct VisualMetadata {
     pub visual_overrides: Option<VisualOverrides>,
     /// The state the live shaders were created under, so a capture shows which creation-time
     /// single-pass rewrites its bytecode carried; `None` when no completed reload established one.
-    pub shader_build: Option<ShaderBuild>,
+    pub(crate) shader_build: Option<ShaderBuild>,
     pub ready: bool,
     pub paused: bool,
     pub frozen: bool,
     pub error: Option<String>,
     pub warmup_frames: u32,
-    pub completed_frames: u32,
+    pub(crate) completed_frames: u32,
     /// The frames rendered since the configuration started, including those that did not yet match
     /// it (a shader reload, a resize, a pose still applying): how long the switch took to be ready.
-    pub configure_frames: u32,
-    pub engine_dimensions: Option<(u32, u32)>,
+    pub(crate) configure_frames: u32,
+    pub(crate) engine_dimensions: Option<(u32, u32)>,
     pub pose: Option<PoseEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub motion: Option<MotionMetadata>,
@@ -163,14 +163,14 @@ pub enum Request {
 #[derive(Debug, Clone)]
 pub(crate) struct FrameObservation {
     pub mode: Mode,
-    pub engine_dimensions: (u32, u32),
-    pub target_dimensions: (u32, u32),
+    pub(crate) engine_dimensions: (u32, u32),
+    pub(crate) target_dimensions: (u32, u32),
     pub single_pass: bool,
-    pub camera_frozen: bool,
-    pub horizon_map_ready: bool,
+    pub(crate) camera_frozen: bool,
+    pub(crate) horizon_map_ready: bool,
     /// Whether the live shaders were created under the state the configuration asks for now.
-    pub shaders_current: bool,
-    pub frame_identity: Option<i64>,
+    pub(crate) shaders_current: bool,
+    pub(crate) frame_identity: Option<i64>,
     pub generation: u64,
     pub pose: Option<PoseEvidence>,
 }

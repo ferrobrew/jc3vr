@@ -193,7 +193,7 @@ impl TryFrom<MotionTable> for MotionRequest {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MotionHistoryEntry {
     pub phase: u32,
-    pub rendered_frame: i64,
+    pub(crate) rendered_frame: i64,
     pub applied: PoseTransform,
 }
 
@@ -202,7 +202,7 @@ pub struct MotionMetadata {
     pub request: MotionRequest,
     pub phase: u32,
     pub cycle: u64,
-    pub rendered_frame: i64,
+    pub(crate) rendered_frame: i64,
     pub history: Vec<MotionHistoryEntry>,
 }
 

@@ -11,7 +11,7 @@ pub(crate) const HOUR_TOLERANCE: f32 = 1e-4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum WeatherControl {
+pub(crate) enum WeatherControl {
     Sunny,
     Rain,
     Snow,
@@ -21,9 +21,9 @@ pub enum WeatherControl {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct EnvironmentMetadata {
     pub hour: f32,
-    pub day_cycle_speed: f32,
-    pub weather_severity: f32,
-    pub weather_control: WeatherControl,
+    pub(crate) day_cycle_speed: f32,
+    pub(crate) weather_severity: f32,
+    pub(crate) weather_control: WeatherControl,
 }
 
 impl EnvironmentMetadata {

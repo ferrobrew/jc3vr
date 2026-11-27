@@ -273,7 +273,7 @@ impl From<PoseValues> for PoseTransform {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PoseEvidence {
-    pub case_id: RequestId,
+    pub(crate) case_id: RequestId,
     pub offset: OrientationOffset,
     #[serde(default)]
     pub translation: TranslationOffset,

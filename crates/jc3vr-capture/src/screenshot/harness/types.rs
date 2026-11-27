@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::testing::visual::{DiagnosticProfile, VisualMetadata};
 
 #[derive(Clone, Serialize)]
-pub struct CaptureMetadata {
+pub(crate) struct CaptureMetadata {
     pub(crate) id: String,
     pub(crate) state: CaptureState,
     #[serde(flatten)]

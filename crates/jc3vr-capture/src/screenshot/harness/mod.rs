@@ -16,7 +16,7 @@ pub(crate) mod draw_census;
 mod kept_shaders;
 mod options;
 pub(crate) mod patch_draw;
-pub mod register_probes;
+pub(crate) mod register_probes;
 pub(crate) mod resolve_probe;
 pub(crate) mod rewrites;
 mod sidecar;

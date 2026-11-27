@@ -51,7 +51,7 @@ pub(crate) struct Format {
     pub values: DXGI_FORMAT,
     pub stencil: Option<DXGI_FORMAT>,
     /// The bytes a pixel takes, for a dump.
-    pub pixel_bytes: u32,
+    pub(crate) pixel_bytes: u32,
     /// Whether the 8-bit channels are stored blue first, for a dump.
     pub bgra: bool,
 }

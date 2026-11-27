@@ -76,7 +76,7 @@ impl Serialize for ResolutionScaleOverride {
 /// FSR's sharpening strength in every mode, in place of the shipped one, held in thousandths so the
 /// overrides compare exactly. Within [0, 1].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SharpnessOverride(u16);
+pub(crate) struct SharpnessOverride(u16);
 
 impl SharpnessOverride {
     pub(crate) fn sharpness(self) -> f32 {
@@ -105,7 +105,7 @@ impl Serialize for SharpnessOverride {
 /// A tuning value of the mod's temporal resolve in every mode, in place of the shipped one, held
 /// in thousandths so the overrides compare exactly. Within [0, 4].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TaaTuningOverride(u16);
+pub(crate) struct TaaTuningOverride(u16);
 
 impl TaaTuningOverride {
     pub(crate) fn value(self) -> f32 {
@@ -154,43 +154,43 @@ pub struct VisualOverrides {
     pub foveation: Option<ShippedOverride>,
     /// The engine's own exposure metering, histogram included, in place of the pinned exposure.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_exposure: Option<ShippedOverride>,
+    pub(crate) auto_exposure: Option<ShippedOverride>,
     /// The screen fade's pass.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub screen_fade: Option<ShippedOverride>,
+    pub(crate) screen_fade: Option<ShippedOverride>,
     /// The player-damage overlay's pass.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub player_damage: Option<ShippedOverride>,
+    pub(crate) player_damage: Option<ShippedOverride>,
     /// FSR's stereo motion-vector correction.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fsr_mv_correction: Option<CorrectionOverride>,
+    pub(crate) fsr_mv_correction: Option<CorrectionOverride>,
     /// FSR's hybrid motion vectors (the camera's motion from depth where the engine wrote none).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fsr_hybrid_velocity: Option<CorrectionOverride>,
+    pub(crate) fsr_hybrid_velocity: Option<CorrectionOverride>,
     /// FSR's sub-pixel camera jitter.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr_jitter: Option<CorrectionOverride>,
     /// The engine's anti-aliasing where FSR does not run: disabled leaves the image with none.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub anti_aliasing: Option<CorrectionOverride>,
+    pub(crate) anti_aliasing: Option<CorrectionOverride>,
     /// FSR's sharpening pass.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fsr_sharpen: Option<CorrectionOverride>,
+    pub(crate) fsr_sharpen: Option<CorrectionOverride>,
     /// FSR's sharpening pass, turned on at this strength.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fsr_sharpness: Option<SharpnessOverride>,
+    pub(crate) fsr_sharpness: Option<SharpnessOverride>,
     /// The temporal resolve's history share at rest (`fsr.taa.history_weight`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub taa_history_weight: Option<TaaTuningOverride>,
+    pub(crate) taa_history_weight: Option<TaaTuningOverride>,
     /// The temporal resolve's clip box at rest (`fsr.taa.clip_gamma_rest`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub taa_clip_gamma_rest: Option<TaaTuningOverride>,
+    pub(crate) taa_clip_gamma_rest: Option<TaaTuningOverride>,
     /// The temporal resolve's unjitter kernel falloff (`fsr.taa.current_sharpness`), in tenths.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub taa_current_sharpness: Option<TaaTuningOverride>,
+    pub(crate) taa_current_sharpness: Option<TaaTuningOverride>,
     /// The temporal resolve's history share in motion (`fsr.taa.motion_history_weight`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub taa_motion_history_weight: Option<TaaTuningOverride>,
+    pub(crate) taa_motion_history_weight: Option<TaaTuningOverride>,
     /// A headset-like eye rig substituted for the located views in every mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headset: Option<HeadsetRig>,
