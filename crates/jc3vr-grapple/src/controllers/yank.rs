@@ -134,21 +134,10 @@ impl LineYank {
 
     /// Advance by `dt` seconds with the hand's grip and aim (`None` while untracked); `armed` is
     /// whether a yank may fire. The first tracked tick of an arming keeps its aim as the line.
-    /// Returns the yank detected this tick, if any. The tests' form, which leaves the head out.
-    #[cfg(test)]
-    pub fn step(
-        &mut self,
-        dt: f32,
-        hand: Option<HandLine>,
-        armed: bool,
-        config: &YankConfig,
-    ) -> Option<Yank> {
-        self.step_from(dt, hand, None, armed, config)
-    }
-
-    /// `step`, with the head's position in the same frame as the hand, whose Y is up
-    /// (`None` when unknown): a pull that takes the hand out from the head across the ground does
-    /// not yank.
+    /// Returns the yank detected this tick, if any.
+    ///
+    /// `head` is the head's position in the same frame as the hand, whose Y is up (`None` when
+    /// unknown): a pull that takes the hand out from the head across the ground does not yank.
     pub fn step_from(
         &mut self,
         dt: f32,
@@ -207,7 +196,7 @@ impl YankDetector {
     /// Advance by `dt` seconds with the hand's reach along its line (`None` while the hand is
     /// untracked); `armed` is whether a yank may fire. Returns the yank detected this tick, if
     /// any.
-    pub fn step(
+    pub(crate) fn step(
         &mut self,
         dt: f32,
         distance: Option<f32>,
@@ -331,7 +320,7 @@ mod tests {
             .filter(|&k| {
                 let grip = from + spread * (k as f32 / 5.0);
                 blind
-                    .step(DT, zip_hand(grip, aim), true, grapple_yank())
+                    .step_from(DT, zip_hand(grip, aim), None, true, grapple_yank())
                     .is_some()
             })
             .count();
@@ -385,7 +374,13 @@ mod tests {
             .enumerate()
             .filter_map(|(k, &grip)| {
                 let aim = SEATED_AIM + Vec3::new(-0.1, 0.1, 0.0) * k as f32;
-                zip.step(SEATED_TICK_S, zip_hand(grip, aim), true, grapple_yank())
+                zip.step_from(
+                    SEATED_TICK_S,
+                    zip_hand(grip, aim),
+                    None,
+                    true,
+                    grapple_yank(),
+                )
             })
             .count();
         assert_eq!(fired, 1);
@@ -411,18 +406,20 @@ mod tests {
         for k in 0..6 {
             let grip = Vec3::new(0.06 * k as f32, -0.25, -0.4);
             assert!(
-                zip.step(
+                zip.step_from(
                     SEATED_TICK_S,
                     zip_hand(grip, Vec3::NEG_Z),
+                    None,
                     true,
                     grapple_yank()
                 )
                 .is_none()
             );
         }
-        zip.step(
+        zip.step_from(
             SEATED_TICK_S,
             zip_hand(Vec3::ZERO, Vec3::NEG_Z),
+            None,
             false,
             grapple_yank(),
         );
@@ -430,9 +427,10 @@ mod tests {
         let fired = (0..6)
             .filter(|&k| {
                 let grip = Vec3::new(0.06 * k as f32, -0.25, -0.4);
-                zip.step(
+                zip.step_from(
                     SEATED_TICK_S,
                     zip_hand(grip, Vec3::NEG_X),
+                    None,
                     true,
                     grapple_yank(),
                 )
@@ -446,15 +444,16 @@ mod tests {
     fn an_untracked_arming_takes_its_line_from_the_first_tracked_tick() {
         let mut zip = LineYank::new();
         assert!(
-            zip.step(SEATED_TICK_S, None, true, grapple_yank())
+            zip.step_from(SEATED_TICK_S, None, None, true, grapple_yank())
                 .is_none()
         );
         let fired = SEATED_ZIP
             .iter()
             .filter(|&&grip| {
-                zip.step(
+                zip.step_from(
                     SEATED_TICK_S,
                     zip_hand(grip, SEATED_AIM),
+                    None,
                     true,
                     grapple_yank(),
                 )

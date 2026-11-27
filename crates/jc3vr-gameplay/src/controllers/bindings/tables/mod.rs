@@ -227,7 +227,7 @@ impl Bindings {
     /// Reset the tables while retaining ownership of a consumed snatch press.
     pub(crate) fn reset_preserving_snatch(&mut self) {
         let mut grapple = self.grapple;
-        grapple.reset_preserving_snatch();
+        grapple.cancel();
         *self = Self::new();
         self.grapple = grapple;
     }

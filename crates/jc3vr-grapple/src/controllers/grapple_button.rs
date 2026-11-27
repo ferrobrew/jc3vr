@@ -197,11 +197,6 @@ impl GrappleButton {
         }
     }
 
-    /// Forget the gesture under way, keeping a press the snatch or a traversal owns.
-    pub fn reset_preserving_snatch(&mut self) {
-        self.phase = Phase::Idle;
-    }
-
     /// Read the current gesture permissions without advancing the button or its timers.
     pub fn current_permissions(&self, context: GrappleContext) -> GrapplePermissions {
         if self.snatch_owned || self.traversal_spent {
@@ -225,7 +220,8 @@ impl GrappleButton {
         self.phase != Phase::Idle || self.traversal_spent
     }
 
-    /// Forget the gesture under way, with no release or waiting tap reaching the game.
+    /// Forget the gesture under way, with no release or waiting tap reaching the game. A press the
+    /// snatch or a traversal owns stays owned.
     pub fn cancel(&mut self) {
         self.phase = Phase::Idle;
     }
@@ -594,7 +590,6 @@ mod tests {
                 ..Default::default()
             }
         );
-        g.reset_preserving_snatch();
         g.cancel();
         g.observe_snatch_neutral(UP, false);
         assert!(g.claim_snatch(HELD, false));
@@ -744,20 +739,14 @@ mod tests {
     }
 
     #[test]
-    fn traversal_consumption_survives_reset_and_cancel_until_a_usable_neutral_sample() {
+    fn traversal_consumption_survives_cancel_until_a_usable_neutral_sample() {
         let mut g = GrappleButton::new();
         g.spend();
-        for reset in [false, true] {
-            if reset {
-                g.reset_preserving_snatch();
-            } else {
-                g.cancel();
-            }
-            for button in [HELD, RELEASE, PRESS] {
-                g.observe_snatch_neutral(button, true);
-                assert!(!g.physical_button_held(true));
-                assert_eq!(apply(&mut g, button, TETHERS).fire, None);
-            }
+        g.cancel();
+        for button in [HELD, RELEASE, PRESS] {
+            g.observe_snatch_neutral(button, true);
+            assert!(!g.physical_button_held(true));
+            assert_eq!(apply(&mut g, button, TETHERS).fire, None);
         }
         g.observe_snatch_neutral(UP, false);
         assert!(!g.physical_button_held(true));
