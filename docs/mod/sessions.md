@@ -37,8 +37,9 @@ A recording's folder holds:
 | `lookback.jc3trk` | a save of the tracking lookback, in a folder of its own | `tracking-synth` |
 | `frames.jsonl` | a video recording's per-frame sidecar, with its mirror layouts and take markers ([capture.md](capture.md)) | `tools/capture/reframe.py` |
 | `frame_map.jsonl` | a streamed take's record of each video frame's source frame ([capture.md](capture.md)) | |
-| `video.mkv`, `video.mkv.ts`, and `stream.json` | the capture host's screen recording of the mirror window, the recorder's first-frame time, and the host's metadata with the region and the video's start wall clock, written there by the host (not the game) when the session folder's Unix form is known | `tools/capture/reframe.py`, an editor |
+| `video.mkv`, `stream.json`, and for a mirror take `video.mkv.ts` | the capture host's video, its metadata, and gpu-screen-recorder's first-frame time, written there by the host rather than the game ([capture.md](capture.md#files-and-alignment)) | `tools/capture/reframe.py`, `scripts/rerun_take.sh`, an editor |
+| `take.rrd`, `rerun.log`, and `view-scan.md` | the relay's export of the take after it ends ([testing/rerun.md](testing/rerun.md)) | Rerun |
 
-A standalone tracking recording is a folder with only `tracking.jc3trk`, a standalone video recording one without it, and an F1 session recording has both halves.
+A standalone tracking recording is a folder with only `tracking.jc3trk`, and an F1 session recording has both halves, while one whose capture host never answered keeps its tracking half.
 
 A kind that writes one file per capture names it `<stamp>[_<qualifier>].<ext>`; a kind that writes several gets a `<stamp>/` folder whose files are named by their role. Images are written by one writer, `crates/jc3vr-render/src/image_writer.rs`, on its own thread, and follow one rule wherever they land: `<stem>.png` for an image of the whole frame (both eyes side by side in stereo) and `<stem>_eye<N>.png` for one eye, with any sidecar beside it as `<stem>.json`.
