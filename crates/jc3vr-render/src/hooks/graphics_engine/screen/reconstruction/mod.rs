@@ -694,7 +694,7 @@ fn set_eye_half_scissor(viewport: D3D11_VIEWPORT, eye: usize) -> Option<()> {
 /// capture were really bound, independent of `reported` -- the count the runtime handed back.
 ///
 /// Whether a runtime writes back the requested slot count or the number actually bound is
-/// implementation-defined; [`capture_viewport_slots`](crate::stereo::single_pass::viewport::capture_viewport_slots) resolves the identical
+/// implementation-defined; the single-pass `capture_viewport_slots` resolves the identical
 /// ambiguity for viewport slots by trusting the extent instead of the count, since a slot nothing bound
 /// reads back zero-width. A scissor rectangle has the same tell: a rect that is actually in effect always
 /// has positive area, so a rect with none -- typically what an unset trailing slot reads back as -- is

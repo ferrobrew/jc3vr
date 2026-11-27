@@ -64,9 +64,9 @@ pub(super) fn hook_library() -> HookLibrary {
 /// else. Two blocking mutexes in opposite orders deadlock if and only if the two sides run on
 /// different threads.
 ///
-/// The second is whether [`jc3vr_view::vr::back_buffer`]'s safety argument holds: it is built on
-/// `CreateRenderSetups` running on the render thread under the drained idle context while the
-/// game-thread hooks transition its `BACKING` mutex from elsewhere.
+/// The second is whether the safety argument of the view crate's `vr::back_buffer` module holds: it
+/// is built on `CreateRenderSetups` running on the render thread under the drained idle context
+/// while the game-thread hooks transition its `BACKING` mutex from elsewhere.
 ///
 /// `target: "thread_identity"` and the `hook`/`thread_id` field names are shared across all three call
 /// sites so the logs can be compared directly across a session.
@@ -145,7 +145,7 @@ fn device_resize_buffers(device: *mut HDevice_t, width: u32, height: u32) -> boo
 /// The back-buffer substitution point: every path that rebuilds the engine's swapchain-derived render
 /// setups funnels through `CreateRenderSetups` (its only callers are `InitializeSystem` and
 /// `ApplyResize`), so an epilogue here cannot be missed. Inert unless the mod owns the back buffer;
-/// see [`jc3vr_view::vr::back_buffer`] and `docs/mod/stereo/swapchain-ownership.md`.
+/// see the view crate's `vr::back_buffer` module and `docs/mod/stereo/swapchain-ownership.md`.
 #[detour(
     address = jc3gi::graphics_engine::graphics_engine::GraphicsEngine::CreateRenderSetups_ADDRESS
 )]

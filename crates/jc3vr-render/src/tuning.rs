@@ -85,7 +85,7 @@ pub struct TaaTuning {
 }
 
 /// When FSR and the temporal resolve call a frame a camera cut and drop their history (see
-/// [`crate::fsr::camera_cut`]).
+/// `crate::fsr::camera_cut`).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CameraCutTuning {
@@ -96,7 +96,7 @@ pub(crate) struct CameraCutTuning {
 }
 
 /// The visibility and spawn corrections for the headset's wider view (see
-/// [`crate::hooks::graphics_engine::scene::culling`]).
+/// the scene hooks' `culling` module).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CullingTuning {
@@ -111,7 +111,7 @@ pub struct CullingTuning {
     pub(crate) spawn_budget_scale: f32,
 }
 
-/// The terrain's detail budgets (see [`crate::hooks::graphics_engine::scene::terrain`]).
+/// The terrain's detail budgets (see [`crate::hooks::graphics_engine::terrain`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TerrainTuning {

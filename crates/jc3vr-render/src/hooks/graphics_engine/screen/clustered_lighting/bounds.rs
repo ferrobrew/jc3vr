@@ -6,37 +6,43 @@ use jc3gi::types::math::Matrix4;
 /// Compute the 8-float cb1 tile-bounds array from the off-axis projection matrix.
 ///
 /// The symmetric formula in the original `DrawClustered` is:
-///   horiz = tan(FOV/2) * aspect
-///   vert = tan(FOV/2)
-///   cb1[0] = -2 * horiz / tileCountX   (horizontal slope)
-///   cb1[1] = horiz * (1 + 1/tileCountX) (horizontal max)
-///   cb1[2] = horiz * (1 - 1/tileCountX) (horizontal min)
-///   cb1[3] = 0
-///   cb1[4..7] = same for vertical
+/// ```text
+/// horiz = tan(FOV/2) * aspect
+/// vert = tan(FOV/2)
+/// cb1[0] = -2 * horiz / tileCountX   (horizontal slope)
+/// cb1[1] = horiz * (1 + 1/tileCountX) (horizontal max)
+/// cb1[2] = horiz * (1 - 1/tileCountX) (horizontal min)
+/// cb1[3] = 0
+/// cb1[4..7] = same for vertical
+/// ```
 ///
 /// For the off-axis case, replace `horiz` with the actual right bound and `2*horiz` (the full
 /// extent) with `(right - left)`:
-///   cb1[0] = -(right - left) / tileCountX
-///   cb1[1] = right + (right - left) / (2 * tileCountX)
-///   cb1[2] = right - (right - left) / (2 * tileCountX)
-///   cb1[3] = 0
-///   cb1[4] = -(top - bottom) / tileCountY
-///   cb1[5] = top + (top - bottom) / (2 * tileCountY)
-///   cb1[6] = top - (top - bottom) / (2 * tileCountY)
-///   cb1[7] = 0
+/// ```text
+/// cb1[0] = -(right - left) / tileCountX
+/// cb1[1] = right + (right - left) / (2 * tileCountX)
+/// cb1[2] = right - (right - left) / (2 * tileCountX)
+/// cb1[3] = 0
+/// cb1[4] = -(top - bottom) / tileCountY
+/// cb1[5] = top + (top - bottom) / (2 * tileCountY)
+/// cb1[6] = top - (top - bottom) / (2 * tileCountY)
+/// cb1[7] = 0
+/// ```
 ///
 /// In the symmetric case, right = horiz and left = -horiz, so (right - left) = 2*horiz. The
 /// off-axis formula generalizes this to arbitrary left/right bounds.
 ///
 /// The frustum bounds are extracted from the projection matrix (row-major, row-vector):
-///   right  = (1 + m[8]) / m[0]
-///   left   = (m[8] - 1) / m[0]
-///   top    = (1 + m[9]) / m[5]
-///   bottom = (m[9] - 1) / m[5]
+/// ```text
+/// right  = (1 + m[8]) / m[0]
+/// left   = (m[8] - 1) / m[0]
+/// top    = (1 + m[9]) / m[5]
+/// bottom = (m[9] - 1) / m[5]
+/// ```
 ///
 /// The reverse-Z remap (applied by `SetupRenderCamera` to `m_ProjectionF`) only changes column 2
-/// (indices 2, 6, 10, 14), so m[0], m[5], m[8], m[9] are unaffected and the bounds can be extracted
-/// from either the standard-depth or reverse-Z'd matrix.
+/// (indices 2, 6, 10, 14), so `m[0]`, `m[5]`, `m[8]`, and `m[9]` are unaffected and the bounds can
+/// be extracted from either the standard-depth or reverse-Z'd matrix.
 ///
 /// `tile_count_x` is the count the horizontal bounds are quantised over -- the whole grid's, or one
 /// eye's half of it under the per-eye split -- and `eye_column_offset` is how many multiples of that

@@ -156,7 +156,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 }
 
 /// Compute distinct per-eye `cb13` rows from the pristine center render-camera transform and the
-/// per-eye [`EyeRenderParams`](jc3vr_view::vr::frame::EyeRenderParams), replicating the
+/// per-eye [`EyeRenderParams`](jc3vr_view::vr::EyeRenderParams), replicating the
 /// double-draw's per-eye camera math (the view crate's `hooks::camera`) purely in mod code -- so
 /// the single walk produces both eyes. Returns `None` (falling back to the mirror) if the center
 /// transform or per-eye params are not available this frame.

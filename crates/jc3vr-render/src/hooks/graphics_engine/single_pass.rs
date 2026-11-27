@@ -68,7 +68,7 @@ struct BakedCbBlock {
 
 /// Runs the shared re-issue dance for a render-block detour: draw it once for both eyes when the block
 /// allows it and the single draw's preconditions hold, else hand the original `Draw` off to
-/// [`reproject_baked_cb_per_eye`] so it runs once per eye against a reprojected constant; if the
+/// `reproject_baked_cb_per_eye` so it runs once per eye against a reprojected constant; if the
 /// re-issue declines, fall back to a single unmodified `Draw`.
 ///
 /// # Safety

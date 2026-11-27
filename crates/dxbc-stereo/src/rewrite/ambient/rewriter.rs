@@ -48,7 +48,7 @@ pub(super) struct Registers {
     /// The screen UV computed from the pixel position, which an exact or snapped pass reads in place
     /// of the input, in `.xy`; the target's (or the eye's) width in `.z` and height in `.w`.
     pub(super) local: u32,
-    /// The sizes of the textures a pass loads from, one register for each entry of its [`Loads`]:
+    /// The sizes of the textures a pass loads from, one register for each entry of its `Loads`:
     /// `.xy` the width and height, `.zw` the last column and row, as floats.
     pub(super) sizes: [u32; 2],
     /// A bilinear load's fraction in `.xy` and its rows' blend in `.zw`.

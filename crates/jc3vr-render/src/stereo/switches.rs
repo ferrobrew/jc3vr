@@ -1,7 +1,7 @@
 //! The set of single-pass switches a shader build bakes in.
 //!
 //! The switches themselves are declared in one table
-//! ([`SinglePassSwitch`](jc3vr_view::stereo::config::SinglePassSwitch)), which records which of them
+//! ([`SinglePassSwitch`]), which records which of them
 //! are rewrites applied at shader creation: those only take effect once the shaders are re-created.
 //! [`ShaderBuild`] is the state the live shaders were created under, so a caller can tell whether
 //! the bytecode matches the configuration.

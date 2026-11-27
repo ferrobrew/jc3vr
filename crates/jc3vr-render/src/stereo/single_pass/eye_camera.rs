@@ -5,7 +5,7 @@
 //! cloth sheen, environment reflection), camera distances, and the sun-shadow cascade lookup from it.
 //! An instance-doubled draw covers both eye halves of the double-wide target in one submission, so
 //! the staging cannot be moved per eye the way it is for a split fullscreen pass
-//! ([`eye_globals`](crate::stereo::single_pass::eye_globals)), and every material shaded that way is
+//! ([`eye_globals`]), and every material shaded that way is
 //! lit as seen from the point between the eyes.
 //!
 //! [`dxbc_stereo::localize_eye_camera`] rewrites every pixel shader that reads those rows to read

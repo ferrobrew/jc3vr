@@ -12,7 +12,7 @@
 //!
 //! The fix is four rows of arithmetic on the matrix the type already staged --
 //! `u' = (u + eye) · 0.5` -- applied around a per-eye re-issue of the block's `Draw`
-//! ([`screen_uv_cb_per_eye`](crate::stereo::single_pass::screen_uv_cb_per_eye)), which is also what
+//! ([`screen_uv_cb_per_eye`]), which is also what
 //! makes the eye known. No shader is touched: the water vertex shaders take their clip position from
 //! the global `cb0`, which the collapse already handles, and the projective coordinate is entirely a
 //! CPU-side constant.

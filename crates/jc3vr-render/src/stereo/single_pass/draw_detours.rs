@@ -546,11 +546,11 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 ///
 /// Declines outside the collapse and the G-buffer range (elsewhere there is no eye split to inherit),
 /// inside a block-level per-eye re-issue (which has already pinned the viewport for this eye
-/// deliberately -- the [`PER_EYE_REISSUE`] marker), and when the bound vertex shader is patched (it
+/// deliberately -- the `PER_EYE_REISSUE` marker), and when the bound vertex shader is patched (it
 /// writes `SV_ViewportArrayIndex` itself and would have to be routed, not pinned; that includes the
 /// tessellated terrain families when `single_pass.terrain` transforms them).
 ///
-/// The re-issue does not raise [`PER_EYE_REISSUE`] itself -- it drives no engine code, only the
+/// The re-issue does not raise `PER_EYE_REISSUE` itself -- it drives no engine code, only the
 /// trampolines, so nothing it calls can re-enter this module's detours.
 pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usize>)) -> bool {
     if !collapse_active() || !in_gbuffer_range() || per_eye_reissue_eye().is_some() {

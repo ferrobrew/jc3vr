@@ -75,21 +75,22 @@ impl ConfigFlags {
 /// The flags this draw thread's dispatch was opened with, else the game thread's frame snapshot, else
 /// a fresh read if neither has been taken yet (the module docs say why there are two snapshots).
 ///
-/// The **draw thread** wants a value that does not move for the whole dispatch: nearly every gate it
-/// consults brackets something (a pass range, an eye-half viewport, an armed reprojection, a per-eye
-/// re-issue loop), and a flag that changes between the arm and the restore leaks that state into the
-/// rest of the frame -- so it pins its own copy in [`DISPATCH_FLAGS`] at [`begin_dispatch`].
-/// Everything else -- the game thread's resolution and camera decisions, and the shader-creation
-/// hooks, which must see a toggle in the *same* frame the debug UI turns it on, because that frame's
-/// shader reload is what applies it -- reads [`CONFIG_FLAGS`], resampled at frame start
-/// ([`refresh_config_flags`]).
+/// The **draw thread** wants a value that does not move for the whole dispatch: nearly every gate
+/// it consults brackets something (a pass range, an eye-half viewport, an armed reprojection, a
+/// per-eye re-issue loop), and a flag that changes between the arm and the restore leaks that state
+/// into the rest of the frame -- so it pins its own copy in [`DISPATCH_FLAGS`] at
+/// [`begin_dispatch`](crate::stereo::single_pass::begin_dispatch). Everything else -- the game
+/// thread's resolution and camera decisions, and the shader-creation hooks, which must see a toggle
+/// in the *same* frame the debug UI turns it on, because that frame's shader reload is what applies
+/// it -- reads [`CONFIG_FLAGS`], resampled at frame start ([`refresh_config_flags`]).
 ///
 /// The pin ends with the dispatch ([`end_dispatch`]): the draw thread is a job-pool worker that runs
 /// game-side jobs between dispatches, and those read the frame snapshot like everything else.
 ///
-/// The frame snapshot deliberately does **not** reach the draw thread mid-dispatch. It is written on
-/// the game thread, which with the frame tail deferred runs concurrently with the previous frame's
-/// still-walking dispatch (the interleaving [`begin_dispatch`] describes for the G-buffer range
+/// The frame snapshot deliberately does **not** reach the draw thread mid-dispatch. It is written
+/// on the game thread, which with the frame tail deferred runs concurrently with the previous
+/// frame's still-walking dispatch (the interleaving
+/// [`begin_dispatch`](crate::stereo::single_pass::begin_dispatch) describes for the G-buffer range
 /// clear), so a flag changing there would land between an arm and its restore.
 pub(crate) fn config_flags() -> ConfigFlags {
     if let Some(flags) = DISPATCH_FLAGS.get() {
@@ -116,7 +117,8 @@ pub fn refresh_config_flags() {
 }
 
 /// Pin the config flags for the dispatch this thread is opening, so every gate it consults answers
-/// the same for the whole of it. Called from [`begin_dispatch`].
+/// the same for the whole of it. Called from
+/// [`begin_dispatch`](crate::stereo::single_pass::begin_dispatch).
 pub(super) fn pin_dispatch_config_flags() {
     let flags = ConfigFlags(store_config_flags());
     DISPATCH_FLAGS.set(Some(flags));
@@ -179,8 +181,9 @@ const _: () = assert!(SHADOW_ANCHOR_TO_FIT_BIT < CONFIG_FLAGS_VALID);
 static CONFIG_FLAGS: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
-    /// The flags [`begin_dispatch`] pinned for the dispatch in flight on this thread, or `None` on a
-    /// thread that has never opened one. Thread-local rather than global because the point is to keep
-    /// the draw thread's view of the config still while the game thread is free to resample its own.
+    /// The flags [`begin_dispatch`](crate::stereo::single_pass::begin_dispatch) pinned for the
+    /// dispatch in flight on this thread, or `None` on a thread that has never opened one.
+    /// Thread-local rather than global because the point is to keep the draw thread's view of the
+    /// config still while the game thread is free to resample its own.
     static DISPATCH_FLAGS: Cell<Option<ConfigFlags>> = const { Cell::new(None) };
 }

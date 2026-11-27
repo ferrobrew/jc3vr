@@ -1,5 +1,6 @@
-//! What the GPU timestamp lane ([`crate::profiler::gpu`]) reports of each resolved dispatch to a
-//! consumer that records runs, and the switch that consumer arms the lane with.
+//! What the GPU timestamp lane (`crate::profiler::gpu`, with the `profiler` feature) reports of
+//! each resolved dispatch to a consumer that records runs, and the switch that consumer arms the
+//! lane with.
 //!
 //! The consumer (the capture tooling's benchmark) registers a `GpuDispatchSink` at startup and arms
 //! the lane with [`arm`] for a run; the lane, which exists only with the `profiler` feature, then

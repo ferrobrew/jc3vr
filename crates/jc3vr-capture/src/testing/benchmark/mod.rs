@@ -11,9 +11,9 @@
 //! carries every frame, so the statistics are computed off line. See
 //! `docs/mod/testing/benchmark.md`.
 //!
-//! Threading: [`request`] and [`tick`] run on the game thread, from the request poll and the top of
-//! the game's update. The GPU records arrive from the draw thread through [`record_gpu_dispatch`],
-//! and the draw-thread naming through [`note_draw_thread`].
+//! Threading: [`request()`] and [`tick`] run on the game thread, from the request poll and the top
+//! of the game's update. The GPU records arrive from the draw thread through `record_gpu_dispatch`
+//! (with the `profiler` feature), and the draw-thread naming through [`note_draw_thread`].
 
 mod request;
 mod sample;

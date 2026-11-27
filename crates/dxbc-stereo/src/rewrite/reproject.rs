@@ -27,15 +27,16 @@ use crate::{
 };
 
 /// Rewrites a vertex shader for single-pass stereo by **reprojection**: instead of remapping `cb0`
-/// per-eye operands (which the baked-WVP and GPU-indirect families don't have), it renames
-/// the shader's own `SV_Position` writes to a temp `rClip` and post-multiplies by a per-eye matrix
+/// per-eye operands (which the baked-WVP and GPU-indirect families don't have), it renames the
+/// shader's own `SV_Position` writes to a temp `rClip` and post-multiplies by a per-eye matrix
 /// `M_eye` before each `ret`, so `o0 = M_eye · clip_center` lands the shader's own center-clip
 /// position in each eye. `M_eye = VP_eye · VP_center⁻¹` is uploaded to `cb13`'s four-rows-per-eye
-/// block at [`MEYE_ROW_BASE`]; the eye index, viewport routing, `SV_InstanceID`/`SV_ViewportArrayIndex`
-/// interface, `SFI0` bit, and checksum are the same as the remap. Shader-agnostic: it works on any
-/// vertex shader that writes `SV_Position` from a scene view-projection, whatever buffer that came
-/// from. The runtime gate (scene pass range ∩ `DrawIndexed`) is what excludes NDC-direct writers
-/// (sky, UI), which the bytecode can't distinguish.
+/// block at [`MEYE_ROW_BASE`](crate::MEYE_ROW_BASE); the eye index, viewport routing,
+/// `SV_InstanceID`/`SV_ViewportArrayIndex` interface, `SFI0` bit, and checksum are the same as the
+/// remap. Shader-agnostic: it works on any vertex shader that writes `SV_Position` from a scene
+/// view-projection, whatever buffer that came from. The runtime gate (scene pass range ∩
+/// `DrawIndexed`) is what excludes NDC-direct writers (sky, UI), which the bytecode can't
+/// distinguish.
 pub fn reproject_vertex_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     reproject(blob, InstanceIds::Unused, Clip::Reproject)
 }

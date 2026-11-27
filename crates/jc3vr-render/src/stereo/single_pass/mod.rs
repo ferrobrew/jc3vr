@@ -887,7 +887,7 @@ pub(crate) fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)
     Some((eye_half_viewport(full, eye), CB13.lock().buffer_ptr()?))
 }
 /// The two per-eye reprojection matrices `M_eye` (`clip_eye = M_eye · clip_center`), published each
-/// view by [`compute_dual_eye_rows`]. The terrain-detail render-block intercept reads them to build a
+/// view by `compute_dual_eye_rows`. The terrain-detail render-block intercept reads them to build a
 /// per-eye `cb1` on the CPU (the detail draw is GPU-indirect, so it cannot be instance-doubled).
 static CURRENT_M_EYE: Mutex<Option<[glam::Mat4; 2]>> = Mutex::new(None);
 
