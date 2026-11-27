@@ -1,6 +1,6 @@
 # HumanIK: driving the upper body from an external target
 
-JC3 wraps Autodesk HumanIK in `NAnimationSystem::CHumanIK` (bindings: `jc3gi::animation::ik::HumanIK`). Each `Character` embeds one solver and drives it every frame inside the pose-finalization pass. The sections below cover the solver's layout, its per-frame lifecycle, the point before which an effector target must be queued to be solved in the same frame, the effector-id model, and the parameter and coordinate-space semantics of the target calls.
+JC3 wraps Autodesk HumanIK in `NAnimationSystem::CHumanIK` ([`HumanIK`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK)). Each `Character` embeds one solver and drives it every frame inside the pose-finalization pass. The sections below cover the solver's layout, its per-frame lifecycle, the point before which an effector target must be queued to be solved in the same frame, the effector-id model, and the parameter and coordinate-space semantics of the target calls.
 
 The verified addresses, field offsets, and constants are in the pyxis defs: the solver in the [`animation::ik`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/animation::ik) module, and its host in [`Character`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character).
 
@@ -16,7 +16,7 @@ The fields, in layout order:
 | [`m_PassInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_PassInfo) | one [`PassInfo`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::PassInfo) per pass: `[Pass::MAIN]` and `[Pass::SECONDARY]` |
 | [`m_CurrentPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_CurrentPass) | set by `SetActiveIKPass` |
 | [`m_HIKNodeAndBonePairs`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_HIKNodeAndBonePairs) | `Vector` |
-| [`m_UsedHIKNodeIds`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_UsedHIKNodeIds) | `int*`, `-2`-terminated |
+| [`m_UsedHIKNodeIds`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_UsedHIKNodeIds) | `int*`, terminated by [`HumanIK::USED_HIK_NODE_IDS_END`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK::USED_HIK_NODE_IDS_END) |
 | [`m_TQS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_TQS) | `Vector` |
 | [`m_EffectorIds`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_EffectorIds) | an [`EffectorIdTable`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::EffectorIdTable) (`THashTable<int,uint,1,ushort>`) |
 | [`m_TargetPull`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_TargetPull) | interpolation destinations |
@@ -178,7 +178,7 @@ There are two `AddEffectorTargetRotation` overloads: the axis-enum variant [`Hum
 1. Queue before the `HasTargets(PASS_MAIN)` gate, at the latest at the entry of `UpdatePassFinalizePose_Parallel` (see "The injection seam").
 2. `eff = GetEffectorIdFromBoneIndex(m_HIK, GetSafeIndex(HEAD))` (expect [`Effector::HEAD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-HEAD)).
 3. `posModel = inverse(characterWorldT1) · desiredHeadWorld`.
-4. `AddEffectorTargetPosition(m_HIK, eff, &posModel, SolveStep::SPINE_HEAD_ONLY, Pass::MAIN, false, 3.0, false, 1.5)` — `SPINE_HEAD_ONLY` so the pass cannot recruit the arms to reach the head (see the step-as-joint-mask note above), and `blend_out=false` for a target re-queued every frame. During a blend-out tail the invalidated entry keeps steering toward the pose it was queued with (see "Target entry lifetime"). That suits a target that remains meaningful while it fades, and a target derived from the current frame's pose does not remain meaningful.
+4. `AddEffectorTargetPosition(m_HIK, eff, &posModel, SolveStep::SPINE_HEAD_ONLY, Pass::MAIN, false, HAND_PASS_INTERPOLATION_RATE, false, HAND_PASS_BLEND_OUT_RATE)` (the hand pass's rates, unused with both flags clear) — `SPINE_HEAD_ONLY` so the pass cannot recruit the arms to reach the head (see the step-as-joint-mask note above), and `blend_out=false` for a target re-queued every frame. During a blend-out tail the invalidated entry keeps steering toward the pose it was queued with (see "Target entry lifetime"). That suits a target that remains meaningful while it fades, and a target derived from the current frame's pose does not remain meaningful.
 5. `m_HIK.m_TargetReachT[eff] = 1.0`.
 6. `m_HIK.m_TargetPull[eff] = w` — without this the spine and shoulders do not follow (see "The four control values" above).
 7. Optionally a rotation target for head orientation via `AddEffectorTargetRotationVector(..., Pass::MAIN)` + `m_TargetReachR[eff]`, and `m_TargetResist[eff]` alongside it.
@@ -192,7 +192,7 @@ A head target does not reach the chest: reach is satisfied by the neck chain, an
 ```
 chestEnd = GetChestEndEffectorId(m_HIK)
 AddEffectorTargetRotation(m_HIK, chestEnd, yawRadians, RotationAxis::Y,
-                          SolveStep::UPPER_BODY, Pass::MAIN, false, 2.0, true, 1.5)
+                          SolveStep::UPPER_BODY, Pass::MAIN, false, interpolationRate, true, blendOutRate)
 m_HIK.m_TargetReachR[chestEnd] = weight
 ```
 
@@ -205,6 +205,6 @@ Where those shoulder targets should *go* is a rig question rather than a solver 
 ## Open risks
 
 - **Coexistence with the aim IK.** The aim/reach IK also queues PASS_MAIN targets (chest/arm rotation). When an external caller and the aim IK both add targets in the same frame, both are solved. The pass step is the max of the queued steps, and targets are keyed by effector id, so a second add to the same effector updates the first. A head target ([`Effector::HEAD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-HEAD)) does not share an effector with the arm targets. Its interaction with a chest or spine target that the game adds in the same frame is untested.
-- **Weight source.** `DriveAllCurrentEffectorControlValues` runs *before* the solve inside the pass; it eases `m_ReachT` toward `m_TargetReachT`. With `interpolation=false` the value snaps; with interpolation it ramps over several frames, so the body eases into the target rather than snapping. Choose per the desired feel.
+- **Weight source.** `DriveAllCurrentEffectorControlValues` runs *before* the solve inside the pass; it eases `m_ReachT` toward `m_TargetReachT`. With `interpolation=false` the value snaps; with interpolation it ramps over several frames, so the body eases into the target rather than snapping.
 - **`updateAllBones`.** `IKToCharacterState` takes `CCharacter::m_IkToCharacterUpdateAllBones`. How the flag changes which bones receive the solved result is not characterized. A `SetJoint` on the same bones later in the same frame, such as one at `UpdatePropEffects`, overwrites the solved joint and re-derives its descendants.
 - **`hkaPose` pointer.** `CharacterToIKState`/`IKToCharacterState` take the character's `hkaPose*`; the engine invokes them inside the pass. An external caller therefore only queues targets. The engine runs the solve, and a direct call to `Solve` is not part of the sequence.

@@ -115,12 +115,12 @@ The readers of the slot fall into two groups:
 
 ## 5. Arm IK and the reticle
 
-### Arm IK during grapple (interface point for [hands-locomotion-and-state.md](../character/hands-locomotion-and-state.md))
+### Arm IK during grapple (interface point for [weapon-attachment-and-arm-ik.md](../character/weapon-attachment-and-arm-ik.md))
 
 Two IK tasks aim the arm during the grapple, each with its own target source:
 
 - [`NGrapplingFireArmIK::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/animation::arm_aim_ik##func-NGrapplingFireArmIK_Update) is the fire arm aim. Its target is [`GrapplingHook::GetLastGrappleTargetPos`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-GetLastGrappleTargetPos), the cached fire target, which is the same point the hook flies to. It computes `aim_dir = target − left_shoulder`, projects a wanted left-hand position at arm length, and writes it to the blackboard (hand-position and weight keys). It is not camera-sourced and does not read the live wire endpoint.
-- [`ReelInAimIK::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::arm_aim_ik::ReelInAimIK##func-Update) calls [`ReelInAimIK::UpdateAimEffector`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::arm_aim_ik::ReelInAimIK##func-UpdateAimEffector) for the reel-in arm aim. Its arm and chest targets are in [hands-locomotion-and-state.md, "Reel-in aim IK"](../character/hands-locomotion-and-state.md#reel-in-aim-ik-the-grapple-arm-one-arm-effector-and-the-chest-grapple-pipeline-interface-point).
+- [`ReelInAimIK::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::arm_aim_ik::ReelInAimIK##func-Update) calls [`ReelInAimIK::UpdateAimEffector`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::arm_aim_ik::ReelInAimIK##func-UpdateAimEffector) for the reel-in arm aim. Its arm and chest targets are in [weapon-attachment-and-arm-ik.md, "Reel-in aim IK"](../character/weapon-attachment-and-arm-ik.md#reel-in-aim-ik-the-grapple-arm-one-arm-effector-and-the-chest-grapple-pipeline-interface-point).
 
 ### The grapple reticle
 

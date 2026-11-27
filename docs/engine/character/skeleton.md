@@ -19,7 +19,7 @@ The controller exposes a model-space `Joint` API, already in the bindings:
 
 `Joint` is `{ Translation; Orientation; Scale }`, model-space; the quaternion is Havok order (x, y, z, w).
 
-So overriding a bone is a `SetJoint`, not a buffer patch. To place the head at a desired world transform relative to the body: `desiredHeadModel = inverse(characterWorldT1) · desiredHeadWorld`, then `SetJoint(HEAD, desiredHeadModel)`. `SetJoint` re-derives descendants but not ancestors — fine for a head/eyes override (the neck above is left as the animation set it).
+So overriding a bone is a `SetJoint`, not a buffer patch. To place the head at a desired world transform relative to the body: `desiredHeadModel = inverse(characterWorldT1) · desiredHeadWorld`, then `SetJoint(HEAD, desiredHeadModel)`. `SetJoint` re-derives descendants but not ancestors, so a head write leaves the neck above it as the animation set it.
 
 ## Hierarchy and root
 
