@@ -2,7 +2,7 @@
 
 A physical handhold stays at the point the hand grips. A grip on a vehicle or helicopter carries the player through the moving climb ([hand-climbing.md](hand-climbing.md#moving-bodies)); it does not enter the native animated helicopter hang or snap onto a roof. The other hand remains available for a gun or an interaction. A rifle can be held in one hand. Only an explicit foregrip grab engages weapon support, and that target keeps priority over the climbing fallback.
 
-The code is `crates/jc3vr-physical/src/controllers/physical_hands/climb/` and `crates/jc3vr-physical/src/controllers/physical_hands/stunt/`. Moving climbing and stunt handoff are always on under the controller scheme, with fixed tuning, and their readouts are in the debug UI. Headset tuning remains unverified.
+The code is `crates/jc3vr-physical/src/controllers/physical_hands/climb/` and `crates/jc3vr-physical/src/controllers/physical_hands/stunt/`. Moving climbing and the stunt handoff are always on under the controller scheme, with no settings.
 
 ## Native automatic attachment
 
@@ -28,24 +28,10 @@ Outside a mantle, the carry average includes every active grip, including zero v
 
 ## Normal helicopter hang
 
-The game's helicopter hang holds Rico inverted under the airframe, and the grapple lock's hang keeps the player out of it. A reel onto a helicopter hangs Rico upright on a short line instead ([grapple-lock.md](grapple-lock.md#the-hang-below-a-ceiling-or-a-helicopter)), and a helicopter seat's stunt press, which the game would answer by dropping the pilot or a passenger into the hang (the seats' stunt states lead into it), is the seat's exit instead (`bindings::bail::stunt_hangs_inverted`). A graph script's attach to a helicopter (`NGSONodes::TryAttachToClosestStuntArea`, the only caller of [`AutoAttachToClosestStuntAreaOnVehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-AutoAttachToClosestStuntAreaOnVehicle)) and a stumble out of a seat into the hang are left to the game, since a mission may wait on the hang. The physical-grip path never requests that entry. In a native hang, the existing grip tracker waits for a hand to take hold before opening all grips can request release. Its existing jump request remains unchanged. The native input task loads the action from graph data; a replacement action is unverified and no fallback action is added. The game's ordinary controls remain available if the request does not leave the hang.
+The game's helicopter hang holds Rico inverted under the airframe, which the player's body cannot match. A reel onto a helicopter hangs Rico upright on a short line instead ([grapple-lock.md](grapple-lock.md#the-hang-below-a-ceiling-or-a-helicopter)), and a helicopter seat's stunt press, which the game would answer by dropping the pilot or a passenger into the hang (the seats' stunt states lead into it), is the seat's exit instead (`jc3vr_gameplay::controllers::bindings::bail::stunt_hangs_inverted`). A graph script's attach to a helicopter (`NGSONodes::TryAttachToClosestStuntArea`, the only caller of [`Character::AutoAttachToClosestStuntAreaOnVehicle`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-AutoAttachToClosestStuntAreaOnVehicle)) and a stumble out of a seat into the hang are left to the game, since a mission may wait on the hang. The physical-grip path never requests that entry. In a native hang, opening every grip after a hand has taken hold requests the release; the game's ordinary controls stay available if the request does not leave the hang.
 
-The animated hang remains an animation-owned state. It is not used to represent a one-handed physical skid grip. A physical helicopter grip uses the moving climb and the actual controller handhold instead.
+The animated hang is an animation-owned state and never represents a one-handed physical skid grip: a physical helicopter grip uses the moving climb at the actual handhold.
 
-## Settings and readouts
+## Readouts
 
-The debug UI's Climbing feature, under Movement/vehicles, holds the climbing and stunt readouts; neither has settings. Older saved `climb`, `stunt`, `enter_hang`, `hang_hold_s`, and `hang_below_m` keys are ignored when loading the configuration. `Moving climbs` reports moving-grip activity. `Stunt positions` reports a native hang or roof position, successful roof entries, refusals, and native-hang release requests. Both rows head the Climbing feature's readout, and the stunt readout beneath them adds only the last entry and what each hand holds. On a roof the procedural body's case is `standing on a vehicle`, with the on-foot clip's torso; the stunt clip modifiers are dropped for the local player there and `Roof torso` reads `Ok`.
-
-## Headset checklist
-
-1. Grip a parked helicopter's skid at several different points, hang below it, and have it lift off. The hand stays at each actual point. There is no animated hang entry or capsule snap. The other hand can aim and fire a pistol or a rifle.
-2. Use an interaction with the free hand. Intentionally grab a rifle's foregrip after releasing the climbing hand. The explicit foregrip takes priority; merely holding the rifle does not brace or steal the climb.
-3. Grip a translating and turning vehicle. Release the final hand without a pull, then with a pull. Vehicle point velocity remains present in both releases; only the additional hand-generated part reaches the fling cap.
-4. Hold a moving body with one hand and static geometry with the other. Release the moving hand first, then the static hand. The second release does not retain the old moving body's carry. Repeat with two different moving bodies.
-5. Destroy or stream out the gripped body, respawn the player, switch input modes, and pause long enough to expire input. Each stale grip is lost without a fling or attachment to a recycled body.
-6. Climb and deliberately mantle onto a moving car's roof. Only the completed mantle offers roof entry, and only for that vehicle. The game then carries the character with the hands free. Check the `Roof torso` row, that the torso follows your head, and that the idle and walk are the on-foot clips rather than the stunt idles.
-7. Land normally on a vehicle without a physical grip, and observe an NPC stunt entry. The native automatic attachment remains available.
-8. With `Hang below ceilings` off, enter a helicopter hang through the normal grapple with open hands. It remains attached until the ordinary game exit or the existing armed grip-release request. Record which native input leaves it if the request is ignored.
-9. Fly a helicopter and tap the seat's stunt press: Rico leaves the seat as for the exit and falls upright, rather than dropping into the hang under the airframe. Repeat from a passenger seat. With `Hang below ceilings` off in the Grapple feature, the tap takes him into the hang as before.
-
-These scenarios have not been run in the headset for this change. They remain required for live acceptance and tuning.
+The debug UI's Climbing feature, under Movement/vehicles, opens with the `Moving climbs` row (moving-grip activity) and the `Stunt positions` row (a native hang or roof position, roof entries, refusals, and native-hang release requests), then adds the last entry and what each hand holds. On a roof the procedural body's case is `standing on a vehicle`, with the on-foot clip's torso; the stunt clip modifiers are dropped for the local player there, which the `Roof torso` row reports.
