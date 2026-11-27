@@ -9,6 +9,7 @@ pub mod sink;
 
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
+    grab::GrabVolume,
     intent::{
         config::{crouch_flick, long_press_s, menu_stick_push},
         controls::{ButtonControl, Controls},
@@ -18,14 +19,11 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::bindings::{
-    grab::GrabVolume,
-    tables::{
-        Step,
-        tests::legacy::{
-            declare::{TableCtx, declare},
-            sink::{EvalSink, Latches, MenuLatch},
-        },
+use crate::controllers::bindings::tables::{
+    Step,
+    tests::legacy::{
+        declare::{TableCtx, declare},
+        sink::{EvalSink, Latches, MenuLatch},
     },
 };
 

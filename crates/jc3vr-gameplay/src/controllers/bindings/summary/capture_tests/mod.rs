@@ -2,7 +2,7 @@ use jc3vr_body::controllers::mode::OnFootVariant;
 use jc3vr_weapons::controllers::weapons::{config::WeaponSettings, reload::eligible_belt_for_test};
 
 use super::*;
-use crate::controllers::summary::eligibility;
+use crate::controllers::{config::ControllersConfig, summary::eligibility};
 
 mod climb;
 mod doors;
@@ -42,7 +42,7 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
             Refresh {
                 sequence,
                 belt_reload,
-                config: &config,
+                settings: &Settings::of(&config),
                 owners,
                 ready,
                 grapple_routes: Default::default(),

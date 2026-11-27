@@ -35,8 +35,6 @@ use jc3vr_view::{
 use jc3vr_weapons::controllers::{loadout::contents, weapons};
 use tracking_format::event::{Label, WingsuitGesture};
 
-use crate::controllers::config::ControllersConfig;
-
 /// Recognition and the calibration that interprets its pose history belong to one binding state.
 #[derive(Debug, Default)]
 pub(super) struct FlightState {
@@ -76,7 +74,8 @@ impl FlightState {
 
 pub(super) struct Tick<'a> {
     pub frame: &'a ControllerFrame,
-    pub config: &'a ControllersConfig,
+    /// Where the grip sits in each hand.
+    pub grip_offset: GripOffset,
     /// The wingsuit gestures' tuning, the fixed one outside the tests.
     pub gestures: &'a WingsuitGesturesTuning,
     pub dimensions: &'a BodyDimensions,
@@ -106,7 +105,7 @@ pub(super) fn evaluate(
     let commands = evaluate_input(
         state,
         Calibration {
-            grip_offset: tick.config.hands.grip,
+            grip_offset: tick.grip_offset,
             dimensions: *tick.dimensions,
         },
         input,
@@ -135,7 +134,7 @@ pub(super) fn commit(
     desired: &mut Vec<Desired>,
 ) {
     let calibration = Calibration {
-        grip_offset: tick.config.hands.grip,
+        grip_offset: tick.grip_offset,
         dimensions: *tick.dimensions,
     };
     state.calibrate(calibration);
@@ -338,7 +337,7 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
         pose: FlightPose::from_packet(
             &packet,
             &FlightCalibration {
-                grip_offset: &tick.config.hands.grip,
+                grip_offset: &tick.grip_offset,
                 dimensions: tick.dimensions,
             },
             now,

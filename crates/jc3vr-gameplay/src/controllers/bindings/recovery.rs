@@ -295,7 +295,7 @@ mod tests {
     use jc3vr_view::vr::input::config::press_rules;
 
     use super::*;
-    use crate::controllers::bindings::{State, TickReport, tables::Bindings};
+    use crate::controllers::bindings::{State, TickReport, heli_hang::HeliHang, tables::Bindings};
 
     fn policy() -> NeutralPolicy {
         NeutralPolicy::new(&BindingsConfig::new(), &VrTurnConfig::new(), Hand::Right)
@@ -406,6 +406,7 @@ mod tests {
             rail: Default::default(),
             yank: LineYank::new(),
             bail: Default::default(),
+            heli_hang: HeliHang::new(),
             report: TickReport::default(),
         };
         let samples = [

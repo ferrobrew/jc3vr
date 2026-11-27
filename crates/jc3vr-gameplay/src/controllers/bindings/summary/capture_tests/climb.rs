@@ -5,10 +5,13 @@ use jc3vr_body::controllers::{
 };
 
 use super::*;
-use crate::controllers::summary::{
-    current,
-    current::{CellKind, CurrentSummary, Source},
-    labels::Text,
+use crate::controllers::{
+    config::ControllersConfig,
+    summary::{
+        current,
+        current::{CellKind, CurrentSummary, Source},
+        labels::Text,
+    },
 };
 
 const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);
@@ -48,7 +51,7 @@ impl Capture {
             Refresh {
                 sequence: 7,
                 belt_reload: None,
-                config: &config,
+                settings: &Settings::of(&config),
                 owners: [Owner {
                     mode: MODE,
                     gun: None,

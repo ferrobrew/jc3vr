@@ -60,11 +60,13 @@ use jc3vr_weapons::controllers::weapons::c4;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    bindings::tables::{
-        declare::TableCtx,
-        describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current},
+    bindings::{
+        settings::Settings,
+        tables::{
+            declare::TableCtx,
+            describe::{DescribeCtx, Features, PhysicalFeatures, describe_bound, describe_current},
+        },
     },
-    config::ControllersConfig,
     summary::{
         content::{Side, Summary, build, with_context},
         context::ContextHint,
@@ -129,24 +131,23 @@ pub fn status() -> SummaryStatus {
 pub(crate) fn refresh(
     mode: Mode,
     controls: &Controls,
-    config: &ControllersConfig,
+    settings: &Settings,
     eligibility: &Eligibility,
 ) {
-    let weapons = &config.weapons;
     let ctx = DescribeCtx {
         mode,
         dominant: controls.dominant,
         table: TableCtx::of(controls),
         features: Features {
             holsters: true,
-            magazine: weapons.reload.enabled,
-            belt_reload: weapons.reload.enabled,
+            magazine: settings.reload,
+            belt_reload: settings.reload,
             sight_chord: controls.sight_chord,
-            wheel_trackpad: weapons.wheel.enabled,
-            wheel_stick: weapons.wheel.enabled,
-            parachute_handles: config.vehicles.parachute_handles.enabled,
+            wheel_trackpad: settings.wheel,
+            wheel_stick: settings.wheel,
+            parachute_handles: settings.parachute_handles,
             ripcord: true,
-            arm_steering: config.vehicles.arm_steering.wingsuit,
+            arm_steering: settings.arm_steering,
             physical: PhysicalFeatures {
                 wheel: true,
                 handlebars: true,

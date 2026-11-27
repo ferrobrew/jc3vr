@@ -16,6 +16,7 @@ use jc3vr_view::vr::input::flight_pose::GestureSample;
 use jc3vr_weapons::controllers::loadout::Socket;
 
 use super::*;
+use crate::controllers::config::ControllersConfig;
 
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
 static CONFIG: LazyLock<WingsuitGesturesTuning> = LazyLock::new(|| WingsuitGesturesTuning {
@@ -350,7 +351,7 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
     let dimensions = BodyDimensions::default();
     let tick = Tick {
         frame: &frame,
-        config: &config,
+        grip_offset: config.hands.grip,
         gestures: &VEHICLES.get().wingsuit_gestures,
         dimensions: &dimensions,
         detection: Detection {
@@ -406,7 +407,7 @@ fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
             let mut config = ControllersConfig::default();
             config.hands.grip = calibration().grip_offset;
             let missing = Tick {
-                config: &config,
+                grip_offset: config.hands.grip,
                 gestures: &CONFIG,
                 detection: Detection {
                     mode: falling,
@@ -502,7 +503,7 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
             .set(Button::SqueezePress, squeezed);
         let tick = Tick {
             frame: &frame,
-            config: &config,
+            grip_offset: config.hands.grip,
             gestures: &VEHICLES.get().wingsuit_gestures,
             dimensions: &dimensions,
             detection: Detection {

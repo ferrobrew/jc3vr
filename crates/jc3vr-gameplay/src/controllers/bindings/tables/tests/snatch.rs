@@ -84,7 +84,7 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
         }
         let mode = if change == 2 { Mode::Ui } else { ON_FOOT };
         let input = simulate(&c, SemanticSet::of(mode.action_set()), layout);
-        let button = crate::controllers::bindings::grapple_button(&input, mode);
+        let button = crate::controllers::bindings::buttons::grapple_button(&input, mode);
         assert!(bindings.claim_snatch(button, false, change != 2, false));
         assert!(player(&bindings.step(mode, &c, &input, DT), FIRE_GRAPPLE).is_none());
         for hand in &mut c.hands {
@@ -92,7 +92,7 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
             hand.a = release();
         }
         let input = simulate(&c, SemanticSet::OnFoot, layout);
-        let button = crate::controllers::bindings::grapple_button(&input, ON_FOOT);
+        let button = crate::controllers::bindings::buttons::grapple_button(&input, ON_FOOT);
         assert!(bindings.claim_snatch(button, false, true, false));
         let released = bindings.step(ON_FOOT, &c, &input, DT);
         assert!(player(&released, FIRE_GRAPPLE).is_none());
@@ -108,7 +108,7 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
             c.hands[new_hand].b = down();
         }
         let input = simulate(&c, SemanticSet::OnFoot, layout);
-        let button = crate::controllers::bindings::grapple_button(&input, ON_FOOT);
+        let button = crate::controllers::bindings::buttons::grapple_button(&input, ON_FOOT);
         assert!(!bindings.claim_snatch(button, false, true, false));
         assert!(player(&bindings.step(ON_FOOT, &c, &input, DT), FIRE_GRAPPLE).is_some());
     }

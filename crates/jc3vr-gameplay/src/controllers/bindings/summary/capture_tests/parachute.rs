@@ -13,6 +13,7 @@ use jc3vr_view::vr::input::semantic::bound::SourceTable;
 use super::*;
 use crate::controllers::{
     bindings::tables::{declare::TableCtx, describe::DescribeCtx},
+    config::ControllersConfig,
     summary::{
         current,
         current::{CellKind, CurrentSummary, Source},
@@ -97,7 +98,7 @@ impl Capture {
             Refresh {
                 sequence: 7,
                 belt_reload: None,
-                config: &self.config,
+                settings: &Settings::of(&self.config),
                 owners: [Owner {
                     mode: self.mode,
                     gun: None,

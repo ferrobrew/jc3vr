@@ -5,6 +5,7 @@ use jc3vr_body::controllers::{
 use jc3vr_physical::controllers::physical_hands::DoorProvider;
 
 use super::*;
+use crate::controllers::config::ControllersConfig;
 
 fn row(hand: Hand) -> Row {
     Row {
@@ -49,7 +50,7 @@ fn capture_door_with_owner(
         Refresh {
             sequence: 7,
             belt_reload: None,
-            config: &config,
+            settings: &Settings::of(&config),
             owners: [Owner {
                 mode: Mode::OnFoot(OnFootVariant::Ground),
                 gun: None,

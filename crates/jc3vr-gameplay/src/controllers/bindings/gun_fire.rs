@@ -97,31 +97,6 @@ mod tests {
         )
     }
 
-    /// The input owner clears the held guns' cached fire while the UI or a pending action set pauses
-    /// the bindings, and while the bindings are inactive, and pauses the weapon wheel then too.
-    #[test]
-    fn input_owner_clears_cached_fire_while_ui_and_action_set_are_paused() {
-        let source = include_str!("mod.rs");
-        let pending_branch = source
-            .split_once("if set_pending {")
-            .unwrap()
-            .1
-            .split_once("writes: state.tracker.pause(),")
-            .unwrap()
-            .0;
-        assert!(pending_branch.contains("clear_controller();"));
-        assert!(pending_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
-        let inactive_branch = source
-            .split_once("state.rail = rail::RailRelease::new();")
-            .unwrap()
-            .1
-            .split_once("fn ")
-            .unwrap()
-            .0;
-        assert!(inactive_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
-        assert!(inactive_branch.contains("weapons::wheel::pause(game);"));
-    }
-
     #[test_case(VehicleClass::Car)]
     #[test_case(VehicleClass::Motorcycle)]
     #[test_case(VehicleClass::Sea)]

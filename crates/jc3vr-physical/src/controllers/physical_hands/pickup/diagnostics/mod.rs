@@ -8,7 +8,7 @@
 //! the consumer's branch, the simulation consumer's result for a request, and the first drive of
 //! what a request took. The event is built after the slot's lock is released.
 
-pub(crate) mod scan;
+pub mod scan;
 #[cfg(test)]
 mod tests;
 

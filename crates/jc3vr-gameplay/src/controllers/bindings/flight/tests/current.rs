@@ -457,7 +457,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
     let dimensions = BodyDimensions::default();
     let mut tick = Tick {
         frame: &frame,
-        config: &config,
+        grip_offset: config.hands.grip,
         gestures: &jc3vr_vehicles::controllers::vehicles::tuning::VEHICLES
             .get()
             .wingsuit_gestures,

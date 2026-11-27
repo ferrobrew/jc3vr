@@ -40,10 +40,10 @@ use crate::controllers::{
     bindings::{
         intents::SemanticInput,
         policy_a::runtime::Tick,
+        settings::Settings,
         tables,
         trigger_ownership::{Owner, TriggerMask},
     },
-    config::ControllersConfig,
     summary::{
         current::{CurrentRouting, TriggerUse},
         eligibility::{Eligibility, SnatchHint},
@@ -89,7 +89,7 @@ impl BeforeFinish {
 pub(super) struct Refresh<'a> {
     pub sequence: u64,
     pub belt_reload: Option<BeltEligibility>,
-    pub config: &'a ControllersConfig,
+    pub settings: &'a Settings,
     pub owners: [Owner; 2],
     pub ready: [bool; 2],
     pub grapple_routes: Vec<(ActionId, Hand)>,
@@ -171,7 +171,7 @@ pub(super) fn capture(game: &GameTick<'_>, input: Refresh<'_>) -> Eligibility {
     let guns = weapons::capabilities::gun_owners_now();
     let reload = current_reload(guns);
     let fire = fire_ready(game, input.ready, guns);
-    let reload_permissions = read_reload_permissions(game, input.config);
+    let reload_permissions = read_reload_permissions(game, input.settings);
     let doors = Hand::BOTH.map(|hand| {
         input.selected[hand.index()]
             .and_then(|target| target.door_eligibility)
@@ -265,7 +265,7 @@ fn capture_current(
     }
     for hand in Hand::BOTH {
         let i = hand.index();
-        if input.config.vehicles.parachute_handles.enabled
+        if input.settings.parachute_handles
             && input.owners[i].mode == Mode::Airborne(AirborneVariant::Parachute)
             && input.ready[i]
             && chosen[i] == Some(GrabVolume::ParachuteHandle(hand))
@@ -368,7 +368,7 @@ struct ReloadPermissionRead {
     holster_animation: bool,
 }
 
-fn read_reload_permissions(game: &GameTick<'_>, config: &ControllersConfig) -> ReloadPermissions {
+fn read_reload_permissions(game: &GameTick<'_>, settings: &Settings) -> ReloadPermissions {
     let Some(owner) = LocalPlayer::get(game) else {
         return ReloadPermissions::default();
     };
@@ -377,7 +377,7 @@ fn read_reload_permissions(game: &GameTick<'_>, config: &ControllersConfig) -> R
     let weapon = unsafe { owner.GetWieldingWeapon(false).as_ref() }
         .and_then(|weapon| unsafe { weapon.px.as_ref() });
     reload_permission(ReloadPermissionRead {
-        native_button: !config.weapons.reload.enabled,
+        native_button: !settings.reload,
         wielded: weapon.is_some(),
         // SAFETY: the inventory and wielded weapon remain live for this input-thread read.
         reload_animation: unsafe { owner.m_Inventory.GetAnimationAllowsReloading() },
