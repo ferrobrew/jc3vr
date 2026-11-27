@@ -1,8 +1,9 @@
 //! Registers the systems above the aim with the aim: the weapon handling's and the hand bodies'
 //! hooks into the aim update and the per-weapon update ([`jc3vr_body::controllers::aim::hooks`]),
-//! the weapon handling's contributions around the local player's weapon handling in their order
-//! ([`PRE_WEAPON_HOOKS`]), and the vehicle handling's mounted-gun fact
-//! ([`jc3vr_body::controllers::facts::mounted`]).
+//! and the weapon handling's contributions around the local player's weapon handling in their
+//! order ([`PRE_WEAPON_HOOKS`]). The vehicle handling's mounted-gun fact
+//! ([`jc3vr_body::controllers::facts::mounted`]) rides with its other body fields
+//! ([`jc3vr_vehicles::register_body`]), which the register file for the systems below fills.
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's
 //! registration check ([`jc3vr_body::contributions::register`]).
@@ -13,7 +14,6 @@ use jc3vr_body::{
     controllers::{aim::hooks::AimHooks, aim_state::PreWeaponHookFn},
 };
 use jc3vr_physical::controllers::physical_hands;
-use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::weapons::{
     c4, collide,
     dual_wield::single,
@@ -35,7 +35,6 @@ pub(super) fn register(body: &mut BodyContributions) {
         substitute_input: hold_tick::substitute,
     });
     body.pre_weapon_hooks = &PRE_WEAPON_HOOKS;
-    vehicles::register_mounted::register(body);
 }
 
 /// The weapon handling's contributions around the local player's weapon handling, in the order

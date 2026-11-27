@@ -18,7 +18,7 @@
 //!
 //! The layers above reach the modules by path, so an item is `pub` exactly when a crate above names
 //! it: the bindings, which run the vehicle handling's two halves on the input tick, the summary,
-//! the controllers' register files and hand stages, the look detour, the controller settings'
+//! the controllers' hand stages and tables, the look detour, the controller settings'
 //! checks, the HUD's reticle, the debug UI's panels, status rows, and controls page, the
 //! diagnostics, and the payload's composition and settings aggregate. Everything else keeps its
 //! crate-private visibility.
@@ -30,9 +30,8 @@
 //!   payload's composition calls before any hook is installed. It returns [`Registered`], the only
 //!   way to reach the equipment detours ([`hooks::equipment`]), which the composition enables in
 //!   their place in its order.
-//! - [`controllers::vehicles::register_body::register`] fills the body crate's registrations the
-//!   vehicle handling contributes to, and [`controllers::vehicles::register_mounted::register`] the
-//!   body crate's mounted-gun fact; the gameplay crate's install calls both.
+//! - [`register_body()`]: the vehicle handling's fields of the body's contributions (the take-off
+//!   and the mounted-gun fact), which the gameplay crate's install fills.
 //! - [`controllers::vehicles::hook_library`], which the gameplay crate enables inside its
 //!   controllers library in its established place.
 //! - [`controllers::vehicles::mounted_recoil::on_shot`], the handles' kick by each shot of the
@@ -50,7 +49,7 @@ pub mod controllers;
 pub mod hooks;
 mod register;
 
-pub use register::{Registered, register};
+pub use register::{Registered, register, register_body};
 
 #[cfg(test)]
 mod test_config;
