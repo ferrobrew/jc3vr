@@ -127,8 +127,7 @@
 - [attachments.md](mod/body/attachments.md): socket interaction targets and pouch markers in the body mirror.
 - [head-and-body.md](mod/body/head-and-body.md): how head and body yaw relate, the head pose, and the head bone.
 - [grapple-comfort.md](mod/body/grapple-comfort.md): the grapple's body-frame comfort filter.
-- [swim-yaw.md](mod/body/swim-yaw.md): the right stick owning the swim heading.
-- [swim-strokes.md](mod/body/swim-strokes.md): swimming with the arms.
+- [swimming.md](mod/body/swimming.md): the right stick owning the swim heading, the dive control, and swimming with the arms.
 - [parachute.md](mod/body/parachute.md): keeping the head from steering the parachute, the turn toward a grapple line, and skipping the opening roll out of a reel.
 - [locomotion.md](mod/body/locomotion.md): stick locomotion and the steady on-foot view.
 - [act-arbiter.md](mod/body/act-arbiter.md): the one place that drops, replaces, and queues the local player's acts.

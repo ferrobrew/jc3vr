@@ -18,7 +18,7 @@ The hand bodies, the climb, and the grapple's pump restart their motion on any j
 The engine moves the proxy by the wanted velocity its movement task writes each simulation tick. The mod's writers are `wanted::Contributor`s applied through one `wanted::Composition` in a fixed order, each reading the velocity the previous one left:
 
 1. Before the world update: the vehicle rail's entry or step-off, and the grapple lock's release and handback. The movement task carries these into its tick.
-2. In the character's update, exactly one movement task runs. On foot, the locomotion post-call composes the stick's velocity ([locomotion.md](locomotion.md)), adds the palms' push ([physical-hands.md](../input/physical-hands.md#pushing-off-surfaces)), and, while the player owns the root, adds and caps the step drive ([rig.md](rig.md#who-moves-the-root)). Swimming, the strokes add speed along the facing ([swim-strokes.md](swim-strokes.md)). Reeling, the reel's arrival hands on the grapple lock's velocity ([grapple-lock.md](../input/grapple-lock.md)).
+2. In the character's update, exactly one movement task runs. On foot, the locomotion post-call composes the stick's velocity ([locomotion.md](locomotion.md)), adds the palms' push ([physical-hands.md](../input/physical-hands.md#pushing-off-surfaces)), and, while the player owns the root, adds and caps the step drive ([rig.md](rig.md#who-moves-the-root)). Swimming, the strokes add speed along the facing ([swimming.md](swimming.md#arm-strokes)). Reeling, the reel's arrival hands on the grapple lock's velocity ([grapple-lock.md](../input/grapple-lock.md)).
 
 A contributor applied out of order is a programming error and stops a debug build.
 
