@@ -86,7 +86,7 @@ use jc3vr_body::controllers::{
     },
     telemetry,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::EventLog};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -146,7 +146,7 @@ pub struct ReloadStatus {
     /// Native serial magazine execution and the most recent refusal.
     pub serial: serial::SerialStatus,
     /// The most recent reload events, newest last.
-    pub events: Vec<String>,
+    pub events: EventLog<String, 8>,
 }
 
 /// A hand's gun and its weapon as the last input tick saw them.
@@ -180,7 +180,6 @@ pub struct ReloadCounts {
     /// Magazines knocked out by a held one.
     pub knocks: u64,
     pub belt_reloads: u64,
-    pub racks: u64,
     /// Slides caught at the rear.
     pub lock_backs: u64,
     pub empty_pouch: u64,
@@ -943,9 +942,6 @@ pub(super) fn chamber_without_magazine(weapon: usize, hand: Hand) -> bool {
         && ammo::active_snapshot(weapon).is_some_and(|ammo| ammo.out && ammo.chamber_rounds() > 0)
 }
 
-/// How many events the readout keeps.
-const MAX_EVENTS: usize = 8;
-
 /// One input tick's view of the hands' guns.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Tick {
@@ -1119,13 +1115,12 @@ static STATE: Mutex<State> = Mutex::new(State {
             seats: 0,
             knocks: 0,
             belt_reloads: 0,
-            racks: 0,
             lock_backs: 0,
             empty_pouch: 0,
             refused: 0,
         },
         serial: serial::SerialStatus::new(),
-        events: Vec::new(),
+        events: EventLog::new(),
     },
     tick: None,
     pouches: [None; 2],

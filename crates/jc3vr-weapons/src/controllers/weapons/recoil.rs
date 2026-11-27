@@ -226,7 +226,6 @@ pub fn kick(hand: Hand, pitch: f32, yaw: f32, config: &RecoilConfig, one_hand_sc
     let h = &mut state.hands[hand.index()];
     h.spring.kick(kick, stiffness(weight));
     h.kicks += 1;
-    h.last_kick = kick;
     kick
 }
 
@@ -243,8 +242,7 @@ pub fn clear() {
 pub struct RecoilStatus {
     /// Each hand's current offset: pitch and yaw in degrees and the shift back in metres.
     pub offsets: [Vec3; 2],
-    /// Each hand's last kick, in the same units.
-    pub last_kicks: [Vec3; 2],
+    /// Each hand's kicks since the payload loaded.
     pub kicks: [u64; 2],
 }
 
@@ -253,7 +251,6 @@ pub fn status() -> RecoilStatus {
     let degrees = |v: Vec3| Vec3::new(v.x.to_degrees(), v.y.to_degrees(), v.z);
     RecoilStatus {
         offsets: state.hands.map(|h| degrees(h.spring.position)),
-        last_kicks: state.hands.map(|h| degrees(h.last_kick)),
         kicks: state.hands.map(|h| h.kicks),
     }
 }
@@ -265,7 +262,6 @@ const SETTLE_EPS: f32 = 1e-10;
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct HandRecoil {
     spring: Spring,
-    last_kick: Vec3,
     kicks: u64,
 }
 
@@ -280,7 +276,6 @@ static STATE: Mutex<State> = Mutex::new(State {
             position: Vec3::ZERO,
             velocity: Vec3::ZERO,
         },
-        last_kick: Vec3::ZERO,
         kicks: 0,
     }; 2],
     at: None,

@@ -53,22 +53,31 @@ pub struct TakeStatus {
     pub holstered_targets: usize,
     /// The weapons on racks near the player on the last tick.
     pub rack_targets: usize,
-    pub steals: u64,
-    /// Weapons a rack handed over, and copies asked of racks with unlimited stock.
-    pub rack_takes: u64,
-    pub rack_copies: u64,
+    pub counts: TakeCounts,
+}
+
+jc3vr_core::counters! {
+    /// The takes of weapons that have no body in the world, since the payload loaded.
+    pub struct TakeCounters => TakeCounts {
+        /// Guns taken from characters' hands or holsters.
+        steals,
+        /// Weapons a rack handed over.
+        rack_takes,
+        /// Copies asked of racks with unlimited stock.
+        rack_copies,
+    }
 }
 
 pub fn status() -> TakeStatus {
-    let (rack_takes, rack_copies) = rack::counts();
     let state = STATE.lock();
     TakeStatus {
-        steals: steal::steals(),
-        rack_takes,
-        rack_copies,
+        counts: COUNTS.snapshot(),
         ..state.status.clone()
     }
 }
+
+/// The take counts, bumped by the sources that give up their weapons.
+pub(crate) static COUNTS: TakeCounters = TakeCounters::new();
 
 /// Forget the measured grips before native placement and return its capture generation.
 pub(crate) fn begin_handle_placement() -> u64 {
@@ -325,8 +334,10 @@ static STATE: Mutex<State> = Mutex::new(State {
         held_targets: 0,
         holstered_targets: 0,
         rack_targets: 0,
-        steals: 0,
-        rack_takes: 0,
-        rack_copies: 0,
+        counts: TakeCounts {
+            steals: 0,
+            rack_takes: 0,
+            rack_copies: 0,
+        },
     },
 });

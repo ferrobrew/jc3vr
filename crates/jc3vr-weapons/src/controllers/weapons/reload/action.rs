@@ -282,7 +282,6 @@ impl State {
         if events.cycled {
             let chamber = engine.feed(weapon.address, gun.entry());
             self.records.get(weapon.key).chambers[gun.entry()] = chamber;
-            self.status.counts.racks += 1;
             self.event(format!("{} worked", kind.label()));
             // The hand moved the part already, so the gun's own clip is not played over it.
             engine.cycled(weapon.address, kind, false);

@@ -43,6 +43,7 @@ use crate::controllers::{
             rack::paired::Member,
             steal,
             steal::CharacterGun,
+            take,
             tuning::HOLD,
             world::{TargetKind, WorldTarget},
         },
@@ -223,7 +224,7 @@ pub(crate) fn take(
             let weapon = unsafe { &mut *freed.weapon };
             let slot = unsafe { pickup::take(game, hand, weapon, options(freed.source)) }
                 .map_err(SourceRefusal::Take)?;
-            steal::note_steal();
+            take::COUNTS.steals.bump();
             let from = if gun.holstered {
                 "off a character's holster"
             } else {

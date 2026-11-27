@@ -34,8 +34,6 @@ pub(crate) mod offer;
 pub(crate) mod paired;
 pub mod remote;
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use glam::Vec3;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
@@ -56,6 +54,7 @@ use crate::controllers::{
             pickup,
             pickup::TakeOptions,
             source::SourceRefusal,
+            take,
             world::{TargetKind, WorldTarget},
         },
         inventory::engine as inventory_engine,
@@ -161,7 +160,7 @@ pub(crate) fn take(
         let slot = unsafe { pickup::deliver(owner, hand, weapon, admitted, options) }
             .map_err(SourceRefusal::Take)?;
         if source != TakeSource::World {
-            RACK_TAKES.fetch_add(1, Ordering::Relaxed);
+            take::COUNTS.rack_takes.bump();
         }
         return Ok(slot);
     }
@@ -219,13 +218,6 @@ pub(crate) fn stand_down() {
     copy::clear();
     remote::clear();
 }
-
-/// The takes off racks since the payload loaded: weapons handed over, and copies asked for.
-pub(crate) fn counts() -> (u64, u64) {
-    (RACK_TAKES.load(Ordering::Relaxed), copy::count())
-}
-
-static RACK_TAKES: AtomicU64 = AtomicU64::new(0);
 
 /// Walk the weapons `owner`'s valid interaction entries offer that sit on a rack, with a strong
 /// reference holding each alive, until `visit` returns true.

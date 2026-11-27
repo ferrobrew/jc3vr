@@ -37,7 +37,7 @@
 //! reach.
 
 use std::{
-    sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     time::Instant,
 };
 
@@ -324,16 +324,6 @@ pub(crate) fn release(
     })
 }
 
-/// Count a take from a character's hands or holsters.
-pub(crate) fn note_steal() {
-    STEALS.fetch_add(1, Ordering::Relaxed);
-}
-
-/// The takes from characters' hands and holsters since the payload loaded.
-pub(crate) fn steals() -> u64 {
-    STEALS.load(Ordering::Relaxed)
-}
-
 /// The most characters noted at once.
 const MAX_SEEN: usize = 16;
 
@@ -377,7 +367,6 @@ const HOLSTER_SLOTS: [WeaponSlot; 3] = [
 static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 static PROBE: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static ARMED: AtomicBool = AtomicBool::new(false);
-static STEALS: AtomicU64 = AtomicU64::new(0);
 /// How far from the player the grapple's snatch notes characters' guns, metres, as `f32` bits:
 /// never nearer than the steal's
 /// [`notice_range_m`](crate::controllers::weapons::hold::tuning::StealTuning::notice_range_m).

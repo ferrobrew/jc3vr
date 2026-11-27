@@ -17,10 +17,7 @@
 //! [`Player::UpdateWeaponHUD`]: jc3gi::character::player::Player::UpdateWeaponHUD
 //! [`Inventory::UpdateWeaponHandling`]: jc3gi::character::inventory::Inventory::UpdateWeaponHandling
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -36,23 +33,20 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::weapons::hold::tuning::HOLD;
 
-/// The button pickup suppression's readout.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct ButtonPickupStatus {
-    /// Weapon-handling calls whose use-item input was held back, since the payload loaded.
-    pub held_back: u64,
-    /// Weapon-handling calls whose use-item input passed as the mod's own fallback click.
-    pub granted: u64,
-    /// Frames the pickup panel was kept hidden.
-    pub panel_hidden: u64,
+jc3vr_core::counters! {
+    /// The button pickup suppression's readout.
+    pub struct ButtonPickupCounters => ButtonPickupStatus {
+        /// Weapon-handling calls whose use-item input was held back, since the payload loaded.
+        held_back,
+        /// Weapon-handling calls whose use-item input passed as the mod's own fallback click.
+        granted,
+        /// Frames the pickup panel was kept hidden.
+        panel_hidden,
+    }
 }
 
 pub fn status() -> ButtonPickupStatus {
-    ButtonPickupStatus {
-        held_back: HELD_BACK.load(Ordering::Relaxed),
-        granted: GRANTED.load(Ordering::Relaxed),
-        panel_hidden: PANEL_HIDDEN.load(Ordering::Relaxed),
-    }
+    COUNTS.snapshot()
 }
 
 pub(crate) fn hook_library() -> HookLibrary {
@@ -98,19 +92,17 @@ pub unsafe fn hold_back(character: &mut Character) -> Option<HeldUseItem> {
         return None;
     }
     if granted(*GRANT.lock(), Instant::now()) {
-        GRANTED.fetch_add(1, Ordering::Relaxed);
+        COUNTS.granted.bump();
         return None;
     }
     let held = HeldUseItem(*input);
     *input = 0.0;
-    HELD_BACK.fetch_add(1, Ordering::Relaxed);
+    COUNTS.held_back.bump();
     Some(held)
 }
 
 static GRANT: Mutex<Option<Instant>> = Mutex::new(None);
-static HELD_BACK: AtomicU64 = AtomicU64::new(0);
-static GRANTED: AtomicU64 = AtomicU64::new(0);
-static PANEL_HIDDEN: AtomicU64 = AtomicU64::new(0);
+static COUNTS: ButtonPickupCounters = ButtonPickupCounters::new();
 
 /// Whether a grant made at `at` still covers `now`.
 fn granted(at: Option<Instant>, now: Instant) -> bool {
@@ -140,7 +132,7 @@ fn update_weapon_hud(player: *mut Player) {
     }
     p.m_CurrentWeaponPickupId = -1;
     p.m_CurrentWeaponPickupAmmo = -1;
-    PANEL_HIDDEN.fetch_add(1, Ordering::Relaxed);
+    COUNTS.panel_hidden.bump();
 }
 
 #[cfg(test)]

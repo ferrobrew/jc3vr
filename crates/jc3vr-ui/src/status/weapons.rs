@@ -113,7 +113,7 @@ fn takes() -> Line {
         "{} in hands near, {} holstered near, {} taken",
         take.held_targets,
         take.holstered_targets,
-        take.steals
+        take.counts.steals
     ))
 }
 
@@ -122,8 +122,8 @@ fn racks() -> Line {
     Line::ok(format_smolstr!(
         "{} near, {} taken, {} copies",
         take.rack_targets,
-        take.rack_takes,
-        take.rack_copies
+        take.counts.rack_takes,
+        take.counts.rack_copies
     ))
 }
 

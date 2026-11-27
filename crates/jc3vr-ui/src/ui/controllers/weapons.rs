@@ -246,7 +246,7 @@ pub(super) fn weapons_readout(ui: &mut Ui, readout: &WeaponsReadout) {
             .last_release
             .map_or(String::new(), |r| format!(" (last: {})", r.label()))
     ));
-    ui.label(format!("Grabs: {}", status.grabs));
+    ui.label(format!("Grabs: {}", status.events.total()));
     for event in status.events.iter().rev() {
         ui.label(format!(
             "  {} at the {}: {}",
@@ -297,8 +297,8 @@ fn hold_readout(ui: &mut Ui, h: &HoldStatus, d: &DockStatus) {
                 hand.label()
             )),
         h.handovers,
-        h.writes,
-        h.snaps
+        h.counts.writes,
+        h.counts.snaps
     ));
     ui.label(format!(
         "Direct pickups: {} · left to the game {}",
@@ -376,9 +376,9 @@ fn tick_readout(ui: &mut Ui, t: &TickStatus, e: &EmptyStatus) {
         if t.fire[1] { "pulled" } else { "up" },
         t.updates[0],
         t.updates[1],
-        t.substituted,
-        t.aim_modes,
-        t.hints,
+        t.counts.substituted,
+        t.counts.aim_modes,
+        t.counts.hints,
         e.requests_refused
     ));
 }
@@ -426,9 +426,8 @@ fn grapple_readout(ui: &mut Ui, a: &AnchorStatus, (yanks, last): (u64, Option<Ya
 
 fn grenade_readout(ui: &mut Ui, g: &GrenadeStatus) {
     ui.label(format!(
-        "Grenade · primed {} · thrown {} · gone before the throw {}{}",
-        g.primed,
-        g.thrown,
+        "Grenade · thrown {} · gone before the throw {}{}",
+        g.events.total(),
         g.gone,
         if g.weapon_seen {
             ""

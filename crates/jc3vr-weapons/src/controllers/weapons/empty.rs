@@ -38,10 +38,7 @@
 //!
 //! [`Character::StartReloadingWieldingWeapon`]: jc3gi::character::character::Character::StartReloadingWieldingWeapon
 
-use std::{
-    cell::Cell,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::cell::Cell;
 
 use detours_macro::detour;
 use jc3gi::{
@@ -61,23 +58,20 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CANCEL_RELOAD_BINDER)
 }
 
-/// The empty-weapon readout.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct EmptyStatus {
-    /// Automatic switches the game tried and the mod suppressed.
-    pub suppressed: u64,
-    /// Pulls of an empty gun at their press edge.
-    pub dry_fires: u64,
-    /// The ammunition checks' reload requests and cancels refused for the local player.
-    pub requests_refused: u64,
+jc3vr_core::counters! {
+    /// The empty-weapon readout.
+    pub struct EmptyCounters => EmptyStatus {
+        /// Automatic switches the game tried and the mod suppressed.
+        suppressed,
+        /// Pulls of an empty gun at their press edge.
+        dry_fires,
+        /// The ammunition checks' reload requests and cancels refused for the local player.
+        requests_refused,
+    }
 }
 
 pub fn status() -> EmptyStatus {
-    EmptyStatus {
-        suppressed: SUPPRESSED.load(Ordering::Relaxed),
-        dry_fires: DRY_FIRES.load(Ordering::Relaxed),
-        requests_refused: REQUESTS_REFUSED.load(Ordering::Relaxed),
-    }
+    COUNTS.snapshot()
 }
 
 /// Whether to refuse a reload start or a cancel of `character`'s reload made now: it is the local
@@ -88,7 +82,7 @@ pub(crate) fn refuses_check_request(character: *const Character) -> bool {
     let refuse =
         CHECK.get().is_some() && tick::per_hand() && local != 0 && character as usize == local;
     if refuse {
-        REQUESTS_REFUSED.fetch_add(1, Ordering::Relaxed);
+        COUNTS.requests_refused.bump();
     }
     refuse
 }
@@ -112,9 +106,7 @@ pub fn is_reloadable_dry_fire(
     requested && empty && cleared && !was_trigger_pulled
 }
 
-static SUPPRESSED: AtomicU64 = AtomicU64::new(0);
-static DRY_FIRES: AtomicU64 = AtomicU64::new(0);
-static REQUESTS_REFUSED: AtomicU64 = AtomicU64::new(0);
+static COUNTS: EmptyCounters = EmptyCounters::new();
 
 /// A marked ammunition check in progress on this thread.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -186,7 +178,7 @@ fn check_if_reload_should_be_triggered_base(
     if !dry {
         return;
     }
-    DRY_FIRES.fetch_add(1, Ordering::Relaxed);
+    COUNTS.dry_fires.bump();
     if let Some(hand) = hand {
         haptics::play(hand, Event::DryFire);
     }
@@ -209,7 +201,7 @@ fn try_to_switch_to_valid_weapon(inventory: *mut Inventory) -> bool {
     }
     // The empty-weapon switch of the player's weapon reports that no weapon qualified.
     if check.is_some() {
-        SUPPRESSED.fetch_add(1, Ordering::Relaxed);
+        COUNTS.suppressed.bump();
         return false;
     }
     TRY_TO_SWITCH_TO_VALID_WEAPON.get().unwrap().call(inventory)

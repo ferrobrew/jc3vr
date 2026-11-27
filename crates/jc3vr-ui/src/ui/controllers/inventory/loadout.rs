@@ -103,7 +103,7 @@ pub(super) fn loadout_section(ui: &mut Ui, inputs: &LoadoutInputs) {
             if inputs.live.log.is_empty() {
                 ui.label("None yet.");
             }
-            for line in &inputs.live.log {
+            for line in inputs.live.log.iter() {
                 ui.label(line);
             }
         });

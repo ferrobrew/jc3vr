@@ -7,7 +7,7 @@ use jc3vr_body::controllers::{
     grab::{GrabVolume, GripTarget},
     hands::ik,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::EventLog};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -193,9 +193,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
         candidates: 0,
         wielded: None,
         fire_blocked: false,
-        events: Vec::new(),
-        grabs: 0,
-        docks_followed: 0,
+        events: EventLog::new(),
     },
     weapon: None,
     lone: None,

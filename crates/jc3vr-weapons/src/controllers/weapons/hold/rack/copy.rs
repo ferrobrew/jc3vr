@@ -18,10 +18,7 @@
 //! into the world where it hangs, with its bodies, and waits for the line ([`collect`]). One copy
 //! is on its way at a time.
 
-use std::{
-    sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
-};
+use std::time::Instant;
 
 use jc3gi::{
     character::character::Character,
@@ -46,6 +43,7 @@ use crate::controllers::{
             pickup::TakeOptions,
             rack::{paired, paired::Member},
             source::{Freed, SourceRefusal},
+            take,
             tuning::HOLD,
         },
         inventory::{
@@ -100,7 +98,7 @@ pub(crate) unsafe fn request(
         display.PickupStart(character_object(owner))
     });
     unsafe { display.SetVisible(false, false, false) };
-    COPIES.fetch_add(1, Ordering::Relaxed);
+    take::COUNTS.rack_copies.bump();
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
@@ -231,11 +229,6 @@ pub(crate) fn clear() {
     }
 }
 
-/// The copies asked of racks since the payload loaded.
-pub(crate) fn count() -> u64 {
-    COPIES.load(Ordering::Relaxed)
-}
-
 /// A copy a rack with unlimited stock is spawning.
 struct Pending {
     member: Member,
@@ -276,7 +269,6 @@ impl Pending {
 }
 
 static PENDING: Mutex<Option<Pending>> = Mutex::new(None);
-static COPIES: AtomicU64 = AtomicU64::new(0);
 
 /// Take the staged copy `weapon` into `hand` at once, sliding from the rack, as the hand's grab
 /// asked. A take the hands can no longer make leaves the copy lying at the rack.

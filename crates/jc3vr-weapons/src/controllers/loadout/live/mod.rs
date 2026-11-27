@@ -38,6 +38,7 @@ use std::{
 };
 
 use jc3vr_body::controllers::grab::socket::Socket;
+use jc3vr_core::published::EventLog;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -74,7 +75,7 @@ pub struct LiveStatus {
     pub transitions: u64,
     pub refusals: u64,
     /// The latest transitions and refusals, the newest last.
-    pub log: Vec<String>,
+    pub log: EventLog<String, LOG_LINES>,
 }
 
 pub fn status() -> LiveStatus {
@@ -708,7 +709,7 @@ struct Live {
     challenge: Hold,
     transitions: u64,
     refusals: u64,
-    log: Vec<String>,
+    log: EventLog<String, LOG_LINES>,
 }
 
 /// A spawn reset or a load waiting for the next input tick to report the slots it left.
@@ -786,7 +787,7 @@ impl Live {
             challenge: Hold::Idle,
             transitions: 0,
             refusals: 0,
-            log: Vec::new(),
+            log: EventLog::new(),
         }
     }
 
@@ -1003,10 +1004,6 @@ impl Live {
 
     fn push(&mut self, line: String) {
         self.log.push(line);
-        if self.log.len() > LOG_LINES {
-            let excess = self.log.len() - LOG_LINES;
-            self.log.drain(..excess);
-        }
     }
 
     /// The status to publish, without the tick's snapshot.
@@ -1039,7 +1036,7 @@ static STATUS: Mutex<LiveStatus> = Mutex::new(LiveStatus {
     snapshot: None,
     transitions: 0,
     refusals: 0,
-    log: Vec::new(),
+    log: EventLog::new(),
 });
 
 #[cfg(test)]

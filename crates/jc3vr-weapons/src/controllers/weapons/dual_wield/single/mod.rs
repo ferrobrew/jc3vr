@@ -36,7 +36,7 @@ pub mod magazine;
 pub(crate) mod set;
 
 use std::{
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
@@ -55,7 +55,7 @@ use jc3vr_body::controllers::{
     held::native::gun_count,
     physics::{characters::character_object, refs::Strong},
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::Counter};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -90,12 +90,11 @@ pub struct SingleStatus {
     pub slot_single: bool,
     /// Where the slot's pair is in getting its twin.
     pub twin: TwinState,
-    /// Pairs split in two, pistols that arrived as one, pistols taken from the world as one, and
-    /// pairs left as the game's, since the payload loaded.
+    /// Pairs split in two, pistols that arrived as one, and pistols taken from the world as one,
+    /// since the payload loaded.
     pub splits: u64,
     pub ones: u64,
     pub picked: u64,
-    pub pairs: u64,
     /// The last thing that happened, for the readout.
     pub last: Option<String>,
 }
@@ -109,8 +108,7 @@ pub fn status() -> SingleStatus {
         twin: state.grants.state(),
         splits: state.splits,
         ones: state.ones,
-        picked: PICKED.load(Ordering::Relaxed),
-        pairs: state.pairs,
+        picked: PICKED.get(),
         last: state.last.clone(),
     }
 }
@@ -250,7 +248,7 @@ pub(crate) unsafe fn clamp_magazine(owner: &mut Character, weapon: &mut WeaponBa
 /// the world update.
 pub(crate) unsafe fn taken_from_world(owner: &mut Character, weapon: &mut WeaponBase) {
     unsafe { credit_stored(owner, weapon) };
-    PICKED.fetch_add(1, Ordering::Relaxed);
+    PICKED.bump();
 }
 
 /// A reset is under way: the slot's pistol comes back as one pistol, a pair, or with nothing
@@ -295,10 +293,7 @@ pub(crate) unsafe fn pistol_not_restored(owner: &mut Character, tag_hash: u32) {
         .is_some_and(|model| model.m_Flags.contains(ModelInstanceFlags::VISIBLE));
     // SAFETY: the input phase retains the slot source and serializes mutation after the read ends.
     unsafe { handle.as_mut().SetVisible(shown, false, false) };
-    note(
-        |s| s.pairs += 1,
-        "the second pistol never came back; the slot's pistol is the pair again".to_owned(),
-    );
+    remember("the second pistol never came back; the slot's pistol is the pair again".to_owned());
     tracing::warn!(target: "controllers", "single pistols: the second pistol never came back after the reset; the slot's pistol is the game's pair again");
 }
 
@@ -440,7 +435,6 @@ struct State {
     last_tick: Option<Instant>,
     splits: u64,
     ones: u64,
-    pairs: u64,
     last: Option<String>,
 }
 
@@ -452,7 +446,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     last_tick: None,
     splits: 0,
     ones: 0,
-    pairs: 0,
     last: None,
 });
 /// Whether new pistols are made single, for the detours.
@@ -460,7 +453,7 @@ static ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Set by the pickup start's detour for a rack's copy; the input tick covers the copy.
 static RACK_COPY_ASKED: AtomicBool = AtomicBool::new(false);
 /// Pistols taken from the world as one pistol since the payload loaded.
-static PICKED: AtomicU64 = AtomicU64::new(0);
+static PICKED: Counter = Counter::new();
 /// Twins that were not wanted, hidden and kept out of reach until the next reset ([`park`]).
 static PARKED: Mutex<Vec<Strong>> = Mutex::new(Vec::new());
 
@@ -504,8 +497,7 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
                 index.map(|i| state.unrestored.remove(i)).is_some()
             };
             if unrestored {
-                note(
-                    |s| s.pairs += 1,
+                remember(
                     "the second pistol never came back; the slot's pistol is the pair again"
                         .to_owned(),
                 );
@@ -534,18 +526,14 @@ unsafe fn act_on(owner: &mut Character, grant: Grant) {
                 );
             } else {
                 STATE.lock().grants.refused(object);
-                note(
-                    |s| s.pairs += 1,
+                remember(
                     "the second pistol could not be asked for; the pair stays the game's"
                         .to_owned(),
                 );
             }
         }
         Grant::Pair { why, .. } => {
-            note(
-                |s| s.pairs += 1,
-                format!("the pair stays the game's: {}", why.label()),
-            );
+            remember(format!("the pair stays the game's: {}", why.label()));
             tracing::info!(target: "controllers", why = why.label(), "single pistols: the pair stays the game's");
         }
         Grant::Cancelled { .. } => {
@@ -602,10 +590,7 @@ unsafe fn take_twin(game: &GameTick<'_>, owner: &mut Character, strong: Strong, 
     // SAFETY: this shared read ends before carry_loose can call into the inventory.
     let Some(socket) = (unsafe { twin_socket(pair_source.as_ref(), tick.dominant) }) else {
         STATE.lock().grants.refused(pair);
-        note(
-            |s| s.pairs += 1,
-            "no socket is free for the second pistol".to_owned(),
-        );
+        remember("no socket is free for the second pistol".to_owned());
         unsafe { park(owner, strong, "no socket is free for it") };
         return;
     };
@@ -717,6 +702,11 @@ fn note(count: impl FnOnce(&mut State), what: String) {
     state.last = Some(what);
 }
 
+/// Keep `what` as the last thing that happened, for the readout.
+fn remember(what: String) {
+    STATE.lock().last = Some(what);
+}
+
 /// The original native pointer in `owner`'s dual-wield slot, without a pointee borrow.
 fn slot_handle(owner: &Character) -> Option<std::ptr::NonNull<WeaponBase>> {
     slots::weapon(&owner.m_Inventory, WeaponSlot::E_SLOT_DUAL_WIELD)
@@ -769,7 +759,7 @@ fn set_visible_base(weapon: *mut WeaponBase, visible: bool, fade: bool, force: b
 /// `weapon` must be live, on the thread completing its pickup.
 pub(crate) unsafe fn designate_picked(weapon: &mut WeaponBase) {
     if unsafe { designate_if_active(weapon, "a pistol taken from the world") } {
-        PICKED.fetch_add(1, Ordering::Relaxed);
+        PICKED.bump();
     }
 }
 

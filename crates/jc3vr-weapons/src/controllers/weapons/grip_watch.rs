@@ -74,8 +74,6 @@ pub struct GripWatchStatus {
     /// Snaps and sweeps seen per hand since the payload loaded.
     pub flips: [u64; 2],
     pub sweeps: [u64; 2],
-    /// Attach-bone changes seen per hand since the payload loaded.
-    pub bone_changes: [u64; 2],
     /// The last flip or sweep: its hand and its size, degrees.
     pub last_flip: Option<(Hand, f32)>,
     /// Each hand's last grip record: whether it was pinned, and how far the animation had put the
@@ -131,18 +129,17 @@ pub(super) unsafe fn observe(weapon: &WeaponBase, class: HeftClass) {
         let Some(record) = record else {
             continue;
         };
-        if let Some(from) = events.bone_change {
-            status.bone_changes[hand.index()] += 1;
-            if state.hands[hand.index()].limiter.allow(now) {
-                tracing::info!(
-                    target: "controllers",
-                    ?hand,
-                    from = grip::bone_label(from),
-                    to = grip::bone_label(record.bone),
-                    "a held gun moved to another attach bone"
-                );
-                log_context(&context, &record, &events);
-            }
+        if let Some(from) = events.bone_change
+            && state.hands[hand.index()].limiter.allow(now)
+        {
+            tracing::info!(
+                target: "controllers",
+                ?hand,
+                from = grip::bone_label(from),
+                to = grip::bone_label(record.bone),
+                "a held gun moved to another attach bone"
+            );
+            log_context(&context, &record, &events);
         }
         let flip = events.snap.map(|c| (Kind::Snap, c));
         let sweep = events.sweep.map(|c| (Kind::Sweep, c));
@@ -428,7 +425,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         from_grab_deg: [None; 2],
         flips: [0; 2],
         sweeps: [0; 2],
-        bone_changes: [0; 2],
         last_flip: None,
         pinned: [None; 2],
         animated_deviation_deg: [None; 2],

@@ -272,7 +272,6 @@ fn runtime_ready_slide_discards_once_at_the_rear_and_feeds_without_adding_ammo()
             state.fire_hold(&tick, hand, &Reload::of(&config.weapons.reload)),
             None
         );
-        assert_eq!(state.status.counts.racks, 1);
         assert!(engine.reads > 0);
     }
 }

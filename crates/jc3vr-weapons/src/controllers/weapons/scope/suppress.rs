@@ -13,8 +13,6 @@
 //! own per-tick exit check ([`Player::UpdateAimMode`]) is followed by an exit of the mod's, through
 //! the same setter, so the overlay and the hidden body are undone as the game undoes them.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use detours_macro::detour;
 use jc3gi::character::player::{AimMode, Player};
 use jc3vr_body::controllers::scheme;
@@ -26,20 +24,18 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_AIM_MODE_BINDER)
 }
 
-/// The suppression's counts since the payload loaded, for the debug UI.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct SuppressCounters {
-    /// Requests to enter precision aim that were refused.
-    pub refused: u64,
-    /// Exits from precision aim the mod made.
-    pub exited: u64,
+jc3vr_core::counters! {
+    /// The suppression's counts since the payload loaded, for the debug UI.
+    pub struct SuppressCounters => SuppressCounts {
+        /// Requests to enter precision aim that were refused.
+        refused,
+        /// Exits from precision aim the mod made.
+        exited,
+    }
 }
 
-pub fn counters() -> SuppressCounters {
-    SuppressCounters {
-        refused: REFUSED.load(Ordering::Relaxed),
-        exited: EXITED.load(Ordering::Relaxed),
-    }
+pub fn counts() -> SuppressCounts {
+    COUNTS.snapshot()
 }
 
 /// Whether precision aim is refused now.
@@ -53,7 +49,7 @@ pub fn suppressing() -> bool {
 #[detour(address = jc3gi::character::player::Player::SetAimMode_ADDRESS)]
 fn set_aim_mode(player: *mut Player, mode: i32, add_camera_hint: bool) {
     if mode == AimMode::AIM_PRECISION as i32 && suppressing() {
-        REFUSED.fetch_add(1, Ordering::Relaxed);
+        COUNTS.refused.bump();
         return;
     }
     SET_AIM_MODE
@@ -73,7 +69,7 @@ fn update_aim_mode(player: *mut Player) {
         mode == AimMode::AIM_PRECISION as i32
     });
     if precision && suppressing() {
-        EXITED.fetch_add(1, Ordering::Relaxed);
+        COUNTS.exited.bump();
         SET_AIM_MODE
             .get()
             .unwrap()
@@ -81,5 +77,4 @@ fn update_aim_mode(player: *mut Player) {
     }
 }
 
-static REFUSED: AtomicU64 = AtomicU64::new(0);
-static EXITED: AtomicU64 = AtomicU64::new(0);
+static COUNTS: SuppressCounters = SuppressCounters::new();

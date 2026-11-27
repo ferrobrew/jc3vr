@@ -281,7 +281,6 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
             occupied: free.map(|free| !free),
         };
         let (draws, others) = socket_candidates(&ticked, &active, draw);
-        state.status.docks_followed = draws.len();
         targets.extend(draws.iter().map(|c| place.on_skeleton(c)));
         // A held weapon's reach to the back's free sockets moves off their place; a draw stays on
         // the weapon the hand sees, and the attraction below keeps the place, as it travels the

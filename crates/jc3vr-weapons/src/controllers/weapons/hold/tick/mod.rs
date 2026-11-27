@@ -39,7 +39,7 @@
 //! The detours run on the simulation's worker threads; they read only the published inputs and
 //! the armed weapons' addresses, and lock nothing but this module's short locks.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use detours_macro::detour;
 use glam::Vec3;
@@ -50,7 +50,7 @@ use jc3gi::{
     equipment::weapon::{WeaponBase, WeaponInputs, WeaponState},
     types::math::Vector3,
 };
-use jc3vr_core::published::Stamp;
+use jc3vr_core::published::{Counter, Stamp};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -85,21 +85,27 @@ pub struct TickStatus {
     pub fire: [bool; 2],
     /// The updates the mod gave each hand's armed weapon since the payload loaded.
     pub updates: [u64; 2],
-    /// The wielded weapon's updates handed its hand's fire input since the payload loaded.
-    pub substituted: u64,
-    /// The armed guns' aim modes set and the use hints put back since the payload loaded.
-    pub aim_modes: u64,
-    pub hints: u64,
+    pub counts: TickCounts,
+}
+
+jc3vr_core::counters! {
+    /// The per-hand tick's counts, since the payload loaded.
+    pub struct TickCounters => TickCounts {
+        /// The wielded weapon's updates handed its hand's fire input.
+        substituted,
+        /// The armed guns' aim modes set.
+        aim_modes,
+        /// The use hints put back.
+        hints,
+    }
 }
 
 pub fn status() -> TickStatus {
     TickStatus {
         per_hand: PER_HAND.load(Ordering::Relaxed),
         fire: Hand::BOTH.map(|h| FIRE[h.index()].load(Ordering::Relaxed)),
-        updates: Hand::BOTH.map(|h| UPDATES[h.index()].load(Ordering::Relaxed)),
-        substituted: SUBSTITUTED.load(Ordering::Relaxed),
-        aim_modes: AIM_MODES.load(Ordering::Relaxed),
-        hints: HINTS.load(Ordering::Relaxed),
+        updates: Hand::BOTH.map(|h| UPDATES[h.index()].get()),
+        counts: COUNTS.snapshot(),
     }
 }
 
@@ -158,7 +164,7 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>) {
         let weapon = unsafe { handle.as_mut() };
         if weapon.m_AimMode != mode {
             unsafe { weapon.SetAimMode(mode) };
-            AIM_MODES.fetch_add(1, Ordering::Relaxed);
+            COUNTS.aim_modes.bump();
         }
     }
     unsafe { restore_hints(owner, wielded, &stopped) };
@@ -196,7 +202,7 @@ pub unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Option<We
     let fire = FIRE[hand.index()].load(Ordering::Relaxed)
         && !reload::holds_fire(address, hand)
         && unsafe { permission::shooting_allowed(user) };
-    SUBSTITUTED.fetch_add(1, Ordering::Relaxed);
+    COUNTS.substituted.bump();
     Some(WeaponInputs {
         m_PrimaryFireInput: if fire { 1.0 } else { 0.0 },
         ..*input
@@ -206,10 +212,8 @@ pub unsafe fn substitute(weapon: &WeaponBase, input: &WeaponInputs) -> Option<We
 static PER_HAND: AtomicBool = AtomicBool::new(false);
 static FIRE: [AtomicBool; 2] = [const { AtomicBool::new(false) }; 2];
 static TARGETS: Mutex<[Option<HandTarget>; 2]> = Mutex::new([None; 2]);
-static UPDATES: [AtomicU64; 2] = [const { AtomicU64::new(0) }; 2];
-static SUBSTITUTED: AtomicU64 = AtomicU64::new(0);
-static AIM_MODES: AtomicU64 = AtomicU64::new(0);
-static HINTS: AtomicU64 = AtomicU64::new(0);
+static UPDATES: [Counter; 2] = [const { Counter::new() }; 2];
+static COUNTS: TickCounters = TickCounters::new();
 /// The use hints of the local player's weapons that stopped being used since the last input tick.
 static STOPPED: Mutex<Vec<u32>> = Mutex::new(Vec::new());
 
@@ -244,7 +248,7 @@ unsafe fn restore_hints(owner: &mut Character, wielded: Option<usize>, stopped: 
         }
         if !unsafe { camera.HasHint(hint) } {
             unsafe { camera.AddHint(hint, std::ptr::null()) };
-            HINTS.fetch_add(1, Ordering::Relaxed);
+            COUNTS.hints.bump();
             tracing::debug!(target: "controllers", hint, "per-hand tick: put back a gun's camera hint");
         }
         restored.push(hint);
@@ -300,7 +304,7 @@ unsafe fn update_armed(
         match arguments {
             UpdateArguments::Tick { inputs, aim } => {
                 update(weapon, &inputs, &aim);
-                UPDATES[hand.index()].fetch_add(1, Ordering::Relaxed);
+                UPDATES[hand.index()].bump();
             }
             UpdateArguments::Stop => unsafe { armed::release_fire(weapon) },
         }

@@ -50,7 +50,7 @@ use jc3vr_body::controllers::{
     telemetry,
     telemetry::Thrown,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::EventLog};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -182,12 +182,12 @@ pub struct GrenadeStatus {
     /// stock was full.
     pub returned: u64,
     pub returns_refused: u64,
-    pub primed: u64,
-    pub thrown: u64,
     pub gone: u64,
     pub caught_hand: Option<Hand>,
     pub catch: CatchCounts,
-    pub events: Vec<GrenadeEvent>,
+    /// The most recent throws, and how many grenades were primed and thrown since the payload
+    /// loaded.
+    pub events: EventLog<GrenadeEvent, 6>,
 }
 
 /// Whether the pouch has a grenade to give: the game's stock holds one, or the game's unlimited
@@ -663,16 +663,12 @@ pub unsafe fn render_frame(dtf: f32) {
 
 pub(super) fn report_native_throw(hand: Hand, release: Release) {
     let mut state = STATE.lock();
-    state.status.primed += 1;
-    state.status.thrown += 1;
     state.status.last_release = Some(release.velocity);
     state.thrown[hand.index()] = true;
     state.status.events.push(GrenadeEvent {
         hand: Some(hand),
         release,
     });
-    let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
-    state.status.events.drain(..excess);
 }
 
 /// Draw a grenade from the pouch: one from the game's stock, as an item in `hand`. The stock is
@@ -745,8 +741,6 @@ fn return_to_pouch(game: &GameTick<'_>, hand: Hand) {
     tracing::info!(target: "controllers", hand = hand.label(), "grenade: put the grenade back into the pouch");
 }
 
-const MAX_EVENTS: usize = 6;
-
 struct State {
     thrown: [bool; 2],
     /// The inert grenades the snatch brought to each hand, for the next input tick to take.
@@ -784,8 +778,6 @@ static STATE: Mutex<State> = Mutex::new(State {
         stock: None,
         returned: 0,
         returns_refused: 0,
-        primed: 0,
-        thrown: 0,
         gone: 0,
         caught_hand: None,
         catch: CatchCounts {
@@ -795,7 +787,7 @@ static STATE: Mutex<State> = Mutex::new(State {
             thrown: 0,
             lost: 0,
         },
-        events: Vec::new(),
+        events: EventLog::new(),
     },
     grips: [None; 2],
     next_pulse_s: 0.0,

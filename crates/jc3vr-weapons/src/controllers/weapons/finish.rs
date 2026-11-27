@@ -439,10 +439,7 @@ pub fn finish_tick(
 
     let mut state = STATE.lock();
     state.status.fire_blocked = fire_blocked;
-    state.status.grabs += events.len() as u64;
     state.status.events.extend(events);
-    let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
-    state.status.events.drain(..excess);
     drop(state);
     let sequence = frame::with_latest(|frame| frame.sequence)?;
     reload_finish.belt_eligibility(sequence, &config, source_guns, gun_owners_now())
@@ -465,9 +462,6 @@ fn explosive_holds_fire(hands: &[HandContents; 2]) -> bool {
 
 /// The fire inputs a weapon action holds back.
 const FIRE_ACTIONS: [Action; 2] = [Action::FIRE_RIGHT, Action::R2];
-
-/// How many grabs the readout keeps.
-const MAX_EVENTS: usize = 6;
 
 /// Declare what each hand holds of the weapons, for its finger pose: a gun by its grip in each hand
 /// that holds one, the foregrip, a grenade or a charge, the detonator, which is held as a gun's

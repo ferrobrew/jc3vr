@@ -11,7 +11,7 @@ use jc3vr_weapons::controllers::weapons::{
     collide,
     collide::HandCollideStatus,
     scope,
-    scope::{ScopeStatus, suppress, suppress::SuppressCounters},
+    scope::{ScopeStatus, suppress, suppress::SuppressCounts},
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
 /// Everything the scope section shows, read before the config is locked for editing.
 pub(super) struct ScopeReadout {
     status: ScopeStatus,
-    counters: SuppressCounters,
+    counts: SuppressCounts,
     suppressing: bool,
     ads: AdsStatus,
 }
@@ -31,7 +31,7 @@ impl ScopeReadout {
     pub(super) fn read() -> Self {
         Self {
             status: scope::status(),
-            counters: suppress::counters(),
+            counts: suppress::counts(),
             suppressing: suppress::suppressing(),
             ads: ads::status(),
         }
@@ -41,7 +41,7 @@ impl ScopeReadout {
 pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
     let ScopeReadout {
         status,
-        counters,
+        counts,
         suppressing,
         ads,
     } = readout;
@@ -75,8 +75,8 @@ pub(super) fn scope_readout(ui: &mut Ui, readout: &ScopeReadout) {
         } else {
             "allowed"
         },
-        counters.refused,
-        counters.exited
+        counts.refused,
+        counts.exited
     ));
     match &status.scope {
         Some(s) => ui.label(format!(

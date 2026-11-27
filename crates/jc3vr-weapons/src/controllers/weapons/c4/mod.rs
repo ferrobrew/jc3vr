@@ -102,7 +102,7 @@ use jc3vr_body::controllers::{
     physics::local_player::LocalPlayer,
     scheme,
 };
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_core::{game_tick::GameTick, published::EventLog};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Event,
@@ -206,7 +206,7 @@ pub struct C4Status {
     /// Placed charges taken back into a hand.
     pub taken: u64,
     /// The most recent throw steps, newest last.
-    pub events: Vec<C4Event>,
+    pub events: EventLog<C4Event, 6>,
     /// Whether a detonation request waits for the weapon.
     pub detonation_pending: bool,
     /// Whether the last detonation's charges are still live: it started, and they have neither all
@@ -576,9 +576,6 @@ pub fn observe_hands(grips: [Option<Pose>; 2]) {
     }
 }
 
-/// How many throw steps the readout keeps.
-const MAX_EVENTS: usize = 6;
-
 /// A started detonation whose charges are still live.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct InFlight {
@@ -781,7 +778,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         detonator_presses: 0,
         idle_presses: 0,
         taken: 0,
-        events: Vec::new(),
+        events: EventLog::new(),
         detonation_pending: false,
         detonation_in_flight: false,
         detonations: 0,
@@ -825,8 +822,6 @@ fn report(state: &mut State, hand: Option<Hand>, outcome: Outcome) {
         _ => {}
     }
     state.status.events.push(C4Event { hand, outcome });
-    let excess = state.status.events.len().saturating_sub(MAX_EVENTS);
-    state.status.events.drain(..excess);
 }
 
 /// The C4 weapon's serial update from its user: the throw's action and the detonation request

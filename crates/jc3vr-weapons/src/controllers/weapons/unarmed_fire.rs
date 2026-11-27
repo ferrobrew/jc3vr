@@ -9,10 +9,9 @@
 //!
 //! [`Inventory::UpdateWeaponHandling`]: jc3gi::character::inventory::Inventory::UpdateWeaponHandling
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use jc3gi::character::character::{Character, WeaponInput};
 use jc3vr_body::controllers::scheme;
+use jc3vr_core::published::Counter;
 
 /// The draw-on-fire suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -24,7 +23,7 @@ pub struct UnarmedFireStatus {
 
 pub fn status() -> UnarmedFireStatus {
     UnarmedFireStatus {
-        held_back: HELD_BACK.load(Ordering::Relaxed),
+        held_back: HELD_BACK.get(),
     }
 }
 
@@ -73,7 +72,7 @@ pub unsafe fn hold_back(character: &mut Character, holstering: bool) -> Option<H
     }
     inputs[WeaponInput::E_INPUT_MAIN_WEAPON as usize] = 0.0;
     inputs[WeaponInput::E_INPUT_PRECISION_AIM as usize] = 0.0;
-    HELD_BACK.fetch_add(1, Ordering::Relaxed);
+    HELD_BACK.bump();
     Some(held)
 }
 
@@ -83,7 +82,7 @@ pub fn would_draw(wielding: bool, holstering: bool, fire: f32, precision_aim: f3
     (fire > 0.0 && (!wielding || holstering)) || (precision_aim > 0.0 && !wielding)
 }
 
-static HELD_BACK: AtomicU64 = AtomicU64::new(0);
+static HELD_BACK: Counter = Counter::new();
 
 #[cfg(test)]
 mod tests {

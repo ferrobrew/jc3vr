@@ -2,6 +2,7 @@
 //! bindings, and what the debug UI reads back.
 
 use jc3vr_body::controllers::grab::{GrabVolume, GripTarget};
+use jc3vr_core::published::EventLog;
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
@@ -130,9 +131,6 @@ pub struct WeaponsStatus {
     pub wielded: Option<WieldedReadout>,
     /// Whether the fire inputs were held back for a weapon action on the last tick.
     pub fire_blocked: bool,
-    /// The most recent grabs, newest last.
-    pub events: Vec<GrabEvent>,
-    pub grabs: u64,
-    /// How many sockets' volumes sat on their weapons on the last tick.
-    pub docks_followed: usize,
+    /// The most recent grabs, and how many there were since the payload loaded.
+    pub events: EventLog<GrabEvent, 6>,
 }

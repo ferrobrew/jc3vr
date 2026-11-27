@@ -74,7 +74,7 @@ pub mod world;
 
 use std::{
     ptr::NonNull,
-    sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
     time::Instant,
 };
 
@@ -149,19 +149,25 @@ pub struct HoldStatus {
     pub handovers: u64,
     pub pickups: u64,
     pub pickup_fallbacks: u64,
-    /// Why the last thing the hands tried with a weapon did not happen ([`last_refusal`]).
-    pub last_refusal: Option<String>,
     /// Table writes and snapped placements since the payload loaded.
-    pub writes: u64,
-    pub snaps: u64,
+    pub counts: HoldCounts,
     /// The takes of weapons that have no body in the world.
     pub take: take::TakeStatus,
+}
+
+jc3vr_core::counters! {
+    /// The attach table's counts.
+    pub struct HoldCounters => HoldCounts {
+        /// Writes of the attach table.
+        writes,
+        /// Placements snapped past the render interpolation.
+        snaps,
+    }
 }
 
 pub fn status() -> HoldStatus {
     // Read before the tick's lock: the status rows take one lock at a time.
     let take = take::status();
-    let last_refusal = last_refusal();
     let pending = live::pending().and_then(|p| Some((p.hand, by_a_grab(p.expect)?)));
     let wielded = WIELDED.load(Ordering::Relaxed);
     let holder = owned_holder(wielded);
@@ -175,9 +181,7 @@ pub fn status() -> HoldStatus {
         handovers: tick.handovers,
         pickups: tick.pickups,
         pickup_fallbacks: tick.pickup_fallbacks,
-        last_refusal,
-        writes: WRITES.load(Ordering::Relaxed),
-        snaps: SNAPS.load(Ordering::Relaxed),
+        counts: COUNTS.snapshot(),
         take,
     }
 }
@@ -354,7 +358,7 @@ pub(crate) unsafe fn apply(weapon: &mut WeaponBase, snap: bool) {
             .and_then(|&bone| late::attach_hand(bone));
     }
     if wrote {
-        WRITES.fetch_add(1, Ordering::Relaxed);
+        COUNTS.writes.bump();
     }
     if !snap {
         return;
@@ -378,7 +382,7 @@ pub(crate) unsafe fn apply(weapon: &mut WeaponBase, snap: bool) {
             && let Ok(index) = i32::try_from(index)
         {
             unsafe { weapon.SkipRenderInterpolationForOneFrame(index) };
-            SNAPS.fetch_add(1, Ordering::Relaxed);
+            COUNTS.snaps.bump();
         }
     }
 }
@@ -409,18 +413,12 @@ pub(crate) fn record_pickup(refusal: Option<String>) {
     }
 }
 
-/// Note why the last thing the hands tried with a weapon (a pickup, a take, a draw, a dock, or a
-/// drop) did not happen, for the readout and the log. Each call answers one attempt by the player,
-/// so it logs at info, where the log explains a grab that did nothing.
+/// Log why the last thing the hands tried with a weapon (a pickup, a take, a draw, a dock, or a
+/// drop) did not happen. Each call answers one attempt by the player, so it logs at info, where the
+/// log explains a grab that did nothing.
 pub(crate) fn refused(why: impl ToString) {
     let why = why.to_string();
     tracing::info!(target: "controllers", why = %why, "hold: refused: {why}");
-    *LAST_REFUSAL.lock() = Some(why);
-}
-
-/// Why the last thing the hands tried with a weapon did not happen.
-pub fn last_refusal() -> Option<String> {
-    LAST_REFUSAL.lock().clone()
 }
 
 /// Log a weapon coming into a hand, and arm the grip watch when a grab put it there.
@@ -459,13 +457,11 @@ static TICK: Mutex<Tick> = Mutex::new(Tick {
     pickup_fallbacks: 0,
 });
 static PLACED: Mutex<Option<Placed>> = Mutex::new(None);
-static LAST_REFUSAL: Mutex<Option<String>> = Mutex::new(None);
 /// Whether the last input tick had the hold on.
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// The weapon the game wielded at the last input tick, or zero.
 static WIELDED: AtomicUsize = AtomicUsize::new(0);
-static WRITES: AtomicU64 = AtomicU64::new(0);
-static SNAPS: AtomicU64 = AtomicU64::new(0);
+static COUNTS: HoldCounters = HoldCounters::new();
 
 const fn is_wielded(state: WeaponState) -> bool {
     matches!(

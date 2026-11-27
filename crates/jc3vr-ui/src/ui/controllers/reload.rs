@@ -104,7 +104,7 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
                 r.work.worked
             ),
         });
-        for event in &r.events {
+        for event in r.events.iter() {
             ui.label(format!("  {event}"));
         }
     });

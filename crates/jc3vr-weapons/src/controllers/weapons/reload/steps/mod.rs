@@ -26,8 +26,8 @@ use crate::controllers::{
         pouch_models,
         regions::{action_back, action_volume},
         reload::{
-            BeltFinish, BeltGate, FinishInputs, GunTick, HandBelt, MAX_EVENTS, State, Tick,
-            WeaponReadout, WeaponTick,
+            BeltFinish, BeltGate, FinishInputs, GunTick, HandBelt, State, Tick, WeaponReadout,
+            WeaponTick,
             action::locks_back,
             ammo,
             ammo::{NativeAmmo, Observation},
@@ -979,8 +979,6 @@ impl State {
     pub(super) fn event(&mut self, event: String) {
         tracing::info!(target: "controllers", "reload: {event}");
         self.status.events.push(event);
-        let excess = self.status.events.len().saturating_sub(MAX_EVENTS);
-        self.status.events.drain(..excess);
     }
 
     pub(super) fn clear_tick(&mut self) {
