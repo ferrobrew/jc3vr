@@ -12,8 +12,18 @@ use crate::controllers::{
         foregrip, grenade,
         hold::{armed, tick},
         reload,
+        state::last_wielded,
     },
 };
+
+/// What each hand holds at the call, by [`Hand::index`], with the wielded weapon as the last input
+/// tick began. Unlike the record the input tick publishes at its end
+/// ([`hands`](crate::controllers::loadout::contents::hands)), it follows the beacon and the C4 throw
+/// as their weapons' updates move them between ticks, and keeps the gun hands through a
+/// stand-down. The brace is the engaged foregrip hold only, not one fading out after a release.
+pub fn now() -> [HandContents; 2] {
+    sample(last_wielded().0.as_ref())
+}
 
 /// What each hand holds now, by [`Hand::index`], with `wielded` the wielded weapon as the caller
 /// read it.

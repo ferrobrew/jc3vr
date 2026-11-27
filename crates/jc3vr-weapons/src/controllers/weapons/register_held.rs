@@ -16,7 +16,6 @@ use jc3vr_input::frame::Hand;
 
 use crate::controllers::{
     loadout::{ItemKind, live},
-    weapons,
     weapons::{
         c4, collide, contents,
         dual_wield::single,
@@ -24,6 +23,7 @@ use crate::controllers::{
         hold::{act, armed, rack::paired::stack_offset, take},
         regions, reload,
         reload::{knock, zones},
+        state::last_wielded,
     },
 };
 
@@ -61,13 +61,11 @@ pub fn register() {
     });
 }
 
-/// What each hand holds, sampled now, with the wielded weapon as the last tick began: the readers
-/// below the weapon handling read between ticks, after the simulation's C4 update has moved the
-/// throw, and keep the gun hands through a stand-down, which the record published at the end of
-/// the input tick does neither of.
+/// What each hand holds, sampled now ([`contents::now`]): the readers below the weapon handling
+/// read between ticks, after the simulation's C4 update has moved the throw, and keep the gun hands
+/// through a stand-down, which the record published at the end of the input tick does neither of.
 fn hand_contents() -> [HeldContents; 2] {
-    let wielded = weapons::status().wielded.map(|readout| readout.weapon);
-    contents::sample(wielded.as_ref()).map(|hand| HeldContents {
+    contents::now().map(|hand| HeldContents {
         item: hand.item.map(held_item),
         wielded: hand.wielded,
         armed: hand.armed,
@@ -94,19 +92,16 @@ fn held_item(kind: ItemKind) -> HeldItem {
 
 /// The hands holding a gun of the wielded weapon, from the weapon handling's last tick.
 fn wielded_gun_hands() -> [bool; 2] {
-    let status = weapons::status();
-    status
-        .wielded
-        .filter(|_| status.active)
-        .map_or([false; 2], |w| w.weapon.wielded.hands)
+    let (wielded, active) = last_wielded();
+    wielded
+        .filter(|_| active)
+        .map_or([false; 2], |w| w.wielded.hands)
 }
 
 /// The hands holding a gun of the wielded weapon, from the weapon handling's last tick, whether or
 /// not it is active.
 fn last_wielded_hands() -> [bool; 2] {
-    weapons::status()
-        .wielded
-        .map_or([false; 2], |w| w.weapon.wielded.hands)
+    last_wielded().0.map_or([false; 2], |w| w.wielded.hands)
 }
 
 /// The holding hand of the engaged two-hand grip.

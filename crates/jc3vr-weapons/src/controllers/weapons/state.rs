@@ -37,6 +37,16 @@ pub fn status() -> WeaponsStatus {
     STATE.lock().status.clone()
 }
 
+/// The wielded weapon as the last input tick began, and whether that tick ran the weapon handling.
+/// A stand-down keeps the weapon and clears the flag.
+pub(crate) fn last_wielded() -> (Option<HeldWeapon>, bool) {
+    let state = STATE.lock();
+    (
+        state.status.wielded.map(|readout| readout.weapon),
+        state.status.active,
+    )
+}
+
 /// Pause for a game menu, the map, or the debug panel, which skips the weapon handling's tick
 /// halves but keeps what the hands hold: physical magazine work is cancelled, and the grip release
 /// stands down, so that the first tick back ends a gun's hold with the grip as it is then. The
