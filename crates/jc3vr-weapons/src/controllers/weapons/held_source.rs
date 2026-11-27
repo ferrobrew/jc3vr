@@ -1,15 +1,13 @@
-//! Registers the weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]): the
-//! query functions behind each hand's contents, armed weapon, wielded gun, C4 detonate act, and long
+//! The weapon handling's side of the held-item seam ([`jc3vr_body::controllers::held`]), which
+//! [`crate::controllers::weapons::register_body`] registers: the query functions behind each hand's
+//! contents, armed weapon, wielded gun, C4 detonate act, and long
 //! gun, the steal offer, rack and slide state, the reload's zones, and the rigid grip's placement
 //! reads.
 
 use glam::Vec3;
-use jc3vr_body::{
-    contributions::BodyContributions,
-    controllers::held::{
-        HeldContents, HeldItem, HeldSource, PlacementSource,
-        zones::{GunZones, KnockZone, ReloadViews, ZoneAxis},
-    },
+use jc3vr_body::controllers::held::{
+    HeldContents, HeldItem, HeldSource, PlacementSource,
+    zones::{GunZones, KnockZone, ReloadViews, ZoneAxis},
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
@@ -27,9 +25,9 @@ use crate::controllers::{
     },
 };
 
-/// Fill the held-item source of `body`; the install registers it before any hook is enabled.
-pub fn register(body: &mut BodyContributions) {
-    body.held = Some(HeldSource {
+/// The weapon handling's held-item source.
+pub(crate) fn source() -> HeldSource {
+    HeldSource {
         armed_hand_of: armed::hand_of,
         armed_weapon: armed::weapon_of,
         owned_holder: hold::owned_holder,
@@ -50,7 +48,7 @@ pub fn register(body: &mut BodyContributions) {
             body_deviation: jc3vr_body::controllers::held::guns::deviation,
             carried_for: armed::carried_for,
         },
-    });
+    }
 }
 
 /// What each hand holds, sampled now ([`contents::now`]): the readers below the weapon handling
