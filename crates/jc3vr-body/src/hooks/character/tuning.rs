@@ -38,10 +38,10 @@ pub struct NeckTuning {
     /// real head only turns so far before the neck must follow, and with the hidden head bone
     /// carrying the whole yaw, leaving the neck animated knots the visible neck skinning once the
     /// head turns past it.
-    pub twist_start_deg: f32,
+    pub(crate) twist_start_deg: f32,
     /// The most yaw the neck takes, degrees: the excess beyond
     /// [`twist_start_deg`](Self::twist_start_deg) goes to the neck up to this cap.
-    pub twist_max_deg: f32,
+    pub(crate) twist_max_deg: f32,
 }
 
 #[cfg(test)]

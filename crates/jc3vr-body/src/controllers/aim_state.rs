@@ -208,7 +208,7 @@ impl StateBit {
 /// The neutral aim point: `distance` ahead of `head` along the body's horizontal forward. A
 /// forward with no horizontal component (the body pitched straight up or down, which the on-foot
 /// body never is) is used as it is.
-pub fn neutral_aim_point(head: Vec3, body_forward: Vec3, distance: f32) -> Vec3 {
+pub(crate) fn neutral_aim_point(head: Vec3, body_forward: Vec3, distance: f32) -> Vec3 {
     let flat = Vec3::new(body_forward.x, 0.0, body_forward.z);
     let forward = flat.try_normalize().unwrap_or(body_forward);
     head + forward * distance
@@ -216,7 +216,7 @@ pub fn neutral_aim_point(head: Vec3, body_forward: Vec3, distance: f32) -> Vec3 
 
 /// The two automatic-holster acts the mental-state cuts watch.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum WatchedAct {
+pub(crate) enum WatchedAct {
     /// `ACT_ON_UNEQUIP_WEAPON_SLOW`, queued only by the mental state's decay to relaxed.
     UnequipSlow,
     /// `UB_ACT_HOLSTER`, queued by the weapon handling's relaxed branch, which is also how the
@@ -226,7 +226,7 @@ pub enum WatchedAct {
 
 /// What the `QueueAct` detour does with a watched act for the local player.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ActVerdict {
+pub(crate) enum ActVerdict {
     Pass,
     /// Passed as a deliberate holster.
     PassDeliberate,
@@ -237,7 +237,11 @@ pub enum ActVerdict {
 /// player's weapon-handling update with the cuts active, and `deliberate` whether a deliberate
 /// holster is pending. A `UB_ACT_HOLSTER` from anywhere else (the unequip state task, a script) is
 /// not the relaxed branch and passes.
-pub fn act_verdict(act: WatchedAct, in_weapon_handling: bool, deliberate: bool) -> ActVerdict {
+pub(crate) fn act_verdict(
+    act: WatchedAct,
+    in_weapon_handling: bool,
+    deliberate: bool,
+) -> ActVerdict {
     match act {
         WatchedAct::UnequipSlow => ActVerdict::Swallow,
         WatchedAct::Holster if !in_weapon_handling => ActVerdict::Pass,
@@ -251,7 +255,7 @@ pub fn act_verdict(act: WatchedAct, in_weapon_handling: bool, deliberate: bool) 
 /// act, so it lapses once a draw or holster plays (the act took, or a draw replaced it) or the
 /// mental state leaves relaxed (weapon input brought combat back, and the game would not holster
 /// either).
-pub fn deliberate_holster_holds(relaxed: bool, drawing_or_holstering: bool) -> bool {
+pub(crate) fn deliberate_holster_holds(relaxed: bool, drawing_or_holstering: bool) -> bool {
     relaxed && !drawing_or_holstering
 }
 

@@ -123,7 +123,7 @@ pub fn apply(pose: &mut RigPose, rig: &Rig, side: Side, turn: ClavicleTurn) {
 
 /// Eases both clavicles' turns toward the wanted ones.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ClavicleFollower {
+pub(crate) struct ClavicleFollower {
     turns: [ClavicleTurn; 2],
 }
 
@@ -156,7 +156,7 @@ impl ClavicleFollower {
 }
 
 /// Where the shoulder joint on `side` is in `pose`: carried by its clavicle.
-pub fn shoulder_joint(pose: &RigPose, rig: &Rig, side: Side) -> Vec3 {
+pub(crate) fn shoulder_joint(pose: &RigPose, rig: &Rig, side: Side) -> Vec3 {
     let clavicle = pose.get(arm_bones(side).0);
     clavicle.translation + clavicle.rotation * rig.arm(side).shoulder_local
 }

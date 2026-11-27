@@ -82,7 +82,7 @@ pub fn blend(inputs: &BlendInputs, config: &FingerTuning) -> HandShape {
 }
 
 /// The pose's share a hold of `firmness` asks for at the grip's `squeeze`, `0..=1`.
-pub fn firmness_share(firmness: Firmness, squeeze: f32, config: &GripPoseTuning) -> f32 {
+pub(crate) fn firmness_share(firmness: Firmness, squeeze: f32, config: &GripPoseTuning) -> f32 {
     match firmness {
         Firmness::Held => 1.0,
         Firmness::Grip => {
@@ -96,7 +96,7 @@ pub fn firmness_share(firmness: Firmness, squeeze: f32, config: &GripPoseTuning)
 
 /// Follow the share `target` from `previous` over `dt` seconds with the time constant
 /// `time_constant_s`.
-pub fn follow_share(previous: f32, target: f32, dt: f32, time_constant_s: f32) -> f32 {
+pub(crate) fn follow_share(previous: f32, target: f32, dt: f32, time_constant_s: f32) -> f32 {
     previous + (target - previous) * follow_factor(dt, time_constant_s)
 }
 

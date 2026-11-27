@@ -374,7 +374,7 @@ impl Category {
 }
 
 /// The name of the grab volume on `socket`. The sides are the body's own, not the dominant hand's.
-pub const fn socket_label(socket: Socket) -> &'static str {
+pub(crate) const fn socket_label(socket: Socket) -> &'static str {
     match socket {
         Socket::Hip(Hand::Left) => "left hip socket",
         Socket::Hip(Hand::Right) => "right hip socket",

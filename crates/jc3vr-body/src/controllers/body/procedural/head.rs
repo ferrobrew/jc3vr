@@ -79,7 +79,7 @@ pub(super) fn read(world: &Mat4, scale: f32) -> ModelHead {
 /// [`neck_pivot_offset`]. A look down turns the eyes about the pivot, so aiming the head bone at
 /// the published head would drop it below the shoulders; the pivot does not move, and the head bone's
 /// orientation, which follows the HMD, is what puts the drawn eyes back in front of it.
-pub fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
+pub(crate) fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
     let frame = character_rotation * animation_rotation(true);
     let head = frame.inverse() * query().position;
     let published = frame * head_bone_target(head, body_relative_rotation(), scale);
@@ -96,7 +96,7 @@ pub fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
 /// The camera's neck pivot: the eye point `eye` the camera renders from plus [`EYES_TO_NECK`]
 /// turned by the head's world orientation `orientation`, at the world scale `scale`. The rig reads
 /// the player's neck at the same point, from the same eyes and the same turn.
-pub fn camera_neck_pivot(eye: Vec3, orientation: Quat, scale: f32) -> Vec3 {
+pub(crate) fn camera_neck_pivot(eye: Vec3, orientation: Quat, scale: f32) -> Vec3 {
     let pivot = eye + orientation.normalize() * EYES_TO_NECK * valid_scale(scale);
     if pivot.is_finite() { pivot } else { eye }
 }
@@ -113,7 +113,7 @@ fn pivot_weight() -> f32 {
 
 /// [`head_bone_world`] in body axes without a synthetic animation frame. `head_rotation` is the
 /// tracking rotation against those axes, at the world scale `scale`.
-pub fn head_bone_target(head: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
+pub(crate) fn head_bone_target(head: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
     head + neck_pivot_offset(head_rotation, scale)
 }
 
@@ -121,7 +121,7 @@ pub fn head_bone_target(head: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
 /// `head_rotation` from neutral against the body, at the world scale `scale`: what to add to the
 /// published head to have the pivot. Zero for a neutral head, since the anchor already is the
 /// pivot then.
-pub fn neck_pivot_offset(head_rotation: Quat, scale: f32) -> Vec3 {
+pub(crate) fn neck_pivot_offset(head_rotation: Quat, scale: f32) -> Vec3 {
     let offset = (head_rotation.normalize() * EYES_TO_NECK - EYES_TO_NECK) * valid_scale(scale);
     if offset.is_finite() {
         offset

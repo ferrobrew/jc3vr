@@ -87,7 +87,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// Turn `hand`'s wrist and grip about its grip so that the grip's pointing axis (-Z) runs along
 /// `line`, a direction in the hand's frame, by `weight` (`0..=1`). The aim pose stays where the
 /// controller points (see the module docs). The hand is returned as it is for a degenerate line.
-pub fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
+pub(crate) fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
     let weight = weight.clamp(0.0, 1.0);
     let (Some(line), Some(axis)) = (
         line.try_normalize(),
@@ -114,7 +114,7 @@ pub fn hold_line(hand: CockpitHand, line: Vec3, weight: f32) -> CockpitHand {
 /// The swing impulse for a grapple hand displaced by `displacement` (horizontal, body frame,
 /// metres) from where it held the line when the hang began: against the displacement, from zero at
 /// the deadzone to `full_impulse` at the full displacement, and zero inside the deadzone.
-pub fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
+pub(crate) fn swing_impulse(displacement: Vec2, full_impulse: f32) -> Vec2 {
     let tuning = &HANDS.get().anchor;
     let length = displacement.length();
     let span = tuning.swing_full_m - tuning.swing_deadzone_m;

@@ -75,15 +75,15 @@ impl Tuning for GrabTuning {
 pub struct GrabReachTuning {
     /// How long after closing a fist still takes what the hand comes to however fast it moves,
     /// seconds: a hand that closes a moment before it reaches a handle still takes the handle.
-    pub fist_window_s: f32,
+    pub(crate) fist_window_s: f32,
     /// The fastest a hand may move for a closed fist to take what it comes to, metres per second at
     /// the player's scale: a hand laid on a handle is slower, and a punch is far faster.
-    pub slow_hand_mps: f32,
+    pub(crate) slow_hand_mps: f32,
     /// How long a hand that leaves a body slot's reach still takes from it, seconds.
-    pub recall_s: f32,
+    pub(crate) recall_s: f32,
     /// How far below the drawn hand the controller must be for the low reach to reach from it,
     /// metres: more than the drawn hand strays from its controller in ordinary reaches.
-    pub low_reach_m: f32,
+    pub(crate) low_reach_m: f32,
 }
 
 /// The grab markers ([`markers`](crate::controllers::grab::markers)). Opacities and ring
@@ -94,32 +94,32 @@ pub struct MarkersTuning {
     /// The size of the marker on something in the world, metres at the player's scale.
     pub world_size_m: f32,
     /// The smallest a marker is drawn, metres.
-    pub min_size_m: f32,
+    pub(crate) min_size_m: f32,
     /// The opacity of a marker's part behind the world.
     pub occluded_alpha: f32,
     /// The opacity of a marker no hand is within reach of: faint, so that it shows where the target
     /// is without drawing the eye.
-    pub idle_alpha: f32,
+    pub(crate) idle_alpha: f32,
     /// The opacity of a marker a hand is within reach of.
-    pub reach_alpha: f32,
+    pub(crate) reach_alpha: f32,
     /// The opacity of the marker a squeeze would take.
-    pub chosen_alpha: f32,
+    pub(crate) chosen_alpha: f32,
     /// The opacity of a marker a hand holds.
-    pub held_alpha: f32,
+    pub(crate) held_alpha: f32,
     /// How much larger the marker a squeeze would take is drawn.
-    pub chosen_scale: f32,
+    pub(crate) chosen_scale: f32,
     /// A ring marker's thickness.
     pub ring_thickness: f32,
     /// A ring marker's thickness while chosen or held.
-    pub chosen_thickness: f32,
+    pub(crate) chosen_thickness: f32,
     /// The thickness of the ring round a handle's dot while a hand reaches or holds it.
     pub handle_ring_thickness: f32,
     /// The thickness of a button's ring while a hand reaches it.
-    pub button_ring_thickness: f32,
+    pub(crate) button_ring_thickness: f32,
     /// The share of a handle's marker its centre dot spans.
-    pub handle_dot_share: f32,
+    pub(crate) handle_dot_share: f32,
     /// The share of its size a no-fit marker's disc spans.
-    pub no_fit_share: f32,
+    pub(crate) no_fit_share: f32,
     pub colours: MarkerColours,
 }
 

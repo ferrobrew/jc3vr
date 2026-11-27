@@ -41,18 +41,18 @@ use jc3vr_input::frame::Hand;
 
 /// Which parts of the `SECONDARY` pass to switch off for a hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct SecondaryParts {
+pub(crate) struct SecondaryParts {
     /// The wrist's own target (the grapple fire arm and the parachute handles).
-    pub wrist_target: bool,
+    pub(crate) wrist_target: bool,
     /// The weapon off-hand grip, when it targets this hand.
-    pub weapon_grip: bool,
+    pub(crate) weapon_grip: bool,
 }
 
 /// What the switch did for a hand this frame.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct Switched {
-    pub wrist_target: bool,
-    pub weapon_grip: bool,
+pub(crate) struct Switched {
+    pub(crate) wrist_target: bool,
+    pub(crate) weapon_grip: bool,
 }
 
 /// Switch `parts` of the `SECONDARY` pass off for `hand` this frame.
@@ -61,7 +61,7 @@ pub struct Switched {
 ///
 /// `blackboard` must be the character's live blackboard, called from the `SECONDARY` pass's entry,
 /// after this frame's keys were written.
-pub unsafe fn switch_off(
+pub(crate) unsafe fn switch_off(
     blackboard: &mut ObjectBlackboard,
     hand: Hand,
     parts: SecondaryParts,
@@ -84,7 +84,7 @@ pub unsafe fn switch_off(
 /// Zero the current translation reach of `hand`'s wrist effector, so that the `SECONDARY` pass
 /// drops any stale target it holds for the wrist and its solve leaves the wrist alone (see the
 /// module docs).
-pub fn release_wrist(hik: &mut HumanIK, hand: Hand) {
+pub(crate) fn release_wrist(hik: &mut HumanIK, hand: Hand) {
     let effector = match hand {
         Hand::Left => Effector::LEFT_WRIST,
         Hand::Right => Effector::RIGHT_WRIST,
@@ -100,7 +100,7 @@ pub fn release_wrist(hik: &mut HumanIK, hand: Hand) {
 /// # Safety
 ///
 /// As [`switch_off`].
-pub unsafe fn weapon_grip_target(blackboard: &mut ObjectBlackboard) -> Option<Hand> {
+pub(crate) unsafe fn weapon_grip_target(blackboard: &mut ObjectBlackboard) -> Option<Hand> {
     let mut weight = 0.0f32;
     let present =
         unsafe { blackboard.GetFloat(ObjectBlackboard::OFFHAND_IK_WEIGHT_ID, &mut weight) };
@@ -116,7 +116,7 @@ pub unsafe fn weapon_grip_target(blackboard: &mut ObjectBlackboard) -> Option<Ha
 /// # Safety
 ///
 /// As [`switch_off`].
-pub unsafe fn hold_wrist(
+pub(crate) unsafe fn hold_wrist(
     blackboard: &mut ObjectBlackboard,
     hand: Hand,
     position: Vec3,

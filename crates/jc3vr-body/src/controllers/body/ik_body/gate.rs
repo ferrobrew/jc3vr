@@ -165,12 +165,12 @@ pub(crate) struct GateState {
     pub rate: StepRate,
     pub hold: Option<Hold>,
     /// The feet's last world targets, faded out with the feet's weight after the idle.
-    pub last_feet: [Option<FootPose>; 2],
+    pub(crate) last_feet: [Option<FootPose>; 2],
     pub targets: Option<Targets>,
     pub status: IkStatus,
     /// The state and reason last logged.
     pub logged: Option<(IkState, Option<StandDown>)>,
-    pub in_idle: bool,
+    pub(crate) in_idle: bool,
     pub episode: Episode,
     pub climb: ClimbFeet,
     pub epoch: u64,
@@ -498,15 +498,15 @@ pub(crate) struct GateInput<'a> {
     pub rig: &'a Rig,
     pub case: Case,
     /// Whether the active state is one of the standing idles.
-    pub idle_state: bool,
+    pub(crate) idle_state: bool,
     pub locomotion: LocomotionFrame,
     /// The player's neck pivot in Rico's model space: where the head bone goes.
-    pub model_neck: Vec3,
+    pub(crate) model_neck: Vec3,
     /// The character's world transform.
     pub world: Mat4,
     /// The weight the procedural torso is headed for: the seeded pose is written only while the
     /// torso is procedural, so the IK hands back with it.
-    pub torso_target: f32,
+    pub(crate) torso_target: f32,
     pub config: IkBodyConfig,
     pub dt: f32,
     pub now: Stamp,
@@ -518,7 +518,7 @@ pub(crate) struct Prepared {
     /// The posture to solve the torso on, while the IK has any weight.
     pub pose: Option<RigPose>,
     /// The planted feet's weight against the clip's: the square stance yields by it.
-    pub feet_weight: f32,
+    pub(crate) feet_weight: f32,
 }
 
 /// The targets [`prepare`] leaves for the effectors, in model space.
@@ -530,12 +530,12 @@ pub(crate) struct Targets {
     /// The knees' hints.
     pub knees: [Vec3; 2],
     /// The airborne legs' ankles, while in the air, and the hanging legs' while climbing.
-    pub air_ankles: Option<[Vec3; 2]>,
+    pub(crate) air_ankles: Option<[Vec3; 2]>,
     /// The braced feet's targets while climbing, with each brace's share against the hanging leg.
     pub braces: [Option<ModelBrace>; 2],
     /// The toe's height over the ankle's ground, and its reach ahead of the ankle, metres.
     pub toe_height_m: f32,
-    pub toe_ahead_m: f32,
+    pub(crate) toe_ahead_m: f32,
     /// The ankle's height over the ground, metres.
     pub ankle_height_m: f32,
 }

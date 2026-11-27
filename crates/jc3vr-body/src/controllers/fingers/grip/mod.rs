@@ -83,7 +83,7 @@ impl GripSource {
     }
 
     /// How firmly the source's hold holds.
-    pub const fn firmness(self) -> Firmness {
+    pub(crate) const fn firmness(self) -> Firmness {
         self.firmness
     }
 
@@ -160,7 +160,7 @@ pub enum Firmness {
 pub struct Grip {
     pub source: GripSource,
     pub pose: GripPose,
-    pub firmness: Firmness,
+    pub(crate) firmness: Firmness,
     /// The share of the pose the source's hold gives, `0..=1`: below one while the hold blends in
     /// or out.
     pub share: f32,

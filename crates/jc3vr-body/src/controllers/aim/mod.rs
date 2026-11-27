@@ -223,7 +223,7 @@ pub fn status() -> AimStatus {
 /// point, or the mounted gun's point from its handles (which the game draws the gun toward), or
 /// `None` when neither aim is acting. The aim-state hook writes it after the game's own point is
 /// set, so the point still counts as set this frame.
-pub fn character_aim_point() -> Option<Vec3> {
+pub(crate) fn character_aim_point() -> Option<Vec3> {
     let dominant = scheme::acting_hand();
     gun::character_aim_point(dominant).or_else(mounted::aim_point)
 }

@@ -84,7 +84,7 @@ pub struct BodyIkStatus {
     pub head_offset: glam::Vec3,
     /// The axis of the lean swing, in character-model space, or zero when there is no lean. Says
     /// which way the torso was asked to bend.
-    pub lean_axis: glam::Vec3,
+    pub(crate) lean_axis: glam::Vec3,
     pub engine_reach_t: f32,
     pub engine_reach_r: f32,
     pub engine_pull: f32,

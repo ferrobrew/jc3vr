@@ -17,11 +17,11 @@ use jc3gi::animation::ik::HumanIK;
 /// One effector slot's targets and live values, as the solver holds them.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct Slot {
-    pub target_reach_t: f32,
-    pub target_reach_r: f32,
-    pub target_pull: f32,
-    pub reach_t: f32,
-    pub reach_r: f32,
+    pub(crate) target_reach_t: f32,
+    pub(crate) target_reach_r: f32,
+    pub(crate) target_pull: f32,
+    pub(crate) reach_t: f32,
+    pub(crate) reach_r: f32,
     pub pull: f32,
 }
 
@@ -37,7 +37,7 @@ pub enum Fade {
 
 /// The fade's memory of what it wrote, per effector slot.
 #[derive(Debug, Clone, PartialEq)]
-pub struct TargetFade {
+pub(crate) struct TargetFade {
     records: [[Option<Record>; CHANNELS]; SLOTS],
 }
 

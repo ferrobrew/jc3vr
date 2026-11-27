@@ -139,7 +139,7 @@ impl Case {
     /// authored motion such as a hard landing, a takeoff the mode detection has not classified
     /// yet, or standing on a vehicle's roof, whose stunt clips crouch and step down with the arms
     /// across the face. The camera keeps its eyes out in front of the animated face in these.
-    pub const fn game_poses_body(self) -> bool {
+    pub(crate) const fn game_poses_body(self) -> bool {
         matches!(
             self,
             Self::Dead
@@ -184,7 +184,7 @@ impl Case {
     /// feet through all of it, so no clip turns their view. Vehicles and their stunt positions, the
     /// grapple's traversals and hangs, the ledge climb, swimming, the wingsuit, the parachute, and
     /// scripted sequences keep the animated head.
-    pub const fn view_holds_root(self) -> bool {
+    pub(crate) const fn view_holds_root(self) -> bool {
         matches!(
             self,
             Self::OnFoot
@@ -203,14 +203,14 @@ impl Case {
     /// Whether the held view follows Rico's animated head rather than standing over the root: a
     /// ragdoll, its get-up, and a death carry the body far from the root for seconds and leave it
     /// somewhere else, so a view held over the root would float away from the body.
-    pub const fn view_follows_head(self) -> bool {
+    pub(crate) const fn view_follows_head(self) -> bool {
         matches!(self, Self::Ragdoll | Self::GettingUp | Self::Dead)
     }
 
     /// Whether a clip or the physics may carry Rico's head down to the ground, so the view's floor
     /// holds it above the ground: every case but those that hold the body where the root does not
     /// stand on the ground under it (a seat, a hang from the hands or a line, a climb, a swim).
-    pub const fn head_may_lie(self) -> bool {
+    pub(crate) const fn head_may_lie(self) -> bool {
         !matches!(
             self,
             Self::Seated
@@ -229,7 +229,7 @@ impl Case {
     /// from the root for longer than a dip: a landing (which reads as on foot once grounded), a
     /// fall, a stumble, an authored one-off, or the movement task stopping. A jump and a climb by
     /// the hands stay over the root.
-    pub const fn view_may_escape(self) -> bool {
+    pub(crate) const fn view_may_escape(self) -> bool {
         matches!(
             self,
             Self::OnFoot
@@ -244,7 +244,7 @@ impl Case {
 /// What the character is doing, as [`classify`] needs it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct CharacterState {
-    pub in_headset: bool,
+    pub(crate) in_headset: bool,
     pub in_gameplay: bool,
     /// Driven by a scripted sequence.
     pub sequence: bool,
@@ -255,14 +255,14 @@ pub struct CharacterState {
     /// Seated and riding in the vehicle, not in a stunt position: a narrower [`vehicle`](Self::vehicle).
     pub seated: bool,
     /// Standing in a vehicle's stunt area, not traversing it: a narrower [`vehicle`](Self::vehicle).
-    pub stunt_standing: bool,
+    pub(crate) stunt_standing: bool,
     /// Hanging in a helicopter's stable stunt idle, not traversing it.
-    pub stunt_hanging: bool,
+    pub(crate) stunt_hanging: bool,
     pub traversal: bool,
     /// Attached to a wall at the end of a grapple's reel.
-    pub grapple_attach: bool,
+    pub(crate) grapple_attach: bool,
     /// Climbing over a ledge at the end of a grapple.
-    pub ledge_climb: bool,
+    pub(crate) ledge_climb: bool,
     pub swimming: bool,
     /// In the wingsuit, or going into it, or skydiving.
     pub wingsuit: bool,
@@ -271,15 +271,15 @@ pub struct CharacterState {
     /// Falling past the jump's grace.
     pub flight: bool,
     /// Within the hold of a stumble's or a knock-back's act.
-    pub hit_reaction: bool,
+    pub(crate) hit_reaction: bool,
     /// Hanging from a hand that grips the world.
-    pub hand_climb: bool,
+    pub(crate) hand_climb: bool,
     /// In the air within the jump's grace: a jump, a fall, or the proxy off its support. It wins
     /// over a movement task that ran this tick, which it can on the tick the body leaves the ground.
     pub jump: bool,
-    pub authored_motion: bool,
+    pub(crate) authored_motion: bool,
     /// Whether the on-foot movement task ran since the last gate.
-    pub movement_task: bool,
+    pub(crate) movement_task: bool,
 }
 
 /// The case `state` falls in.
@@ -379,7 +379,7 @@ pub(super) fn relaxes_legs(case: Case, state: &CharacterState) -> bool {
 
 /// The torso's weight, eased toward its case's.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct TorsoBlend {
+pub(crate) struct TorsoBlend {
     spring: Spring,
     /// What is left of the torso's hold through a flight, seconds.
     hold_s: f32,
@@ -450,7 +450,7 @@ impl TorsoBlend {
 /// One weight in `0..=1` eased toward its target as the torso's is: over `in_s` toward one and the
 /// quicker `out_s` back.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct WeightFollower {
+pub(crate) struct WeightFollower {
     spring: Spring,
 }
 

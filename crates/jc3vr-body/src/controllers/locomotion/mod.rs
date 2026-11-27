@@ -31,7 +31,7 @@ pub mod speeds;
 pub mod strokes;
 pub mod tuning;
 pub mod view;
-pub mod view_follow;
+pub(crate) mod view_follow;
 
 use std::time::Duration;
 

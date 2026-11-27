@@ -49,26 +49,26 @@ use crate::controllers::{
 #[serde(deny_unknown_fields)]
 pub struct ReachTuning {
     /// The time constant of the smoothing on the character's measured shoulder positions, seconds.
-    pub shoulder_smoothing_s: f32,
+    pub(crate) shoulder_smoothing_s: f32,
     /// The time constant of the smoothing on the shoulder's offset in the clip's chest, seconds.
-    pub chest_shoulder_smoothing_s: f32,
+    pub(crate) chest_shoulder_smoothing_s: f32,
     /// The time constant the measured bone lengths settle over, seconds.
-    pub length_smoothing_s: f32,
+    pub(crate) length_smoothing_s: f32,
     /// The extension, as a fraction of the character's arm length, where the wrist targets' pull
     /// starts, so the character's shoulder and chest follow a reach.
-    pub pull_start: f32,
+    pub(crate) pull_start: f32,
     /// The extension where the pull reaches [`pull_max`](Self::pull_max).
-    pub pull_full: f32,
+    pub(crate) pull_full: f32,
     /// The pull at and beyond full extension, `0..=1`.
-    pub pull_max: f32,
+    pub(crate) pull_max: f32,
     /// The shortfall of a solved wrist from its target left alone, metres: below it, the rendered
     /// hand stays on the arm.
-    pub detach_threshold_m: f32,
+    pub(crate) detach_threshold_m: f32,
     /// The furthest the rendered hand leaves the arm, metres.
-    pub detach_cap_m: f32,
+    pub(crate) detach_cap_m: f32,
     /// The most the rendered forearm extends along its axis to stay attached to a detached hand,
     /// as a ratio of its length.
-    pub max_forearm_stretch: f32,
+    pub(crate) max_forearm_stretch: f32,
 }
 
 impl ReachTuning {
@@ -102,8 +102,8 @@ impl ReachTuning {
 /// `character_shoulder`. All positions are in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmRemap {
-    pub player_shoulder: Vec3,
-    pub character_shoulder: Vec3,
+    pub(crate) player_shoulder: Vec3,
+    pub(crate) character_shoulder: Vec3,
     pub scale: f32,
 }
 
@@ -173,7 +173,7 @@ impl ArmRemap {
 /// The sphere a wrist is held within: the character's arm length about his shoulder joint, both
 /// in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ReachLimit {
+pub(crate) struct ReachLimit {
     pub shoulder: Vec3,
     pub length: f32,
 }
@@ -213,7 +213,7 @@ pub struct MeasuredArm {
     /// The shoulder joint's offset from the eye midpoint in the clip's chest frame (facing the line
     /// across the clip's shoulders), world metres, followed over
     /// [`ReachTuning::chest_shoulder_smoothing_s`].
-    pub shoulder_in_chest: Vec3,
+    pub(crate) shoulder_in_chest: Vec3,
 }
 
 impl MeasuredArm {
@@ -227,13 +227,13 @@ impl MeasuredArm {
 /// one space, the rotation from that space into the body frame's axes, and the rotation from it
 /// into the clip's chest frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ArmSample {
+pub(crate) struct ArmSample {
     pub shoulder: Vec3,
     pub elbow: Vec3,
     pub wrist: Vec3,
     pub eyes: Vec3,
-    pub to_body: Quat,
-    pub to_chest: Quat,
+    pub(crate) to_body: Quat,
+    pub(crate) to_chest: Quat,
 }
 
 impl ArmSample {
@@ -258,7 +258,7 @@ impl ArmSample {
 /// animation and follows it over [`ReachTuning::shoulder_smoothing_s`], and the offset in the clip's
 /// chest over [`ReachTuning::chest_shoulder_smoothing_s`].
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct ArmTracker {
+pub(crate) struct ArmTracker {
     arm: Option<MeasuredArm>,
     samples: u32,
     rejected: u32,
@@ -326,14 +326,14 @@ impl ArmTracker {
 /// The share of the pull a wrist target takes at `extension`, its distance from the shoulder as a
 /// fraction of the arm's length: zero up to `start`, one from `full`, and a smoothstep between. With
 /// `full` at or below `start` the ramp is a step at `start`.
-pub fn pull_ramp(extension: f32, start: f32, full: f32) -> f32 {
+pub(crate) fn pull_ramp(extension: f32, start: f32, full: f32) -> f32 {
     smoothstep_between(start, full, extension)
 }
 
 /// How far the rendered hand moves from the solved wrist toward the target, given the shortfall
 /// `miss` (target minus solved wrist): the shortfall beyond `threshold`, up to `cap`, along the
 /// shortfall. Continuous in the shortfall, so a hand crossing the threshold does not jump.
-pub fn detach_offset(miss: Vec3, threshold: f32, cap: f32) -> Vec3 {
+pub(crate) fn detach_offset(miss: Vec3, threshold: f32, cap: f32) -> Vec3 {
     let length = miss.length();
     if !length.is_finite() || length <= 0.0 {
         return Vec3::ZERO;

@@ -47,7 +47,7 @@ use jc3vr_core::{game_tick::GameTick, published::Stamp};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-pub use crate::controllers::body::firm_ragdoll::stand_in::TargetReport;
+pub(crate) use crate::controllers::body::firm_ragdoll::stand_in::TargetReport;
 use crate::{
     controllers::{
         body::{

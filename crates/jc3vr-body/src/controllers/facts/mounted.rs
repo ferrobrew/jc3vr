@@ -35,7 +35,7 @@ pub struct MountedSource {
 }
 
 /// The vehicle handling's seated body aim ([`seated_body_aim`]).
-pub type SeatedBodyAimFn = fn(Option<VehicleSeat>, bool, [Option<Vec3>; 2]) -> Option<Vec3>;
+pub(crate) type SeatedBodyAimFn = fn(Option<VehicleSeat>, bool, [Option<Vec3>; 2]) -> Option<Vec3>;
 
 /// Whether the weapon at `weapon` is the mounted gun the hands last aimed. Lock-free, for the
 /// per-weapon update of every character's weapons to rule a weapon out before taking any lock.

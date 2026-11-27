@@ -21,7 +21,7 @@ pub mod clavicles;
 pub mod pose;
 pub mod spine;
 pub mod twist;
-pub mod wings;
+pub(crate) mod wings;
 
 use glam::{Quat, Vec3};
 
@@ -29,7 +29,7 @@ use crate::controllers::body::procedural::solver::pose::RigPose;
 
 /// One solve's inputs, model space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SolveInput {
+pub(crate) struct SolveInput {
     /// The animated pose.
     pub animated: RigPose,
     /// Where the head bone should be: the player's head, at the neck pivot.
@@ -39,9 +39,9 @@ pub struct SolveInput {
     /// The player's head rotation relative to the body (identity faces forward).
     pub head_rotation: Quat,
     /// The player's torso heading relative to Rico's facing, radians about +Y, when estimated.
-    pub torso_yaw: Option<f32>,
+    pub(crate) torso_yaw: Option<f32>,
     /// The share of the clip's forward lean taken out of the spine before the player's motion is
     /// added, `0..=1`: on foot, where the gait clips lean the whole torso forward and the swing
     /// would otherwise bend the chest back over a tilted pelvis.
-    pub delean: f32,
+    pub(crate) delean: f32,
 }

@@ -55,33 +55,6 @@ pub fn replace_axis(desired: &mut Vec<Desired>, value: f32, negative: Action, po
     }
 }
 
-/// Raise the player-map want on `action` to at least `value`, `0..=1`, keeping a larger one the
-/// tables wrote.
-pub fn raise_analog(desired: &mut Vec<Desired>, value: f32, action: Action) {
-    let value = if value.is_finite() {
-        value.clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let target = Target {
-        map: MapKind::Player,
-        action,
-    };
-    let existing = desired
-        .iter()
-        .filter(|d| d.target == target)
-        .map(|d| match d.want {
-            Want::Analog(v) | Want::Hold(v) => v,
-            Want::Click => 0.0,
-        })
-        .fold(0.0, f32::max);
-    desired.retain(|d| d.target != target);
-    desired.push(Desired {
-        target,
-        want: Want::Analog(value.max(existing)),
-    });
-}
-
 /// Whether the tables wrote either half of the axis `negative`/`positive` this tick: their stick
 /// is out of its deadzone.
 #[inline]

@@ -74,7 +74,7 @@ pub fn classify(state: Option<u32>) -> SeatPhase {
 
 /// The phase across frames, reporting its edges.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct SeatTracker {
+pub(crate) struct SeatTracker {
     phase: SeatPhase,
 }
 
@@ -121,7 +121,7 @@ pub struct SeatAction {
     pub recenter: Option<RecenterKind>,
     /// Re-base the cockpit's yaw by the head's offset from the body when it stopped following
     /// ([`jc3vr_view::vr::request_seat_yaw_rebase`]), in place of a recenter.
-    pub rebase_yaw: bool,
+    pub(crate) rebase_yaw: bool,
 }
 
 /// The action `mode` takes at `event`. Under [`SeatTransition::Fade`] the fade clears only after

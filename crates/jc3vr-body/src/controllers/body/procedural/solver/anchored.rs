@@ -47,7 +47,7 @@ use crate::controllers::body::procedural::{
 };
 
 /// Solve the torso on the animated hips of `input.animated`, toward `input.head`.
-pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose {
+pub(crate) fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose {
     let animated = input.animated;
     let mut pose = animated;
     let base = pose.position(RigBone::Spine);
@@ -194,7 +194,7 @@ fn keep_chest_clear(pose: &mut RigPose, input: &SolveInput, base: Vec3, config: 
 /// `chest_clearance.back_m` behind them along the view's level forward. Only the offset's own
 /// forward part is taken back, so a point the solve left in the near field is not pushed further
 /// back than it stood, and a translation back or to the side is untouched.
-pub fn clear_clavicle_offset(
+pub(crate) fn clear_clavicle_offset(
     points: [Vec3; 2],
     offset: Vec3,
     input: &SolveInput,
@@ -237,7 +237,7 @@ const CLEAR_ITERATIONS: usize = 3;
 /// How much of the torso's turn and of the look down a spine pointing along `upright` takes: all
 /// of it within the tuning's `torso.upright_full_rad` of the vertical, none past
 /// `torso.upright_none_rad`, eased between.
-pub fn upright_share(upright: Vec3) -> f32 {
+pub(crate) fn upright_share(upright: Vec3) -> f32 {
     upright_share_with(upright, &PROCEDURAL.get().torso)
 }
 

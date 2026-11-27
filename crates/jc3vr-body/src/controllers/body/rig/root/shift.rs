@@ -24,7 +24,7 @@ use crate::controllers::body::rig::root::ledger::CompletedMovement;
 
 /// The shift pair, and the cumulative completed movement it has folded in.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct CockpitShift {
+pub(crate) struct CockpitShift {
     prev: Vec3,
     cur: Vec3,
     observed: Vec2,
@@ -32,7 +32,7 @@ pub struct CockpitShift {
 
 /// The cockpit frame in which the world-space correction is expressed.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct CockpitBasis {
+pub(crate) struct CockpitBasis {
     /// The body rotation the cockpit composes with.
     pub body: Quat,
     /// World metres per cockpit metre.
@@ -95,14 +95,14 @@ impl CockpitShift {
     /// that the head sits over the body, with no interpolation from the previous shift. For a
     /// teleport, which moves the body to a new place and must not leave the head where the old
     /// offset put it.
-    pub fn rebase_horizontal(&mut self, raw: Vec3) {
+    pub(crate) fn rebase_horizontal(&mut self, raw: Vec3) {
         self.cur = Vec3::new(raw.x, self.cur.y, raw.z);
         self.settle();
     }
 
     /// Move the view by `offset`, cockpit frame, on both sides of the pair alike, so the view does
     /// not interpolate across it: the push-back holding the view at a wall.
-    pub fn slide_view(&mut self, offset: Vec3) {
+    pub(crate) fn slide_view(&mut self, offset: Vec3) {
         if offset.is_finite() {
             self.prev -= offset;
             self.cur -= offset;

@@ -115,10 +115,10 @@ pub struct PoseShape {
     pub splay: [f32; 5],
     pub hook: [f32; 5],
     /// The thumb's opposition, `0..=1`.
-    pub opposition: f32,
+    pub(crate) opposition: f32,
     /// The open thumb's spread, degrees, or `None` (the key left out of the tuning file) for the
     /// configured spread.
-    pub thumb_spread_deg: Option<f32>,
+    pub(crate) thumb_spread_deg: Option<f32>,
     pub roles: [FingerRole; 5],
 }
 

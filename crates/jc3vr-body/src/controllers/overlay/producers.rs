@@ -139,7 +139,7 @@ fn ticked_grapple_point(point: Vec3) -> Anchor {
 /// The grapple's aim point on the tick before last and the last tick.
 static GRAPPLE_TICKS: Mutex<(Option<Vec3>, Option<Vec3>)> = Mutex::new((None, None));
 
-pub fn grapple_highlight(
+pub(crate) fn grapple_highlight(
     g: &GrappleAim,
     at: Anchor,
     off_hit: Option<RayHit>,
@@ -192,7 +192,7 @@ pub fn grapple_highlight(
 
 /// The sight tuning marker: a ring and a centre dot at the marker, over the scene, and a dot where
 /// the dominant hand's sight line passes closest to it, while that hand aims a gun.
-pub fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primitive>) {
+pub(crate) fn sight_marker(marker: Vec3, dominant: Option<HandAim>, out: &mut Vec<Primitive>) {
     let overlay = &CONTROLS.get().overlay;
     for (shape, size) in [
         (Shape::Ring { thickness: 0.25 }, overlay.marker_ring_rad),

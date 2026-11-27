@@ -51,7 +51,7 @@ pub struct AssistCorrection {
 /// the direction turns by that fraction of the angle between them and the distance moves by that
 /// fraction of the difference. `None` when either point is at the origin or `strength` is not
 /// positive.
-pub fn assisted_point(
+pub(crate) fn assisted_point(
     origin: Vec3,
     aim_point: Vec3,
     candidate: Vec3,
@@ -151,7 +151,7 @@ pub(super) unsafe fn grapple_assist(
 }
 
 /// `ray` turned toward `target` by `strength` of the angle between them: one aims at it.
-pub fn assisted_ray(ray: &Ray, target: Vec3, strength: f32) -> Option<Ray> {
+pub(crate) fn assisted_ray(ray: &Ray, target: Vec3, strength: f32) -> Option<Ray> {
     let distance = (target - ray.origin).length();
     let point = assisted_point(ray.origin, ray.at(distance), target, strength)?;
     Ray::new(ray.origin, point - ray.origin)

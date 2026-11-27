@@ -469,7 +469,7 @@ pub fn manual_recenter_kind() -> RecenterKind {
 /// The recenter for the latest frame's seat phase: out of a seat, only the yaw and the height need
 /// re-basing, since the rig's snap puts the body under the head; in a seat, or without a recent
 /// frame where nothing is known, the full re-base.
-pub fn recenter_kind(seat: Option<SeatPhase>) -> RecenterKind {
+pub(crate) fn recenter_kind(seat: Option<SeatPhase>) -> RecenterKind {
     match seat {
         Some(SeatPhase::Out) => RecenterKind::YawAndHeight,
         _ => RecenterKind::Full,

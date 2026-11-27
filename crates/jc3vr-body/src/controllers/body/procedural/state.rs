@@ -44,7 +44,7 @@ pub(crate) unsafe fn animation_moves_body(character: &Character, now: Stamp) -> 
 
 /// The history the hand-over table's reads keep between gates.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct StateTracker {
+pub(crate) struct StateTracker {
     /// When Rico was last on the ground with the movement task running, for the jump's grace.
     grounded_at: Option<Stamp>,
     /// When the movement task had last run as of the previous gate, so this gate can tell whether

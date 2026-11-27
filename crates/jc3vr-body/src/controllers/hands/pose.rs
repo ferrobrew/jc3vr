@@ -74,7 +74,7 @@ pub fn cockpit_hand(
 
 /// `hand` with its wrist held within `limit`, its grip and aim poses carried by the same shift so
 /// that the controller's rays leave the limited hand.
-pub fn limit_reach(hand: CockpitHand, limit: &ReachLimit) -> CockpitHand {
+pub(crate) fn limit_reach(hand: CockpitHand, limit: &ReachLimit) -> CockpitHand {
     let shift = limit.apply(hand.wrist.position) - hand.wrist.position;
     let shifted = |p: Pose| Pose {
         position: p.position + shift,
@@ -124,7 +124,12 @@ pub fn grip_to_wrist(hand: Hand, offset: &GripOffset) -> Pose {
 /// -Z runs from the wrist to the middle knuckle. +Y is the back of the hand: the normal of the
 /// plane through the wrist and the two knuckles, whose sign depends on the side because the index
 /// finger is on the thumb side of each hand.
-pub fn wrist_frame_from_bones(hand: Hand, wrist: Vec3, index: Vec3, middle: Vec3) -> Option<Quat> {
+pub(crate) fn wrist_frame_from_bones(
+    hand: Hand,
+    wrist: Vec3,
+    index: Vec3,
+    middle: Vec3,
+) -> Option<Quat> {
     let to_middle = middle - wrist;
     let to_index = index - wrist;
     let back = match hand {
@@ -141,13 +146,13 @@ pub fn wrist_frame_from_bones(hand: Hand, wrist: Vec3, index: Vec3, middle: Vec3
 /// axis and angle HumanIK's rotation target takes: the engine pre-multiplies it onto the effector's
 /// pre-solve orientation, so any fixed offset between the wrist frame and the bone's own frame
 /// cancels.
-pub fn wrist_rotation_delta(target: Quat, animated: Quat) -> (Vec3, f32) {
+pub(crate) fn wrist_rotation_delta(target: Quat, animated: Quat) -> (Vec3, f32) {
     // The shorter way round, so that the solver is never asked to spin the wrist past 180 degrees.
     shortest(target * animated.inverse()).to_axis_angle()
 }
 
 /// Interpolate between two poses: a linear position and a spherical orientation.
-pub fn interp(a: Pose, b: Pose, t: f32) -> Pose {
+pub(crate) fn interp(a: Pose, b: Pose, t: f32) -> Pose {
     Pose {
         position: a.position.lerp(b.position, t),
         orientation: a.orientation.slerp(b.orientation, t).normalize(),
@@ -164,7 +169,7 @@ pub fn delta(now: Pose, reference: Pose) -> Pose {
 /// Interpolating the poses before deriving the correction keeps a rotation about a translated
 /// wrist physically anchored at that wrist. Interpolating the world-space correction from identity
 /// would instead move the correction's pivot toward the world origin.
-pub fn weighted_delta(now: Pose, reference: Pose, weight: f32) -> Pose {
+pub(crate) fn weighted_delta(now: Pose, reference: Pose, weight: f32) -> Pose {
     let weighted_now = interp(reference, now, weight.clamp(0.0, 1.0));
     delta(weighted_now, reference)
 }

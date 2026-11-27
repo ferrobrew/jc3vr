@@ -82,7 +82,10 @@ pub fn latest() -> Option<Estimate> {
 
 /// The rig's view of `estimate`: its headings with a confidence that falls with its age under
 /// `tuning`, or `None` once it counts for nothing.
-pub fn for_rig(estimate: Option<&Estimate>, tuning: &EstimateTuning) -> Option<BodyEstimate> {
+pub(crate) fn for_rig(
+    estimate: Option<&Estimate>,
+    tuning: &EstimateTuning,
+) -> Option<BodyEstimate> {
     let estimate = estimate?;
     let confidence = tuning.confidence(estimate.age.as_secs_f32());
     (confidence > 0.0).then_some(BodyEstimate {
@@ -97,9 +100,9 @@ pub fn for_rig(estimate: Option<&Estimate>, tuning: &EstimateTuning) -> Option<B
 pub(crate) struct Reading {
     pub output: EgoPoserOutput,
     /// When the window's last pose was taken.
-    pub window_end: Stamp,
+    pub(crate) window_end: Stamp,
     pub posture: EffectivePosture,
-    pub submitted_at: Stamp,
+    pub(crate) submitted_at: Stamp,
     pub read_at: Stamp,
 }
 

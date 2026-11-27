@@ -55,7 +55,7 @@ pub struct FkPose {
 
 impl FkPose {
     /// The floor point under the pelvis, room `(x, z)`.
-    pub fn pelvis_floor(&self) -> Vec2 {
+    pub(crate) fn pelvis_floor(&self) -> Vec2 {
         let pelvis = self.neck + self.body.pelvis;
         Vec2::new(pelvis.x, pelvis.z)
     }

@@ -35,7 +35,7 @@ use crate::{
 /// previous-tick body frame and anchor, `current` with the current tick's. The engine interpolates
 /// the camera between the two by `dtf`, and so does [`at`](Self::at).
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PosePair {
+pub(crate) struct PosePair {
     pub previous: Pose,
     pub current: Pose,
     /// The head pair that transports the fixed latest tracking pose into the world.
@@ -64,7 +64,7 @@ impl PosePair {
 /// One hand's render-time world poses from the latest controller frame, which the late update
 /// corrects the hand toward.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RenderHand {
+pub(crate) struct RenderHand {
     /// The character's wrist frame.
     pub wrist: PosePair,
     /// The controller's grip pose (moved with the wrist by the remap).

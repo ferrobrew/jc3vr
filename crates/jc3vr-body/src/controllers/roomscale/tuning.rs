@@ -28,7 +28,7 @@ pub struct RoomscaleTuning {
     pub fade: FadeTuning,
     pub seat: SeatTuning,
     /// The move stick past this deflection moves the body, for the yaw's deadzone, `0..1`.
-    pub moving_stick: f32,
+    pub(crate) moving_stick: f32,
     pub driving_view: DrivingViewTuning,
 }
 
@@ -86,11 +86,11 @@ impl Tuning for RoomscaleTuning {
 pub struct CrouchTuning {
     /// How far (metres, at the character's scale) the head must drop below the standing eye height
     /// before the character counts as crouched, for the capsule and the readouts.
-    pub enter_drop_m: f32,
+    pub(crate) enter_drop_m: f32,
     /// How far the head must come back up, metres below the standing eye height at the character's
     /// scale, before the character counts as standing again. At most the entry depth, so the
     /// hysteresis never inverts.
-    pub exit_drop_m: f32,
+    pub(crate) exit_drop_m: f32,
 }
 
 /// The seat transitions ([`crate::controllers::roomscale::seat`]).
@@ -100,7 +100,7 @@ pub struct SeatTuning {
     /// Under [`SeatTransition::Fade`](crate::controllers::roomscale::config::SeatTransition::Fade),
     /// how long the view stays dark after the seat locks, so that the re-based view settles before
     /// it clears, seconds.
-    pub fade_hold_s: f32,
+    pub(crate) fade_hold_s: f32,
 }
 
 /// The driver's view correction ([`crate::controllers::facts::driving`]).

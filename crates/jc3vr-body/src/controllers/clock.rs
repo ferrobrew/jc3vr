@@ -78,7 +78,7 @@ impl TimeScale {
 
     /// A rate of the player's body, per real second, as a rate per game second: the same motion
     /// through the slowed world, faster in its seconds.
-    pub fn to_game_rate(self, per_real_s: Vec3) -> Vec3 {
+    pub(crate) fn to_game_rate(self, per_real_s: Vec3) -> Vec3 {
         per_real_s / self.0
     }
 }

@@ -112,8 +112,8 @@ pub fn status() -> [ArmStatus; 2] {
 /// One arm as the pre-solve seam read it this tick: the shoulder joint in model space and the
 /// smoothed arm length, for the pull ramp.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct TickArm {
-    pub shoulder_model: Vec3,
+pub(crate) struct TickArm {
+    pub(crate) shoulder_model: Vec3,
     pub length: f32,
 }
 

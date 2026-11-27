@@ -49,7 +49,7 @@ use crate::{
 
 /// Where an act the filter knows is filtered.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ActScope {
+pub(crate) enum ActScope {
     /// On foot on the ground, while the stick drives the body.
     OnFoot,
     /// Standing in a vehicle's stunt area.
@@ -70,7 +70,7 @@ impl ActScope {
     /// What a replacement the state machine refused becomes. On foot the original act is queued,
     /// so the state machine still moves on; a stunt turn is dropped, which leaves the state as the
     /// game would have left it with no turn to make.
-    pub const fn on_refusal(self) -> ActDecision {
+    pub(crate) const fn on_refusal(self) -> ActDecision {
         match self {
             ActScope::OnFoot => ActDecision::Pass,
             ActScope::StuntArea => ActDecision::Drop,
@@ -80,7 +80,7 @@ impl ActScope {
 
 /// What the filter does with an act.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ActDecision {
+pub(crate) enum ActDecision {
     /// Queue the act as the game asked.
     Pass,
     /// Drop the act.
@@ -190,7 +190,7 @@ pub(crate) unsafe fn filter(
 
 /// Times the filter's bursts of activity and releases it when one runs too long.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Watchdog {
+pub(crate) struct Watchdog {
     /// When the current burst began.
     burst_start: Option<Stamp>,
     /// When the filter last acted.
@@ -203,7 +203,7 @@ pub struct Watchdog {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Release {
     /// How long the burst that tripped it lasted.
-    pub acted_for: Duration,
+    pub(crate) acted_for: Duration,
 }
 
 impl Watchdog {
@@ -255,7 +255,7 @@ impl Watchdog {
 
 /// The act ids the filter acts on, resolved once the event-id symbol table is live.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActTable {
+pub(crate) struct ActTable {
     drop: Vec<i32>,
     replace: Vec<(i32, i32)>,
     stunt_replace: Vec<(i32, i32)>,

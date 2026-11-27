@@ -31,7 +31,7 @@ use crate::controllers::body::procedural::{
 
 /// One foot's targets across the ground, model `(x, z)`.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct FootPlacement {
+pub(crate) struct FootPlacement {
     pub ankle: Vec2,
     pub toe: Vec2,
 }
@@ -41,7 +41,7 @@ pub struct FootPlacement {
 /// tuning's `stance.width_m` apart square across the heading, centred across it under the hips and
 /// along it where the clip's ankles stand on average, and each toe ahead of its ankle by the clip's
 /// own foot length, turned out by `stance.toe_out_deg`. Left, then right.
-pub fn square_stance(animated: &RigPose, heading: f32) -> [FootPlacement; 2] {
+pub(crate) fn square_stance(animated: &RigPose, heading: f32) -> [FootPlacement; 2] {
     let flat = |v: Vec3| Vec2::new(v.x, v.z);
     let ahead = forward(heading);
     let across = right(heading);

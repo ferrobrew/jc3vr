@@ -34,7 +34,7 @@ use crate::controllers::fingers::{
 /// roots are in the palm's frame, as `(toward the thumb, out of the palm, toward the fingers)`
 /// metres from the wrist.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HandGeometry {
+pub(crate) struct HandGeometry {
     pub roots: [Vec3; 5],
     /// The proximal, middle, and distal bones' lengths, metres. The distal bone has no joint
     /// beyond it, so its length is a share of the middle bone's
@@ -67,14 +67,14 @@ impl HandGeometry {
     }
 
     /// Finger `finger`'s root in the frame `palm`.
-    pub fn root_in(&self, finger: Finger, palm: &PalmFrame) -> Vec3 {
+    pub(crate) fn root_in(&self, finger: Finger, palm: &PalmFrame) -> Vec3 {
         let r = self.roots[finger.index()];
         palm.wrist + palm.toward_thumb * r.x + palm.palm * r.y + palm.forward * r.z
     }
 }
 
 /// Publish `hand`'s proportions. Called by the finger curls each tick they write the fingers.
-pub fn publish_geometry(hand: Hand, geometry: HandGeometry) {
+pub(crate) fn publish_geometry(hand: Hand, geometry: HandGeometry) {
     FIT.lock().geometry[hand.index()] = Some(geometry);
 }
 
@@ -163,7 +163,7 @@ pub fn fit_contacts(
 
 /// The palm's frame from a hand's wrist frame in the world: the fingers along its -Z, the back of
 /// the hand along its +Y, and the little finger toward +X on the right hand and -X on the left.
-pub fn palm_of_wrist(hand: Hand, wrist: Pose) -> PalmFrame {
+pub(crate) fn palm_of_wrist(hand: Hand, wrist: Pose) -> PalmFrame {
     let q = wrist.orientation;
     PalmFrame {
         wrist: wrist.position,
@@ -216,7 +216,7 @@ pub fn sweep(
 
 /// The finger's joints at `curl`, root outward, with the fingertip last; `None` for a degenerate
 /// hand.
-pub fn finger_points(
+pub(crate) fn finger_points(
     finger: Finger,
     shape: &FingerSweep,
     palm: &PalmFrame,

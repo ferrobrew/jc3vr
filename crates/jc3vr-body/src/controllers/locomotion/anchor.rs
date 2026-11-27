@@ -279,20 +279,20 @@ pub(crate) unsafe fn stabilize(
 /// The anchors the pose publishes: the anatomy's, and the camera's while the headset's view hangs
 /// from the root instead of the animated head.
 pub(crate) struct Stabilized {
-    pub anatomy: Anchors,
+    pub(crate) anatomy: Anchors,
     /// The camera's anchors, `None` where the camera uses [`anatomy`](Self::anatomy).
     pub camera: Option<Anchors>,
     /// The root-held anchor's weight against the animated head, from zero to one.
     pub weight: f32,
     /// Whether the case may carry Rico's head down to the ground ([`Case::head_may_lie`]), where
     /// the view's floor applies. Always outside the headset's cases.
-    pub head_may_lie: bool,
+    pub(crate) head_may_lie: bool,
     /// In the headset, the eyes' clearance out in front of the animated face, model space, still to
     /// be added to the eye arm once the arm is expressed in the filtered head frame (the headset's
     /// eye arm is rebuilt in that frame after this returns, so the clearance cannot ride
     /// [`anatomy`](Self::anatomy) as it does elsewhere). Zero outside the headset, where
     /// [`anatomy`](Self::anatomy) already carries it.
-    pub face_offset: Vec3,
+    pub(crate) face_offset: Vec3,
 }
 
 /// How long after leaving the ground the anchor stays on the root, seconds (the locomotion tuning's

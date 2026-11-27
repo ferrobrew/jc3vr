@@ -287,7 +287,7 @@ pub fn take_support_break(hand: Hand) -> bool {
 /// The support and weight targets of the held guns: called with the cockpit-frame hands and the
 /// head's position, it poses a two-handed or heavy gun's hands. The weapon handling composes it
 /// with its own configuration.
-pub type TargetsFn = fn(&mut [Option<CockpitHand>; 2], Vec3);
+pub(crate) type TargetsFn = fn(&mut [Option<CockpitHand>; 2], Vec3);
 
 /// Give `hands` the held guns' support and weight targets, as the registered targets pose them
 /// ([`crate::contributions::BodyContributions::gun_targets`]); the install refuses to finish

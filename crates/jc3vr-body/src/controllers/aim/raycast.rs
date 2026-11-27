@@ -239,7 +239,10 @@ pub unsafe fn cast_on_with<R>(
 /// # Safety
 ///
 /// As [`cast`].
-pub unsafe fn cast_terrain(ray: &Ray, max_distance: f32) -> Result<Option<Vec3>, RaycastError> {
+pub(crate) unsafe fn cast_terrain(
+    ray: &Ray,
+    max_distance: f32,
+) -> Result<Option<Vec3>, RaycastError> {
     if !(max_distance.is_finite() && max_distance > 0.0) {
         return Err(RaycastError::InvalidDistance);
     }

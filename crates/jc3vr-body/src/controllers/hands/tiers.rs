@@ -60,7 +60,7 @@ impl HandTier {
     /// The tier the hands actually take in `state`: the anchored tier where it is built and
     /// switched on (`anchor`), and the yielded tier in its place elsewhere, as the plan starts every
     /// scripted state yielded until its tier is built.
-    pub const fn effective_in(self, state: Option<TierState>, anchor: bool) -> HandTier {
+    pub(crate) const fn effective_in(self, state: Option<TierState>, anchor: bool) -> HandTier {
         match self {
             HandTier::Anchored => match state {
                 Some(state) if anchor && state.anchor_built() => HandTier::Anchored,
@@ -153,7 +153,7 @@ impl TierState {
 
     /// Whether the anchored tier is built for this state: the grapple states, where the grapple
     /// hand holds the line, and the mounted guns, where the hands hold the handles.
-    pub const fn anchor_built(self) -> bool {
+    pub(crate) const fn anchor_built(self) -> bool {
         matches!(
             self,
             TierState::GrappleReel | TierState::GrappleHang | TierState::MountedGun
@@ -203,19 +203,19 @@ pub enum TierScope {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct HandTierTable {
     pub on_foot: HandTier,
-    pub grapple_reel: HandTier,
-    pub grapple_hang: HandTier,
-    pub stunt_traversal: HandTier,
-    pub stunt_hang: HandTier,
+    pub(crate) grapple_reel: HandTier,
+    pub(crate) grapple_hang: HandTier,
+    pub(crate) stunt_traversal: HandTier,
+    pub(crate) stunt_hang: HandTier,
     pub vehicle_transition: HandTier,
-    pub vehicle_seated: HandTier,
+    pub(crate) vehicle_seated: HandTier,
     pub mounted_gun: HandTier,
     pub parachute: HandTier,
     pub wingsuit: HandTier,
     pub swimming: HandTier,
     pub interaction: HandTier,
     pub melee: HandTier,
-    pub weapon_action: HandTier,
+    pub(crate) weapon_action: HandTier,
     pub ragdoll: HandTier,
     pub cutscene: HandTier,
 }
@@ -286,15 +286,15 @@ pub struct TierSignals {
     /// The character's state words and vehicle seat, `None` while the character is unreadable.
     pub character: Option<CharacterSnapshot>,
     /// Whether the character is seated and riding (not entering, exiting, or switching seats).
-    pub riding_vehicle: bool,
+    pub(crate) riding_vehicle: bool,
     /// Whether the character is in a stunt traversal.
-    pub stunt_traversing: bool,
+    pub(crate) stunt_traversing: bool,
     /// Whether the character hangs from a helicopter in its stunt position.
-    pub stunt_hanging: bool,
+    pub(crate) stunt_hanging: bool,
     /// Whether the character is on a mounted gun.
     pub mounted_gun: bool,
     /// Whether the selected camera is a cinematic one.
-    pub cinematic_camera: bool,
+    pub(crate) cinematic_camera: bool,
 }
 
 /// Classify the tick's state, highest priority first: a cutscene, then the body being thrown

@@ -50,11 +50,11 @@ pub(super) fn hook_library() -> HookLibrary {
 
 /// A game rumble's motor strengths.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Motors {
+pub(crate) struct Motors {
     pub left: f32,
     pub right: f32,
-    pub left_trigger: f32,
-    pub right_trigger: f32,
+    pub(crate) left_trigger: f32,
+    pub(crate) right_trigger: f32,
 }
 
 impl Motors {
@@ -68,12 +68,12 @@ impl Motors {
 }
 
 /// A shot's amplitude: its rumble's strength raised by its recoil kick (radians).
-pub fn shot_amplitude(strength: f32, kick_rad: f32) -> f32 {
+pub(crate) fn shot_amplitude(strength: f32, kick_rad: f32) -> f32 {
     (strength + kick_rad.abs() * CONTROLS.get().rumble.kick_amplitude_per_rad).clamp(0.0, 1.0)
 }
 
 /// The length a weapon's fire rumble plays for on a controller.
-pub fn shot_duration(time: f32) -> f32 {
+pub(crate) fn shot_duration(time: f32) -> f32 {
     if time.is_finite() {
         time.clamp(0.0, CONTROLS.get().rumble.max_shot_s)
     } else {
@@ -97,7 +97,7 @@ pub fn kick(hand: Hand, kick_rad: f32) {
 /// frequency, which also carries the trigger motors) the right hand, matching how a one-off
 /// rumble's own left and right motors are already understood to sit on each hand. Any other index
 /// is not one the game uses.
-pub fn motor_hand(motor: i32) -> Option<Hand> {
+pub(crate) fn motor_hand(motor: i32) -> Option<Hand> {
     match motor {
         0 => Some(Hand::Left),
         1 => Some(Hand::Right),
@@ -109,7 +109,7 @@ pub fn motor_hand(motor: i32) -> Option<Hand> {
 /// and level to send, if any, and the value to actually pass through to the physical gamepad.
 /// `forward` is false while forwarding is off; a motor the game uses is silenced on the gamepad
 /// whether or not it is forwarded.
-pub fn continuous_motor(motor: i32, value: f32, forward: bool) -> ContinuousMotor {
+pub(crate) fn continuous_motor(motor: i32, value: f32, forward: bool) -> ContinuousMotor {
     let hand = motor_hand(motor);
     let level = hand
         .filter(|_| forward)
@@ -120,12 +120,12 @@ pub fn continuous_motor(motor: i32, value: f32, forward: bool) -> ContinuousMoto
 
 /// The result of [`continuous_motor`].
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ContinuousMotor {
+pub(crate) struct ContinuousMotor {
     /// The hand and its level, if the motor's value is forwarded this call. A level of zero ends
     /// the hand's game rumble at once.
     pub level: Option<(Hand, f32)>,
     /// The value to actually pass to [`Gamepad::SetMotorValue`]'s real implementation.
-    pub passthrough: f32,
+    pub(crate) passthrough: f32,
 }
 
 const WEAPON_FIRE: &str = "WeaponFire";

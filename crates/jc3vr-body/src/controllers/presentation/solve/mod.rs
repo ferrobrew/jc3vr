@@ -56,7 +56,7 @@ pub struct UpperBody {
 /// and the hand (the wrist), and the hand bone's orientation.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmJoints {
-    pub clavicle: Vec3,
+    pub(crate) clavicle: Vec3,
     pub shoulder: Vec3,
     pub elbow: Vec3,
     pub wrist: Vec3,
@@ -115,7 +115,7 @@ pub struct Motion {
     /// elbow as the torso carries it.
     pub arms: bool,
     /// Whether the forearm stretches along its length to meet a hand moved off the end of the arm.
-    pub stretch_forearm: bool,
+    pub(crate) stretch_forearm: bool,
     /// The elbow pole's inputs; `None` bends every arm toward its drawn elbow.
     pub elbow: Option<ElbowDrive>,
 }
@@ -126,7 +126,7 @@ pub struct ElbowDrive {
     /// The player's up, a unit vector.
     pub up: Vec3,
     /// The little finger's pull (the presentation tuning's `elbow.palm_weight`).
-    pub palm_weight: f32,
+    pub(crate) palm_weight: f32,
     /// The smoothing's time constant, seconds.
     pub smoothing_s: f32,
     /// The time since the smoothed poles in [`arms`](Self::arms) were solved, seconds.
@@ -267,7 +267,12 @@ pub fn solve(body: &UpperBody, motion: &Motion) -> Solved {
 /// The rigid transform that takes a head whose neck pivot was at `pivot_before` turned
 /// `turn_before` to one at `pivot_now` turned `turn_now`: a turn about the pivot and the pivot's
 /// travel. The turns are world orientations; only the turn between them is applied.
-pub fn head_motion(pivot_before: Vec3, turn_before: Quat, pivot_now: Vec3, turn_now: Quat) -> Mat4 {
+pub(crate) fn head_motion(
+    pivot_before: Vec3,
+    turn_before: Quat,
+    pivot_now: Vec3,
+    turn_now: Quat,
+) -> Mat4 {
     let turn = (turn_now.normalize() * turn_before.normalize().inverse()).normalize();
     Mat4::from_translation(pivot_now)
         * Mat4::from_quat(turn)
@@ -279,7 +284,7 @@ pub fn head_motion(pivot_before: Vec3, turn_before: Quat, pivot_now: Vec3, turn_
 /// share of the swing. The joints turn about their own origins, so the bones keep their lengths and
 /// the base stays put; a target off the sphere the chain's end can sweep is reached in direction,
 /// not in distance.
-pub fn chain_swing<const N: usize>(
+pub(crate) fn chain_swing<const N: usize>(
     joints: [Vec3; N],
     end: Vec3,
     target: Vec3,

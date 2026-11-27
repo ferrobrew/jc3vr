@@ -15,28 +15,28 @@ pub struct BodyIkTuning {
     /// head world target. Full reach: with body IK on, the solver — not the
     /// `UpdatePropEffects` override — is what places the head, so anything less leaves the rendered
     /// head short of where the player's head actually is.
-    pub head_reach_t: f32,
+    pub(crate) head_reach_t: f32,
     /// The rotation-reach weight written to `m_TargetReachR[head]` (scaled by
     /// [`weight`](Self::weight)) for the head's rotation target: how strongly the head is oriented
     /// toward the headpose forward.
-    pub head_reach_r: f32,
+    pub(crate) head_reach_r: f32,
     /// The pull weight written to `m_TargetPull[head]` (scaled by [`weight`](Self::weight)): how
     /// much reaching the head target propagates *down the chain* into the shoulders, chest, and
     /// spine rather than being absorbed by the neck alone. This is the knob that makes the upper
     /// body follow the head; with it at zero the solver reaches the target locally and the torso
     /// stays on the animated pose.
-    pub head_pull: f32,
+    pub(crate) head_pull: f32,
     /// The resistance weight written to `m_TargetResist[head]` (scaled by [`weight`](Self::weight))
     /// for the head's rotation target: how much the head effector resists being displaced by other
     /// effectors' pull, so the game's own aim and hand targets do not drag it off the headpose.
-    pub head_resist: f32,
+    pub(crate) head_resist: f32,
     /// How much of the player's lean the torso takes: the share applied to the swing about the base
     /// of the spine that would carry the animated head to where the player's head actually is. `1.0`
     /// articulates the spine the whole way, leaving nothing for the neck; lower values split the
     /// lean between the two. Being a rotation about the spine's base, it handles a lean in any
     /// direction — sideways, forward, or a duck — from the one construction, and it can never
     /// telescope the spine the way a straight displacement would.
-    pub lean_share: f32,
+    pub(crate) lean_share: f32,
     /// Where the torso pivots, between the base of the spine (`0.0`) and the hips (`1.0`).
     ///
     /// No single point suits both directions. A sideways lean is genuinely spinal, and the spine's
@@ -44,49 +44,49 @@ pub struct BodyIkTuning {
     /// back tips the chest without carrying the torso forward, which reads as the lean barely doing
     /// anything. Dropping the pivot trades angle for travel: the same head displacement resolves to
     /// a smaller rotation about a longer arm, so the shoulders move further.
-    pub pivot_drop: f32,
+    pub(crate) pivot_drop: f32,
     /// The maximum torso lean, in degrees — an anatomical limit on the spine's range, and the bound
     /// that keeps the lean model inside the region it is valid over. The swing's angle grows toward
     /// 180 degrees as the head approaches the height of the pivot, about an axis that becomes
     /// ill-conditioned there, so without a cap a head dropped to waist height would fold the torso
     /// over backwards in a near-arbitrary direction.
-    pub lean_max_deg: f32,
+    pub(crate) lean_max_deg: f32,
     /// How much of the head's body-relative yaw the torso takes, as a rotation about the spine base's
     /// vertical axis. Composes with [`lean_share`](Self::lean_share) into a single torso rotation.
-    pub yaw_share: f32,
+    pub(crate) yaw_share: f32,
     /// The translation-reach weight written to `m_TargetReachT[shoulder]` (scaled by
     /// [`weight`](Self::weight)) for each shoulder carried by the torso rotation.
-    pub shoulder_reach_t: f32,
+    pub(crate) shoulder_reach_t: f32,
     /// The pull weight written to `m_TargetPull[shoulder]` (scaled by [`weight`](Self::weight)): how
     /// much the shoulders' displacement carries on down into the chest and spine.
-    pub shoulder_pull: f32,
+    pub(crate) shoulder_pull: f32,
     /// The translation-reach weight written to `m_TargetReachT[wrist]` (scaled by
     /// [`weight`](Self::weight)) for each pinned hand: how rigidly the hands keep their animated
     /// position as the shoulders move.
-    pub hand_reach_t: f32,
+    pub(crate) hand_reach_t: f32,
     /// The rotation-reach weight written to `m_TargetReachR[wrist]` (scaled by
     /// [`weight`](Self::weight)) for each pinned hand: how rigidly the hands keep their animated
     /// *orientation*, as opposed to merely their position. Holding
     /// position alone lets the solver reach it from any wrist orientation, which spins the hands in
     /// place and takes the wielded weapon's aim with them.
-    pub hand_reach_r: f32,
+    pub(crate) hand_reach_r: f32,
     /// The resistance weight written to `m_TargetResist[wrist]` (scaled by
     /// [`weight`](Self::weight)) for each pinned hand: how much the wrist refuses to be displaced by
     /// the shoulders' pull. Zero — the reach weights are the primary hold, and this is
     /// the knob to reach for if the hands still drift under a strong lean.
-    pub hand_resist: f32,
+    pub(crate) hand_resist: f32,
     /// The rotation-reach weight written to `m_TargetReachR[chestEnd]` (scaled by
     /// [`weight`](Self::weight)), orienting the chest by the same torso rotation that places the
     /// shoulders.
-    pub chest_reach_r: f32,
+    pub(crate) chest_reach_r: f32,
     /// A master multiplier on every reach, pull, and resist weight (`0..=1`).
     pub weight: f32,
     /// An optional character-model-space offset added to the head target position, for tuning where
     /// the body reaches relative to the headpose point. Zero.
-    pub target_offset: Vec3,
+    pub(crate) target_offset: Vec3,
     /// How far above the ground the view's head stays at the least, metres: the eyes hang a little
     /// below and in front of it, and the near plane needs a few centimetres past them.
-    pub view_floor_clearance_m: f32,
+    pub(crate) view_floor_clearance_m: f32,
     /// The farthest the character's root may move between two ticks for the synthetic head frame's
     /// filter to carry on, metres. A longer step is a teleport, and the filter starts over.
     pub max_root_step_m: f32,

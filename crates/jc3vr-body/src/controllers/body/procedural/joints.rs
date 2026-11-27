@@ -75,7 +75,7 @@ pub struct Lookup {
 
 /// The rig of the skeleton an animation controller holds, built once per skeleton.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct RigCache {
+pub(crate) struct RigCache {
     /// The rig, for the skeleton it was built from; `None` beside the key when that skeleton could
     /// not be rigged.
     entry: Option<(SkeletonKey, Option<Rig>)>,

@@ -255,7 +255,7 @@ impl CharacterSnapshot {
 
 /// The debounced mode state machine.
 #[derive(Debug, Clone, Default)]
-pub struct ModeDetector {
+pub(crate) struct ModeDetector {
     current: Detection,
     /// A gameplay mode that differs from the current one, and for how many consecutive ticks it
     /// has been classified.
@@ -415,7 +415,7 @@ pub fn last_snapshot() -> Option<ModeSnapshot> {
 /// Read the engine state the rules need, in a game tick before the world update (the game stage):
 /// the vehicle predicates walk the animation rule system and the interaction graph, which the world
 /// update mutates.
-pub fn read_snapshot(game: &GameTick<'_>) -> ModeSnapshot {
+pub(crate) fn read_snapshot(game: &GameTick<'_>) -> ModeSnapshot {
     let ui = UiSignals {
         clock_stopped: unsafe { Clock::get() }.is_some_and(|clock| clock.m_Stop),
         screen_focus: unsafe { LocalPlayerActionMap::get() }.is_some_and(|map| {

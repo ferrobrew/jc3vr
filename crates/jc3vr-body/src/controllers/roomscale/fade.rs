@@ -19,14 +19,14 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub struct FadeTuning {
     /// How long a fade from clear to fully dark takes, seconds.
-    pub out_s: f32,
+    pub(crate) out_s: f32,
     /// How long a fade from fully dark to clear takes, seconds.
-    pub in_s: f32,
+    pub(crate) in_s: f32,
 }
 
 /// Who wants the view darkened.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum FadeSource {
+pub(crate) enum FadeSource {
     /// The head is inside geometry the body cannot follow it through.
     HeadInGeometry,
     /// A seat transition is hiding an entry or exit animation.
@@ -74,7 +74,7 @@ pub fn status() -> FadeStatus {
 }
 
 /// Set a source's target darkness, `0..=1`.
-pub fn set_target(source: FadeSource, target: f32) {
+pub(crate) fn set_target(source: FadeSource, target: f32) {
     let target = if target.is_finite() {
         target.clamp(0.0, 1.0)
     } else {

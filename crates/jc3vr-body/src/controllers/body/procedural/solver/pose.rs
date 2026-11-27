@@ -21,7 +21,7 @@ impl RigPose {
     }
 
     /// Turn `bone` and everything under it by `rotation` about `pivot`.
-    pub fn rotate_about(&mut self, bone: RigBone, rotation: Quat, pivot: Vec3) {
+    pub(crate) fn rotate_about(&mut self, bone: RigBone, rotation: Quat, pivot: Vec3) {
         for b in RigBone::ALL {
             if b.descends_from(bone) {
                 let t = &mut self.bones[b.index()];
@@ -60,7 +60,7 @@ impl RigPose {
 
     /// `self` (the animated pose) mixed toward `solved` by `torso` above the hips: the pelvis and
     /// the legs stay the animation's, which keeps the hips in every solve.
-    pub fn blend_torso(&self, solved: &Self, torso: f32) -> Self {
+    pub(crate) fn blend_torso(&self, solved: &Self, torso: f32) -> Self {
         let mut out = self.blend(solved, torso);
         for bone in RigBone::ALL {
             if bone == RigBone::Hips || bone.descends_from(RigBone::Pelvis) {

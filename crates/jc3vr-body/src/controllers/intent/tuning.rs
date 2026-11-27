@@ -109,7 +109,7 @@ pub struct BindingsTuning {
 pub struct HoldTuning {
     /// The analog value above which an analog action also reads as pressed, `0..1`. The game's
     /// devices press at their own button threshold, which is not read; this stands in for it.
-    pub analog_press: f32,
+    pub(crate) analog_press: f32,
 }
 
 /// The gameplay mode detection ([`crate::controllers::mode`]).
@@ -119,7 +119,7 @@ pub struct ModeTuning {
     /// How many consecutive ticks a new gameplay mode must be detected before it takes effect.
     /// One switches at once; two rides out a one-tick flicker during an animation blend. Counted
     /// at the game's 30 Hz tick.
-    pub debounce_ticks: u32,
+    pub(crate) debounce_ticks: u32,
 }
 
 /// The game rumble's forward to the controllers ([`crate::controllers::haptics::rumble`]).
@@ -127,12 +127,12 @@ pub struct ModeTuning {
 #[serde(deny_unknown_fields)]
 pub struct RumbleTuning {
     /// Below this, a kick plays nothing, `0..1`.
-    pub min_amplitude: f32,
+    pub(crate) min_amplitude: f32,
     /// How much a shot's recoil kick adds to its pulse's amplitude, per radian of kick.
-    pub kick_amplitude_per_rad: f32,
+    pub(crate) kick_amplitude_per_rad: f32,
     /// The longest a weapon's fire rumble plays on a controller, seconds: the game's rumbles can
     /// last long enough to blur into one another.
-    pub max_shot_s: f32,
+    pub(crate) max_shot_s: f32,
 }
 
 /// The world-space overlay's drawing ([`crate::controllers::overlay`]).
@@ -151,18 +151,18 @@ pub struct OverlayTuning {
     pub body_mirror_distance_m: f32,
     /// A move of the grapple's aim point beyond this between ticks is a new target, metres, drawn
     /// there at once rather than swept across.
-    pub ticked_jump_m: f32,
+    pub(crate) ticked_jump_m: f32,
     /// How close the off-hand's hit must be to the grapple's point for the highlight to take its
     /// surface normal, metres.
-    pub surface_match_m: f32,
+    pub(crate) surface_match_m: f32,
     /// The grapple highlight's ring's size, radians seen from the head.
-    pub grapple_ring_rad: f32,
+    pub(crate) grapple_ring_rad: f32,
     /// The aim assist's lock ring's size against the grapple's ring.
-    pub assist_ring_scale: f32,
+    pub(crate) assist_ring_scale: f32,
     /// The sight tuning marker's ring's size, radians seen from the head.
-    pub marker_ring_rad: f32,
+    pub(crate) marker_ring_rad: f32,
     /// The sight tuning marker's dots' size, radians seen from the head.
-    pub marker_dot_rad: f32,
+    pub(crate) marker_dot_rad: f32,
 }
 
 #[cfg(test)]

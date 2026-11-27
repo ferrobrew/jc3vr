@@ -80,7 +80,7 @@ impl Contributor {
 }
 
 /// Where a composition reads and writes the wanted velocity, world metres per second.
-pub trait WantedStore {
+pub(crate) trait WantedStore {
     fn read(&self) -> Vec3;
     fn write(&mut self, wanted: Vec3);
 }
@@ -88,7 +88,7 @@ pub trait WantedStore {
 /// The local player character's wanted velocity through the engine's world-velocity accessors
 /// ([`Character::GetWantedWorldVelocity`], [`Character::SetWantedWorldVelocity`]), which convert
 /// to and from the character's frame.
-pub struct CharacterWanted<'c> {
+pub(crate) struct CharacterWanted<'c> {
     character: &'c mut Character,
 }
 
@@ -101,11 +101,6 @@ impl<'c> CharacterWanted<'c> {
     /// the game thread, for as long as the store is.
     pub unsafe fn new(character: &'c mut Character) -> Self {
         Self { character }
-    }
-
-    /// The character, for a contribution that reads it.
-    pub fn character(&self) -> &Character {
-        self.character
     }
 
     /// The character, mutably, for a contribution whose engine reads take it so.
@@ -133,7 +128,7 @@ impl WantedStore for CharacterWanted<'_> {
 
 /// One composition of the wanted velocity: the contributions of one context of a frame, applied
 /// through `S` in [`Contributor`] order.
-pub struct Composition<S> {
+pub(crate) struct Composition<S> {
     store: S,
     applied: Option<Contributor>,
 }
@@ -174,7 +169,8 @@ impl<S: WantedStore> Composition<S> {
     }
 
     /// The store, for reads between the contributions.
-    pub fn store(&self) -> &S {
+    #[cfg(test)]
+    pub(crate) fn store(&self) -> &S {
         &self.store
     }
 }
@@ -203,7 +199,7 @@ pub unsafe fn read(character: &Character) -> Vec3 {
 
 /// [`Contributor::Locomotion`]'s write: the horizontal velocity `velocity`, world `(x, z)`, with
 /// the task's vertical velocity kept.
-pub fn with_horizontal(wanted: Vec3, velocity: Vec2) -> Vec3 {
+pub(crate) fn with_horizontal(wanted: Vec3, velocity: Vec2) -> Vec3 {
     Vec3::new(velocity.x, wanted.y, velocity.y)
 }
 

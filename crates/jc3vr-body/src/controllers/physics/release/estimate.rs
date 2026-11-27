@@ -28,13 +28,13 @@ pub struct ReleaseFrame {
     /// jumps of the rig.
     pub rig: RigSample,
     pub scale: f32,
-    pub teleport_epoch: u64,
+    pub(crate) teleport_epoch: u64,
 }
 
 impl ReleaseFrame {
     /// Recover the transform used by hand composition without adding HMD translation twice: the
     /// origin is where the cockpit frame's origin lands with the head at `head_world`.
-    pub fn with_composed_head(mut self, head_world: Vec3, head_cockpit: Vec3) -> Self {
+    pub(crate) fn with_composed_head(mut self, head_world: Vec3, head_cockpit: Vec3) -> Self {
         self.origin = CockpitTransform {
             head_world,
             head_cockpit,
@@ -79,7 +79,7 @@ impl ReleaseTransport {
     }
 
     /// Samples at or before the latest coordinate change cannot feed a release or a difference.
-    pub fn history_after_s(&self) -> Option<f64> {
+    pub(crate) fn history_after_s(&self) -> Option<f64> {
         self.history_after_s
     }
 
@@ -202,7 +202,7 @@ impl ReleaseMotion {
     /// as the hand moved, carrying on from the hold, which kept it with the hand in real time,
     /// instead of slowing at the release. The player's own movement through the rig is already
     /// per game second and is kept.
-    pub fn in_game_time(self, time_scale: TimeScale) -> Self {
+    pub(crate) fn in_game_time(self, time_scale: TimeScale) -> Self {
         let hand = WorldMotion {
             linear: self.world.linear - self.inherited.linear,
             angular: self.world.angular - self.inherited.angular,
@@ -306,7 +306,7 @@ pub struct ReleaseInput<'a> {
     /// The display time the hand took what it lets go of: earlier samples belong to whatever the
     /// hand did before.
     pub since_s: f64,
-    pub history_after_s: Option<f64>,
+    pub(crate) history_after_s: Option<f64>,
     pub point_world: Vec3,
 }
 

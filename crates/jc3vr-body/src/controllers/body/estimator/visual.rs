@@ -44,8 +44,8 @@ pub(crate) fn diagnostics(view: Quat, scale: f32, out: &mut Vec<Primitive>) {
 /// The headings to draw, cockpit-frame yaws.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Headings {
-    pub estimate_pelvis: f32,
-    pub estimate_chest: f32,
+    pub(crate) estimate_pelvis: f32,
+    pub(crate) estimate_chest: f32,
     /// The grounded rig's legs and chest, while it runs.
     pub rig: Option<(f32, f32)>,
     /// Whether the estimate is stale, which dims its arrows.

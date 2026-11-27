@@ -48,7 +48,7 @@ impl RootOwner {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct OwnerInput {
     /// Whether the on-foot movement task wrote the proxy's velocity this tick.
-    pub task_wrote: bool,
+    pub(crate) task_wrote: bool,
     /// Whether a hand grips the world.
     pub climbing: bool,
     /// Whether the animation moves the body this tick.

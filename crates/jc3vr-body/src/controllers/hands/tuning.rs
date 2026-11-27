@@ -63,9 +63,9 @@ impl Tuning for HandsTuning {
 pub struct TiersTuning {
     /// How long a hand takes to blend from its controller to the animation when a state yields it,
     /// seconds.
-    pub yield_blend_s: f32,
+    pub(crate) yield_blend_s: f32,
     /// How long a hand takes to blend from the animation back to its controller, seconds.
-    pub return_blend_s: f32,
+    pub(crate) return_blend_s: f32,
 }
 
 /// The anchored tier of the grapple states ([`anchor`](crate::controllers::hands::anchor)).
@@ -76,12 +76,12 @@ pub struct AnchorTuning {
     /// controls' and handles' anchored poses blend over it too.
     pub blend_s: f32,
     /// The hand displacement below which the hang is left alone, metres.
-    pub swing_deadzone_m: f32,
+    pub(crate) swing_deadzone_m: f32,
     /// The hand displacement that swings at full strength, metres.
-    pub swing_full_m: f32,
+    pub(crate) swing_full_m: f32,
     /// The full-strength swing impulse per hang tick, as a multiple of the game's own continuous
     /// stick swing at full deflection.
-    pub swing_scale: f32,
+    pub(crate) swing_scale: f32,
 }
 
 /// The hand's own geometry ([`pose`](crate::controllers::hands::pose)).
@@ -100,16 +100,16 @@ pub struct HandPoseTuning {
 pub struct WristTargetTuning {
     /// The reach of the weak `SECONDARY` target that holds a driven wrist while the weapon off-hand
     /// grip solves for the other.
-    pub secondary_hold_reach: f32,
+    pub(crate) secondary_hold_reach: f32,
     /// The wrist targets' positional reach.
-    pub wrist_reach_t: f32,
+    pub(crate) wrist_reach_t: f32,
     /// The wrist targets' rotational reach.
-    pub wrist_reach_r: f32,
+    pub(crate) wrist_reach_r: f32,
     /// How far a wrist target out of reach pulls the torso after it, before the reach ramp raises
     /// it near full extension.
-    pub wrist_pull: f32,
+    pub(crate) wrist_pull: f32,
     /// How strongly a wrist resists being dragged by other effectors' pull.
-    pub wrist_resist: f32,
+    pub(crate) wrist_resist: f32,
 }
 
 /// The rigid grip ([`grip`](crate::controllers::hands::grip)).
@@ -118,7 +118,7 @@ pub struct WristTargetTuning {
 pub struct RigidGripTuning {
     /// How far the right hand's own grip may turn from the mirrored one before the automatic choice
     /// takes the mirrored one, degrees.
-    pub auto_turn_deg: f32,
+    pub(crate) auto_turn_deg: f32,
 }
 
 #[cfg(test)]

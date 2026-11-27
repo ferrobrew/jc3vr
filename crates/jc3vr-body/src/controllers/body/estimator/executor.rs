@@ -39,7 +39,7 @@ use crate::controllers::{
 
 /// Why the estimator could not run.
 #[derive(Debug)]
-pub enum EstimatorError {
+pub(crate) enum EstimatorError {
     /// Neither the settings nor the payload's own location name the weights' file.
     NoWeightsPath,
     /// The weights' file is not there.

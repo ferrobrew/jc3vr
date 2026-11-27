@@ -193,14 +193,18 @@ pub(crate) fn service(
 }
 
 /// The marker's position: `distance_m` along the head's forward (-Z).
-pub fn marker_position(head: Pose, distance_m: f32) -> Vec3 {
+pub(crate) fn marker_position(head: Pose, distance_m: f32) -> Vec3 {
     head.position + head.orientation * Vec3::NEG_Z * distance_m.max(MIN_MARKER_DISTANCE_M)
 }
 
 /// The sight origin, in the fire point's frame, that makes a sight line at `angles_deg` from the
 /// fire point whose world frame is `fire_frame` pass through `marker`: the point on that line
 /// directly above or below the muzzle (on the fire point's XY plane).
-pub fn line_up(fire_frame: Mat4, angles_deg: Vec2, marker: Vec3) -> Result<Vec3, LineUpError> {
+pub(crate) fn line_up(
+    fire_frame: Mat4,
+    angles_deg: Vec2,
+    marker: Vec3,
+) -> Result<Vec3, LineUpError> {
     let determinant = fire_frame.determinant();
     if !determinant.is_finite() || determinant.abs() < 1e-6 {
         return Err(LineUpError::Degenerate);

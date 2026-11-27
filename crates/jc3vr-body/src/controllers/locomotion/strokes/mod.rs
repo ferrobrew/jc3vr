@@ -80,14 +80,14 @@ pub fn status() -> StrokeStatus {
 /// swim cores' detours to join to the velocity the cores wrote. `None` while the strokes are not
 /// swimming: out of the water, switched off, without tracked hands, gliding to a stop, or with no
 /// stroke tick recent enough to trust.
-pub fn propulsion(now: Stamp) -> Option<f32> {
+pub(crate) fn propulsion(now: Stamp) -> Option<f32> {
     let state = STATE.lock();
     (state.status.fresh(now) && state.status.step.speed > 0.0).then_some(state.status.step.speed)
 }
 
 /// Note what the swim core's detour did with [`propulsion`]: the speed along the facing the core
 /// wrote and the speed written in its place, for the debug UI.
-pub fn record_applied(core_mps: f32, written_mps: f32) {
+pub(crate) fn record_applied(core_mps: f32, written_mps: f32) {
     let mut state = STATE.lock();
     state.status.core_mps = core_mps;
     state.status.written_mps = written_mps;

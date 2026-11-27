@@ -59,7 +59,7 @@ pub struct AimHooks {
 
 /// The weapon armed in each hand beside the wielded one and its hand's aim point, by
 /// [`Hand::index`](jc3vr_input::frame::Hand::index): the weapon's address and the point.
-pub type ArmedTargets = [Option<(usize, Vec3)>; 2];
+pub(crate) type ArmedTargets = [Option<(usize, Vec3)>; 2];
 
 /// The registered table.
 #[inline]

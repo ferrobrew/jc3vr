@@ -85,7 +85,12 @@ impl Aabb {
 
 /// A box quantized into the world's integer space, restored as the engine restores it
 /// ([`hknpWorld::getBodyAabb`]): each corner times the inverse scale, less the low offset.
-pub fn restore_aabb(min: [u16; 3], max: [u16; 3], scale_inv: Vec3, offset_low: Vec3) -> Aabb {
+pub(crate) fn restore_aabb(
+    min: [u16; 3],
+    max: [u16; 3],
+    scale_inv: Vec3,
+    offset_low: Vec3,
+) -> Aabb {
     let restore = |q: [u16; 3]| Vec3::from(q.map(f32::from)) * scale_inv - offset_low;
     Aabb {
         min: restore(min),

@@ -29,7 +29,7 @@ use crate::controllers::body::rig::{
 
 /// One frame's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PushbackInput {
+pub(crate) struct PushbackInput {
     /// The step demand: the gap past what a lean explains: what the drive has yet to close.
     pub gap: Vec2,
     /// Who owned the root on the last tick.
@@ -55,7 +55,7 @@ pub struct PushbackOutcome {
 
 /// The push-back's episode state.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Pushback {
+pub(crate) struct Pushback {
     /// How far the view has been slid back in this episode, metres.
     debt: f32,
     /// How long the gap has stayed under the calm share of the threshold, seconds.
@@ -74,7 +74,7 @@ impl Pushback {
     }
 
     /// The slide applied in the current episode, metres.
-    pub fn debt(&self) -> f32 {
+    pub(crate) fn debt(&self) -> f32 {
         self.debt
     }
 
@@ -83,7 +83,7 @@ impl Pushback {
     }
 
     /// End the episode at once, after a teleport or a recenter.
-    pub fn end_episode(&mut self) {
+    pub(crate) fn end_episode(&mut self) {
         self.debt = 0.0;
         self.calm_s = 0.0;
     }

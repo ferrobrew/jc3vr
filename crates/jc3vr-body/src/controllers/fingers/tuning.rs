@@ -48,26 +48,26 @@ impl Tuning for FingersTuning {
 pub struct FingerTuning {
     /// The bend each finger takes at its open and closed curl, as a share of its full joint
     /// bends, indexed by [`Finger::index`](crate::controllers::fingers::curl::Finger::index).
-    pub curl_ranges: [CurlRange; 5],
+    pub(crate) curl_ranges: [CurlRange; 5],
     /// The full bend of a finger's proximal, middle, and distal joints from straight, degrees: the
     /// bend at a range share of one.
-    pub finger_bend_deg: [f32; 3],
+    pub(crate) finger_bend_deg: [f32; 3],
     /// The full bend of the thumb's base, middle, and distal joints across the palm, degrees.
-    pub thumb_bend_deg: [f32; 3],
+    pub(crate) thumb_bend_deg: [f32; 3],
     /// Each joint's bend at a share of zero, degrees, indexed by finger and then from the root
     /// joint outward: a correction to the straight finger built from the animated hand, positive
     /// toward the palm.
-    pub rest_offset_deg: [[f32; 3]; 5],
+    pub(crate) rest_offset_deg: [[f32; 3]; 5],
     /// How a full hook scales each joint's share of the bend, root outward: the knuckle nearly
     /// straight and the outer joints bent about half again as far.
-    pub hook_shift: [f32; 3],
+    pub(crate) hook_shift: [f32; 3],
     /// The open thumb's turn from the fingers' direction toward the thumb side, in the palm's
     /// plane, degrees.
-    pub thumb_spread_deg: f32,
+    pub(crate) thumb_spread_deg: f32,
     /// The share of the tracked finger splay applied (hand tracking only).
-    pub splay_scale: f32,
+    pub(crate) splay_scale: f32,
     /// The largest splay applied either way, degrees.
-    pub max_splay_deg: f32,
+    pub(crate) max_splay_deg: f32,
     /// The time constant the curls follow their source with, seconds. The estimate jumps when a
     /// touch sensor changes, and the smoothing turns the jump into a quick motion.
     pub smoothing_s: f32,
@@ -127,22 +127,22 @@ impl FingerTuning {
 pub struct GripPoseTuning {
     /// The pose's share at the lightest grip that holds, `0..=1`; it rises to the full pose at
     /// [`firm_squeeze`](Self::firm_squeeze).
-    pub light_share: f32,
+    pub(crate) light_share: f32,
     /// The grip's squeeze at which the pose is fully on, `0..=1`.
-    pub firm_squeeze: f32,
+    pub(crate) firm_squeeze: f32,
     /// The time constant the pose's share follows the grip with, seconds, so that taking hold
     /// closes the fingers and letting go opens them over a short motion.
     pub blend_s: f32,
     /// The thumb's largest turn out of the palm's plane toward the palm side, at full opposition,
     /// degrees.
-    pub max_opposition_deg: f32,
+    pub(crate) max_opposition_deg: f32,
 }
 
 /// The bend a finger takes at its open (curl 0) and closed (curl 1) ends, as a share of its full
 /// joint bends from straight. The bend replaces the animated one rather than adding to it.
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct CurlRange {
+pub(crate) struct CurlRange {
     pub open: f32,
     pub closed: f32,
 }
@@ -161,20 +161,20 @@ impl CurlRange {
 pub struct TrackedCurlsTuning {
     /// A finger's knuckle, middle, and last joint flexions at a full fist, degrees: a finger's
     /// curl is its flexions' sum over theirs.
-    pub finger_full_flex_deg: [f32; 3],
+    pub(crate) finger_full_flex_deg: [f32; 3],
     /// The thumb's two outer flexions at a full bend, degrees.
-    pub thumb_full_flex_deg: [f32; 2],
+    pub(crate) thumb_full_flex_deg: [f32; 2],
 }
 
 impl TrackedCurlsTuning {
     /// The sum of a finger's flexions at a full fist, radians.
-    pub fn finger_full_flex_rad(&self) -> f32 {
+    pub(crate) fn finger_full_flex_rad(&self) -> f32 {
         let [a, b, c] = self.finger_full_flex_deg;
         (a + b + c) * std::f32::consts::PI / 180.0
     }
 
     /// The sum of the thumb's flexions at a full bend, radians.
-    pub fn thumb_full_flex_rad(&self) -> f32 {
+    pub(crate) fn thumb_full_flex_rad(&self) -> f32 {
         let [a, b] = self.thumb_full_flex_deg;
         (a + b) * std::f32::consts::PI / 180.0
     }
@@ -196,22 +196,22 @@ impl TrackedCurlsTuning {
 #[serde(deny_unknown_fields)]
 pub struct EstimatedCurlsTuning {
     /// The thumb's curl resting on the thumbstick.
-    pub thumb_on_stick: f32,
+    pub(crate) thumb_on_stick: f32,
     /// The thumb's curl resting on the trackpad.
-    pub thumb_on_trackpad: f32,
+    pub(crate) thumb_on_trackpad: f32,
     /// The thumb's curl resting on the A button. The face buttons sit nearer the palm than the
     /// thumbstick, so the thumb bends further to reach them.
-    pub thumb_on_a: f32,
+    pub(crate) thumb_on_a: f32,
     /// The thumb's curl resting on the B button.
-    pub thumb_on_b: f32,
+    pub(crate) thumb_on_b: f32,
     /// The extra curl of a thumb pressing down.
-    pub thumb_press_extra: f32,
+    pub(crate) thumb_press_extra: f32,
     /// The trackpad force past which the thumb counts as pressing it.
-    pub trackpad_pressed_force: f32,
+    pub(crate) trackpad_pressed_force: f32,
     /// The index finger's curl resting on the trigger.
-    pub trigger_rest: f32,
+    pub(crate) trigger_rest: f32,
     /// The curl of fingers resting on a Touch controller's grip without pulling it.
-    pub touch_grip_rest: f32,
+    pub(crate) touch_grip_rest: f32,
 }
 
 impl EstimatedCurlsTuning {
@@ -248,19 +248,19 @@ impl EstimatedCurlsTuning {
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GripPosesTuning {
-    pub pistol_grip: PoseShape,
+    pub(crate) pistol_grip: PoseShape,
     pub foregrip: PoseShape,
-    pub magazine_pinch: PoseShape,
-    pub magazine_cup: PoseShape,
-    pub slide_pinch: PoseShape,
-    pub grenade_palm: PoseShape,
-    pub charge_palm: PoseShape,
-    pub ledge_hook: PoseShape,
-    pub flat_palm: PoseShape,
+    pub(crate) magazine_pinch: PoseShape,
+    pub(crate) magazine_cup: PoseShape,
+    pub(crate) slide_pinch: PoseShape,
+    pub(crate) grenade_palm: PoseShape,
+    pub(crate) charge_palm: PoseShape,
+    pub(crate) ledge_hook: PoseShape,
+    pub(crate) flat_palm: PoseShape,
     pub wrap: PoseShape,
     pub cylinder: CylinderPoseTuning,
     pub door_handle: PoseShape,
-    pub collar_grab: PoseShape,
+    pub(crate) collar_grab: PoseShape,
 }
 
 impl GripPosesTuning {
@@ -319,16 +319,16 @@ pub struct CylinderPoseTuning {
     /// further.
     pub curls: [[f32; 2]; 6],
     /// How much less the thumb curls than the fingers.
-    pub thumb_less: f32,
+    pub(crate) thumb_less: f32,
     /// The least the thumb curls.
-    pub thumb_min: f32,
+    pub(crate) thumb_min: f32,
     /// How much more the ring finger curls than the index and middle fingers.
-    pub ring_more: f32,
+    pub(crate) ring_more: f32,
     /// How much more the little finger curls than the index and middle fingers.
-    pub little_more: f32,
+    pub(crate) little_more: f32,
     pub splay: [f32; 5],
-    pub opposition: f32,
-    pub thumb_spread_deg: f32,
+    pub(crate) opposition: f32,
+    pub(crate) thumb_spread_deg: f32,
     pub roles: [FingerRole; 5],
 }
 
@@ -371,13 +371,13 @@ impl CylinderPoseTuning {
 pub struct ContactFitTuning {
     /// The distal bone's length as a share of the middle bone's: the distal bone has no joint
     /// beyond it to measure.
-    pub distal_share: f32,
+    pub(crate) distal_share: f32,
     /// The steps a sweep takes from straight to a fist.
-    pub sweep_steps: u32,
+    pub(crate) sweep_steps: u32,
     /// The fingers of a hand swept per tick.
-    pub fingers_per_tick: usize,
+    pub(crate) fingers_per_tick: usize,
     /// How long a fitted hold keeps its fit before it is swept again.
-    pub refit_ms: Millis,
+    pub(crate) refit_ms: Millis,
 }
 
 impl ContactFitTuning {
@@ -406,13 +406,13 @@ impl ContactFitTuning {
 pub struct SourceDiametersTuning {
     pub articulated_m: f32,
     pub stunt_m: f32,
-    pub wheel_m: f32,
-    pub handlebars_m: f32,
-    pub stick_m: f32,
-    pub lever_m: f32,
+    pub(crate) wheel_m: f32,
+    pub(crate) handlebars_m: f32,
+    pub(crate) stick_m: f32,
+    pub(crate) lever_m: f32,
     pub parachute_handle_m: f32,
     pub mounted_gun_m: f32,
-    pub grapple_line_m: f32,
+    pub(crate) grapple_line_m: f32,
 }
 
 impl SourceDiametersTuning {

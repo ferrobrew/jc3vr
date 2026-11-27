@@ -48,7 +48,7 @@ impl Ray {
     }
 
     /// The nearest a point may lie to the origin and still have an angle off the ray, metres.
-    pub const MIN_OFFSET_M: f32 = 1e-3;
+    pub(crate) const MIN_OFFSET_M: f32 = 1e-3;
 }
 
 /// Where a point lies from a ray ([`Ray::offset`]).
@@ -69,13 +69,13 @@ impl RayOffset {
 }
 
 /// The ray along a pose's -Z axis, the OpenXR aim pose's pointing direction.
-pub fn pose_ray(pose: Pose) -> Option<Ray> {
+pub(crate) fn pose_ray(pose: Pose) -> Option<Ray> {
     Ray::new(pose.position, pose.orientation * Vec3::NEG_Z)
 }
 
 /// The grapple ray: from the gauntlet, `origin_offset` in the wrist frame of `wrist`, along the
 /// controller's aim direction.
-pub fn grapple_ray(wrist: Pose, aim: Pose, origin_offset: Vec3) -> Option<Ray> {
+pub(crate) fn grapple_ray(wrist: Pose, aim: Pose, origin_offset: Vec3) -> Option<Ray> {
     Ray::new(
         wrist.position + wrist.orientation * origin_offset,
         aim.orientation * Vec3::NEG_Z,
@@ -85,7 +85,7 @@ pub fn grapple_ray(wrist: Pose, aim: Pose, origin_offset: Vec3) -> Option<Ray> {
 /// The gun's world transform with a hand's correction applied: `correction × gun`. The correction
 /// carries the gun from where the last simulation tick placed it to where the controller holds it
 /// now, as the render-time late update does for the rendered gun.
-pub fn corrected_gun(gun: Mat4, correction: Option<Pose>) -> Mat4 {
+pub(crate) fn corrected_gun(gun: Mat4, correction: Option<Pose>) -> Mat4 {
     match correction {
         Some(d) => d.to_mat4() * gun,
         None => gun,
@@ -107,7 +107,7 @@ pub fn sight_ray(gun: Mat4, fire_point: Mat4, sight: Option<&SightOverride>) -> 
 
 /// The sight line's direction in the fire point's frame: the barrel axis, -Z, turned by `angles`
 /// (pitch and yaw, degrees).
-pub fn sight_direction(angles: Vec2) -> Vec3 {
+pub(crate) fn sight_direction(angles: Vec2) -> Vec3 {
     sight_turn(angles) * Vec3::NEG_Z
 }
 
@@ -136,13 +136,13 @@ pub fn aim_point(
 }
 
 /// How far along its forward the player aim's raycast starts from the aim matrix's translation.
-pub const DIRECT_AIM_START_OFFSET: f32 = 0.1;
+pub(crate) const DIRECT_AIM_START_OFFSET: f32 = 0.1;
 
 /// The engine-convention camera matrix whose aim ray is `ray`: forward (`-z_axis`) along the ray,
 /// up as close to world up as the ray allows, and the translation set back so that the player
 /// aim's raycast, which starts [`DIRECT_AIM_START_OFFSET`] along the forward, starts at the ray's
 /// origin.
-pub fn view_matrix(ray: &Ray) -> Mat4 {
+pub(crate) fn view_matrix(ray: &Ray) -> Mat4 {
     let back = -ray.direction;
     let right = Vec3::Y
         .cross(back)

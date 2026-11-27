@@ -4,46 +4,46 @@
 use crate::controllers::body::{BodyDimensions, InvalidDimension};
 
 /// Standing eye height as a fraction of standing height.
-pub const EYE_HEIGHT_RATIO: f32 = 0.933;
+pub(crate) const EYE_HEIGHT_RATIO: f32 = 0.933;
 /// Standing shoulder-joint height as a fraction of standing height.
-pub const SHOULDER_HEIGHT_RATIO: f32 = 0.818;
+pub(crate) const SHOULDER_HEIGHT_RATIO: f32 = 0.818;
 /// The distance between the shoulder joints as a fraction of standing height.
-pub const SHOULDER_WIDTH_RATIO: f32 = 0.223;
+pub(crate) const SHOULDER_WIDTH_RATIO: f32 = 0.223;
 /// Hand length (wrist to the tip of the middle finger) as a fraction of standing height.
-pub const HAND_RATIO: f32 = 0.108;
+pub(crate) const HAND_RATIO: f32 = 0.108;
 /// The upper arm's length as a fraction of standing height.
-pub const UPPER_ARM_RATIO: f32 = 0.186;
+pub(crate) const UPPER_ARM_RATIO: f32 = 0.186;
 /// The forearm's length as a fraction of standing height.
-pub const FOREARM_RATIO: f32 = 0.146;
+pub(crate) const FOREARM_RATIO: f32 = 0.146;
 /// The upper arm's share of the shoulder-to-wrist length; the forearm takes the rest.
-pub const UPPER_ARM_SHARE: f32 = UPPER_ARM_RATIO / (UPPER_ARM_RATIO + FOREARM_RATIO);
+pub(crate) const UPPER_ARM_SHARE: f32 = UPPER_ARM_RATIO / (UPPER_ARM_RATIO + FOREARM_RATIO);
 /// How far along the hand, from the wrist, the fingertip lies beyond the grip pose, as a fraction
 /// of the hand's length. The grip pose is the centre of the closed hand, about three tenths of the
 /// hand's length from the wrist.
-pub const GRIP_TO_FINGERTIP_SHARE: f32 = 0.7;
+pub(crate) const GRIP_TO_FINGERTIP_SHARE: f32 = 0.7;
 
 /// An adult's arm span as a fraction of their standing height. The two are within a few percent of
 /// each other for most adults, so a seated calibration, which cannot measure the height, estimates
 /// it from the span ([`height_from_grip_span`]).
-pub const ARM_SPAN_HEIGHT_RATIO: f32 = 1.0;
+pub(crate) const ARM_SPAN_HEIGHT_RATIO: f32 = 1.0;
 
 /// The standing eye heights a calibration accepts, metres. Outside this, the player is most likely
 /// seated or the runtime's floor is wrong.
-pub const EYE_HEIGHT_RANGE: (f32, f32) = (1.0, 2.3);
+pub(crate) const EYE_HEIGHT_RANGE: (f32, f32) = (1.0, 2.3);
 /// The seated eye heights a calibration accepts, metres: from a low sofa to a tall stool. Above
 /// this, the player is most likely standing.
-pub const SEATED_EYE_HEIGHT_RANGE: (f32, f32) = (0.7, 1.5);
+pub(crate) const SEATED_EYE_HEIGHT_RANGE: (f32, f32) = (0.7, 1.5);
 /// The arm spans a calibration accepts, metres, whatever the height.
-pub const ARM_SPAN_RANGE: (f32, f32) = (1.2, 2.4);
+pub(crate) const ARM_SPAN_RANGE: (f32, f32) = (1.2, 2.4);
 /// The shortest arm span a calibration accepts, as a fraction of the height. An adult's span is
 /// within a few percent of their height, so a shorter one means the arms were not spread. There is
 /// no upper bound relative to the height: the grip span cannot exceed the arms, so a span well over
 /// the height means the height is low (the eye height was measured seated), not the arms long, and
 /// the review flags it instead ([`span_out_of_proportion`]).
-pub const ARM_SPAN_MIN_RATIO: f32 = 0.85;
+pub(crate) const ARM_SPAN_MIN_RATIO: f32 = 0.85;
 /// The arm span, as a fraction of the height, above which the review flags the two as out of
 /// proportion.
-pub const ARM_SPAN_FLAG_RATIO: f32 = 1.15;
+pub(crate) const ARM_SPAN_FLAG_RATIO: f32 = 1.15;
 
 /// What the headset measured from a standing player.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -51,16 +51,16 @@ pub struct Measurements {
     /// The standing eye height above the floor, metres.
     pub eye_height: f32,
     /// The distance between the two controllers' grip poses in a T-pose, metres.
-    pub grip_span: f32,
+    pub(crate) grip_span: f32,
 }
 
 /// What the headset measured from a seated player, and the height the player set, if any.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SeatedMeasurements {
+pub(crate) struct SeatedMeasurements {
     /// The eye height above the floor while sitting upright, metres.
     pub seated_eye_height: f32,
     /// The distance between the two controllers' grip poses in a T-pose, metres.
-    pub grip_span: f32,
+    pub(crate) grip_span: f32,
     /// The standing height the player set on the review, replacing the estimate from the span.
     pub height: Option<f32>,
 }
@@ -148,19 +148,19 @@ pub fn height_from_eye_height(eye_height: f32) -> f32 {
 
 /// The fingertip-to-fingertip arm span of a player of `height` whose grip poses are `grip_span`
 /// apart in a T-pose: the grip span plus, on each side, the part of the hand beyond the grip.
-pub fn arm_span_from_grip_span(grip_span: f32, height: f32) -> f32 {
+pub(crate) fn arm_span_from_grip_span(grip_span: f32, height: f32) -> f32 {
     grip_span + 2.0 * GRIP_TO_FINGERTIP_SHARE * HAND_RATIO * height
 }
 
 /// The standing height of a player whose grip poses are `grip_span` apart in a T-pose, estimated
 /// from the arm span: the height at which [`arm_span_from_grip_span`] gives a span of
 /// [`ARM_SPAN_HEIGHT_RATIO`] of the height.
-pub fn height_from_grip_span(grip_span: f32) -> f32 {
+pub(crate) fn height_from_grip_span(grip_span: f32) -> f32 {
     grip_span / (ARM_SPAN_HEIGHT_RATIO - 2.0 * GRIP_TO_FINGERTIP_SHARE * HAND_RATIO)
 }
 
 /// The shortest arm span a calibration accepts for a player of `height`.
-pub fn min_arm_span(height: f32) -> f32 {
+pub(crate) fn min_arm_span(height: f32) -> f32 {
     (ARM_SPAN_MIN_RATIO * height).max(ARM_SPAN_RANGE.0)
 }
 
@@ -210,7 +210,9 @@ pub fn derive(measurements: Measurements) -> Result<BodyDimensions, CalibrationE
 /// millimetre. The height is the one the player set, else the estimate from the span
 /// ([`height_from_grip_span`]); the standing eye height follows from it, and everything else is
 /// derived as [`derive`] does. The seated eye height is kept as measured.
-pub fn derive_seated(measurements: SeatedMeasurements) -> Result<BodyDimensions, CalibrationError> {
+pub(crate) fn derive_seated(
+    measurements: SeatedMeasurements,
+) -> Result<BodyDimensions, CalibrationError> {
     let SeatedMeasurements {
         seated_eye_height,
         grip_span,
@@ -235,7 +237,7 @@ pub fn derive_seated(measurements: SeatedMeasurements) -> Result<BodyDimensions,
 /// A standing calibration's result with the seated eye height from the saved dimensions it replaces,
 /// when that is still below the new standing eye height: a standing calibration does not measure
 /// it, and saving would otherwise drop it.
-pub fn keeping_seated_eye_height(body: BodyDimensions, kept: Option<f32>) -> BodyDimensions {
+pub(crate) fn keeping_seated_eye_height(body: BodyDimensions, kept: Option<f32>) -> BodyDimensions {
     let seated_eye_height =
         kept.filter(|seated| seated.is_finite() && *seated > 0.0 && *seated < body.eye_height);
     BodyDimensions {

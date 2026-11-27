@@ -53,22 +53,22 @@ impl Tuning for IkBodyTuning {
 #[serde(deny_unknown_fields)]
 pub struct GateTuning {
     /// The IK pose's share of the pelvis's turn and the spine on the walk.
-    pub walk_weight: f32,
+    pub(crate) walk_weight: f32,
     /// How long a hand-over between the IK pose and a clip takes, seconds.
     pub blend_s: f32,
     /// How long after a hand-over to the walk the IK waits before it takes the standing body back,
     /// seconds, once Rico stands still again.
-    pub resume_s: f32,
+    pub(crate) resume_s: f32,
     /// The furthest the pelvis is lowered so that the planted feet stay within the legs' reach,
     /// metres.
     pub max_pelvis_drop_m: f32,
     /// In the air, the share of the way from the estimate's legs to the light air pose.
-    pub air_relax: f32,
+    pub(crate) air_relax: f32,
     /// The toe joint's height over the ground, metres: a generic anthropometric figure.
     pub toe_height_m: f32,
     /// The pelvis position's weight from which the root follows the FK pelvis: past half way into
     /// the standing body, so the step commit keeps the root through the start of the blend.
-    pub root_follow_weight: f32,
+    pub(crate) root_follow_weight: f32,
 }
 
 impl GateTuning {
@@ -92,11 +92,11 @@ pub struct SeedTuning {
     pub reach_share: f32,
     /// The light air pose's knee under the hip, as shares of the leg's length: down along the
     /// pelvis and ahead of it.
-    pub air_knee_down: f32,
-    pub air_knee_ahead: f32,
+    pub(crate) air_knee_down: f32,
+    pub(crate) air_knee_ahead: f32,
     /// The light air pose's ankle under the hip, as shares of the leg's length.
-    pub air_ankle_down: f32,
-    pub air_ankle_ahead: f32,
+    pub(crate) air_ankle_down: f32,
+    pub(crate) air_ankle_ahead: f32,
 }
 
 impl SeedTuning {
@@ -114,9 +114,9 @@ impl SeedTuning {
 #[serde(deny_unknown_fields)]
 pub struct ClimbTuning {
     /// How far the cast from the hip along the facing reaches, as a share of the leg's length.
-    pub hip_cast_share: f32,
+    pub(crate) hip_cast_share: f32,
     /// How far the cast from the ankle forward and down reaches, as a share of the leg's length.
-    pub ankle_cast_share: f32,
+    pub(crate) ankle_cast_share: f32,
 }
 
 /// The feet's ground probes.
@@ -124,13 +124,13 @@ pub struct ClimbTuning {
 #[serde(deny_unknown_fields)]
 pub struct ProbeTuning {
     /// How far above the height asked about a probe starts, metres: a step up.
-    pub above_m: f32,
+    pub(crate) above_m: f32,
     /// How far below it a probe reaches, metres: a step down; past it, the foot is unsupported.
     pub below_m: f32,
     /// A request this close to an answer's point is answered by it, metres.
-    pub same_point_m: f32,
+    pub(crate) same_point_m: f32,
     /// ...and this close to its height, metres.
-    pub same_height_m: f32,
+    pub(crate) same_height_m: f32,
 }
 
 impl ProbeTuning {
@@ -152,7 +152,7 @@ impl ProbeTuning {
 #[serde(deny_unknown_fields)]
 pub struct SupportTuning {
     /// The furthest a snapshot is carried forward by its velocities, seconds: a few ticks.
-    pub max_predict_s: f32,
+    pub(crate) max_predict_s: f32,
 }
 
 /// The HumanIK targets' gains at full weight.
@@ -163,16 +163,16 @@ pub struct EffectorsTuning {
     pub hips: Gains,
     /// The hips effector's rotation reach: the zero rotation offset that holds the seeded pelvis's
     /// orientation through the solve.
-    pub hips_rotation_reach: f32,
+    pub(crate) hips_rotation_reach: f32,
     /// How firmly the hips resist being displaced by other effectors' pull.
-    pub hips_resist: f32,
+    pub(crate) hips_resist: f32,
     /// The ankle and toe targets, planted or braced. The pull is how much reaching a foot's target
     /// drags the rest of the body after it.
     pub foot: Gains,
     /// The knee hints: weak, a direction rather than a place.
-    pub knee_hint: Gains,
+    pub(crate) knee_hint: Gains,
     /// In the air, the ankle targets.
-    pub air_foot: Gains,
+    pub(crate) air_foot: Gains,
 }
 
 impl EffectorsTuning {

@@ -75,12 +75,12 @@ impl Frames {
             && self.character.determinant().abs() > 1.0e-6
     }
 
-    pub fn model_to_world(&self, point: Vec3) -> Vec3 {
+    pub(crate) fn model_to_world(&self, point: Vec3) -> Vec3 {
         self.character.transform_point3(point)
     }
 
     #[inline]
-    pub fn world_to_model(&self, point: Vec3) -> Vec3 {
+    pub(crate) fn world_to_model(&self, point: Vec3) -> Vec3 {
         self.character.inverse().transform_point3(point)
     }
 
@@ -101,7 +101,7 @@ impl Frames {
 
     /// A cockpit heading as a heading in the character's model space, or `None` for one that
     /// turns vertical there.
-    pub fn cockpit_yaw_to_model(&self, yaw: f32) -> Option<f32> {
+    pub(crate) fn cockpit_yaw_to_model(&self, yaw: f32) -> Option<f32> {
         let (_, rotation, _) = self.character.to_scale_rotation_translation();
         yaw_of(rotation.inverse() * self.cockpit.direction_to_world(direction(yaw)))
     }
@@ -163,7 +163,7 @@ pub fn plausible(landmarks: &SkeletonLandmarks) -> bool {
 /// The head is held loosely, anywhere within reach of the chest, below the shoulders included: the
 /// body IK keeps the head bone on the player's neck pivot, but a clip, a fold over the hips, or a
 /// head the solve cannot reach can still hang it forward of and below the shoulder joints.
-pub fn implausibility(landmarks: &SkeletonLandmarks) -> Option<Implausible> {
+pub(crate) fn implausibility(landmarks: &SkeletonLandmarks) -> Option<Implausible> {
     if !landmarks.is_finite() {
         return Some(Implausible::NotFinite);
     }
@@ -185,7 +185,7 @@ pub fn implausibility(landmarks: &SkeletonLandmarks) -> Option<Implausible> {
 
 /// Why landmarks are not a plausible body, in the order [`implausibility`] tests.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum Implausible {
+pub(crate) enum Implausible {
     /// A landmark is not a finite position.
     NotFinite,
     /// The shoulders are too near the hips or too far from them.
@@ -213,7 +213,7 @@ impl fmt::Display for Implausible {
 /// The turn of the line from `left` to `right` away from the model's lateral axis, radians, in
 /// `-π/2..=π/2`; `None` when the points coincide horizontally. Wrapping to a half turn makes the
 /// measure independent of which side of the model the rig puts its left.
-pub fn lateral_twist(left: Vec3, right: Vec3) -> Option<f32> {
+pub(crate) fn lateral_twist(left: Vec3, right: Vec3) -> Option<f32> {
     let angle = line_yaw(left, right)?;
     let half = std::f32::consts::FRAC_PI_2;
     Some(if angle > half {

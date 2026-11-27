@@ -64,7 +64,7 @@ pub struct HeldWeapon {
     pub sight: ResolvedSight,
     /// The world frame of the fire point of the gun each hand aims, indexed by [`Hand::index`]: the
     /// gun carried to the controller's current pose, composed with its current fire point.
-    pub fire_frames: [Option<Mat4>; 2],
+    pub(crate) fire_frames: [Option<Mat4>; 2],
 }
 
 /// The most guns per weapon the gun aim tracks. A dual-wield weapon has two.
@@ -167,7 +167,7 @@ pub(super) fn publish(held: Option<HeldWeapon>, targets: [Option<Vec3>; 2]) {
 /// player's weapon aim (weapons the per-weapon update is not handed a point for, and the
 /// character's shared aim state) follows the gun hand too. The dominant hand's point while it holds
 /// a gun, else the other hand's. `None` when the gun aim is not acting.
-pub fn character_aim_point(dominant: Hand) -> Option<Vec3> {
+pub(crate) fn character_aim_point(dominant: Hand) -> Option<Vec3> {
     SNAPSHOT
         .lock()
         .filter(Snapshot::fresh)

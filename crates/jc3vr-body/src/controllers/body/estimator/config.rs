@@ -20,7 +20,7 @@ pub struct EstimatorConfig {
 pub const DEFAULT_WEIGHTS_FILE: &str = "egoposer.safetensors";
 
 /// The script that converts the authors' checkpoint into the file the estimator loads.
-pub const WEIGHTS_SCRIPT: &str = "scripts/egoposer_weights.sh";
+pub(crate) const WEIGHTS_SCRIPT: &str = "scripts/egoposer_weights.sh";
 
 impl EstimatorConfig {
     pub const fn new() -> Self {

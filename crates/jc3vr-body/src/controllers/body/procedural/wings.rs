@@ -60,7 +60,7 @@ pub(super) struct WingQueue {
 
 /// Which hands the wingsuit's arms queued targets for at the last gate, by [`Hand::index`]: the
 /// body IK does not pin those wrists to the animation.
-pub fn wing_arms() -> [bool; 2] {
+pub(crate) fn wing_arms() -> [bool; 2] {
     let bits = WING_HANDS.load(Ordering::Relaxed);
     Hand::BOTH.map(|hand| bits & (1 << hand.index()) != 0)
 }

@@ -18,7 +18,7 @@ use crate::controllers::body::rig::tuning::RootTuning;
 
 /// What the frame half publishes for the simulation half.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct StepFrame {
+pub(crate) struct StepFrame {
     pub phase: StepPhase,
     /// The pelvis's gap to the floor point under the neck, world `(x, z)`, metres.
     pub gap: Vec2,
@@ -55,7 +55,7 @@ pub fn to_cockpit(v: Vec2, view: Quat, world_scale: f32) -> Vec3 {
 /// `dt` seconds, is a teleport rather than movement: further than `tuning`'s `warp_min_m`, and
 /// further than its `warp_speed_factor` times what the speed covers, so that fast vehicles and
 /// dives never trip it.
-pub fn is_warp(distance: f32, speed: f32, dt: f32, tuning: &RootTuning) -> bool {
+pub(crate) fn is_warp(distance: f32, speed: f32, dt: f32, tuning: &RootTuning) -> bool {
     let travelled = if speed.is_finite() && dt.is_finite() {
         tuning.warp_speed_factor * speed.abs() * dt.max(0.0)
     } else {

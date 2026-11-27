@@ -57,7 +57,7 @@ impl BodyState {
 }
 
 /// The mass of a body whose inverse mass is `inverse_mass`, or `None` for an infinite mass.
-pub fn mass_of(inverse_mass: f32) -> Option<f32> {
+pub(crate) fn mass_of(inverse_mass: f32) -> Option<f32> {
     (inverse_mass.is_finite() && inverse_mass > 0.0).then(|| 1.0 / inverse_mass)
 }
 

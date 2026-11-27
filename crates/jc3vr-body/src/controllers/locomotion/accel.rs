@@ -17,9 +17,9 @@ use crate::controllers::locomotion::tuning::LOCOMOTION;
 #[serde(deny_unknown_fields)]
 pub struct Rates {
     /// While the target is at least as fast as the velocity and not behind it.
-    pub accelerate_mps2: f32,
+    pub(crate) accelerate_mps2: f32,
     /// While the target is slower than the velocity or turned away from it.
-    pub decelerate_mps2: f32,
+    pub(crate) decelerate_mps2: f32,
 }
 
 /// Move `velocity` toward `target` by at most the applicable rate times `dt`. Non-finite inputs
@@ -54,7 +54,7 @@ pub fn step(velocity: Vec2, target: Vec2, dt: f32, rates: Rates) -> Vec2 {
 /// slows the coast with it, so the integrator cannot hold a speed the body lost and hand it back
 /// once nothing holds the body back. A velocity no faster than the target is the stick's own and
 /// is kept, as it is without a finite `body`.
-pub fn coast_limited(velocity: Vec2, target: Vec2, body: Option<Vec2>) -> Vec2 {
+pub(crate) fn coast_limited(velocity: Vec2, target: Vec2, body: Option<Vec2>) -> Vec2 {
     let Some(body) = body.filter(|b| b.is_finite()) else {
         return velocity;
     };

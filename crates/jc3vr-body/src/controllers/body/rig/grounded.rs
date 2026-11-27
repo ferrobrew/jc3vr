@@ -85,7 +85,7 @@ pub struct GroundedFrame {
     pub pelvis: Vec2,
     /// Where the root's cockpit point should be put after a recenter, `(x, z)`: the upright eyes
     /// over the pelvis under the neck.
-    pub snap_to: Option<Vec2>,
+    pub(crate) snap_to: Option<Vec2>,
 }
 
 /// Advance the rig by one frame. `None` while Rico is not grounded.
@@ -184,7 +184,7 @@ pub fn standing_eye_height() -> f32 {
 
 /// Snap on the next grounded frame: face the head, measure the standing height afresh, and put the
 /// pelvis under the neck. The recenter's, and the debug UI's button.
-pub fn request_snap() {
+pub(crate) fn request_snap() {
     STATE.lock().snap = Some(Stamp::now());
 }
 

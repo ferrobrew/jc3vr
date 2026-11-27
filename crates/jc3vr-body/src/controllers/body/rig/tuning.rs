@@ -71,9 +71,9 @@ impl Tuning for BodyRigTuning {
 pub struct GroundedFrameTuning {
     /// How far a committed step pushes the move stick for the game's animation, `0..=1`: a walk.
     /// The velocity is the drive's whatever this is; it only picks the clip.
-    pub walk_stick: f32,
+    pub(crate) walk_stick: f32,
     /// A step closer than this to arriving shuffles under the drive rather than walking, metres.
-    pub walk_gap_m: f32,
+    pub(crate) walk_gap_m: f32,
     /// A spell off the ground longer than this starts the rig again facing the head.
     pub resume_after_ms: Millis,
 }
@@ -93,9 +93,9 @@ impl GroundedFrameTuning {
 pub struct TorsoTuning {
     /// The distance between the hip joints as a share of the distance between the shoulder joints:
     /// a generic anthropometric figure.
-    pub hip_spacing_share: f32,
+    pub(crate) hip_spacing_share: f32,
     /// The furthest the chest is turned from the character's facing, degrees.
-    pub chest_limit_deg: f32,
+    pub(crate) chest_limit_deg: f32,
 }
 
 /// The head-through-geometry probe and its fade.
@@ -104,14 +104,14 @@ pub struct TorsoTuning {
 pub struct ProbeTuning {
     /// How far above the eyes the terrain check starts, metres: deeper than the full fade, and
     /// short enough that the heightfield over a tunnel or a bunker is never in reach.
-    pub terrain_reach_m: f32,
+    pub(crate) terrain_reach_m: f32,
     /// How deep past the obstruction the head may go before the view starts to darken, metres.
-    pub head_fade_start_m: f32,
+    pub(crate) head_fade_start_m: f32,
     /// How deep past the obstruction the view is fully dark, metres.
-    pub head_fade_full_m: f32,
+    pub(crate) head_fade_full_m: f32,
     /// How far to either side of the eye centre the outer rays of the fan run, metres: about the
     /// head's half-width.
-    pub fan_half_width_m: f32,
+    pub(crate) fan_half_width_m: f32,
 }
 
 impl ProbeTuning {
@@ -134,15 +134,15 @@ impl ProbeTuning {
 pub struct RootTuning {
     /// The gap at a seat exit past which the head is put back over the body instead of the body
     /// stepping to it, world metres.
-    pub exit_rebase_m: f32,
+    pub(crate) exit_rebase_m: f32,
     /// Where the headroom ray starts above the feet, metres: above a step the character stands on.
-    pub headroom_ray_start_m: f32,
+    pub(crate) headroom_ray_start_m: f32,
     /// The shortest single-tick jump of the body, metres, that counts as a teleport the game made
     /// without announcing it.
-    pub warp_min_m: f32,
+    pub(crate) warp_min_m: f32,
     /// How many times what the body's speed covers in the tick a jump must also exceed to count as
     /// a teleport, so that fast vehicles and dives never trip it.
-    pub warp_speed_factor: f32,
+    pub(crate) warp_speed_factor: f32,
 }
 
 impl RootTuning {
@@ -168,7 +168,7 @@ pub struct TraceTuning {
 #[serde(deny_unknown_fields)]
 pub struct LedgerTuning {
     /// The share of the requested drive below which the credited drive means an obstruction.
-    pub obstructed_share: f32,
+    pub(crate) obstructed_share: f32,
 }
 
 /// The push-back at a wall the body cannot pass.
@@ -176,23 +176,23 @@ pub struct LedgerTuning {
 #[serde(deny_unknown_fields)]
 pub struct PushbackTuning {
     /// How far past the root the view may go while the player's step drive is obstructed, metres.
-    pub obstructed_m: f32,
+    pub(crate) obstructed_m: f32,
     /// How far while the animation carries the body and the drive is suspended, metres: only a
     /// runaway gap.
     pub authored_m: f32,
     /// How far while climbing, metres: about an arm's-length lean.
     pub reach_m: f32,
     /// The smallest gap that counts as obstructed, metres.
-    pub min_gap_m: f32,
+    pub(crate) min_gap_m: f32,
     /// The most the view is slid back in one episode, metres; past it the view fades.
-    pub debt_cap_m: f32,
+    pub(crate) debt_cap_m: f32,
     /// How far past the threshold, with the cap spent, the fade reaches black, metres.
-    pub fade_span_m: f32,
+    pub(crate) fade_span_m: f32,
     /// How long the gap must stay under the calm share of the threshold for the episode to end,
     /// seconds.
-    pub reset_s: f32,
+    pub(crate) reset_s: f32,
     /// The share of the threshold the gap must stay under for the episode to end.
-    pub calm_share: f32,
+    pub(crate) calm_share: f32,
 }
 
 impl PushbackTuning {

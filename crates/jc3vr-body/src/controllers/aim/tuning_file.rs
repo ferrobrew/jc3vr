@@ -24,7 +24,7 @@ pub struct AimTuning {
     pub grapple_weapons: GrappleWeaponsTuning,
     pub marker_rays: MarkerRaysTuning,
     pub neutral: NeutralAimTuning,
-    pub sight_tool: SightToolTuning,
+    pub(crate) sight_tool: SightToolTuning,
 }
 
 impl Tuning for AimTuning {
@@ -93,7 +93,7 @@ pub struct RayTuning {
     /// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed
     /// out along the ray, because the game fires along the barrel instead of at an aim point near
     /// the muzzle, and skips the weapon's update entirely for one almost at the muzzle.
-    pub min_target_distance_m: f32,
+    pub(crate) min_target_distance_m: f32,
 }
 
 /// The aim assist.
@@ -104,10 +104,10 @@ pub struct AssistTuning {
     pub max_distance_m: f32,
     /// The half-angle of the cone around the grapple hand's ray that the grapple's aim assist
     /// looks for a target in, degrees.
-    pub grapple_cone_deg: f32,
+    pub(crate) grapple_cone_deg: f32,
     /// How far short of a target's body position the line of sight to it may be blocked and still
     /// count as clear, metres: the line ends inside the target's own body, or its vehicle's.
-    pub body_sight_tolerance_m: f32,
+    pub(crate) body_sight_tolerance_m: f32,
 }
 
 /// The grapple's cast for the weapons lying in the world.
@@ -118,7 +118,7 @@ pub struct GrappleWeaponsTuning {
     /// collision body) on its way to a weapon.
     pub max_steps: usize,
     /// How far past a hit the next step of the weapon cast starts, metres.
-    pub step_past_m: f32,
+    pub(crate) step_past_m: f32,
 }
 
 /// The world markers' fallback raycasts.
@@ -126,7 +126,7 @@ pub struct GrappleWeaponsTuning {
 #[serde(deny_unknown_fields)]
 pub struct MarkerRaysTuning {
     /// The most rays cast per simulation update; the rest wait for a later update.
-    pub max_casts_per_tick: usize,
+    pub(crate) max_casts_per_tick: usize,
 }
 
 /// The neutral aim point the body turns toward.
@@ -140,9 +140,9 @@ pub struct NeutralAimTuning {
 /// The in-headset sight tuning tool.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SightToolTuning {
+pub(crate) struct SightToolTuning {
     /// How far ahead of the head the line-up marker is placed, metres.
-    pub marker_distance_m: f32,
+    pub(crate) marker_distance_m: f32,
 }
 
 #[cfg(test)]

@@ -161,11 +161,11 @@ impl Tuning for FreshnessTuning {
 pub struct AimFreshness {
     /// How long the gun aim's snapshot stands for the player. The aim update runs every simulation
     /// tick while the player exists, so an older one belongs to a paused or departed player.
-    pub gun_ms: Millis,
+    pub(crate) gun_ms: Millis,
     /// How long a published grapple-weapon aim stays current.
-    pub grapple_weapons_ms: Millis,
+    pub(crate) grapple_weapons_ms: Millis,
     /// How long a sight tool request waits for an aim update before it is dropped.
-    pub sight_request_ms: Millis,
+    pub(crate) sight_request_ms: Millis,
 }
 
 /// The body's windows: the unarmed pose, the learned estimator, the IK body, the procedural body,
@@ -175,40 +175,40 @@ pub struct AimFreshness {
 pub struct BodyFreshness {
     /// How long an unarmed decision holds for the modifier pass, which runs earlier in the next
     /// tick.
-    pub unarmed_ms: Millis,
+    pub(crate) unarmed_ms: Millis,
     /// How long after the last frame the eyes stand for the estimator window's position.
-    pub estimator_eyes_ms: Millis,
+    pub(crate) estimator_eyes_ms: Millis,
     /// An estimate older than this is stale for any consumer.
-    pub estimate_ms: Millis,
+    pub(crate) estimate_ms: Millis,
     /// A support snapshot older than this no longer stands for its support: the body has gone, or
     /// the probes' update has stopped running.
-    pub ik_support_ms: Millis,
+    pub(crate) ik_support_ms: Millis,
     /// The IK body's published FK pose stops standing for the player after this long: a few
     /// rendered frames.
-    pub ik_fk_ms: Millis,
+    pub(crate) ik_fk_ms: Millis,
     /// How long after the procedural body's solve gate last ran its status, and the IK body's
     /// status written in the same gate, still stand: a few ticks.
-    pub gate_ms: Millis,
+    pub(crate) gate_ms: Millis,
     /// How long the published local model counts as the player's after it was last refreshed: a
     /// few ticks.
-    pub procedural_local_ms: Millis,
+    pub(crate) procedural_local_ms: Millis,
     /// How long a published firm ragdoll source stands: a few ticks.
-    pub firm_ragdoll_source_ms: Millis,
+    pub(crate) firm_ragdoll_source_ms: Millis,
     /// How long a body mirror submission is drawn without another: a few ticks, so a paused or
     /// skipped pass clears the mirror.
-    pub mirror_ms: Millis,
+    pub(crate) mirror_ms: Millis,
     /// A support the IK body's gate asks about stays tracked this long after it last asked.
-    pub ik_support_kept_ms: Millis,
+    pub(crate) ik_support_kept_ms: Millis,
     /// A ground probe's answer stands for its point this long.
-    pub ik_probe_answer_ms: Millis,
+    pub(crate) ik_probe_answer_ms: Millis,
     /// A brace cast's answer stands this long: a few ticks, so a brace taken from it is near where
     /// the leg is.
-    pub ik_brace_answer_ms: Millis,
+    pub(crate) ik_brace_answer_ms: Millis,
     /// How long after the climb's task last ran it still counts as running: a tick or two.
-    pub procedural_climb_task_ms: Millis,
+    pub(crate) procedural_climb_task_ms: Millis,
     /// A gap between the wings' readings longer than this starts their follower again: a few
     /// ticks.
-    pub wings_gap_ms: Millis,
+    pub(crate) wings_gap_ms: Millis,
 }
 
 /// The body rig's windows.
@@ -216,20 +216,20 @@ pub struct BodyFreshness {
 #[serde(deny_unknown_fields)]
 pub struct RigFreshness {
     /// The grounded rig's published frame stops standing for the rig after this long.
-    pub grounded_ms: Millis,
+    pub(crate) grounded_ms: Millis,
     /// How old the character's pose may be and still place the holsters.
-    pub skeleton_ms: Millis,
+    pub(crate) skeleton_ms: Millis,
     /// How long a collision probe result stays current. The probe runs every simulation tick in
     /// gameplay under the headset, so a stale result means the probe has stopped, and its fade must
     /// clear.
-    pub probe_ms: Millis,
+    pub(crate) probe_ms: Millis,
     /// How old the latest tick's root trace may be for the recorder to sample it.
-    pub root_trace_ms: Millis,
+    pub(crate) root_trace_ms: Millis,
     /// A gap between rendered frames longer than this means the headset stopped rendering, and the
     /// root's frame half measurement stops holding for the simulation half.
-    pub root_frame_gap_ms: Millis,
+    pub(crate) root_frame_gap_ms: Millis,
     /// How long a recenter's snap waits for Rico to be grounded before it expires.
-    pub snap_wait_ms: Millis,
+    pub(crate) snap_wait_ms: Millis,
 }
 
 /// The hands' windows: the anchor, the measured arms, the presentation, and the grab readout.
@@ -237,23 +237,23 @@ pub struct RigFreshness {
 #[serde(deny_unknown_fields)]
 pub struct HandsFreshness {
     /// How long the input tick's attach point stays current.
-    pub anchor_ms: Millis,
+    pub(crate) anchor_ms: Millis,
     /// A gap in the hang task's ticks longer than this begins a new hang.
-    pub hang_gap_ms: Millis,
+    pub(crate) hang_gap_ms: Millis,
     /// How long the hands rig's measured arms stay current after the last measurement.
-    pub measured_arms_ms: Millis,
+    pub(crate) measured_arms_ms: Millis,
     /// How old the latest tick may be for the presentation layer to pose from it: a few ticks. Past
     /// it the pose pass has stopped running for the player (a cutscene, a load), and the body is
     /// left as drawn.
-    pub presentation_ms: Millis,
+    pub(crate) presentation_ms: Millis,
     /// How long the grab readout counts as live after the last input tick.
-    pub grab_status_ms: Millis,
+    pub(crate) grab_status_ms: Millis,
     /// How long the grab markers live in the overlay. They are submitted at the input tick's rate,
     /// so they live a little past one tick.
-    pub grab_markers_ms: Millis,
+    pub(crate) grab_markers_ms: Millis,
     /// The longest step the elbow pole's smoothing carries its direction across, seconds; past it
     /// (the layer was idle, a hitch) the smoothing starts again from the rule's pole.
-    pub elbow_smoothing_gap_s: f32,
+    pub(crate) elbow_smoothing_gap_s: f32,
 }
 
 /// The finger curls' grip declarations: a declaration lasts a few of the curls' ticks, so that a
@@ -263,12 +263,12 @@ pub struct HandsFreshness {
 #[serde(deny_unknown_fields)]
 pub struct FingersFreshness {
     /// The shortest a declaration lasts, seconds.
-    pub grip_min_s: f32,
+    pub(crate) grip_min_s: f32,
     /// The longest a declaration lasts, seconds: also how long one counts for the readouts, which do
     /// not know the curls' tick interval.
-    pub grip_max_s: f32,
+    pub(crate) grip_max_s: f32,
     /// How many of the curls' ticks a declaration lasts, within the two bounds.
-    pub grip_ticks: f32,
+    pub(crate) grip_ticks: f32,
 }
 
 /// The held items' windows.
@@ -278,7 +278,7 @@ pub struct HeldFreshness {
     /// How long a physics step's held-gun results stay current for a reader between the steps. A
     /// publication's staleness counts steps instead ([`PhysicsFreshness::stale_steps`]), so a hitch
     /// of the whole simulation tick never drops a held gun.
-    pub guns_ms: Millis,
+    pub(crate) guns_ms: Millis,
 }
 
 /// Locomotion's windows.
@@ -286,15 +286,15 @@ pub struct HeldFreshness {
 #[serde(deny_unknown_fields)]
 pub struct LocomotionFreshness {
     /// Ticks of the movement task further apart than this are separate runs of it.
-    pub movement_task_ms: Millis,
+    pub(crate) movement_task_ms: Millis,
     /// How long the strokes may go without a tick before they forget the hands' motion.
-    pub strokes_ms: Millis,
+    pub(crate) strokes_ms: Millis,
     /// How long after the movement task last ran it still counts as driving the root, seconds. It
     /// runs every simulation tick on foot, so this covers a few ticks' jitter without letting an
     /// unclassified animation carry the body far from the view first.
-    pub movement_task_grace_s: f32,
+    pub(crate) movement_task_grace_s: f32,
     /// The longest tick that can contain a stroke, seconds. Longer gaps forget the hands' motion.
-    pub strokes_max_tick_s: f32,
+    pub(crate) strokes_max_tick_s: f32,
 }
 
 /// Roomscale's windows.
@@ -303,7 +303,7 @@ pub struct LocomotionFreshness {
 pub struct RoomscaleFreshness {
     /// A gap between rendered frames longer than this means the headset stopped rendering: the fade
     /// resets, and the frame half's values stop holding for the simulation half.
-    pub frame_gap_ms: Millis,
+    pub(crate) frame_gap_ms: Millis,
 }
 
 /// The overlay producers' windows.
@@ -311,7 +311,7 @@ pub struct RoomscaleFreshness {
 #[serde(deny_unknown_fields)]
 pub struct OverlayFreshness {
     /// The time to live of the simulation-rate producers' slots: a few simulation ticks.
-    pub sim_ms: Millis,
+    pub(crate) sim_ms: Millis,
     /// The time to live of the frame-rate producers' slots.
     pub frame_ms: Millis,
 }
@@ -322,7 +322,7 @@ pub struct OverlayFreshness {
 pub struct FactsFreshness {
     /// A driving view target older than this is ignored: the input tick stopped publishing, so the
     /// view eases back.
-    pub driving_ms: Millis,
+    pub(crate) driving_ms: Millis,
 }
 
 /// The detours' windows.
@@ -330,11 +330,11 @@ pub struct FactsFreshness {
 #[serde(deny_unknown_fields)]
 pub struct HooksFreshness {
     /// How long a layer mask publication holds. The pose-finalization pass republishes every tick.
-    pub layer_mask_ms: Millis,
+    pub(crate) layer_mask_ms: Millis,
     /// A gap between the body IK animation's ticks longer than this restarts its filter.
-    pub body_ik_animation_gap_ms: Millis,
+    pub(crate) body_ik_animation_gap_ms: Millis,
     /// A gap between the parachute's yaw alignment calls longer than this opens a new alignment.
-    pub parachute_align_gap_ms: Millis,
+    pub(crate) parachute_align_gap_ms: Millis,
 }
 
 /// The physics steps' window.
@@ -345,7 +345,7 @@ pub struct PhysicsFreshness {
     /// a hand acts. Counted in steps rather than wall-clock time, so a hitch that holds up the whole
     /// simulation tick (a frame of a few hundred milliseconds) ages nothing, and a live hold is not
     /// torn down; only steps that run without a new publication do.
-    pub stale_steps: u64,
+    pub(crate) stale_steps: u64,
 }
 
 #[cfg(test)]

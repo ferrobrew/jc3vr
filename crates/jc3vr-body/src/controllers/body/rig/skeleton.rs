@@ -31,7 +31,7 @@ use crate::{
 
 /// The tracing target for the divergence's once-a-second log. Public so that the debug UI can turn
 /// it up to `DEBUG`.
-pub const SKELETON_TARGET: &str = "body_divergence";
+pub(crate) const SKELETON_TARGET: &str = "body_divergence";
 
 /// The character's skeleton in the cockpit frame, while the character's pose is fresh: what the
 /// body's grab volumes ride (`controllers::weapons::volumes`), with where it came from.
@@ -110,7 +110,7 @@ pub fn status() -> SkeletonStatus {
 /// # Safety
 ///
 /// `character` must be null or a live character at the end of its pose-finalization pass.
-pub unsafe fn after_solve(character: *mut Character) {
+pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };

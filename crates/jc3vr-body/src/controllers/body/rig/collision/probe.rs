@@ -60,7 +60,7 @@ impl ProbeResult {
 
 /// The probe's memory across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct HeadProbe {
+pub(crate) struct HeadProbe {
     last_clear: Option<Vec3>,
 }
 
@@ -111,7 +111,10 @@ impl HeadProbe {
 /// How far below the terrain's surface the eyes are, metres, or `None` when they are above it or
 /// further below than the rig tuning's `probe.terrain_reach_m`. `cast` returns the first terrain
 /// hit between two points.
-pub fn below_terrain(eyes: Vec3, mut cast: impl FnMut(Vec3, Vec3) -> Option<Vec3>) -> Option<f32> {
+pub(crate) fn below_terrain(
+    eyes: Vec3,
+    mut cast: impl FnMut(Vec3, Vec3) -> Option<Vec3>,
+) -> Option<f32> {
     if !eyes.is_finite() {
         return None;
     }
@@ -122,7 +125,7 @@ pub fn below_terrain(eyes: Vec3, mut cast: impl FnMut(Vec3, Vec3) -> Option<Vec3
 }
 
 /// The deeper of a scene probe's result and a terrain check's depth.
-pub fn with_terrain(result: ProbeResult, terrain: Option<f32>) -> ProbeResult {
+pub(crate) fn with_terrain(result: ProbeResult, terrain: Option<f32>) -> ProbeResult {
     match terrain {
         Some(depth) if depth > result.depth() => ProbeResult::Obstructed { depth },
         _ => result,
@@ -134,7 +137,7 @@ pub fn with_terrain(result: ProbeResult, terrain: Option<f32>) -> ProbeResult {
 /// # Safety
 ///
 /// As [`raycast::cast_terrain`].
-pub unsafe fn terrain_cast(from: Vec3, to: Vec3) -> Result<Option<Vec3>, RaycastError> {
+pub(crate) unsafe fn terrain_cast(from: Vec3, to: Vec3) -> Result<Option<Vec3>, RaycastError> {
     let Some(ray) = Ray::new(from, to - from) else {
         return Ok(None);
     };
@@ -150,7 +153,7 @@ pub fn head_fade(depth: f32) -> f32 {
 
 /// The fade for a head `depth` metres into geometry: clear up to `start_m`, black from `full_m`,
 /// smooth between.
-pub fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
+pub(crate) fn fade_for_depth(depth: f32, start_m: f32, full_m: f32) -> f32 {
     let start = start_m.max(0.0);
     let full = full_m.max(start + 1e-3);
     smoothstep_between(start, full, depth)
@@ -173,7 +176,7 @@ pub struct TimedProbe {
 /// # Safety
 ///
 /// As [`raycast::cast`]: the simulation phase, and live or zero ignored objects.
-pub unsafe fn scene_cast(
+pub(crate) unsafe fn scene_cast(
     from: Vec3,
     to: Vec3,
     options: &CastOptions,

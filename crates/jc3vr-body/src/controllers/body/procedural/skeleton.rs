@@ -72,7 +72,7 @@ pub struct SkeletonSnapshot {
 
 impl SkeletonSnapshot {
     /// The reference pose in model space, one transform per bone.
-    pub fn reference_model_space(&self) -> Vec<Transform> {
+    pub(crate) fn reference_model_space(&self) -> Vec<Transform> {
         let mut model: Vec<Transform> = Vec::with_capacity(self.bones.len());
         for bone in &self.bones {
             let transform = match bone.parent {
@@ -200,7 +200,7 @@ pub unsafe fn read(controller: &AnimationController) -> Result<SkeletonSnapshot,
 /// # Safety
 ///
 /// `character` must be the live local character, on the thread finalizing its pose.
-pub unsafe fn dump_once(character: &Character) {
+pub(crate) unsafe fn dump_once(character: &Character) {
     if DUMPED.load(Ordering::Relaxed) {
         return;
     }

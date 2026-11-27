@@ -173,7 +173,7 @@ const NO_GROUP: u8 = u8::MAX;
 
 /// The presentation layer's rig of one skeleton.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PresentationRig {
+pub(crate) struct PresentationRig {
     /// Each group's root bone's skeleton index, by [`Group::index`].
     pub roots: [usize; Group::COUNT],
     pub groups: GroupMap,
@@ -181,7 +181,7 @@ pub struct PresentationRig {
 
 /// Why a skeleton has no presentation rig.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RigError {
+pub(crate) enum RigError {
     Missing(&'static str),
     NotUnder {
         bone: &'static str,

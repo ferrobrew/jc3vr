@@ -11,7 +11,7 @@ use crate::{controllers::locomotion::tuning::LOCOMOTION, tuning::FRESHNESS};
 
 /// The palm's normal in the wrist frame: the fingers run along -Z and the back of the hand faces
 /// +Y, so the palm faces -Y.
-pub const WRIST_PALM: Vec3 = Vec3::NEG_Y;
+pub(crate) const WRIST_PALM: Vec3 = Vec3::NEG_Y;
 
 /// The strokes' tuning, the locomotion tuning's `strokes`.
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
@@ -19,9 +19,9 @@ pub const WRIST_PALM: Vec3 = Vec3::NEG_Y;
 pub struct StrokeTuning {
     /// The swim speed a metre of palm-first paddle travel back through the water adds, metres per
     /// second per metre.
-    pub speed_per_metre: f32,
+    pub(crate) speed_per_metre: f32,
     /// The time constant the swim speed decays over between strokes, seconds: the glide.
-    pub decay_s: f32,
+    pub(crate) decay_s: f32,
     /// The fastest the strokes swim, metres per second.
     pub max_speed_mps: f32,
     /// A hand slower than this through the water pushes nothing, metres per second, so a hand held
@@ -30,48 +30,48 @@ pub struct StrokeTuning {
     /// How far the palm may face away from the way the hand moves before the full-strength cone
     /// falls to its minimum assistance. A hand closed round a controller rarely holds its palm
     /// square to the stroke. A palm facing against the motion contributes nothing.
-    pub palm_cone_deg: f32,
+    pub(crate) palm_cone_deg: f32,
     /// The paddle speed that gives the catch haptic its full strength, metres per second.
-    pub catch_mps: f32,
+    pub(crate) catch_mps: f32,
     /// The heading turn per square metre of the hands' smoothed turning push about the head, in
     /// radians per second per square metre per second.
-    pub turn_gain: f32,
+    pub(crate) turn_gain: f32,
     /// The time constant the hands' turning push is smoothed over, seconds: the alternate arms of
     /// a crawl cancel within it, and a stroke on one side alone turns.
-    pub turn_smoothing_s: f32,
+    pub(crate) turn_smoothing_s: f32,
     /// The fastest the strokes turn the heading, degrees per second.
-    pub max_turn_deg_s: f32,
+    pub(crate) max_turn_deg_s: f32,
     /// How far below the eyes a hand is in the water at the surface, metres. Underwater every hand
     /// is.
-    pub water_below_eyes_m: f32,
+    pub(crate) water_below_eyes_m: f32,
     /// The time constant the hands' velocities are smoothed over, seconds: long enough to steady a
     /// tracker's jitter, short enough to keep a stroke's catch crisp.
     pub velocity_smoothing_s: f32,
     /// How far ahead of the head a recovering hand must reach to be ready to catch, metres.
-    pub catch_reach_m: f32,
+    pub(crate) catch_reach_m: f32,
     /// How far behind the head a hand finishes its stroke and recovers, metres.
-    pub finish_behind_head_m: f32,
+    pub(crate) finish_behind_head_m: f32,
     /// How far a ready hand paddles before its stroke catches the water, metres.
-    pub catch_travel_m: f32,
+    pub(crate) catch_travel_m: f32,
     /// The share of each hand's outward sweep a breaststroke (both hands sweeping out ahead of the
     /// head) counts toward the drive.
-    pub breaststroke_sweep_share: f32,
+    pub(crate) breaststroke_sweep_share: f32,
     /// How far a hand pushes, metres, to turn the heading all the way to the push's direction:
     /// about one stroke's pull.
-    pub steer_travel_m: f32,
+    pub(crate) steer_travel_m: f32,
     /// A palm whose facing along the hand's motion is below this cosine faces against it and
     /// pushes nothing.
-    pub palm_against_cos: f32,
+    pub(crate) palm_against_cos: f32,
     /// The assistance a palm turned past [`palm_cone_deg`](Self::palm_cone_deg), but not against
     /// the motion, still gets, `0..1`.
-    pub min_alignment: f32,
+    pub(crate) min_alignment: f32,
     /// The weakest a catch's haptic plays, `0..1` of its strength.
-    pub catch_min_strength: f32,
+    pub(crate) catch_min_strength: f32,
 }
 
 /// One hand as the strokes read it.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct StrokeHand {
+pub(crate) struct StrokeHand {
     /// The grip's position.
     pub position: Vec3,
     /// The palm's normal, a unit vector.
@@ -80,7 +80,7 @@ pub struct StrokeHand {
 
 /// One tick's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct StrokeInput {
+pub(crate) struct StrokeInput {
     /// Indexed by [`Hand::index`](jc3vr_input::frame::Hand::index); `None` for a hand that
     /// is untracked or may not stroke.
     pub hands: [Option<StrokeHand>; 2],
@@ -89,7 +89,7 @@ pub struct StrokeInput {
     pub head: Vec3,
     pub forward: Vec3,
     /// Whether the swimmer is underwater, where every hand is in the water.
-    pub underwater: bool,
+    pub(crate) underwater: bool,
     /// Seconds.
     pub dt: f32,
 }
@@ -126,7 +126,7 @@ impl StrokeStep {
 
 /// The strokes' state across ticks.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct StrokeModel {
+pub(crate) struct StrokeModel {
     /// Each hand's position relative to the head on the last tick.
     last: [Option<Vec3>; 2],
     /// Each hand's smoothed velocity.
@@ -337,7 +337,7 @@ fn steer_rate(push: Vec3, forward: Vec3, right: Vec3, travel_m: f32) -> f32 {
 /// moves where it faces. The strokes raise the velocity's share along `direction` to `speed` and
 /// leave everything else the core wrote (the drift across, the buoyancy, the waves' push); a core
 /// already swimming faster along it, the left stick's crawl, keeps its own speed.
-pub fn propel(velocity: Vec3, direction: Vec3, speed: f32) -> Vec3 {
+pub(crate) fn propel(velocity: Vec3, direction: Vec3, speed: f32) -> Vec3 {
     let direction = direction.normalize_or_zero();
     if !velocity.is_finite() || !speed.is_finite() || speed <= 0.0 || direction == Vec3::ZERO {
         return velocity;

@@ -116,7 +116,7 @@ pub(crate) fn take_submission() -> Option<Submission> {
 pub(crate) struct Submission {
     pub window: Box<SparseWindow>,
     /// When the window's last pose was taken.
-    pub window_end: Stamp,
+    pub(crate) window_end: Stamp,
     pub posture: EffectivePosture,
 }
 

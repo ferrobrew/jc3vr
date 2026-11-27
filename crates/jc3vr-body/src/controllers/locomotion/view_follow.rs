@@ -34,14 +34,14 @@ pub enum HeldSource {
 
 /// The held view's head at the previous and the current tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HeadPair {
+pub(crate) struct HeadPair {
     pub previous: Vec3,
     pub current: Vec3,
 }
 
 /// Follows the held view's head from one source to the other without a jump.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct HeadFollower {
+pub(crate) struct HeadFollower {
     state: FollowState,
     last: Option<Vec3>,
 }
@@ -187,7 +187,7 @@ impl Escape {
 /// drop of the locomotion tuning's `follow.escape_drop_m` counts as its `follow.escape_m`,
 /// whichever is further. A landing's crouch drops
 /// the head well short of the drop's threshold; a body lying on the ground does not.
-pub fn escape_distance(away: Vec3) -> f32 {
+pub(crate) fn escape_distance(away: Vec3) -> f32 {
     let tuning = &LOCOMOTION.get().follow;
     let horizontal = Vec3::new(away.x, 0.0, away.z).length();
     let drop = (-away.y).max(0.0) * tuning.escape_m / tuning.escape_drop_m;

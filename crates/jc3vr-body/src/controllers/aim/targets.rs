@@ -57,7 +57,7 @@ pub unsafe fn targets(set: TargetSet) -> Vec<*mut Target> {
 /// # Safety
 ///
 /// As [`targets`].
-pub unsafe fn included_sets() -> [bool; 3] {
+pub(crate) unsafe fn included_sets() -> [bool; 3] {
     match unsafe { TargetSystem::get() } {
         Some(s) => [
             s.m_IncludeCharacters,
@@ -83,7 +83,7 @@ pub unsafe fn game_object(target: *mut Target) -> Option<*mut c_void> {
 /// # Safety
 ///
 /// As [`game_object`].
-pub unsafe fn body_position(target: *mut Target) -> Option<Vec3> {
+pub(crate) unsafe fn body_position(target: *mut Target) -> Option<Vec3> {
     let mut out = Vector3 { data: [0.0; 3] };
     unsafe { PlayerAimControl::GetTargetBodyPosition(&mut out, target, false, false, false) };
     let v = Vec3::from_array(out.data);

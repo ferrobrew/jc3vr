@@ -19,7 +19,7 @@ use crate::controllers::body::procedural::tuning::PROCEDURAL;
 
 /// The player's arms, in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PlayerArms {
+pub(crate) struct PlayerArms {
     /// The player's torso heading: a turn about the vertical from facing -Z.
     pub torso: Quat,
     /// Each shoulder joint, estimated from the head, left then right.
@@ -28,25 +28,25 @@ pub struct PlayerArms {
     /// right; `None` for a hand not tracked.
     pub wrists: [Option<Pose>; 2],
     /// The player's arm, shoulder joint to wrist, metres.
-    pub arm_length: f32,
+    pub(crate) arm_length: f32,
 }
 
 /// Rico's arms, in his model space and the world.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct RicoArms {
+pub(crate) struct RicoArms {
     /// The root's world transform.
     pub world: Mat4,
     /// Each shoulder joint in model space, left then right, as the animation has it.
     pub shoulders: [Vec3; 2],
     /// Each arm, shoulder joint to wrist, metres, left then right.
-    pub arm_lengths: [f32; 2],
+    pub(crate) arm_lengths: [f32; 2],
     /// Where Rico flies, horizontally: a unit vector in the world.
     pub heading: Vec3,
 }
 
 /// A wrist target in Rico's model space.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct WingTarget {
+pub(crate) struct WingTarget {
     pub position: Vec3,
     /// The wrist frame's orientation, in the same convention as the player's.
     pub rotation: Quat,
@@ -54,7 +54,7 @@ pub struct WingTarget {
 
 /// Each of Rico's wrist targets for the player's arms, left then right; `None` for a hand that is
 /// not tracked, or for both when either frame is degenerate.
-pub fn wing_targets(player: &PlayerArms, rico: &RicoArms) -> [Option<WingTarget>; 2] {
+pub(crate) fn wing_targets(player: &PlayerArms, rico: &RicoArms) -> [Option<WingTarget>; 2] {
     let player_heading = flat_turn(player.torso * Vec3::NEG_Z);
     let rico_heading = flat_turn(rico.heading);
     let (_, root, _) = rico.world.to_scale_rotation_translation();

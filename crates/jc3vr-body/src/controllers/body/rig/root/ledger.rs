@@ -58,7 +58,7 @@ impl Movement {
     /// rounding, which grows with the distance from the world origin. `position_scale` is the
     /// larger magnitude of the two positions (any coordinate bound will do), and the match
     /// tolerance widens with it so that free movement far from the origin still matches.
-    pub fn achieved_drive(self, actual: Vec2, position_scale: f32) -> (Vec2, Attribution) {
+    pub(crate) fn achieved_drive(self, actual: Vec2, position_scale: f32) -> (Vec2, Attribution) {
         if !actual.is_finite() || !self.task.is_finite() || !self.drive.is_finite() {
             return (Vec2::ZERO, Attribution::Projected);
         }
@@ -93,7 +93,7 @@ pub enum Attribution {
 
 /// Cumulative world-space drive movement credited at the last two completed simulation steps.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct CompletedMovement {
+pub(crate) struct CompletedMovement {
     pub previous: Vec2,
     pub current: Vec2,
 }
@@ -107,7 +107,7 @@ pub struct LedgerCounts {
 
 /// The submission metadata consumed by one completion, independent of later owner selections.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct CompletedRequest {
+pub(crate) struct CompletedRequest {
     pub movement: Movement,
     /// Absent for callers that submit movement without an owner.
     pub owner: Option<RootOwner>,
@@ -117,7 +117,7 @@ pub struct CompletedRequest {
 
 /// The ledger values after one completion, with the request consumed by that completion.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct LedgerCompletion {
+pub(crate) struct LedgerCompletion {
     pub request: Option<CompletedRequest>,
     pub movement: CompletedMovement,
     pub counts: LedgerCounts,
@@ -125,7 +125,7 @@ pub struct LedgerCompletion {
 
 /// The pending request and the running total.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Requests {
+pub(crate) struct Requests {
     pending: Option<PendingRequest>,
     completed: CompletedMovement,
     counts: LedgerCounts,
@@ -185,7 +185,7 @@ impl Requests {
     }
 
     /// Retain the owner selected at this submission, rather than a later status value.
-    pub fn submit_owned(&mut self, movement: Movement, owner: RootOwner) {
+    pub(crate) fn submit_owned(&mut self, movement: Movement, owner: RootOwner) {
         self.pending = Some(PendingRequest {
             movement,
             owner: Some(owner),
@@ -241,7 +241,7 @@ struct PendingRequest {
 
 /// The fastest the stick, the hands, and the drive together may move the root, metres per second:
 /// a sanity bound, well above anything a player asks for.
-pub const MAX_COMBINED_SPEED_MPS: f32 = 12.0;
+pub(crate) const MAX_COMBINED_SPEED_MPS: f32 = 12.0;
 
 /// The least drive two steps must ask for, metres, before their shortfall counts as an
 /// obstruction.

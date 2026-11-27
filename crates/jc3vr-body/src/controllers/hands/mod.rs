@@ -112,7 +112,7 @@ impl HandSettings {
 /// correction, without adding synthetic recoil or wall-probe displacement. A kinematic gun hand
 /// carries its recoil offset; a palm pressed into a surface is held at it, and a hand body's hand
 /// is drawn at its body; and an anchored grapple hand holds the line ([`anchor::apply`]).
-pub fn active_hands() -> Option<ActiveHands> {
+pub(crate) fn active_hands() -> Option<ActiveHands> {
     compose_active_hands(DrawTime::Tick)
 }
 

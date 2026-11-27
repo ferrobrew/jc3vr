@@ -9,7 +9,7 @@ use jc3vr_core::published::Stamp;
 
 /// Watches the target speed and the root speed, and logs each target speed once.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SpeedLog {
+pub(crate) struct SpeedLog {
     /// The target speed being held, in centimetres per second, since when, and the root speed's
     /// running sum and sample count.
     current: Option<Held>,

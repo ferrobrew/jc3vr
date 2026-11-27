@@ -46,7 +46,7 @@ pub struct RigTuning {
     /// The turn of the body's facing between two of a reader's ticks, with no event of the mod's,
     /// past which the game turned or placed the body rather than the body turning, radians
     /// ([`crate::controllers::physics::rig`]). Wider than any smooth turn makes in a tick.
-    pub unannounced_turn_rad: f32,
+    pub(crate) unannounced_turn_rad: f32,
 }
 
 /// What everything a hand lets go of leaves with ([`crate::controllers::physics::release`]).
@@ -58,10 +58,10 @@ pub struct ReleaseTuning {
     pub max_hand_mps: f32,
     /// The fastest movement of the player's a release carries, metres per second: past the game's
     /// fastest jets, so only a stale or corrupt reading is cut.
-    pub max_carried_mps: f32,
+    pub(crate) max_carried_mps: f32,
     /// The oldest the rig's motion, the controller's publication, and the hand's latest sample may
     /// be for a release to use them, seconds.
-    pub max_age_s: f32,
+    pub(crate) max_age_s: f32,
 }
 
 #[cfg(test)]

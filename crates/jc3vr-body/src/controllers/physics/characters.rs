@@ -28,7 +28,7 @@ pub fn character_object(character: *const Character) -> *mut GameObject {
 
 /// `character`'s world transform, as its last simulation tick placed it.
 #[inline]
-pub fn character_frame(character: &Character) -> Mat4 {
+pub(crate) fn character_frame(character: &Character) -> Mat4 {
     Mat4::from(character.m_WorldMatrixT1)
 }
 

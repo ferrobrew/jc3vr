@@ -91,7 +91,7 @@ pub(crate) fn placement_weights(character: usize, controller: usize) -> [f32; 2]
 /// The hands the controllers drive this tick, decided before the body IK queues its hand pins so
 /// that a pin never competes with a controller target.
 #[derive(Clone)]
-pub struct HandPlan {
+pub(crate) struct HandPlan {
     active: Option<ActiveHands>,
     weights: [f32; 2],
     arm_identity: Option<(SkeletonKey, usize)>,

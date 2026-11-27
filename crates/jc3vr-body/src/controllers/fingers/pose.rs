@@ -36,7 +36,7 @@ use crate::controllers::{
 
 /// One bone's model-space joint.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct BoneJoint {
+pub(crate) struct BoneJoint {
     pub position: Vec3,
     pub orientation: Quat,
 }
@@ -55,14 +55,14 @@ pub struct HandShape {
     pub hook: [f32; 5],
     /// The thumb's turn out of the palm's plane toward the palm side, from 0 to 1 of the configured
     /// largest turn.
-    pub opposition: f32,
+    pub(crate) opposition: f32,
     /// The open thumb's turn from the fingers' direction toward the thumb side, radians.
-    pub thumb_spread: f32,
+    pub(crate) thumb_spread: f32,
 }
 
 impl HandShape {
     /// The shape of measured `curls`: no hook, no opposition, and the configured thumb spread.
-    pub fn of_curls(curls: &FingerCurls, config: &FingerTuning) -> Self {
+    pub(crate) fn of_curls(curls: &FingerCurls, config: &FingerTuning) -> Self {
         Self {
             curl: curls.curl,
             splay: curls.splay,
@@ -94,31 +94,31 @@ impl HandShape {
 /// One hand's target finger pose: each joint's bend from straight, radians, indexed by
 /// [`Finger::index`] and then from the finger's root joint outward.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct HandBend {
+pub(crate) struct HandBend {
     pub bend: [[f32; 3]; 5],
     /// The knuckle's sideways turn toward the thumb side.
     pub splay: [f32; 5],
     /// Which fingers are driven; the others keep the animated pose.
     pub driven: [bool; 5],
     /// The open thumb's turn from the fingers' direction toward the thumb side, radians.
-    pub thumb_spread: f32,
+    pub(crate) thumb_spread: f32,
     /// The open thumb's turn out of the palm's plane toward the palm side, radians.
-    pub thumb_opposition: f32,
+    pub(crate) thumb_opposition: f32,
     /// How far the driven fingers go from the animated pose to the target, from 0 to 1.
     pub weight: f32,
 }
 
 /// The largest bend any joint is given, degrees, whatever the configuration asks for.
-pub const MAX_FLEXION_DEG: f32 = 110.0;
+pub(crate) const MAX_FLEXION_DEG: f32 = 110.0;
 /// The largest bend back past straight any joint is given, degrees.
-pub const MAX_HYPEREXTENSION_DEG: f32 = 30.0;
+pub(crate) const MAX_HYPEREXTENSION_DEG: f32 = 30.0;
 
 /// Every finger driven.
-pub const ALL_FINGERS: [bool; 5] = [true; 5];
+pub(crate) const ALL_FINGERS: [bool; 5] = [true; 5];
 
 /// The target pose for a hand's `shape`, reached by the hand's tier `weight`, for the `driven`
 /// fingers.
-pub fn hand_bend(
+pub(crate) fn hand_bend(
     shape: &HandShape,
     config: &FingerTuning,
     weight: f32,
@@ -142,7 +142,12 @@ pub fn hand_bend(
 }
 
 /// A finger's three joint bends from straight at `curl` with `hook`, radians, root outward.
-pub fn joint_angles(finger: Finger, curl: f32, hook: f32, config: &FingerTuning) -> [f32; 3] {
+pub(crate) fn joint_angles(
+    finger: Finger,
+    curl: f32,
+    hook: f32,
+    config: &FingerTuning,
+) -> [f32; 3] {
     let i = finger.index();
     let share = config.curl_ranges[i].at(curl);
     let full = match finger {
@@ -164,21 +169,21 @@ pub fn joint_angles(finger: Finger, curl: f32, hook: f32, config: &FingerTuning)
 
 /// The open thumb's direction: in the palm's plane, turned `spread` radians from the fingers toward
 /// the thumb side, then `opposition` radians out of the plane toward the palm side.
-pub fn thumb_open(palm: &PalmFrame, spread: f32, opposition: f32) -> Vec3 {
+pub(crate) fn thumb_open(palm: &PalmFrame, spread: f32, opposition: f32) -> Vec3 {
     let flat = palm.forward * spread.cos() + palm.toward_thumb * spread.sin();
     (flat * opposition.cos() + palm.palm * opposition.sin()).normalize_or_zero()
 }
 
 /// The axis the thumb bends about from its open direction `open`: across the palm, toward the
 /// little finger's side.
-pub fn thumb_axis(palm: &PalmFrame, open: Vec3) -> Option<Vec3> {
+pub(crate) fn thumb_axis(palm: &PalmFrame, open: Vec3) -> Option<Vec3> {
     let toward = (palm.palm - palm.toward_thumb).normalize_or_zero();
     open.cross(toward).try_normalize()
 }
 
 /// A finger rooted at `knuckle`: its open direction, the axis it bends about, and the axis it
 /// splays about, or `None` for a degenerate hand.
-pub fn finger_axes(palm: &PalmFrame, knuckle: Vec3) -> Option<(Vec3, Vec3, Vec3)> {
+pub(crate) fn finger_axes(palm: &PalmFrame, knuckle: Vec3) -> Option<(Vec3, Vec3, Vec3)> {
     let open = (knuckle - palm.wrist).try_normalize()?;
     let flex = open.cross(palm.palm).try_normalize()?;
     let splay = open.cross(palm.toward_thumb).try_normalize()?;
@@ -187,7 +192,7 @@ pub fn finger_axes(palm: &PalmFrame, knuckle: Vec3) -> Option<(Vec3, Vec3, Vec3)
 
 /// The directions of a finger's three bones, root outward: `open` turned sideways by `splay` about
 /// `splay_axis`, then bent by `angles` about `axis`, turned likewise.
-pub fn bone_directions(
+pub(crate) fn bone_directions(
     open: Vec3,
     axis: Vec3,
     splay_axis: Vec3,
@@ -207,7 +212,7 @@ pub struct PalmFrame {
     /// From the wrist toward the middle knuckle, in the palm's plane.
     pub forward: Vec3,
     /// Across the knuckles toward the thumb side, in the palm's plane.
-    pub toward_thumb: Vec3,
+    pub(crate) toward_thumb: Vec3,
 }
 
 impl PalmFrame {
@@ -237,7 +242,7 @@ impl PalmFrame {
 
 /// A finger's three joints (root outward) posed with `angles` bent from straight and `splay`
 /// sideways, reached by `weight` from the animated `chain`, each joint carrying the ones beyond it.
-pub fn bend_finger(
+pub(crate) fn bend_finger(
     chain: [BoneJoint; 3],
     palm: &PalmFrame,
     angles: [f32; 3],
@@ -257,7 +262,7 @@ pub fn bend_finger(
 /// The thumb's three joints (root outward) posed with `angles` bent across the palm from the open
 /// thumb ([`thumb_open`] at `spread` and `opposition`), reached by `weight` from the animated
 /// `chain`.
-pub fn bend_thumb(
+pub(crate) fn bend_thumb(
     chain: [BoneJoint; 3],
     palm: &PalmFrame,
     angles: [f32; 3],

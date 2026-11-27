@@ -52,7 +52,7 @@ pub fn parts_updated() -> u64 {
 /// The hand a part rides: the hand of the holder's bone it was last placed on, or, while it rides
 /// its gun (`placed_on` is [`ModelAttachementWeaponComponent::NO_CHARACTER_BONE`]), the hand of the
 /// gun's attach bone `gun_bone`. `None` for a part on a holster or any other bone off the hands.
-pub fn part_hand(placed_on: u32, gun_bone: Option<u32>) -> Option<Hand> {
+pub(crate) fn part_hand(placed_on: u32, gun_bone: Option<u32>) -> Option<Hand> {
     if placed_on == ModelAttachementWeaponComponent::NO_CHARACTER_BONE {
         return gun_bone.and_then(late::attach_hand);
     }

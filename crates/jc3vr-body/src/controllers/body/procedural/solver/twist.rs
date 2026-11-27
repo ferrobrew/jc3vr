@@ -43,7 +43,7 @@ pub struct Segment {
     pub region: Region,
     /// Whether the twist comes from the child joint (the forearm, the shin) rather than from the
     /// segment against its parent (the upper arm, the thigh).
-    pub distal: bool,
+    pub(crate) distal: bool,
     /// The segment's bone index.
     pub bone: usize,
     /// Its parent's index.
@@ -53,8 +53,8 @@ pub struct Segment {
     /// The segment's length axis in its own frame, unit length.
     pub axis: Vec3,
     /// The reference pose's segment against its parent, and its end against it.
-    pub reference_local: Quat,
-    pub reference_end_local: Quat,
+    pub(crate) reference_local: Quat,
+    pub(crate) reference_end_local: Quat,
     pub rolls: Vec<Roll>,
 }
 
@@ -64,14 +64,14 @@ pub struct Roll {
     pub bone: usize,
     pub name: SmolStr,
     /// The reference pose's twist bone against its segment.
-    pub reference_local: Quat,
+    pub(crate) reference_local: Quat,
     /// How far along the segment it sits, `0..=1`, from the segment's joint to its end.
     pub along: f32,
 }
 
 /// The skeleton's twist bones, by segment.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct TwistRig {
+pub(crate) struct TwistRig {
     pub segments: Vec<Segment>,
 }
 
@@ -133,7 +133,7 @@ impl TwistRig {
     }
 
     /// The highest bone index the rig reads or writes.
-    pub fn highest_bone(&self) -> usize {
+    pub(crate) fn highest_bone(&self) -> usize {
         self.segments
             .iter()
             .flat_map(|s| {
@@ -204,7 +204,7 @@ impl Segment {
 /// The part of a forearm's twist `twist` handed up to the upper arm: the tuning's
 /// `twist.upper_arm_share` of what is past its `twist.forearm_limit_rad`, in the twist's own
 /// direction.
-pub fn passed_up(twist: f32) -> f32 {
+pub(crate) fn passed_up(twist: f32) -> f32 {
     if !twist.is_finite() {
         return 0.0;
     }

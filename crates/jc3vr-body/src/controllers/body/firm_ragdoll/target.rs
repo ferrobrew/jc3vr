@@ -76,7 +76,7 @@ pub(crate) struct TargetInput<'a> {
     /// Each bone's parent index, `-1` for a root; parents before children.
     pub parents: &'a [i16],
     /// The last tick's final pose, local transforms.
-    pub last_final: &'a [Transform],
+    pub(crate) last_final: &'a [Transform],
     /// This tick's animated pose, local transforms.
     pub animated: &'a [Transform],
     pub bones: TargetBones,

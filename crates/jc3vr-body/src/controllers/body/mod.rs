@@ -141,7 +141,7 @@ impl BodyDimensions {
     /// so the wingsuit's spread arms scale by it; the calibration splits it into the upper arm and
     /// forearm. A reach forward or down goes further ([`Self::arm_reach`]). The upper arm and forearm
     /// are not summed for either, because hand-written dimensions need not agree with their span.
-    pub fn shoulder_to_wrist(&self) -> f32 {
+    pub(crate) fn shoulder_to_wrist(&self) -> f32 {
         Self::shoulder_to_wrist_of(self.arm_span, self.shoulder_width, self.hand)
     }
 
@@ -159,7 +159,7 @@ impl BodyDimensions {
 
     /// The shoulder-to-wrist length of an arm span `arm_span` across shoulders `shoulder_width`
     /// wide, with hands `hand` long, metres.
-    pub fn shoulder_to_wrist_of(arm_span: f32, shoulder_width: f32, hand: f32) -> f32 {
+    pub(crate) fn shoulder_to_wrist_of(arm_span: f32, shoulder_width: f32, hand: f32) -> f32 {
         (arm_span - shoulder_width) * 0.5 - hand
     }
 
@@ -264,13 +264,13 @@ pub fn save(dimensions: BodyDimensions) -> Result<(), InvalidDimension> {
 }
 
 /// The ratio of the character's height to the player's, which scales vertical head travel.
-pub fn height_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f32 {
+pub(crate) fn height_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f32 {
     character.height / player.height
 }
 
 /// The ratio of the character's arm span to the player's, which scales the hands' offsets from
 /// the shoulders.
-pub fn arm_span_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f32 {
+pub(crate) fn arm_span_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f32 {
     character.arm_span / player.arm_span
 }
 
@@ -278,7 +278,7 @@ pub fn arm_span_ratio(player: &BodyDimensions, character: &BodyDimensions) -> f3
 /// Standing straight puts the eyes at the character's standing eye height, and every metre the
 /// player ducks below their own standing eye height moves the character's eyes by the height
 /// ratio.
-pub fn remap_head_height(
+pub(crate) fn remap_head_height(
     player_eye_height: f32,
     player: &BodyDimensions,
     character: &BodyDimensions,
@@ -289,7 +289,7 @@ pub fn remap_head_height(
 /// Remap a head translation (a change in the head position, in a frame with +Y up): the vertical
 /// component scales by the height ratio, and the horizontal components stay 1:1 so that walking a
 /// metre in the room walks a metre in the world.
-pub fn remap_head_translation(
+pub(crate) fn remap_head_translation(
     delta: Vec3,
     player: &BodyDimensions,
     character: &BodyDimensions,
@@ -315,7 +315,7 @@ pub fn shoulder_positions(eye_position: Vec3, torso: Quat, body: &BodyDimensions
 /// `torso`: [`CHARACTER_EYES_TO_RIGHT_SHOULDER`] turned by the torso's heading, mirrored for the
 /// left. The character counterpart of [`shoulder_positions`], from his skeleton rather than from
 /// generic ratios.
-pub fn character_shoulder_positions(eye_position: Vec3, torso: Quat) -> [Vec3; 2] {
+pub(crate) fn character_shoulder_positions(eye_position: Vec3, torso: Quat) -> [Vec3; 2] {
     shoulders(eye_position, torso, CHARACTER_EYES_TO_RIGHT_SHOULDER)
 }
 
@@ -324,7 +324,7 @@ pub fn character_shoulder_positions(eye_position: Vec3, torso: Quat) -> [Vec3; 2
 /// skeleton's reference pose. His shoulders sit lower and further behind the eyes, and closer
 /// together, than generic adult ratios put them ([`BodyDimensions::CHARACTER_ESTIMATE`]); the
 /// on-foot clips carry them within a couple of centimetres of the reference pose.
-pub const CHARACTER_EYES_TO_RIGHT_SHOULDER: Vec3 = Vec3::new(0.188, -0.259, 0.118);
+pub(crate) const CHARACTER_EYES_TO_RIGHT_SHOULDER: Vec3 = Vec3::new(0.188, -0.259, 0.118);
 
 #[cfg(test)]
 mod tests {

@@ -59,14 +59,14 @@ use crate::{
 
 /// Whether the IK body owns the standing body now: its feet are planted by IK, so the game's
 /// turn-in-place acts must not turn the clip's.
-pub fn owns_idle() -> bool {
+pub(crate) fn owns_idle() -> bool {
     let state = STATE.lock();
     fresh(&state.status) && state.status.state == IkState::Idle && state.status.weights.feet > 0.0
 }
 
 /// The floor point under the FK pelvis, room `(x, z)`, while the IK body owns the root: the
 /// grounded rig's drive follows it.
-pub fn root_target() -> Option<Vec2> {
+pub(crate) fn root_target() -> Option<Vec2> {
     let owns = {
         let state = STATE.lock();
         fresh(&state.status)

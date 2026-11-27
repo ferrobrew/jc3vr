@@ -139,7 +139,7 @@ pub fn right_grip_read() -> Option<RightGripRead> {
 
 /// The model-space axis across the body: the one the two wrists' bind positions differ most
 /// along.
-pub fn lateral_axis(left: Vec3, right: Vec3) -> usize {
+pub(crate) fn lateral_axis(left: Vec3, right: Vec3) -> usize {
     let span = (left - right).abs();
     if span.x >= span.y && span.x >= span.z {
         0
@@ -153,7 +153,7 @@ pub fn lateral_axis(left: Vec3, right: Vec3) -> usize {
 /// `pose` mirrored across the plane through the origin across `axis`: its position reflected, and
 /// its rotation the reflected frame's, turned back to a right-handed one by flipping the frame's
 /// own `axis`, which is the mirror image of a body symmetric across its own `axis`.
-pub fn mirror_pose(pose: Pose, axis: usize) -> Pose {
+pub(crate) fn mirror_pose(pose: Pose, axis: usize) -> Pose {
     let mut position = pose.position;
     position[axis] = -position[axis];
     let q = pose.orientation;
@@ -169,7 +169,7 @@ pub fn mirror_pose(pose: Pose, axis: usize) -> Pose {
 
 /// The left hand's grip mirrored onto the right wrist: the left attach bone's bind pose
 /// `left_attach` mirrored across `axis`, relative to the right wrist's bind pose `right_wrist`.
-pub fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Option<Pose> {
+pub(crate) fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Option<Pose> {
     let attach = relative_pose(Mat4::IDENTITY, left_attach)?;
     let mirrored = mirror_pose(attach, axis);
     relative_pose(right_wrist, mirrored.to_mat4())
@@ -178,7 +178,7 @@ pub fn mirrored_grip(right_wrist: Mat4, left_attach: Mat4, axis: usize) -> Optio
 /// The grip the right hand takes, from its own bind-pose grip `own` and the left's mirrored, and
 /// whether it is the mirrored one: its own, unless it is turned far from the mirrored one. The left
 /// hand always takes its own grip.
-pub fn pick_right_grip(own: Pose, mirrored: Pose) -> (Pose, bool) {
+pub(crate) fn pick_right_grip(own: Pose, mirrored: Pose) -> (Pose, bool) {
     let auto_turn_deg = HANDS.get().grip.auto_turn_deg;
     if angle_between(own.orientation, mirrored.orientation).to_degrees() > auto_turn_deg {
         (mirrored, true)
@@ -367,7 +367,7 @@ pub struct Placement {
 
 /// The hand and the hand's primary attach bone for a hand attach bone, or `None` for any other
 /// bone.
-pub fn hand_attach(bone: u32) -> Option<(Hand, SafeBoneIndex)> {
+pub(crate) fn hand_attach(bone: u32) -> Option<(Hand, SafeBoneIndex)> {
     [
         SafeBoneIndex::ATTACH_HAND_LEFT,
         SafeBoneIndex::ATTACH_HAND_LEFT2,
@@ -401,7 +401,7 @@ pub fn bone_label(bone: u32) -> &'static str {
 
 /// The attach bone's pose `offset` carried onto a model-space `wrist` joint of scale
 /// `wrist_scale`, as the pose producer composes a child onto its parent.
-pub fn pinned_attach(wrist: Pose, wrist_scale: Vec3, offset: Pose) -> Pose {
+pub(crate) fn pinned_attach(wrist: Pose, wrist_scale: Vec3, offset: Pose) -> Pose {
     Pose {
         position: wrist.position + wrist.orientation * (wrist_scale * offset.position),
         orientation: (wrist.orientation * offset.orientation).normalize(),
@@ -411,7 +411,7 @@ pub fn pinned_attach(wrist: Pose, wrist_scale: Vec3, offset: Pose) -> Pose {
 /// The attach bone's pose `held` on the wrist carried by `deviation`, the gun body's stray from
 /// its seat on the holding hand's body, in the gun's own frame: where the gun body is, drawn on the
 /// hand.
-pub fn seat_on_body(held: Pose, deviation: Pose) -> Pose {
+pub(crate) fn seat_on_body(held: Pose, deviation: Pose) -> Pose {
     held.compose(deviation)
 }
 
@@ -419,7 +419,7 @@ pub fn seat_on_body(held: Pose, deviation: Pose) -> Pose {
 /// (`1`): the `animated` pose carried toward the `pinned` one by the weight, so the gun settles
 /// into the hand as the hand blends onto its controller and back out as it yields, rather than
 /// switching between the two at a stroke.
-pub fn blend_pin(animated: Pose, pinned: Pose, weight: f32) -> Pose {
+pub(crate) fn blend_pin(animated: Pose, pinned: Pose, weight: f32) -> Pose {
     let weight = if weight.is_finite() {
         weight.clamp(0.0, 1.0)
     } else {
@@ -430,7 +430,7 @@ pub fn blend_pin(animated: Pose, pinned: Pose, weight: f32) -> Pose {
 
 /// The attach bone's pose part of the way, `toward_hand`, from where the gun was (`start`: on its
 /// dock, or where a hand took it in the world) to the hand's grip `held`, both in model space.
-pub fn slide_grip(start: Pose, held: Pose, toward_hand: f32) -> Pose {
+pub(crate) fn slide_grip(start: Pose, held: Pose, toward_hand: f32) -> Pose {
     let toward_hand = if toward_hand.is_finite() {
         toward_hand.clamp(0.0, 1.0)
     } else {

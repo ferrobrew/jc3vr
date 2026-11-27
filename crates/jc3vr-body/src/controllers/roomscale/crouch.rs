@@ -12,7 +12,7 @@ use jc3gi::physics::ProxyState;
 
 /// Whether the character counts as crouched, with hysteresis on the head's drop.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct CrouchTracker {
+pub(crate) struct CrouchTracker {
     crouched: bool,
 }
 
@@ -36,7 +36,7 @@ impl CrouchTracker {
 
 /// What the capsule request writes this tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct CapsuleStep {
+pub(crate) struct CapsuleStep {
     /// The value to write to the pending proxy state, if any.
     pub write: Option<i32>,
     /// Whether the mod holds the crouch request after the write.
@@ -46,7 +46,7 @@ pub struct CapsuleStep {
 /// Decide the capsule's pending proxy state. `want` is whether the character should be in the crouch
 /// capsule, `owned` whether the mod's request is standing, and `pending` and `default` the
 /// character's pending and default proxy states.
-pub fn capsule_step(want: bool, owned: bool, pending: i32, default: i32) -> CapsuleStep {
+pub(crate) fn capsule_step(want: bool, owned: bool, pending: i32, default: i32) -> CapsuleStep {
     let crouching = ProxyState::CROUCHING as i32;
     match (want, pending) {
         // The game wants another state: stand down without touching it.

@@ -46,7 +46,7 @@ impl Neutral {
 
 /// Averages the animated head, neck, and eyes over the time Rico stands still.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct NeutralCapture {
+pub(crate) struct NeutralCapture {
     sum: [Vec3; 3],
     seconds: f32,
 }
@@ -95,7 +95,7 @@ impl NeutralCapture {
 
 /// A critically damped follower of the root's height.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct HeightFilter {
+pub(crate) struct HeightFilter {
     state: HeightState,
     /// The height the last step returned.
     last: Option<f32>,
@@ -116,7 +116,7 @@ enum HeightState {
 
 /// The smoothed height at the previous and the current tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HeightPair {
+pub(crate) struct HeightPair {
     pub previous: f32,
     pub current: f32,
 }
@@ -225,7 +225,7 @@ pub struct Eligibility {
     /// The mode detection reads Rico on foot on the ground, outside a traversal.
     pub on_ground: bool,
     /// The mode detection reads a fall that began within the jump's grace.
-    pub falling_in_grace: bool,
+    pub(crate) falling_in_grace: bool,
     /// What the procedural body's hand-over table reads the character doing, while the headset
     /// drives the view; `None` outside it, where the mode alone decides.
     pub case: Option<Case>,
@@ -237,7 +237,7 @@ impl Eligibility {
     /// stumble, or a ragdoll and its get-up, so the view holds the root through all of them, even
     /// where the clip carries Rico's body away from under it. Elsewhere the mode decides: on the
     /// ground or early in a fall, out of a ragdoll.
-    pub fn root_fixed(&self) -> bool {
+    pub(crate) fn root_fixed(&self) -> bool {
         self.enabled
             && match self.case {
                 Some(case) => case.view_holds_root(),
@@ -254,7 +254,7 @@ impl Eligibility {
 /// small horizontal offset from the root would swing around it whenever the body turns under the
 /// view (the torso follow), which moves the view sideways with nothing the player did; the
 /// recenter takes up the constant offset instead.
-pub fn stable_anchors(
+pub(crate) fn stable_anchors(
     neutral: &Neutral,
     world_t0: Mat4,
     world_t1: Mat4,
@@ -283,7 +283,7 @@ pub fn stable_anchors(
 /// The neutral pose's eyes are the idle clip's, which hold the head pitched and turned a little,
 /// and its neck stands behind the head bone, so the measured arm puts the eyes a few centimetres
 /// lower and further forward of the head bone than a level head carries them.
-pub fn neck_model_anchors(stable: &Anchors, scale: f32) -> Anchors {
+pub(crate) fn neck_model_anchors(stable: &Anchors, scale: f32) -> Anchors {
     let scale = if scale.is_finite() && scale > 0.0 {
         scale
     } else {
@@ -302,7 +302,7 @@ pub fn neck_model_anchors(stable: &Anchors, scale: f32) -> Anchors {
 /// reclines the head carries the clearance with the face, so the eyes stay ahead of it rather than
 /// at the eye bones, where the chest and the shoulders of a pose that folds or leans back sit just
 /// beyond the near plane. The anchors are returned unchanged when the face has no forward.
-pub fn face_clear(animated: &Anchors, model: &Neutral, clearance: f32) -> Anchors {
+pub(crate) fn face_clear(animated: &Anchors, model: &Neutral, clearance: f32) -> Anchors {
     Anchors {
         eye_arm: animated.eye_arm + face_offset(model, clearance),
         ..*animated
@@ -311,7 +311,7 @@ pub fn face_clear(animated: &Anchors, model: &Neutral, clearance: f32) -> Anchor
 
 /// The eyes' offset `clearance` metres out in front of the face, model space, from the animated
 /// head, neck, and eyes `model` (see [`face_clear`]); zero when the face has no forward.
-pub fn face_offset(model: &Neutral, clearance: f32) -> Vec3 {
+pub(crate) fn face_offset(model: &Neutral, clearance: f32) -> Vec3 {
     face_forward(model)
         .map(|forward| forward * clearance)
         .filter(|offset| offset.is_finite())

@@ -77,7 +77,7 @@ pub struct AttachmentPass {
 /// A sampler of the attachments on the body: called on each mirror pass, it adds the reflected
 /// attachments' primitives to `out`, or nothing without a current sample. It runs on the thread
 /// running the local player's pose finalization, and reads only copied observations.
-pub type AttachmentSampler = fn(&AttachmentPass, &mut Vec<Primitive>);
+pub(crate) type AttachmentSampler = fn(&AttachmentPass, &mut Vec<Primitive>);
 
 /// Submit the reflected pouches of a render publication, drawn by the weapon handling from the
 /// matrices it applied.
@@ -204,7 +204,7 @@ impl Plane {
 }
 
 /// The figure's bones, by [`FIGURE_BONES`]' order.
-pub const FIGURE_BONE_COUNT: usize = FIGURE_BONES.len();
+pub(crate) const FIGURE_BONE_COUNT: usize = FIGURE_BONES.len();
 
 /// What the reflection is drawn from, in the world.
 #[derive(Debug, Clone, PartialEq)]
@@ -213,11 +213,11 @@ pub struct Figure {
     /// Each of [`FIGURE_BONES`] in the world, `None` for a bone the skeleton lacks.
     pub bones: [Option<Vec3>; FIGURE_BONE_COUNT],
     /// Where the body's head was posed toward: the player's neck pivot under the eyes.
-    pub head_target: Vec3,
+    pub(crate) head_target: Vec3,
     /// Each controller's wrist target, left then right.
-    pub wrist_targets: [Option<Vec3>; 2],
+    pub(crate) wrist_targets: [Option<Vec3>; 2],
     /// The root's height, where the mirror's frame stands.
-    pub root_height: f32,
+    pub(crate) root_height: f32,
 }
 
 /// The reflection's primitives, anchored to the head at `head` (the world position the offsets

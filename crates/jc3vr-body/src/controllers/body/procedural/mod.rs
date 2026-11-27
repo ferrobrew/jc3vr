@@ -50,7 +50,7 @@ pub mod state;
 pub mod targets;
 pub mod tuning;
 pub mod twist;
-pub mod wings;
+pub(crate) mod wings;
 
 use std::sync::{
     LazyLock,
@@ -142,17 +142,17 @@ impl ProceduralStatus {
 /// What the controllers' arm targets are queued against while the procedural body poses the
 /// torso: published by the gate for the hand IK it runs next.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ArmContext {
+pub(crate) struct ArmContext {
     /// The torso the wrist and elbow targets are kept out of.
     pub keep_out: TorsoKeepOut,
     /// The elbow hints' reach, already scaled by the procedural pose's weight.
-    pub elbow_reach: Option<f32>,
+    pub(crate) elbow_reach: Option<f32>,
     /// The written chest's turn about +Y from Rico's facing, radians: the elbow hints turn with it.
     pub chest_yaw: f32,
 }
 
 /// The arm context of this tick's gate, `None` when the procedural body did not pose the torso.
-pub fn arm_context() -> Option<ArmContext> {
+pub(crate) fn arm_context() -> Option<ArmContext> {
     STATE.lock().arms
 }
 
@@ -181,7 +181,7 @@ pub fn owns_body() -> bool {
 /// would pose the same bones (the body IK's torso) is queued while it is below one, and the gate
 /// fades the reach and pull of those targets by what is left of it ([`neutralize_owned_targets`]),
 /// so the hand-over is as gradual as the blend.
-pub fn torso_weight() -> f32 {
+pub(crate) fn torso_weight() -> f32 {
     f32::from_bits(TORSO_WEIGHT.load(Ordering::Relaxed))
 }
 

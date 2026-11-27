@@ -32,7 +32,7 @@ pub struct ProxyPlace {
 ///
 /// The game thread, outside the physics step. The proxy is the character's, live while it is; the
 /// caller holds the reference no longer than the call that took it.
-pub unsafe fn local_proxy() -> Result<&'static mut PfxCharacterInstance, PhysicsError> {
+pub(crate) unsafe fn local_proxy() -> Result<&'static mut PfxCharacterInstance, PhysicsError> {
     let character =
         unsafe { Character::GetLocalPlayerCharacter().as_ref() }.ok_or(PhysicsError::NoPlayer)?;
     unsafe { character.m_PfxCharacter.px.as_mut() }.ok_or(PhysicsError::NoPlayer)
@@ -45,7 +45,7 @@ pub unsafe fn local_proxy() -> Result<&'static mut PfxCharacterInstance, Physics
 ///
 /// `world` must be the live world and `proxy` a live proxy, read where the world's bodies do not
 /// change under the read.
-pub unsafe fn proxy_slot<'w>(
+pub(crate) unsafe fn proxy_slot<'w>(
     world: &'w hknpWorld,
     proxy: &PfxCharacterInstance,
 ) -> Result<&'w hknpBody, PhysicsError> {

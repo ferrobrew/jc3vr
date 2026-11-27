@@ -32,13 +32,13 @@ pub struct PoleInput {
     /// The arm's shoulder joint.
     pub shoulder: Vec3,
     /// The other arm's shoulder joint, which fixes which way is out to this arm's side.
-    pub other_shoulder: Vec3,
+    pub(crate) other_shoulder: Vec3,
     /// The arm's wrist.
     pub wrist: Vec3,
     /// The player's up, a unit vector.
     pub up: Vec3,
     /// The little-finger side of the wrist, a unit vector ([`little_finger`]).
-    pub little_finger: Vec3,
+    pub(crate) little_finger: Vec3,
 }
 
 /// The direction the elbow of the arm on `side` points from the line from its shoulder to its
@@ -86,7 +86,7 @@ pub fn pole(input: &PoleInput, side: Side, palm_weight: f32) -> Option<Vec3> {
 
 /// The little-finger side of the hand on `side` whose bone is turned `hand` in model space: the
 /// direction across the palm from the index finger's knuckle toward the little finger's.
-pub fn little_finger(hand: Quat, side: Side) -> Vec3 {
+pub(crate) fn little_finger(hand: Quat, side: Side) -> Vec3 {
     let local = match side {
         Side::Left => LEFT_LITTLE_FINGER,
         // The right hand's bone frame is the left's mirrored with every axis reversed, so the

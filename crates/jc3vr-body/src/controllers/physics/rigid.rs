@@ -50,7 +50,7 @@ pub struct RigidBody {
 
 impl RigidBody {
     /// The inverse inertia, world space.
-    pub fn inverse_inertia_world(&self) -> Mat3 {
+    pub(crate) fn inverse_inertia_world(&self) -> Mat3 {
         let rotation = Mat3::from_quat(self.pose.orientation);
         rotation * Mat3::from_diagonal(sanitise(self.inverse_inertia)) * rotation.transpose()
     }

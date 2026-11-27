@@ -112,7 +112,7 @@ pub const MASKABLE_LAYERS: [AnimationLayer; 3] = [
 ];
 
 /// Which of [`MASKABLE_LAYERS`] are left out of the pose: all of them while the body applies.
-pub fn masked_layers(verdict: UnarmedVerdict) -> [bool; MASKABLE_LAYERS.len()] {
+pub(crate) fn masked_layers(verdict: UnarmedVerdict) -> [bool; MASKABLE_LAYERS.len()] {
     [verdict == UnarmedVerdict::Applies; MASKABLE_LAYERS.len()]
 }
 
@@ -129,7 +129,7 @@ pub const fn layer_label(layer: AnimationLayer) -> &'static str {
 
 /// Which rule systems the wielded weapon's animation modifiers are kept off.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ModifierSuppression {
+pub(crate) enum ModifierSuppression {
     /// Every rule system takes them: the game's own behaviour.
     None,
     /// Only the upper-body action layer takes them (the unarmed body).
@@ -137,7 +137,7 @@ pub enum ModifierSuppression {
 }
 
 /// Whether the rule system at `layer` takes the weapon's modifiers under `suppression`.
-pub fn keeps_weapon_modifier(suppression: ModifierSuppression, layer: usize) -> bool {
+pub(crate) fn keeps_weapon_modifier(suppression: ModifierSuppression, layer: usize) -> bool {
     match suppression {
         ModifierSuppression::None => true,
         ModifierSuppression::AllButActions => layer == AnimationLayer::GLOBAL_PARTIAL as usize,
@@ -149,7 +149,7 @@ pub fn keeps_weapon_modifier(suppression: ModifierSuppression, layer: usize) -> 
 /// `relaxed` ([`wielded_relaxed`]): every layer but the upper-body actions, so their draws,
 /// holsters, and reloads keep the transitions they key on it. A condition on one slot (the planted
 /// explosive's) is left alone.
-pub fn relaxes_wielded(relaxed: bool, any_slot: bool, layer: Option<usize>) -> bool {
+pub(crate) fn relaxes_wielded(relaxed: bool, any_slot: bool, layer: Option<usize>) -> bool {
     relaxed && any_slot && layer.is_some_and(|l| l != AnimationLayer::GLOBAL_PARTIAL as usize)
 }
 
@@ -161,7 +161,7 @@ pub fn wielded_relaxed() -> bool {
 }
 
 /// Count one weapon-wielded evaluation that the relaxed locomotion read as false, for the readout.
-pub fn count_relaxed_wielded() {
+pub(crate) fn count_relaxed_wielded() {
     RELAXED_EVALUATIONS.bump();
 }
 
@@ -239,7 +239,7 @@ pub unsafe fn tick(character: *mut Character) {
 
 /// Record whether the modifier pass kept the wielded weapon's modifiers off the body, for the
 /// readout.
-pub fn record_modifiers(weapon_suppressed: bool) {
+pub(crate) fn record_modifiers(weapon_suppressed: bool) {
     STATE.lock().weapon_suppressed = weapon_suppressed;
 }
 
@@ -257,7 +257,7 @@ pub fn applies() -> bool {
 }
 
 /// Whether the game's off-hand weapon grip is switched off for both hands this tick.
-pub fn release_grip() -> bool {
+pub(crate) fn release_grip() -> bool {
     applies()
 }
 

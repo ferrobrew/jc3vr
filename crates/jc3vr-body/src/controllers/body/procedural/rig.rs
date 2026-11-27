@@ -118,7 +118,7 @@ impl RigBone {
     }
 
     /// Whether `ancestor` is this bone or one of its ancestors in the rig.
-    pub fn descends_from(self, ancestor: Self) -> bool {
+    pub(crate) fn descends_from(self, ancestor: Self) -> bool {
         let mut bone = Some(self);
         while let Some(b) = bone {
             if b == ancestor {
@@ -145,7 +145,7 @@ pub struct Rig {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ArmRig {
     /// The shoulder joint (the upper arm's origin) in its clavicle's frame.
-    pub shoulder_local: Vec3,
+    pub(crate) shoulder_local: Vec3,
     /// The upper arm's and the forearm's lengths together, metres.
     pub length: f32,
 }
@@ -209,7 +209,7 @@ impl Rig {
     }
 
     /// The skeleton index of `bone`.
-    pub fn skeleton_index(&self, bone: RigBone) -> usize {
+    pub(crate) fn skeleton_index(&self, bone: RigBone) -> usize {
         self.bones[bone.index()]
     }
 

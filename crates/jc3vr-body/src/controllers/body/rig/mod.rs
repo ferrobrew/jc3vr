@@ -64,7 +64,7 @@ pub fn follow_settings() -> FollowSettings {
 }
 
 /// The player's torso heading relative to the character's facing.
-pub fn torso_turn(character_rotation: Quat) -> Option<f32> {
+pub(crate) fn torso_turn(character_rotation: Quat) -> Option<f32> {
     if headpose::source() != headpose::Source::Vr {
         return None;
     }
@@ -82,7 +82,7 @@ pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
 }
 
 /// The grounded rig's torso heading, which the procedural chest faces on foot.
-pub fn shoulder_heading() -> Option<Quat> {
+pub(crate) fn shoulder_heading() -> Option<Quat> {
     estimate().map(|e| e.rotation())
 }
 

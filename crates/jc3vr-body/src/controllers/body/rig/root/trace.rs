@@ -114,7 +114,7 @@ pub struct Jump {
 
 /// The tracer's history between ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub struct Tracer {
+pub(crate) struct Tracer {
     previous: Option<RootTrace>,
     ticks: u64,
     jumps: u64,

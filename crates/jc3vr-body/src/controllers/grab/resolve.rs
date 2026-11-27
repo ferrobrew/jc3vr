@@ -133,7 +133,7 @@ pub fn recall(
 
 /// Whether a hand whose grip would take `chosen` takes a recalled body slot instead
 /// ([`recall`]): it takes nothing, or only a remote target, which ranks below anything in reach.
-pub fn recalls(chosen: Option<Reach>) -> bool {
+pub(crate) fn recalls(chosen: Option<Reach>) -> bool {
     chosen.is_none_or(|chosen| chosen.tier == Tier::Remote)
 }
 

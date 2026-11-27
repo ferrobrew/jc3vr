@@ -57,7 +57,7 @@ impl Tuning for InputHooksTuning {
 #[serde(deny_unknown_fields)]
 pub struct AirTuning {
     /// How long a carried speed takes to ease back to the game's cap, seconds.
-    pub carry_s: f32,
+    pub(crate) carry_s: f32,
 }
 
 /// The on-foot heading pin and the movement input's thresholds.
@@ -67,12 +67,12 @@ pub struct LocomotionTuning {
     /// The tracking turn rate: the maximum yaw step, in degrees per orientation update (one per
     /// frame), passed to the orientation executor while the body is pinned to the camera or the
     /// headpose's heading. Positive, since the executor divides by it.
-    pub turn_step_deg: f32,
+    pub(crate) turn_step_deg: f32,
     /// Move-direction magnitudes below this are treated as no input (idle), where the pin always
     /// applies so that turning the camera turns the body.
-    pub move_dir_idle_threshold: f32,
+    pub(crate) move_dir_idle_threshold: f32,
     /// Movement-input magnitudes below this are treated as no input.
-    pub input_deadzone: f32,
+    pub(crate) input_deadzone: f32,
 }
 
 /// When the canopy's yaw alignment stays off.
@@ -80,12 +80,12 @@ pub struct LocomotionTuning {
 #[serde(deny_unknown_fields)]
 pub struct ParachuteTuning {
     /// How long after the canopy opens its yaw alignment stays off, seconds.
-    pub align_hold_s: f32,
+    pub(crate) align_hold_s: f32,
     /// The horizontal speed below which the canopy's yaw alignment stays off, metres per second.
-    pub align_min_mps: f32,
+    pub(crate) align_min_mps: f32,
     /// How far from the facing the velocity may point before the canopy's yaw alignment stays off,
     /// radians.
-    pub align_reversed_rad: f32,
+    pub(crate) align_reversed_rad: f32,
 }
 
 /// The swim heading and the underwater dive.
@@ -96,16 +96,16 @@ pub struct SwimTuning {
     /// look input's own rate, or the body trails the target and the turn continues after the stick
     /// is released; the game's own swim turn rates are far below it. Capped per frame by the angle
     /// `DoRotate` eases out over, so it cannot overshoot.
-    pub turn_rate_deg_s: f32,
+    pub(crate) turn_rate_deg_s: f32,
     /// The head pitch, in degrees, within which the underwater dive control does nothing, so a
     /// resting head does not slowly dive or surface the swimmer.
-    pub pitch_deadzone_deg: f32,
+    pub(crate) pitch_deadzone_deg: f32,
     /// The furthest the underwater dive control will pitch the body, in degrees. Kept short of
     /// vertical, where a heading is undefined.
-    pub pitch_limit_deg: f32,
+    pub(crate) pitch_limit_deg: f32,
     /// How fast, in degrees per second, the underwater dive pitch follows the head. Slower than the
     /// yaw rate on purpose: a dive that snaps as fast as a turn reads as the world tipping over.
-    pub pitch_rate_deg_s: f32,
+    pub(crate) pitch_rate_deg_s: f32,
 }
 
 #[cfg(test)]

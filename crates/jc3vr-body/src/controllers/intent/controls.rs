@@ -285,7 +285,7 @@ pub enum PadZone {
 /// with the fingers round the handle at or above the value grips release at, as a [`ClosedHand`]
 /// that is closed reads it. A read with no history cannot tell a sagged hold from fingers resting
 /// round the handle, so it errs toward the hold: fingers resting there read as holding.
-pub fn holds_unseen(pressed: bool, squeeze: Option<f32>, value_release: f32) -> bool {
+pub(crate) fn holds_unseen(pressed: bool, squeeze: Option<f32>, value_release: f32) -> bool {
     pressed || squeeze.is_some_and(|v| v.is_finite() && v >= value_release)
 }
 

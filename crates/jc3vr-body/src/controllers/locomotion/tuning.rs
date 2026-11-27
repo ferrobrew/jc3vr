@@ -86,15 +86,15 @@ pub struct StickTuning {
     /// is crisp.
     pub rates: Rates,
     /// A stick shorter than this has no direction, `0..1`.
-    pub direction_min: f32,
+    pub(crate) direction_min: f32,
     /// A move stick shorter than this is no stick, for standing still and for the player's own
     /// stick under a committed step, `0..1`.
-    pub still_stick: f32,
+    pub(crate) still_stick: f32,
     /// Below this the task's and the stick's velocities are no motion, metres per second.
-    pub still_speed_mps: f32,
+    pub(crate) still_speed_mps: f32,
     /// The shortest horizontal head forward that still has a heading, `0..1`; a head looking
     /// further up or down takes Rico's own forward as the stick's frame.
-    pub min_forward: f32,
+    pub(crate) min_forward: f32,
 }
 
 /// The act filter's watchdog ([`crate::controllers::locomotion::acts::Watchdog`]).
@@ -103,11 +103,11 @@ pub struct StickTuning {
 pub struct ActsTuning {
     /// How long the filter may act without a break before the watchdog decides the animation state
     /// machine is waiting on an act the filter keeps from it, seconds.
-    pub watchdog_s: f32,
+    pub(crate) watchdog_s: f32,
     /// How long the watchdog then lets every act through, seconds.
     pub release_s: f32,
     /// Acts closer together than this belong to one burst.
-    pub burst_gap_ms: Millis,
+    pub(crate) burst_gap_ms: Millis,
 }
 
 /// The stable view anchor ([`crate::controllers::locomotion::anchor`]).
@@ -117,15 +117,15 @@ pub struct AnchorTuning {
     /// How far in front of the animated face the eyes are held while a clip poses the body,
     /// metres: a few centimetres past the skull's front, so a chest or a shoulder the pose folds
     /// toward the face stays beyond the near plane.
-    pub face_clearance_m: f32,
+    pub(crate) face_clearance_m: f32,
     /// How long Rico must have stood still for his neutral head to be measured, seconds.
-    pub capture_s: f32,
+    pub(crate) capture_s: f32,
     /// How long the anchor takes to hand over between the animated head and the root, seconds.
     pub blend_s: f32,
     /// How long after leaving the ground the anchor stays on the root, seconds, so a jump keeps the
     /// view steady while a long fall hands it back to the animation. The procedural body's
     /// hand-over table reads a jump by the same grace.
-    pub jump_grace_s: f32,
+    pub(crate) jump_grace_s: f32,
 }
 
 /// The smoothing of the root's height under the stable anchor
@@ -158,19 +158,19 @@ pub struct FollowTuning {
     /// fall eases in rather than dropping the view.
     pub max_speed_mps: f32,
     /// The smoothing of the difference left on the way back to the root, seconds.
-    pub return_smoothing_s: f32,
+    pub(crate) return_smoothing_s: f32,
     /// How far the animated head must be from the root's, horizontally, to count toward the
     /// escape, metres: past a walk's lean and a crouch's forward reach.
-    pub escape_m: f32,
+    pub(crate) escape_m: f32,
     /// How far the animated head must drop below the root's to count toward the escape as
     /// [`escape_m`](Self::escape_m) does horizontally, metres: below a landing's crouch, above a
     /// body lying down.
-    pub escape_drop_m: f32,
+    pub(crate) escape_drop_m: f32,
     /// How long the head must stay that far for the view to follow it, seconds: longer than a
     /// landing's dip.
-    pub escape_s: f32,
+    pub(crate) escape_s: f32,
     /// How close the head must come back for the view to return to the root, metres.
-    pub escape_return_m: f32,
+    pub(crate) escape_return_m: f32,
 }
 
 impl StrokeTuning {

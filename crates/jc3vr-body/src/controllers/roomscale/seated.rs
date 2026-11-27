@@ -34,12 +34,12 @@ pub struct SeatedReferenceTuning {
     /// (a lean, a duck, a look around) does not move the median.
     pub window_s: f32,
     /// The fastest the adaptive baseline moves the reference, metres per second.
-    pub rate_mps: f32,
+    pub(crate) rate_mps: f32,
     /// How far the median must be from the reference before the adaptive baseline moves it,
     /// metres.
     pub deadband_m: f32,
     /// Once adapting, the adaptive baseline closes the gap to this fraction of the deadband.
-    pub settle_fraction: f32,
+    pub(crate) settle_fraction: f32,
     /// The longest frame step a head-height tracker accounts for, seconds ([`step`]).
     pub max_step_s: f32,
 }
@@ -89,7 +89,7 @@ pub struct SeatedReferenceStatus {
 
 /// Tracks the seated eye reference from frame to frame.
 #[derive(Debug, Clone, PartialEq)]
-pub struct SeatedReference {
+pub(crate) struct SeatedReference {
     reference: Option<SeatedEyeReference>,
     /// The valid calibrated height seen on the last update, `None` before the first update, so
     /// that a new calibration restarts the reference and the first one seeds it.

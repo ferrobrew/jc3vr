@@ -23,17 +23,17 @@ jc3vr_core::tuning_file! {
 pub struct ProceduralTuning {
     pub blend: BlendTuning,
     pub torso: TorsoTuning,
-    pub chest_clearance: ChestClearanceTuning,
+    pub(crate) chest_clearance: ChestClearanceTuning,
     pub keep_out: KeepOutTuning,
     pub elbow_hint: ElbowHintTuning,
     pub clavicles: ClavicleTuning,
     pub stance: StanceTuning,
     pub hips: HipsTuning,
     pub in_air: InAirTuning,
-    pub hit_reaction: HitReactionTuning,
-    pub wings: WingsTuning,
+    pub(crate) hit_reaction: HitReactionTuning,
+    pub(crate) wings: WingsTuning,
     pub twist: TwistTuning,
-    pub leg_swing: LegSwingTuning,
+    pub(crate) leg_swing: LegSwingTuning,
 }
 
 impl Tuning for ProceduralTuning {
@@ -62,15 +62,15 @@ impl Tuning for ProceduralTuning {
 pub struct BlendTuning {
     /// How long a region of the body takes to hand over from the animation to the procedural pose,
     /// seconds: the smoothing time of its spring.
-    pub in_s: f32,
+    pub(crate) in_s: f32,
     /// How long a region takes to hand back to the animation, seconds; shorter, since the game's
     /// authored motion (a vehicle entry, a climb, a fall) is under way when it does.
-    pub out_s: f32,
+    pub(crate) out_s: f32,
     /// The longest step the body takes, seconds: a hitch is not a long blend.
     pub max_step_s: f32,
     /// How long a flight keeps the torso procedural after a jump or the parachute, seconds of the
     /// simulation's time.
-    pub flight_hold_s: f32,
+    pub(crate) flight_hold_s: f32,
 }
 
 impl BlendTuning {
@@ -87,32 +87,32 @@ impl BlendTuning {
 #[serde(deny_unknown_fields)]
 pub struct TorsoTuning {
     /// How far the chest turns toward the player's torso, at most, degrees.
-    pub chest_turn_limit_deg: f32,
+    pub(crate) chest_turn_limit_deg: f32,
     /// How far the spine leans from upright, at most, degrees.
-    pub lean_limit_deg: f32,
+    pub(crate) lean_limit_deg: f32,
     /// The share of a gait clip's forward lean the torso takes out on the ground before following
     /// the player's head.
-    pub delean: f32,
+    pub(crate) delean: f32,
     /// How long the de-lean takes to ease in or out across a change of case, seconds.
-    pub delean_blend_s: f32,
+    pub(crate) delean_blend_s: f32,
     /// The spine's tilt from the vertical within which it takes the whole of the torso's turn and
     /// the look down, radians.
-    pub upright_full_rad: f32,
+    pub(crate) upright_full_rad: f32,
     /// The spine's tilt from the vertical past which it takes none of them, radians.
-    pub upright_none_rad: f32,
+    pub(crate) upright_none_rad: f32,
     /// The share of the head's look down the chest pitches by.
-    pub chest_pitch_share: f32,
+    pub(crate) chest_pitch_share: f32,
     /// The furthest the chest pitches forward for a look down, radians.
-    pub max_chest_pitch_rad: f32,
+    pub(crate) max_chest_pitch_rad: f32,
     /// The share of the head's turn against the chest the neck takes.
-    pub neck_share: f32,
+    pub(crate) neck_share: f32,
     /// Each spine bone's share of the chest's pitch, from the base: the upper back takes it.
-    pub pitch_shares: [f32; 4],
+    pub(crate) pitch_shares: [f32; 4],
     /// Each spine bone's share of the swing toward the neck target, from the base.
-    pub swing_shares: [f32; 4],
+    pub(crate) swing_shares: [f32; 4],
     /// Each spine bone's share of the chest's twist, from the base: more of it higher up, as in a
     /// real spine.
-    pub twist_shares: [f32; 4],
+    pub(crate) twist_shares: [f32; 4],
 }
 
 impl TorsoTuning {
@@ -163,7 +163,7 @@ impl TorsoTuning {
 /// How the chest is kept out of the camera's near field.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ChestClearanceTuning {
+pub(crate) struct ChestClearanceTuning {
     /// A point of the chest higher than this below the camera's eyes is kept out of the near
     /// field, metres.
     pub below_m: f32,
@@ -171,7 +171,7 @@ pub struct ChestClearanceTuning {
     pub back_m: f32,
     /// The furthest the clearance swings the spine back in all, radians. A camera far inside the
     /// chest would otherwise fold the spine over backwards to clear it.
-    pub limit_rad: f32,
+    pub(crate) limit_rad: f32,
 }
 
 impl ChestClearanceTuning {
@@ -192,11 +192,11 @@ impl ChestClearanceTuning {
 #[serde(deny_unknown_fields)]
 pub struct KeepOutTuning {
     /// The chest capsule's radius, metres.
-    pub chest_radius_m: f32,
+    pub(crate) chest_radius_m: f32,
     /// The abdomen capsule's radius, metres.
-    pub abdomen_radius_m: f32,
+    pub(crate) abdomen_radius_m: f32,
     /// How far outside the torso a pushed wrist or elbow lands, metres: the hand's half-thickness.
-    pub hand_margin_m: f32,
+    pub(crate) hand_margin_m: f32,
 }
 
 impl KeepOutTuning {
@@ -219,17 +219,17 @@ pub struct ElbowHintTuning {
     /// measures it: the hints point down and back from the chest, which only holds near upright.
     pub upright: f32,
     /// The elbow pole's lean down.
-    pub pole_down: f32,
+    pub(crate) pole_down: f32,
     /// The elbow pole's lean out to the arm's side.
-    pub pole_out: f32,
+    pub(crate) pole_out: f32,
     /// The elbow pole's lean back.
-    pub pole_back: f32,
+    pub(crate) pole_back: f32,
     /// How much further out a reach up or across lifts the elbow, on top of
     /// [`pole_out`](Self::pole_out).
-    pub pole_reach_out: f32,
+    pub(crate) pole_reach_out: f32,
     /// The share of the pole left across the reach below which the fallback pole (straight back)
     /// takes over, fully at none.
-    pub pole_fallback_below: f32,
+    pub(crate) pole_fallback_below: f32,
 }
 
 impl ElbowHintTuning {
@@ -257,27 +257,27 @@ pub struct ClavicleTuning {
     /// How far a clavicle lifts for a hand overhead, at most, degrees.
     pub elevation_deg: f32,
     /// How far a clavicle drops for a hand reaching far down, at most, degrees.
-    pub depression_deg: f32,
+    pub(crate) depression_deg: f32,
     /// How far a clavicle swings forward for a hand reaching far ahead or across, at most,
     /// degrees.
-    pub protraction_deg: f32,
+    pub(crate) protraction_deg: f32,
     /// The share of the arm's length at which a reach ahead or down starts to take the clavicle;
     /// it takes it fully at the arm's full length.
-    pub reach_start: f32,
+    pub(crate) reach_start: f32,
     /// The share of the arm's length from which a hand overhead starts to lift the clavicle, by
     /// how straight the arm is.
-    pub lift_extension_start: f32,
+    pub(crate) lift_extension_start: f32,
     /// How steeply up the hand must be from the shoulder before it lifts it: the sine of the angle
     /// above the horizontal.
-    pub lift_start: f32,
+    pub(crate) lift_start: f32,
     /// How steeply down the hand must be from the shoulder before it lowers it: the sine of the
     /// angle below the horizontal.
-    pub lower_start: f32,
+    pub(crate) lower_start: f32,
     /// How much a reach across the body counts against a reach ahead: less, since the chest is in
     /// the way.
-    pub across_share: f32,
+    pub(crate) across_share: f32,
     /// How quickly the clavicles follow the hands, seconds: the time constant of their follower.
-    pub follow_s: f32,
+    pub(crate) follow_s: f32,
 }
 
 impl ClavicleTuning {
@@ -339,11 +339,11 @@ pub struct HipsTuning {
 pub struct InAirTuning {
     /// How long the proxy must be off its support, with no jump and no fall detected, before the
     /// body counts as in the air, seconds: a stair or a bump lifts it for a tick without a fall.
-    pub debounce_s: f32,
+    pub(crate) debounce_s: f32,
     /// How long the proxy must be off its support while the movement task still runs, seconds: the
     /// proxy loses its support for a few ticks as a walk comes to a stop, and drops a few
     /// centimetres onto the ground, without leaving it.
-    pub debounce_on_foot_s: f32,
+    pub(crate) debounce_on_foot_s: f32,
 }
 
 impl InAirTuning {
@@ -356,23 +356,23 @@ impl InAirTuning {
 /// The hit reactions ([`crate::controllers::body::procedural::signals`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HitReactionTuning {
+pub(crate) struct HitReactionTuning {
     /// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after
     /// its act: the game keeps no state for the reaction's length.
-    pub hold_ms: Millis,
+    pub(crate) hold_ms: Millis,
 }
 
 /// The wingsuit's arms ([`crate::controllers::body::procedural::wings`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WingsTuning {
+pub(crate) struct WingsTuning {
     /// The least the player's reach is scaled by onto Rico's arm.
-    pub arm_scale_min: f32,
+    pub(crate) arm_scale_min: f32,
     /// The most the player's reach is scaled by onto Rico's arm.
-    pub arm_scale_max: f32,
+    pub(crate) arm_scale_max: f32,
     /// The wrists spread at least this far apart across the ground give the torso's heading,
     /// metres.
-    pub spread_m: f32,
+    pub(crate) spread_m: f32,
     /// The follower of the head in flight, when the wrists are not spread.
     pub follow: WingFollowTuning,
 }
@@ -405,7 +405,7 @@ impl WingsTuning {
 /// standing yaw follow's ([`body_rig::yaw::YawTuning`]).
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct WingFollowTuning {
+pub(crate) struct WingFollowTuning {
     /// [`body_rig::yaw::YawTuning::turn_deg`].
     pub turn_deg: f32,
     /// [`body_rig::yaw::YawTuning::sustain_deg`].
@@ -422,10 +422,10 @@ pub struct WingFollowTuning {
 pub struct TwistTuning {
     /// How far a hand turns from its forearm before the upper arm takes a share, radians: about the
     /// forearm's own range of pronation from the reference.
-    pub forearm_limit_rad: f32,
+    pub(crate) forearm_limit_rad: f32,
     /// The share of a hand's turn past [`forearm_limit_rad`](Self::forearm_limit_rad) the upper arm
     /// takes.
-    pub upper_arm_share: f32,
+    pub(crate) upper_arm_share: f32,
 }
 
 impl TwistTuning {
@@ -444,20 +444,20 @@ impl TwistTuning {
 /// the root's acceleration and settles back under it.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LegSwingTuning {
+pub(crate) struct LegSwingTuning {
     /// The pendulum's length, metres: with gravity, its period.
     pub length_m: f32,
     /// The pendulum's damping, per second.
     pub damping: f32,
     /// The most of the root's horizontal acceleration the pendulum feels, metres per second
     /// squared.
-    pub max_acceleration: f32,
+    pub(crate) max_acceleration: f32,
     /// The fastest the pendulum swings, offset per second.
-    pub max_rate: f32,
+    pub(crate) max_rate: f32,
     /// The furthest the pendulum swings from straight down, as an offset across the unit down.
-    pub max_offset: f32,
+    pub(crate) max_offset: f32,
     /// The longest integration step, seconds: a tick is split into steps no longer than this.
-    pub substep_s: f32,
+    pub(crate) substep_s: f32,
     /// A root moved further than this in one tick has been carried, not swung, and the pendulum
     /// starts again under it, metres.
     pub jump_m: f32,

@@ -116,21 +116,21 @@ impl<'t> LocalPlayer<'t> {
 
     /// Whether the character rides in a vehicle ([`Character::IsInRidingInVehicleState`]).
     #[inline]
-    pub fn in_riding_in_vehicle_state(&self) -> bool {
+    pub(crate) fn in_riding_in_vehicle_state(&self) -> bool {
         // SAFETY: as [`Self::faction`].
         unsafe { self.character().IsInRidingInVehicleState() }
     }
 
     /// Whether the character traverses a vehicle's stunt area ([`Character::IsStuntTraversing`]).
     #[inline]
-    pub fn stunt_traversing(&self) -> bool {
+    pub(crate) fn stunt_traversing(&self) -> bool {
         // SAFETY: as [`Self::faction`].
         unsafe { self.character().IsStuntTraversing() }
     }
 
     /// Whether the character hangs from a vehicle's stunt area ([`Character::IsStuntHanging`]).
     #[inline]
-    pub fn stunt_hanging(&self) -> bool {
+    pub(crate) fn stunt_hanging(&self) -> bool {
         // SAFETY: as [`Self::faction`].
         unsafe { self.character().IsStuntHanging() }
     }

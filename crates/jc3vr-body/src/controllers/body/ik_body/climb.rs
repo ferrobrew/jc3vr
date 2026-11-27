@@ -22,7 +22,7 @@ use crate::controllers::{
 pub(crate) struct ClimbLegs<'a> {
     pub world: &'a Mat4,
     /// The character's heading in the world.
-    pub world_yaw: f32,
+    pub(crate) world_yaw: f32,
     /// The hip joints, left then right.
     pub hips: [Vec3; 2],
     /// The clip's ankles, left then right.

@@ -14,7 +14,7 @@ use jc3vr_view::hooks::graphics_engine::palette_edit::PaletteLayout;
 use crate::controllers::hands::tuning::HANDS;
 
 /// Read a palette entry as a transform.
-pub fn entry_to_matrix(m: &[f32; 12], layout: PaletteLayout) -> Mat4 {
+pub(crate) fn entry_to_matrix(m: &[f32; 12], layout: PaletteLayout) -> Mat4 {
     match layout {
         PaletteLayout::Columns => Mat4::from_cols(
             Vec4::new(m[0], m[1], m[2], 0.0),
@@ -32,7 +32,7 @@ pub fn entry_to_matrix(m: &[f32; 12], layout: PaletteLayout) -> Mat4 {
 }
 
 /// Write a transform back into a palette entry in the same layout.
-pub fn matrix_to_entry(t: &Mat4, layout: PaletteLayout) -> [f32; 12] {
+pub(crate) fn matrix_to_entry(t: &Mat4, layout: PaletteLayout) -> [f32; 12] {
     let (x, y, z, w) = (t.x_axis, t.y_axis, t.z_axis, t.w_axis);
     match layout {
         PaletteLayout::Columns => [x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z, w.x, w.y, w.z],
@@ -41,14 +41,14 @@ pub fn matrix_to_entry(t: &Mat4, layout: PaletteLayout) -> [f32; 12] {
 }
 
 /// Pre-multiply a palette entry by `edit`, in place.
-pub fn premultiply_entry(m: &mut [f32; 12], layout: PaletteLayout, edit: &Mat4) {
+pub(crate) fn premultiply_entry(m: &mut [f32; 12], layout: PaletteLayout, edit: &Mat4) {
     *m = matrix_to_entry(&(*edit * entry_to_matrix(m, layout)), layout);
 }
 
 /// The forearm's swing about the elbow `elbow` that takes the wrist `wrist` toward the corrected
 /// wrist `wrist_corrected`: a rotation about the elbow, so the forearm keeps its length and stays
 /// on the elbow. The identity for a degenerate forearm.
-pub fn forearm_swing(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3) -> Mat4 {
+pub(crate) fn forearm_swing(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3) -> Mat4 {
     let (Some(from), Some(to)) = (
         (wrist - elbow).try_normalize(),
         (wrist_corrected - elbow).try_normalize(),
@@ -66,7 +66,12 @@ pub fn forearm_swing(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3) -> Mat4 {
 /// end of the arm. Extension is bounded to the hands tuning's `reach.max_forearm_stretch`
 /// ([`ReachTuning`](crate::controllers::hands::reach::ReachTuning)); shortening has no floor, since
 /// a separate floor would leave a close hand detached from the forearm.
-pub fn forearm_reach(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3, stretch: bool) -> Mat4 {
+pub(crate) fn forearm_reach(
+    elbow: Vec3,
+    wrist: Vec3,
+    wrist_corrected: Vec3,
+    stretch: bool,
+) -> Mat4 {
     let swing = forearm_swing(elbow, wrist, wrist_corrected);
     let (Some(axis), true) = (
         (wrist_corrected - elbow)

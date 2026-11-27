@@ -101,7 +101,7 @@ pub(crate) fn is_local_model(model: *const AnimatedModel) -> bool {
 }
 
 /// Whether the grapple's ledge climb ran within the last tick or two.
-pub fn in_ledge_climb(now: Stamp) -> bool {
+pub(crate) fn in_ledge_climb(now: Stamp) -> bool {
     STATE.lock().ledge_climb_at.is_some_and(|at| {
         FRESHNESS
             .get()
@@ -113,7 +113,7 @@ pub fn in_ledge_climb(now: Stamp) -> bool {
 }
 
 /// Whether a hit reaction's act was queued within the tuning's last `hit_reaction.hold_ms`.
-pub fn in_hit_reaction(now: Stamp) -> bool {
+pub(crate) fn in_hit_reaction(now: Stamp) -> bool {
     let hold = PROCEDURAL.get().hit_reaction.hold_ms.duration();
     STATE
         .lock()

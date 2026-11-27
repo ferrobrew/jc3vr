@@ -63,9 +63,9 @@ pub struct CalibrationTuning {
 #[serde(deny_unknown_fields)]
 pub struct FirmRagdollTuning {
     /// How long the physics takes to come in, seconds.
-    pub blend_in_s: f32,
+    pub(crate) blend_in_s: f32,
     /// How long the physics takes to go out, seconds.
-    pub blend_out_s: f32,
+    pub(crate) blend_out_s: f32,
 }
 
 /// The learned estimator's submissions ([`crate::controllers::body::estimator`]).
@@ -75,7 +75,7 @@ pub struct EstimatorTuning {
     /// How many windows a second go to the GPU.
     pub submit_hz: f32,
     /// How early a frame may take a submission's due time: a frame's jitter.
-    pub submit_early_ms: Millis,
+    pub(crate) submit_early_ms: Millis,
 }
 
 #[cfg(test)]

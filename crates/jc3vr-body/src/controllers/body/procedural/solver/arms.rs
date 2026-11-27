@@ -101,7 +101,7 @@ impl TorsoKeepOut {
 
 /// The arm's bones on `side`: the clavicle (a rig bone), and the names of the upper arm, the
 /// forearm, and the hand under it.
-pub const fn arm_bones(side: Side) -> (RigBone, [&'static str; 3]) {
+pub(crate) const fn arm_bones(side: Side) -> (RigBone, [&'static str; 3]) {
     match side {
         Side::Left => (
             RigBone::LeftShoulder,

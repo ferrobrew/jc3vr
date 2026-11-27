@@ -36,31 +36,31 @@ pub struct AutoPostureTuning {
     /// How long a seated player's head must stay at standing height before the posture becomes
     /// standing, seconds. Short: a seated player cannot raise the head that far without standing
     /// up.
-    pub stand_after_s: f32,
+    pub(crate) stand_after_s: f32,
     /// How long a standing player's head must stay at seated height before the posture becomes
     /// seated, seconds. Long, so that a standing player crouching behind cover keeps the physical
     /// crouch.
-    pub sit_after_s: f32,
+    pub(crate) sit_after_s: f32,
     /// In the seated posture, how far the crouch toggle lowers the eyes, metres at the character's
     /// scale.
-    pub seated_crouch_drop_m: f32,
+    pub(crate) seated_crouch_drop_m: f32,
     /// The seated eye height estimated from the standing eye height, without a calibration, as a
     /// share of it: an adult on an ordinary chair.
-    pub seated_eye_fraction: f32,
+    pub(crate) seated_eye_fraction: f32,
     /// The smallest gap between a calibrated seated eye height and the standing eye height the
     /// thresholds take it with, metres; a closer one is replaced by the estimate.
-    pub min_eye_gap_m: f32,
+    pub(crate) min_eye_gap_m: f32,
     /// Where between the seated and the standing eye heights the sit threshold sits.
-    pub sit_fraction: f32,
+    pub(crate) sit_fraction: f32,
     /// Where between the seated and the standing eye heights the stand threshold sits.
-    pub stand_fraction: f32,
+    pub(crate) stand_fraction: f32,
     /// How far below the seated eye height a head is at floor level, as a share of the standing
     /// eye height: about twenty centimetres for a standing eye height of 1.7 m, below the lowest
     /// chair and above a head sitting on the floor.
-    pub floor_margin_fraction: f32,
+    pub(crate) floor_margin_fraction: f32,
     /// How far a standing player's head may move up or down and still count as steady at a chair's
     /// height, metres: a seated head holds its height, and a crouch behind cover bobs.
-    pub steady_band_m: f32,
+    pub(crate) steady_band_m: f32,
 }
 
 /// The posture in effect after the automatic setting is resolved.
@@ -100,13 +100,13 @@ pub enum DetectedPosture {
 
 /// What the classifier reads on one frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ClassifierInput {
+pub(crate) struct ClassifierInput {
     /// The head's height above the STAGE floor, metres, when the runtime can locate it.
     pub head_height: Option<f32>,
     /// The player's standing eye height, metres.
     pub standing_eye_m: f32,
     /// The player's calibrated seated eye height, metres, when one is saved.
-    pub calibrated_seated_eye_m: Option<f32>,
+    pub(crate) calibrated_seated_eye_m: Option<f32>,
 }
 
 /// Why the classifier holds its posture.
@@ -141,7 +141,7 @@ impl DetectionReason {
 pub struct ClassifierStatus {
     pub detected: DetectedPosture,
     pub reason: DetectionReason,
-    pub head_height_m: Option<f32>,
+    pub(crate) head_height_m: Option<f32>,
     pub thresholds: Thresholds,
     /// How long the head has been past the threshold that would change the posture, seconds.
     pub dwell_s: f32,
@@ -167,7 +167,7 @@ pub struct Thresholds {
     /// A seated player whose head stays above this for the stand dwell is standing.
     pub stand_above_m: f32,
     /// The first sample and a recenter classify against this, with no dwell.
-    pub midpoint_m: f32,
+    pub(crate) midpoint_m: f32,
 }
 
 impl Thresholds {
@@ -227,7 +227,7 @@ impl Thresholds {
 ///
 /// The controllers' heights are not used: a crouching player's hands sit as low as a seated one's.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct PostureClassifier {
+pub(crate) struct PostureClassifier {
     detected: Option<(DetectedPosture, DetectionReason)>,
     dwell_s: f32,
     /// The head's height when the sit dwell started: the dwell holds while the head stays near it.
@@ -304,7 +304,7 @@ impl PostureClassifier {
 
     /// Classify at once against the midpoint, for a manual recenter: the player has just said this
     /// is how they are. Returns the posture detected, `None` without a located head height.
-    pub fn reclassify(&mut self, input: &ClassifierInput) -> Option<DetectedPosture> {
+    pub(crate) fn reclassify(&mut self, input: &ClassifierInput) -> Option<DetectedPosture> {
         let height = input.head_height.filter(|h| h.is_finite())?;
         let thresholds = Thresholds::new(input.standing_eye_m, input.calibrated_seated_eye_m);
         let detected = thresholds.classify(height);
@@ -359,13 +359,13 @@ pub struct HeadHeightInput {
     /// vertical component).
     pub cockpit_y: f32,
     /// The head's height above the STAGE floor, metres, when the runtime can locate it.
-    pub stage_height: Option<f32>,
+    pub(crate) stage_height: Option<f32>,
     /// The seated eye reference, in the seated posture once it has one.
     pub seated_reference: Option<SeatedEyeReference>,
     /// Whether the seated crouch toggle lowers the eyes on this frame.
     pub seated_crouch: bool,
     /// How far the seated crouch lowers the eyes, metres at the character's scale.
-    pub seated_drop_m: f32,
+    pub(crate) seated_drop_m: f32,
 }
 
 /// Where the head height came from.
@@ -455,7 +455,11 @@ pub fn head_height(
 
 /// How far the seated crouch lowers the eyes: `seated_drop_m` while crouched in the seated
 /// posture, and nothing otherwise.
-pub fn seated_crouch_drop(posture: EffectivePosture, crouched: bool, seated_drop_m: f32) -> f32 {
+pub(crate) fn seated_crouch_drop(
+    posture: EffectivePosture,
+    crouched: bool,
+    seated_drop_m: f32,
+) -> f32 {
     if posture == EffectivePosture::Seated && crouched && seated_drop_m.is_finite() {
         seated_drop_m.max(0.0)
     } else {

@@ -19,7 +19,7 @@ use parking_lot::Mutex;
 use crate::controllers::scheme;
 
 /// The value the pin holds: the gamepad is the active input device.
-pub const GAMEPAD: i32 = 1;
+pub(crate) const GAMEPAD: i32 = 1;
 
 /// The pin's readout for the debug UI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -35,7 +35,7 @@ pub struct SettingStatus {
 
 /// The pin's state across ticks.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
-pub struct SettingPin {
+pub(crate) struct SettingPin {
     saved: Option<i32>,
 }
 
