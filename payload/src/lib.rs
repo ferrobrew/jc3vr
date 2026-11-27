@@ -21,6 +21,7 @@ mod config;
 mod crash;
 mod eject_gpu;
 mod hooks;
+mod native_callbacks;
 mod teardown;
 mod tuning;
 

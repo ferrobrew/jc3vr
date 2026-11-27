@@ -80,7 +80,7 @@ use crate::controllers::{
     scheme,
 };
 
-/// The aiming hooks, aggregated by `controllers::hook_library`.
+/// The aiming hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_POST_SIM_BINDER)

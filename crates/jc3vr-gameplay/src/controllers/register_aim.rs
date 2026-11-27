@@ -3,7 +3,7 @@
 //! and the weapon handling's contributions around the local player's weapon handling in their
 //! order ([`PRE_WEAPON_HOOKS`]). The vehicle handling's mounted-gun fact
 //! ([`jc3vr_body::controllers::facts::mounted`]) rides with its other body fields
-//! ([`jc3vr_vehicles::register_body`]), which the register file for the systems below fills.
+//! ([`jc3vr_vehicles::register`]).
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's
 //! registration check ([`jc3vr_body::contributions::register`]).

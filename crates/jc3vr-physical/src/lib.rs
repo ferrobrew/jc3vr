@@ -12,8 +12,8 @@
 //!   and bringing a pane down with a hard enough strike.
 //!
 //! What the weapon handling knows about a held weapon reaches the hands through the body crate's
-//! held-item facts and registrations ([`jc3vr_body::controllers::held`]), which the gameplay crate
-//! connects above both.
+//! held-item facts and registrations ([`jc3vr_body::controllers::held`]), which the payload's
+//! composition connects above both.
 //!
 //! # The public surface
 //!
@@ -22,19 +22,17 @@
 //! grapple, the debug UI's panels and status rows, and the directing tools. Everything else keeps
 //! its crate-private visibility.
 //!
-//! The gameplay crate composes the registrations and the hook libraries:
+//! The payload's composition makes the registrations and enables the hook libraries:
 //!
 //! - [`contributions`]: what the crate reads from the crates above it, one record the vehicle
 //!   handling registers, which the install's registration check requires.
-//! - [`controllers::physical_hands::register_body::register`] fills the physical hands' fields of
-//!   the body's contributions record, and the gameplay crate's install calls it; the hand stage
-//!   and the aim hook the physical hands provide sit in the gameplay crate's ordered tables.
-//! - The hook libraries, which the gameplay crate and the payload enable in their established
-//!   order with the other layers':
+//! - [`register`] fills the physical hands' fields of the body's contributions record; the hand
+//!   stage and the aim hook the physical hands provide sit in the gameplay crate's ordered tables.
+//! - The hook libraries, which the composition enables in its order with the other layers':
 //!   [`controllers::physical_hands::impacts::hook_library`],
-//!   [`controllers::physical_hands::lifetime::hook_library`], and
-//!   [`controllers::glass::hook_library`] inside the gameplay crate's controllers library, and
-//!   [`controllers::physical_hands::human_hull::hook_library`] in the payload's composition.
+//!   [`controllers::physical_hands::lifetime::hook_library`],
+//!   [`controllers::glass::hook_library`], and
+//!   [`controllers::physical_hands::human_hull::hook_library`].
 //! - The settings: [`controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG`] and
 //!   [`controllers::glass::config::GLASS_CONFIG`] declare the slots for the two groups beside
 //!   their types, and the payload binds them to its aggregate.
@@ -44,6 +42,8 @@
 
 pub mod contributions;
 pub mod controllers;
+
+pub use controllers::physical_hands::register_body::register;
 
 #[cfg(test)]
 mod test_config;

@@ -1,8 +1,9 @@
 //! The gameplay participants of the head pose ([`jc3vr_view::headpose::HeadParticipants`]): the
 //! character's state the head composition reads, and the two inputs to the body's heading that
-//! systems above the head pose own: the wingsuit take-off's heading and the arm strokes' turn. The grapple registers its comfort filter as the
-//! head pose's body frame filter itself ([`jc3vr_grapple::register`]), and [`register`] reports it
-//! to the install's registration check when it is missing.
+//! systems above the head pose own: the wingsuit take-off's heading and the arm strokes' turn.
+//! [`register`] reports the table to the install's registration check when it is missing. The
+//! grapple registers its comfort filter as the head pose's body frame filter itself
+//! ([`jc3vr_grapple::register`]).
 
 use jc3vr_body::{
     controllers::{
@@ -21,8 +22,7 @@ use jc3vr_body::{
 use jc3vr_core::{published::Stamp, registration::RegistrationCheck};
 use jc3vr_vehicles::controllers::vehicles::take_off;
 use jc3vr_view::headpose::{
-    HeadParticipants, body_frame_filter_registered, head_participants_registered,
-    register_head_participants,
+    HeadParticipants, head_participants_registered, register_head_participants,
 };
 
 pub(super) fn register(check: &mut RegistrationCheck) {
@@ -31,11 +31,6 @@ pub(super) fn register(check: &mut RegistrationCheck) {
         "head pose",
         "the gameplay participants",
         head_participants_registered(),
-    );
-    check.require(
-        "head pose",
-        "the body frame filter",
-        body_frame_filter_registered(),
     );
 }
 

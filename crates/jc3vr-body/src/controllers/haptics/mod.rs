@@ -43,7 +43,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{scheme, telemetry};
 
-/// The haptics' hooks, aggregated by `controllers::hook_library`.
+/// The haptics' hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     rumble::hook_library()
 }

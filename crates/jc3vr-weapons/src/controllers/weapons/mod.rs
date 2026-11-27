@@ -122,7 +122,7 @@ pub use stand_down::{StandDown, StandDownScope, stand_down};
 pub use state::status;
 pub use types::{TickStart, WeaponsStatus};
 
-/// The weapon handling's hooks, aggregated by `controllers::hook_library`.
+/// The weapon handling's hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(fire::hook_library())

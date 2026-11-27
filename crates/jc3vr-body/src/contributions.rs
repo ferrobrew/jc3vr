@@ -28,7 +28,7 @@ use crate::{
         hands::{anchor::HangPump, late::ObserveWeapon, stages::HandStageFn},
         held::{HeldSource, guns::TargetsFn, pickup::PickupSink},
     },
-    hooks::character::BlocksAutoAttach,
+    hooks::character::{BlocksAutoAttach, PoseObserver},
 };
 
 /// Everything the body reads from the crates above it. Each field names the subsystem that fills
@@ -92,12 +92,15 @@ pub struct BodyContributions {
     /// what the hand holds in its fingers over what it holds on to; at most
     /// [`MAX_SOURCES`] (gameplay's grip table).
     pub grip_order: &'static [GripSource],
+    /// The observer of the local player's pose-finalization pass, before the solves and after the
+    /// pass (the tooling's diagnostics).
+    pub pose_observer: Option<PoseObserver>,
 }
 
 impl BodyContributions {
     /// Report every field still empty to `check`, under the reader that reads it.
     pub fn report(&self, check: &mut RegistrationCheck) {
-        let fields: [(&'static str, &'static str, bool); 20] = [
+        let fields: [(&'static str, &'static str, bool); 21] = [
             ("aim", "the aim hooks", self.aim_hooks.is_some()),
             (
                 "aim",
@@ -158,6 +161,11 @@ impl BodyContributions {
                 "the grip sources' order, at most the slots the declarations have",
                 !self.grip_order.is_empty() && self.grip_order.len() <= MAX_SOURCES,
             ),
+            (
+                "character",
+                "the pose observer",
+                self.pose_observer.is_some(),
+            ),
         ];
         for (reader, contribution, registered) in fields {
             check.require(reader, contribution, registered);
@@ -191,6 +199,6 @@ mod tests {
     fn an_empty_record_reports_every_contribution() {
         let mut check = RegistrationCheck::new();
         BodyContributions::default().report(&mut check);
-        assert_eq!(check.missing().len(), 20);
+        assert_eq!(check.missing().len(), 21);
     }
 }

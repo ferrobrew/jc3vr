@@ -25,9 +25,9 @@
 //! The crate's registrations with the layers below it (the post-draw's panels and redirect, the
 //! desktop mirror, the flip, the input capture, and the controller pointers) are gathered in
 //! [`register()`], which the payload's composition calls once before the hooks are installed. The
-//! payload enables [`hooks::ui::hook_library`] and passes [`controllers::map::hook_library`] to the
-//! gameplay crate's controllers library in its own interleaved order with the other layers'. The HUD's settings live in [`hud::config::HUD_CONFIG`], which the payload binds
-//! to its aggregate.
+//! payload enables [`hooks::ui::hook_library`] and [`controllers::map::hook_library`] in its order
+//! with the other layers'. The HUD's settings live in [`hud::config::HUD_CONFIG`], which the
+//! payload binds to its aggregate.
 
 pub mod controllers;
 pub mod egui_impl;

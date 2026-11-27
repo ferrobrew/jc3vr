@@ -23,19 +23,16 @@
 //! diagnostics, and the payload's composition and settings aggregate. Everything else keeps its
 //! crate-private visibility.
 //!
-//! The payload's composition and the gameplay crate's install register the crate, and the
-//! composition enables its hook libraries:
+//! The payload's composition registers the crate and enables its hook libraries:
 //!
-//! - [`register()`]: what the vehicle handling contributes to the physical crate, which the
-//!   payload's composition calls before any hook is installed. It returns [`Registered`], the only
-//!   way to reach the equipment detours ([`hooks::equipment`]), which the composition enables in
-//!   their place in its order.
-//! - [`register_body()`]: the vehicle handling's fields of the body's contributions (the take-off
-//!   and the mounted-gun fact), which the gameplay crate's install fills.
-//! - [`controllers::vehicles::hook_library`], which the gameplay crate enables inside its
-//!   controllers library in its established place.
+//! - [`register()`]: what the vehicle handling contributes to the physical crate and its fields of
+//!   the body's contributions (the take-off and the mounted-gun fact), which the composition calls
+//!   before any hook is installed. It returns [`Registered`], the only way to reach the equipment
+//!   detours ([`hooks::equipment`]), which the composition enables in their place in its order.
+//! - [`controllers::vehicles::hook_library`], which the composition enables in its place in the
+//!   order.
 //! - [`controllers::vehicles::mounted_recoil::on_shot`], the handles' kick by each shot of the
-//!   mounted gun the hands aim, which the gameplay crate hands to the weapon handling's
+//!   mounted gun the hands aim, which the composition hands to the weapon handling's
 //!   contributions.
 //! - The settings: [`controllers::vehicles::config::VEHICLES_CONFIG`] declares the slot for the
 //!   group beside its type, and the payload binds it to its aggregate. The gameplay crate's
@@ -49,7 +46,7 @@ pub mod controllers;
 pub mod hooks;
 mod register;
 
-pub use register::{Registered, register, register_body};
+pub use register::{Registered, register};
 
 #[cfg(test)]
 mod test_config;

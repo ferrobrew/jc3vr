@@ -23,94 +23,40 @@
 //!   injection on the input tick;
 //! - [`summary`]: the controls summary's model, which the HUD draws on the off-hand wrist.
 //!
-//! [`install`] registers what these contribute to the body crate's registrations, and
-//! [`hook_library`] composes the body-bound subsystems' hook libraries with these in their
-//! established order. The controls map and the summary's presentation belong to the HUD layer, and
-//! the pause menu's `VR:` pages to the UI layer.
+//! [`register`] registers what these contribute to the layers below and fills the body's
+//! contributions this crate declares the order of. The controls map and the summary's presentation
+//! belong to the HUD layer, and the pause menu's `VR:` pages to the UI layer.
 //!
 //! Every subsystem is gated on its toggle and, where it changes how the character behaves, on the
 //! controller scheme ([`jc3vr_body::controllers::scheme::is_controllers`]), so that the mod
 //! behaves as before whenever no controllers are in use.
 
-use jc3vr_body::{
-    contributions::BodyContributions,
-    controllers::{aim, aim_state, body, hands, haptics, roomscale},
-};
-use jc3vr_core::{lifecycle::RegistrationError, registration::RegistrationCheck};
-use jc3vr_grapple::controllers::snatch;
-use jc3vr_physical::controllers::{glass, physical_hands};
-use jc3vr_vehicles::controllers::vehicles;
-use jc3vr_weapons::controllers::weapons;
-use re_utilities::hook_library::HookLibrary;
+use jc3vr_body::contributions::BodyContributions;
+use jc3vr_core::registration::RegistrationCheck;
 
 pub mod bindings;
 pub mod config;
 mod register_aim;
-mod register_below;
+mod register_character;
 mod register_hands;
 mod register_head_pose;
-mod register_lifecycle;
 mod register_render;
-mod register_siblings;
 mod register_vr_frame;
 pub mod summary;
 pub mod tuning;
 
 pub use config::ControllersConfig;
 
-/// Register the controller subsystems' shutdown participants and their hook installation and
-/// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
-/// refusal is already logged. The body's contributions are filled in one record and registered
-/// once ([`jc3vr_body::contributions::register`]); it and the other registrations report the
-/// contributions they leave missing to `check`.
-pub fn install(check: &mut RegistrationCheck) -> Result<(), RegistrationError> {
+/// Register what the controller subsystems contribute to the layers below them (the head pose's,
+/// the VR frame's, and the render layer's participants), and fill the body's contributions whose
+/// order this crate declares (the aim's hooks, the hands' stage and observer tables, the grip
+/// sources' order, and the character hooks' refusals). Runs before the hooks are installed; it
+/// reports what is still missing to `check`, and the body's registration reports its fields.
+pub fn register(body: &mut BodyContributions, check: &mut RegistrationCheck) {
     register_head_pose::register(check);
     register_vr_frame::register(check);
     register_render::register(check);
-    let mut body = BodyContributions::default();
-    jc3vr_grapple::register(&mut body);
-    register_hands::register(&mut body);
-    register_aim::register(&mut body);
-    register_below::register(&mut body, check);
-    jc3vr_body::contributions::register(body, check);
-    register_lifecycle::register()
-}
-
-/// The controller subsystems' hooks, aggregated into the payload's hook library by its composition.
-///
-/// The HUD layer's controls map hooks enable inside this library, after the aim's and before the
-/// roomscale's, so the composition passes them in as `map`.
-pub fn hook_library(map: HookLibrary) -> HookLibrary {
-    HookLibrary::new()
-        .with_hook_library(aim_state::hook_library())
-        .with_hook_library(hands::hook_library())
-        .with_hook_library(aim::hook_library())
-        .with_hook_library(map)
-        .with_hook_library(roomscale::hook_library())
-        .with_hook_library(body::rig::root::hook_library())
-        .with_hook_library(body::firm_ragdoll::hook_library())
-        .with_hook_library(weapons::hook_library())
-        .with_hook_library(snatch::hook_library())
-        .with_hook_library(haptics::hook_library())
-        .with_hook_library(physical_hands::impacts::hook_library())
-        .with_hook_library(physical_hands::lifetime::hook_library())
-        .with_hook_library(vehicles::hook_library())
-        .with_hook_library(glass::hook_library())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_registrations_fill_every_body_contribution() {
-        let mut check = RegistrationCheck::new();
-        let mut body = BodyContributions::default();
-        jc3vr_grapple::register(&mut body);
-        register_hands::register(&mut body);
-        register_aim::register(&mut body);
-        register_below::register(&mut body, &mut check);
-        body.report(&mut check);
-        assert_eq!(check.missing(), []);
-    }
+    register_hands::register(body);
+    register_aim::register(body);
+    register_character::register(body);
 }

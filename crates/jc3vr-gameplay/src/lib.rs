@@ -4,9 +4,8 @@
 //! The crate sits above the core, input, view, body, weapons, physical, and grapple crates
 //! (`docs/architecture.md`, "Crate layering") and owns:
 //!
-//! - [`controllers`]: the controller subsystems built on the body: the bindings, the vehicles, the
-//!   scope state, and the summary model, with the controllers' settings aggregate,
-//!   their install, and their hook library. The body-bound subsystems they build on (the body,
+//! - [`controllers`]: the controller subsystems built on the body: the bindings and the summary
+//!   model, with the controllers' settings aggregate and their registration. The body-bound subsystems they build on (the body,
 //!   hands, aim, grip, locomotion, roomscale, the mode detector, the haptics, and the shared
 //!   vocabulary and facts) live in the body crate, under [`jc3vr_body::controllers`], the weapon
 //!   handling with the loadout in the weapons crate, under [`jc3vr_weapons::controllers`], and the
@@ -27,20 +26,13 @@
 //!
 //! The payload composes the hooks and registrations:
 //!
-//! - [`install`] registers the controller subsystems' head-pose, VR-frame, render, and lifecycle
-//!   participants, and what the weapon handling, the physical hands, and the vehicles contribute
-//!   to the body crate's registrations, and must run before the hooks are installed.
-//! - The hook libraries, which the payload enables in its own interleaved order with the other
-//!   layers' (the order is load-bearing): [`hooks::sim::hook_library`],
-//!   the vehicles crate's [`jc3vr_vehicles::hooks::equipment::hook_library`], the body crate's
-//!   [`jc3vr_body::hooks::character::hook_library`] and
-//!   [`jc3vr_body::hooks::animation::hook_library`], [`hooks::input::hook_library`] (which
-//!   composes the body crate's input detours around the look detour), [`controllers::hook_library`]
-//!   (which composes the body-bound subsystems' and the weapons, physical, and grapple crates'
-//!   libraries with these and takes the HUD's controls map library to enable in its place), the
-//!   physical crate's [`jc3vr_physical::controllers::physical_hands::human_hull::hook_library`],
-//!   and the grapple crate's [`jc3vr_grapple::grapple::physical::hook_library`] and
-//!   [`jc3vr_grapple::grapple::device::hook_library`].
+//! - [`register`] registers the controller subsystems' head-pose, VR-frame, and render
+//!   participants, and fills the body's contributions whose order this crate declares (the aim's
+//!   hooks, the hands' stage and observer tables, the grip sources' order, and the character
+//!   hooks' refusals). The payload's composition calls it before the hooks are installed.
+//! - The hook libraries [`hooks::sim::hook_library`], [`hooks::online::hook_library`], and
+//!   [`hooks::input::hook_library`] (which composes the body crate's input detours around the look
+//!   detour), which the composition enables in its order with the other layers'.
 //! - The settings: each subsystem declares the [`ConfigSlot`](jc3vr_core::config::engine::ConfigSlot)
 //!   for its group beside the group's type (one per controllers group, such as
 //!   [`jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG`]), and the `controllers` slot
@@ -56,7 +48,7 @@
 pub mod controllers;
 pub mod hooks;
 
-pub use crate::controllers::install;
+pub use crate::controllers::register;
 
 #[cfg(test)]
 mod test_config;

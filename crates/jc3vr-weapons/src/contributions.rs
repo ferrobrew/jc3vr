@@ -1,7 +1,7 @@
 //! What the weapon handling reads from the crates above it, declared in one place
 //! (`docs/architecture.md`, "Crate layering").
 //!
-//! The gameplay crate's install fills [`WeaponsContributions`] once, with one function per field,
+//! The payload's composition fills [`WeaponsContributions`] once, with one function per field,
 //! so a registration that leaves one out fails to compile. The install's registration check
 //! reports a missing registration ([`registered`]); the readers below find every field filled once
 //! the install has run, and the crate's own tests, which register nothing, read none.

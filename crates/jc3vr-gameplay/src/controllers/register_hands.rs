@@ -1,7 +1,7 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
 //! order, and the observers of each world weapon at its render update in theirs. The weapon
-//! handling fills its held-item source and its held guns' targets in its own `register_body`
-//! (`register_below`), and the grapple fills its pump of the hang swing itself
+//! handling fills its held-item source and its held guns' targets itself
+//! ([`jc3vr_weapons::register`]), and the grapple its pump of the hang swing
 //! ([`jc3vr_grapple::register`]).
 //!
 //! Each fills a field of the body's contributions, which reports any still empty to the install's

@@ -1,16 +1,16 @@
 //! Every registration the tooling makes with the layers below it, in one place: the video recorder
 //! as the observer of the desktop mirror's presents and the post-draw's eye-frame recorder, the
 //! session recording as the handler of take-marker requests, the diagnostics samplers at the
-//! character hooks' pose-finalization observer and after each simulation step, and the directing
-//! tools as the source of a tracking recording's start marker.
+//! character hooks' pose-finalization observer (a field of the body's contributions) and after
+//! each simulation step, and the directing tools as the source of a tracking recording's start
+//! marker.
 //!
 //! The payload's composition calls [`register`] once, before the hooks are installed. Each
 //! registration fills a slot of its own, so their order does not matter. [`register`] reports any
-//! slot still empty to the install's registration check, which stops the startup naming it.
+//! slot still empty to the install's registration check, which stops the startup naming it; the
+//! body's registration reports the pose observer.
 
-use jc3vr_body::hooks::character::{
-    PoseObserver, pose_observer_registered, register_pose_observer,
-};
+use jc3vr_body::{contributions::BodyContributions, hooks::character::PoseObserver};
 use jc3vr_core::{
     registration::RegistrationCheck,
     session::{mark_handler_registered, set_mark_handler},
@@ -31,8 +31,9 @@ use crate::{
     recorder::session_recording,
 };
 
-/// Register the tooling with the layers below it, and report what is still missing to `check`.
-pub fn register(check: &mut RegistrationCheck) {
+/// Register the tooling with the layers below it, filling its field of `body`, and report what is
+/// still missing to `check`.
+pub fn register(body: &mut BodyContributions, check: &mut RegistrationCheck) {
     register_mirror_observer(MirrorObserver {
         records_mirror: recorder::records_mirror,
         note_mirror: recorder::note_mirror,
@@ -45,7 +46,7 @@ pub fn register(check: &mut RegistrationCheck) {
         release_capture: recorder::release_capture,
     });
     set_mark_handler(session_recording::mark);
-    register_pose_observer(PoseObserver {
+    body.pose_observer = Some(PoseObserver {
         before_solve: pose::sample_pre_ik,
         after_pass: pose::sample_final,
     });
@@ -70,7 +71,6 @@ pub fn register(check: &mut RegistrationCheck) {
         "the session recording's take-marker handler",
         mark_handler_registered(),
     );
-    check.require("character", "the pose observer", pose_observer_registered());
     check.require(
         "sim",
         "the diagnostics' post-step sampler",
@@ -101,7 +101,9 @@ mod tests {
     #[test]
     fn the_registration_leaves_nothing_missing() {
         let mut check = RegistrationCheck::new();
-        register(&mut check);
+        let mut body = BodyContributions::default();
+        register(&mut body, &mut check);
         assert_eq!(check.missing(), []);
+        assert!(body.pose_observer.is_some());
     }
 }

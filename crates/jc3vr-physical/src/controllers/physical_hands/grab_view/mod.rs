@@ -146,6 +146,13 @@ pub(crate) unsafe fn scan_candidates(hands: [Option<Vec3>; 2], standing_on: Opti
     }
 }
 
+/// Note that the weapon handling refused a take of a weapon by `hand`, `why`, flashing at the target
+/// the hand's grip chose. The weapon handling calls it through its contributions, on the game thread
+/// where the refusal is made.
+pub fn take_refused(hand: Hand, why: &str) {
+    refused(hand, None, why);
+}
+
 /// Note that a grab by `hand` was refused, `why`, flashing at `at` (game space) or, without it, at
 /// the target the hand's grip chose on the last input tick. Called on the game thread where the
 /// refusal is made, outside the view's own lock.

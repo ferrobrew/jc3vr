@@ -82,7 +82,7 @@ use crate::{
     tuning::FRESHNESS,
 };
 
-/// The roomscale hooks, aggregated by `controllers::hook_library`.
+/// The roomscale hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_hook_library(teleport::hook_library())
 }

@@ -14,10 +14,10 @@
 //! names it: the bindings, the snatch, the vehicles' mounted guns, the controllers' register files,
 //! the HUD, the debug UI, and the payload's composition and settings aggregate. What the weapon
 //! handling reads from the crates above it is declared in one place, [`contributions`], which the
-//! gameplay crate's install fills. The weapon handling meets the physical hands only through the
-//! body crate's held-item seam and registrations (`jc3vr_body::controllers::held`), which the
-//! weapon handling fills in one place (`register_body`), called from the gameplay crate's install. The gameplay crate composes
-//! [`controllers::weapons::hook_library`] into its controllers library in its established place.
+//! payload's composition fills. The weapon handling meets the physical hands only through the body
+//! crate's held-item seam and registrations (`jc3vr_body::controllers::held`), which the weapon
+//! handling fills in one place ([`register`]), called from the payload's composition. The
+//! composition enables [`controllers::weapons::hook_library`] in its place in the order.
 //!
 //! The crate's own tests register a configuration root of their own (`test_config`) holding the
 //! weapons group and the body-bound groups the weapon handling reads, and use the body crate's
@@ -25,6 +25,8 @@
 
 pub mod contributions;
 pub mod controllers;
+
+pub use controllers::weapons::register_body::register;
 
 #[cfg(test)]
 mod test_config;

@@ -56,10 +56,7 @@ pub(crate) mod wielded;
 pub use acts::resolve_act_id;
 pub use body_ik::body_ik_status;
 
-pub use crate::hooks::character::{
-    pose_observer::{PoseObserver, pose_observer_registered, register_pose_observer},
-    stunt::BlocksAutoAttach,
-};
+pub use crate::hooks::character::{pose_observer::PoseObserver, stunt::BlocksAutoAttach};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()

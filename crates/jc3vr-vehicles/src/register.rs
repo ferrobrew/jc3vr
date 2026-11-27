@@ -1,25 +1,25 @@
 //! The vehicles crate's registration: what the vehicle handling contributes to the crates below it,
-//! gathered in one place.
+//! gathered in one [`register`] call, which the payload's composition makes once, before any hook
+//! is enabled.
 //!
-//! - [`register`] fills the physical crate's contributions
+//! - It fills the physical crate's contributions
 //!   ([`jc3vr_physical::contributions::PhysicalContributions`]): the vehicle rail's carry in the
-//!   hand bodies' pre-simulation step. It reports them to the install's registration check if they
-//!   are still missing, which stops the startup naming them, and returns [`Registered`], the only way to reach the equipment
-//!   detours, so the payload's composition cannot enable them without registering the vehicle
-//!   handling first.
-//! - [`register_body`] fills the vehicle handling's fields of the body's contributions
-//!   ([`BodyContributions`]): the wingsuit's take-off from the ground, which the roomscale's frame
-//!   half ticks, and the mounted-gun fact ([`jc3vr_body::controllers::facts::mounted`]): the
-//!   mounted gun the hands aim, its aim point, and the seated body's aim. The body's registration
-//!   reports a field left empty.
+//!   hand bodies' pre-simulation step, and reports them to the install's registration check if
+//!   they are still missing, which stops the startup naming them.
+//! - It fills the vehicle handling's fields of the body's contributions ([`BodyContributions`]):
+//!   the wingsuit's take-off from the ground, which the roomscale's frame half ticks, and the
+//!   mounted-gun fact ([`jc3vr_body::controllers::facts::mounted`]): the mounted gun the hands aim,
+//!   its aim point, and the seated body's aim. The body's registration reports a field left empty.
+//! - It returns [`Registered`], the only way to reach the equipment detours, so the composition
+//!   cannot enable them without registering the vehicle handling first.
 //!
-//! The rest of what the vehicle handling contributes rides in the tables of the crate above that
+//! The rest of what the vehicle handling contributes rides in the tables of the gameplay crate that
 //! declare an order: the vehicle controls' target stage ([`vehicles::apply`], which both the hand
 //! composition and the hand bodies' drive run) and the mounted gun's world weapon observer in the
-//! hands' tables, and the rail's refusal of the automatic entry into a vehicle's stunt area
-//! below the player in the refusals' table. The handles' kick by each shot of the mounted gun the
-//! hands aim ([`on_shot`](crate::controllers::vehicles::mounted_recoil::on_shot)) is the weapon
-//! handling's contribution, which the crate above hands over.
+//! hands' tables, and the rail's refusal of the automatic entry into a vehicle's stunt area below
+//! the player in the refusals' table. The handles' kick by each shot of the mounted gun the hands
+//! aim ([`on_shot`](crate::controllers::vehicles::mounted_recoil::on_shot)) is the weapon
+//! handling's contribution, which the composition hands over.
 
 use glam::Vec3;
 use jc3vr_body::{
@@ -38,11 +38,19 @@ use crate::{
     hooks::equipment,
 };
 
-/// Register the vehicle handling's contributions to the physical crate, before any hook is
-/// enabled, and report them to `check` if they are still missing.
-pub fn register(check: &mut RegistrationCheck) -> Registered {
+/// Register the vehicle handling's contributions to the physical crate and fill its fields of
+/// `body`, before any hook is enabled, and report the physical crate's to `check` if they are still
+/// missing.
+pub fn register(body: &mut BodyContributions, check: &mut RegistrationCheck) -> Registered {
     physical::register(PhysicalContributions {
         rail_step: rail::step_physics,
+    });
+    body.take_off = Some(take_off::tick);
+    body.mounted = Some(MountedSource {
+        is_mounted_weapon: vehicles::is_mounted_weapon,
+        target: vehicles::mounted_target,
+        aim_point: vehicles::mounted_aim_point,
+        seated_body_aim,
     });
     check.require(
         "hand bodies",
@@ -67,18 +75,6 @@ impl Registered {
     }
 }
 
-/// Fill the vehicle handling's fields of `body`: the wingsuit's take-off and the mounted-gun
-/// source.
-pub fn register_body(body: &mut BodyContributions) {
-    body.take_off = Some(take_off::tick);
-    body.mounted = Some(MountedSource {
-        is_mounted_weapon: vehicles::is_mounted_weapon,
-        target: vehicles::mounted_target,
-        aim_point: vehicles::mounted_aim_point,
-        seated_body_aim,
-    });
-}
-
 /// The seated body's aim point, and the record of whether this update set one.
 fn seated_body_aim(
     seat: Option<VehicleSeat>,
@@ -97,7 +93,9 @@ mod tests {
     #[test]
     fn the_registration_leaves_nothing_missing() {
         let mut check = RegistrationCheck::new();
-        register(&mut check);
+        let mut body = BodyContributions::default();
+        register(&mut body, &mut check);
         assert_eq!(check.missing(), []);
+        assert!(body.take_off.is_some() && body.mounted.is_some());
     }
 }

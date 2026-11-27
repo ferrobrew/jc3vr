@@ -102,7 +102,7 @@ pub use self::{
     types::{HandlesReadout, TickVolumes, VehiclesStatus},
 };
 
-/// The vehicles' hooks, aggregated by the gameplay crate's `controllers::hook_library`.
+/// The vehicles' hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(driver_aim::hook_library())

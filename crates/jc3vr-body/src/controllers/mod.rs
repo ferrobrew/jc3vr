@@ -36,8 +36,9 @@
 //!   physics substrate, and the published facts that the subsystems above share with these.
 //!
 //! The weapon handling, the physical hands, the vehicles, the grapple, the bindings, and the
-//! summary live in the gameplay crate above, which registers what they contribute here and
-//! composes these subsystems' hook libraries with its own.
+//! summary live in the crates above, which fill what they contribute here in the body's
+//! contributions record ([`crate::contributions`]); the payload's composition registers it and
+//! enables these subsystems' hook libraries with theirs.
 
 pub mod aim;
 pub mod aim_state;

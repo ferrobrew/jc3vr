@@ -73,7 +73,7 @@ use crate::{
     hooks::{character::resolve_act_id, input::locomotion::character_from_context},
 };
 
-/// The aim-state hooks, aggregated by `controllers::hook_library`.
+/// The aim-state hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&HANDLE_AIMING_INPUT_PLAYER_BINDER)

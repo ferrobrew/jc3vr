@@ -116,7 +116,7 @@ use crate::controllers::{
     yank::{ArmedLine, HandLine, YankConfig, YankDetector},
 };
 
-/// The snatch's hooks, aggregated by `controllers::hook_library`.
+/// The snatch's hooks, enabled by the payload's composition.
 pub fn hook_library() -> HookLibrary {
     hooks::hook_library()
         .with_hook_library(sling_hooks::hook_library())
