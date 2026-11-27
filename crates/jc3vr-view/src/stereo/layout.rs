@@ -57,8 +57,8 @@ pub fn probe(device: &ID3D11Device) -> Capability {
 }
 
 /// Probe the capability using the live engine device, if one is available and the probe has not run
-/// yet. Returns the (now cached) result. Called from the debug UI and the frame driver so the probe
-/// happens as soon as a device exists.
+/// yet. Returns the cached result. The frame driver calls it every frame, so the probe happens as
+/// soon as a device exists.
 pub fn probe_if_needed() -> Capability {
     let cached = capability();
     if cached != Capability::Unprobed {
@@ -97,8 +97,9 @@ pub fn collapse_active() -> bool {
 /// Whether the scene render targets are re-created at 2x per-eye width so each eye-half is full
 /// resolution. The single walk always renders into the double-wide target, so this is
 /// [`collapse_active`]; it is named apart for the code that sizes by the layout. Drives the engine
-/// render resolution ([`crate::vr::engine_render_resolution`]) and the per-eye capture-texture
-/// width (`ui::render`); the XR swapchain stays per-eye width.
+/// render resolution ([`crate::vr::engine_render_resolution`]), and the code that takes a per-eye
+/// size from the render target halves its width; the XR swapchain and the capture textures stay
+/// per-eye width.
 #[inline]
 pub fn double_wide_active() -> bool {
     collapse_active()
@@ -143,7 +144,8 @@ pub fn unpin_dispatch_layout() {
 const COLLAPSE: u8 = 1 << 0;
 
 /// Whether the layout can take effect at all: the device routes viewports from the vertex shader,
-/// and eject has not begun (single-pass goes inert the instant it does, `jc3vr_core::is_shutting_down`).
+/// and eject has not begun (single-pass goes inert the instant it does,
+/// `jc3vr_core::is_shutting_down`).
 #[inline]
 fn routing_live() -> bool {
     !jc3vr_core::is_shutting_down() && capability() == Capability::Supported

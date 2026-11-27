@@ -1,6 +1,6 @@
 //! The single-pass switch table: every single-pass production switch, declared once.
 //!
-//! Each row of the [`single_pass_switches!`] invocation below is one boolean switch, and the macro
+//! Each row of the `single_pass_switches!` invocation below is one boolean switch, and the macro
 //! generates everything that names the set: the [`SinglePassConfig`] fields and their defaults, the
 //! [`SinglePassSwitch`] enum the capture overrides and the shader build key by, whether a change
 //! needs the shaders re-created, the bit each switch takes in the render path's per-frame snapshot
@@ -156,13 +156,13 @@ single_pass_switches! {
                 post-multiply their clip by the per-eye M_eye, instead of leaving them \
                 double-drawn. Reloads shaders to apply. Sky/UI/post are excluded.",
     }
-    /// Single-pass the tessellated base terrain (VS → HS → DS): the vertex shader originates the eye
-    /// index on the free `TEXCOORD3.z` lane, the hull shader forwards it, and the domain shader reads
-    /// it to reproject its clip by the per-eye `M_eye` and route to the eye's viewport. Covers the
-    /// `DrawIndexed` terrain passes (far/color/shadow); also gates the render-block re-issue that
-    /// reprojects the GPU-indirect terrain-detail pass (see
-    /// `payload/src/hooks/graphics_engine/terrain.rs`). Requires [`single_pass`](Self::enabled);
-    /// independent so it can be A/B'd against the models.
+    /// Single-pass the tessellated base terrain (VS → HS → DS): the vertex shader originates the
+    /// eye index on the free `TEXCOORD3.z` lane, the hull shader forwards it, and the domain shader
+    /// reads it to reproject its clip by the per-eye `M_eye` and route to the eye's viewport.
+    /// Covers the `DrawIndexed` terrain passes (far/color/shadow); also gates the render-block
+    /// re-issue that reprojects the GPU-indirect terrain-detail pass (see
+    /// `jc3vr_render::hooks::graphics_engine::scene::terrain`). Requires
+    /// [`single_pass`](Self::enabled); independent so it can be A/B'd against the models.
     Terrain => terrain {
         default: true,
         rebuilds: true,
@@ -172,16 +172,16 @@ single_pass_switches! {
                 reprojects its clip by the per-eye M_eye. Covers the DrawIndexed terrain passes; \
                 the GPU-indirect near passes stay double-drawn. Reloads shaders to apply.",
     }
-    /// On top of [`terrain`](Self::terrain): reproject the terrain patch system's pipelines that cannot
-    /// carry an eye index, inside the per-eye re-issue their draws already take. The patch system's
-    /// tessellated domain shaders get no eye lane (their vertex shaders fill all of `TEXCOORD3`), and
-    /// its GPU-indirect basemesh vertex shaders already read `SV_InstanceID`, so both were drawn once
-    /// per eye from the centred camera. Each is rewritten to read its camera rows from `cb13`'s
-    /// first eye slot (`dxbc_stereo::rebase_pinned_domain_shader` for the domain shaders, and
-    /// `dxbc_stereo::remap_pinned_full_view_projection` for the basemesh), and each per-eye re-issue
-    /// that finds one bound pins `cb13` to the eye it is drawing. No draw is added. The
-    /// tessellation factors, the patch culling, and the distance fades stay centre-derived. A shader
-    /// rewrite, so it needs a shader reload to apply. On by default.
+    /// On top of [`terrain`](Self::terrain): reproject the terrain patch system's pipelines that
+    /// cannot carry an eye index, inside the per-eye re-issue their draws already take. The patch
+    /// system's tessellated domain shaders get no eye lane (their vertex shaders fill all of
+    /// `TEXCOORD3`), and its GPU-indirect basemesh vertex shaders already read `SV_InstanceID`, so
+    /// without this both are drawn once per eye from the centred camera. Each is rewritten to read
+    /// its camera rows from `cb13`'s first eye slot (`dxbc_stereo::rebase_pinned_domain_shader` for
+    /// the domain shaders, and `dxbc_stereo::remap_pinned_full_view_projection` for the basemesh),
+    /// and each per-eye re-issue that finds one bound pins `cb13` to the eye it is drawing. No draw
+    /// is added. The tessellation factors, the patch culling, and the distance fades stay
+    /// centre-derived. A shader rewrite, so it needs a shader reload to apply. On by default.
     TerrainPatchPerEye => terrain_patch_per_eye {
         default: true,
         rebuilds: true,
@@ -194,7 +194,7 @@ single_pass_switches! {
     }
     /// Draw the cloud layers from each eye under the double-wide collapse. The cloud vertex shaders
     /// (`clouds`, `cirrusclouds`, `cloudflythrough`, `softclouds`) take their clip position from the
-    /// full view-projection, which the `cb0` remap does not make per eye, so both eye halves drew the
+    /// full view-projection, which the `cb0` remap does not make per eye, so both eye halves draw the
     /// clouds through the centred render camera, which carries eye 0's projection and no display
     /// cant: invisible with symmetric parallel eyes, but displaced in eye 1 under asymmetric frusta and
     /// in both eyes under canted ones. They take the `M_eye` reprojection instead. Needs a shader
@@ -208,14 +208,14 @@ single_pass_switches! {
                 asymmetric or canted eyes. Reloads shaders to apply.",
     }
     /// Draw the bark and foliage blocks once for both eyes instead of re-issuing them per eye. The
-    /// block's `Draw` runs
-    /// once with each draw's vertex shader swapped for a reprojected variant (built when the engine
-    /// creates the shader, while single-pass is enabled): a plain draw is promoted to two instances,
-    /// a GPU-indirect draw is issued against a copy of its argument buffer with every instance count
-    /// doubled (the variant halves the instance id it fetches by), and a hardware-instanced draw takes
-    /// a step-rate-doubled layout twin when there is one and a per-eye re-issue of that one draw
-    /// otherwise. A block whose vertex shader has no variant keeps the whole-block re-issue (see
-    /// `jc3vr_render::stereo::single_pass::vegetation_once`). On by default; applies at once.
+    /// block's `Draw` runs once with each draw's vertex shader swapped for a reprojected variant
+    /// (built when the engine creates the shader, while single-pass is enabled): a plain draw is
+    /// promoted to two instances, a GPU-indirect draw is issued against a copy of its argument
+    /// buffer with every instance count doubled (the variant halves the instance id it fetches by),
+    /// and a hardware-instanced draw takes a step-rate-doubled layout twin when there is one and a
+    /// per-eye re-issue of that one draw otherwise. A block whose vertex shader has no variant
+    /// keeps the whole-block re-issue (see `jc3vr_render::stereo::single_pass::vegetation_once`).
+    /// On by default; applies at once.
     VegetationOnce => vegetation_once {
         default: true,
         rebuilds: false,
@@ -263,13 +263,14 @@ single_pass_switches! {
     /// Re-issue a **GPU-indirect** draw once per eye under the collapse, so it stops inheriting
     /// whatever viewport the previous draw left bound. `DrawIndexedInstancedIndirect` and
     /// `DrawInstancedIndirect` are how the near tessellating terrain patches
-    /// (`CRenderBlockTerrainPatch` passes 56-57) and the foliage block submit, and neither entry point
-    /// was detoured -- so those draws rasterised eye 0's per-eye projection into the full double-wide
-    /// viewport, a 2x horizontal stretch that reads as the geometry sliding across the screen at twice
-    /// the camera's rate. The counts live in a GPU buffer and cannot be doubled, so each eye gets its
-    /// own submission with both viewport slots pinned to that eye's half. Like the unpatched
-    /// `DrawIndexed` re-issue, the geometry is then present and correctly sized in both eyes but has no
-    /// parallax. Requires the collapse. On by default: it fixes a confirmed visible artifact.
+    /// (`CRenderBlockTerrainPatch`'s near passes) and the foliage block submit, and without the
+    /// re-issue those draws rasterise eye 0's per-eye projection into the full double-wide
+    /// viewport, a 2x horizontal stretch that reads as the geometry sliding across the screen at
+    /// twice the camera's rate. The counts live in a GPU buffer and cannot be doubled, so each eye
+    /// gets its own submission with both viewport slots pinned to that eye's half. Like the
+    /// unpatched `DrawIndexed` re-issue, the geometry is then present and correctly sized in both
+    /// eyes but has no parallax. Requires the collapse. On by default: it fixes a confirmed visible
+    /// artifact.
     IndirectPerEye => indirect_per_eye {
         default: true,
         rebuilds: false,
@@ -284,9 +285,10 @@ single_pass_switches! {
     /// that eye's half of the double-wide target and reconstructing with that eye's own basis.
     ///
     /// The resolve is a fullscreen quad that rebuilds world positions from depth through the
-    /// `ViewProjInv` the off-axis reconstruction (`hooks::graphics_engine::reconstruction`) substitutes,
-    /// and samples the sun-shadow cascade over them. Collapsed, that single quad covers both eye halves
-    /// while the basis describes one eye's frustum: the left half gets that eye's frustum compressed 2x
+    /// `ViewProjInv` the off-axis reconstruction
+    /// (`jc3vr_render::hooks::graphics_engine::screen::reconstruction`) substitutes, and samples
+    /// the sun-shadow cascade over them. Collapsed, that single quad covers both eye halves while
+    /// the basis describes one eye's frustum: the left half gets that eye's frustum compressed 2x
     /// horizontally and the right half a basis unrelated to it. The error is a function of the view
     /// matrix, so it moves as the camera turns -- the shadows slide across the screen instead of
     /// staying on the world. Splitting the pass is the only fix; one draw cannot carry two bases.
@@ -295,8 +297,8 @@ single_pass_switches! {
     /// one-to-one NDC-to-pixel mapping and its G-buffer sampling stays correct; the half's basis comes
     /// from folding the full-target-NDC to eye-NDC remap into the substituted inverse. The whole render
     /// block is re-issued, so its light-assignment phase runs twice (identically) as well. Requires the
-    /// collapse. On by default: sliding shadows are a worse defect
-    /// than the extra light-assignment pass is a cost, and the flag remains for an A/B in the headset.
+    /// collapse. On by default: sliding shadows are a worse defect than the extra light-assignment
+    /// pass is a cost, and the flag remains for an A/B in the headset.
     ReconstructPerEye => reconstruct_per_eye {
         default: true,
         rebuilds: false,
@@ -433,8 +435,8 @@ single_pass_switches! {
     /// from a baked model-view-projection in its own constant buffer rather than from the render
     /// context, so the collapse's per-eye machinery never reaches it and both eyes see the collapsed
     /// centre view. Flat water at the wrong depth reads as correct in a screenshot and wrong in a
-    /// headset, which makes the defect easy to miss. On by default -- the flag stays so a suspected regression can be
-    /// isolated without rebuilding.
+    /// headset, which makes the defect easy to miss. On by default -- the flag stays so a suspected
+    /// regression can be isolated without rebuilding.
     NvwaterPerEye => nvwater_per_eye {
         default: true,
         rebuilds: false,
@@ -468,8 +470,8 @@ single_pass_switches! {
                 reading it.",
     }
     /// Reproject the screen-space decal *box geometry* per eye, on top of
-    /// [`single_pass_ssdecal_per_eye`](Self::ssdecal_per_eye), which fixes only where the
-    /// decal reconstructs from.
+    /// [`ssdecal_per_eye`](Self::ssdecal_per_eye), which fixes only where the decal reconstructs
+    /// from.
     ///
     /// The block bakes a world-view-projection into its vertex constants, so like the water blocks its
     /// geometry never sees the collapse's per-eye transform: the decal lands on the right surface in
@@ -709,25 +711,24 @@ single_pass_switches! {
                 triangle, but it stretches decals and road layers 2x horizontally, which is a 2x \
                 motion gain and reads as them sliding over the world.",
     }
-    /// Requires [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye), and rides on the
-    /// off-axis froxel tile-bounds override: build the clustered
-    /// (froxel) light grid **per eye** as well, instead of building it once with eye 0's projection
-    /// against the double-wide tile count.
+    /// Requires [`reconstruct_per_eye`](Self::reconstruct_per_eye), and rides on the off-axis froxel
+    /// tile-bounds override: build the clustered (froxel) light grid **per eye** as well, instead of
+    /// building it once with eye 0's projection against the double-wide tile count.
     ///
-    /// The grid is a 64-pixel tile lattice over the framebuffer; collapsed, it is twice as wide as
-    /// the frustum whose projection fills it, so every local light lands in the wrong tiles and the
-    /// forward-lit families that sample it (foliage, glass, particles, blended materials -- ~20
-    /// render-block types) are lit wrongly in both eyes. The resolve re-issue already runs the whole
-    /// block once per eye; this makes each run's light assignment cover only that eye's half of the
-    /// tile grid, with that eye's projection and tile bounds.
+    /// The grid is a lattice of fixed-size pixel tiles over the framebuffer; collapsed, it is twice
+    /// as wide as the frustum whose projection fills it, so every local light lands in the wrong
+    /// tiles and the forward-lit families that sample it (foliage, glass, particles, blended
+    /// materials -- ~20 render-block types) are lit wrongly in both eyes. The resolve re-issue
+    /// already runs the whole block once per eye; this makes each run's light assignment cover only
+    /// that eye's half of the tile grid, with that eye's projection and tile bounds.
     ///
     /// The two halves compose because the assignment blend is commutative, the halves are disjoint,
     /// and the compaction phase is per-tile-local -- so long as the second run's whole-target clear
     /// is suppressed, which is what makes the grid end the frame valid for **both** eyes. That
     /// matters well outside the block: foliage samples the grid a frame early, in the G-buffer range.
     ///
-    /// Declines itself (leaving the un-split behaviour) when the double-wide render width is not a
-    /// multiple of 128, i.e. when the eye seam does not fall on a tile boundary.
+    /// Declines itself (leaving the un-split behaviour) when the eye seam of the double-wide render
+    /// width does not fall on a tile boundary.
     ///
     /// On by default: the un-split grid mislights every forward-lit family, and the flag remains so
     /// the two can be compared in the headset.

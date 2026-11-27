@@ -5,9 +5,9 @@
 //! in this crate record the per-eye camera state. The state itself is private to this crate: the
 //! render hooks read it through [`is_second_eye`], [`draw_index`], [`active`], [`center_transform`],
 //! [`collapse_eye`] (an eye's camera against the centre), [`shadow_anchor`], and the other accessors
-//! below, and the one value they publish into it, the
-//! sun-shadow fit's camera position, goes through [`record_shadow_fit_position`]. This is *runtime*
-//! state, distinct from the `stereo` config toggles in [`crate::stereo::config`].
+//! below, and the one value they publish into it, the sun-shadow fit's camera position, goes
+//! through [`record_shadow_fit_position`]. This is *runtime* state, distinct from the stereo
+//! settings in [`crate::stereo::config`].
 
 use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
@@ -74,7 +74,7 @@ impl StereoState {
 /// per eye. FSR then mis-reprojects each eye's temporal history, which shows as per-eye shimmer on
 /// high-contrast edges (sun-shadow boundaries especially), worst under head motion. The FSR
 /// velocity-decode pass uses these snapshots to re-anchor each vector at the eye's own previous pose
-/// (`fsr::velocity_decode`).
+/// (`jc3vr_render::fsr::velocity_decode`).
 pub struct VpHistory {
     /// The previous frame's center (un-offset) view-projection per eye -- the matrix the engine's
     /// velocity pass reprojects with. Per eye because the snapshot carries the projection of the
@@ -90,8 +90,8 @@ pub struct VpHistory {
     /// for the FSR jitter, which [`cur_jitter`](Self::cur_jitter) holds apart (see
     /// [`crate::fsr::jitter::jitter_free_reprojection`]).
     pub cur_eye: [Option<glam::Mat4>; 2],
-    /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
-    /// projection paths such as the light-glow sprite, which cannot be fixed by shader constant remaps.
+    /// This frame's final per-eye view matrices (eye offset applied), for the CPU-side projection
+    /// paths such as the light-glow sprite, which shader constant remaps cannot reach.
     pub(crate) cur_eye_view: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye reverse-Z projections (eye offset applied). Paired with
     /// [`cur_eye_view`](Self::cur_eye_view) for rebuilding the per-eye offset view-projection.
@@ -305,7 +305,8 @@ pub fn dispatch_ordinal() -> usize {
 }
 
 /// The engine's current render-target size in pixels, read from
-/// [`GraphicsEngine::m_BackBufferLinear`], or `None` if the engine is not up yet.
+/// [`GraphicsEngine::m_BackBufferLinear`](jc3gi::graphics_engine::graphics_engine::GraphicsEngine::m_BackBufferLinear),
+/// or `None` if the engine is not up yet.
 ///
 /// This is the size the scene is rendered at, and it is deliberately *not* `Device::m_BackBuffer`,
 /// the DXGI swapchain's buffer. Stock, the two are the same surface -- the engine builds

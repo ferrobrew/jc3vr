@@ -64,8 +64,8 @@ pub fn selected_eye() -> Option<usize> {
     mode().selected_eye()
 }
 
-/// Set the dispatch policy after draining the previous frame's draw work and deferred tail.
-/// The caller applies the matching single-pass settings and shader reload before this call.
+/// Set the dispatch policy, which the next frame's dispatch plan reads. The caller applies the
+/// matching single-pass settings and requests the shader reload alongside it.
 pub fn set_mode(mode: RenderMode) {
     *MODE.lock() = mode;
 }

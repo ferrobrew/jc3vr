@@ -43,7 +43,7 @@ pub struct StereoConfig {
     pub shadow_update_every_frame: bool,
     /// Fit the sun-shadow cascades to the exact union of the two eyes' fields of view rather than
     /// the padded cull projection. The fit sizes each cascade from its camera's field of view, so
-    /// the padding coarsened every cascade's texels over geometry neither eye sees. VR only.
+    /// the padding coarsens every cascade's texels over geometry neither eye sees. VR only.
     pub shadow_fit_unpadded: bool,
     /// Anchor the sun-shadow lookup at the camera position the cascade fit used, not the render
     /// camera's centre. The cascade transform is baked relative to the fit's camera, and the

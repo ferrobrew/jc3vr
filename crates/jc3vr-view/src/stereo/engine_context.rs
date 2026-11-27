@@ -1,9 +1,5 @@
-//! A borrowed handle to the engine's immediate D3D context.
-//!
-//! Borrowed rather than cloned: the paths that take this run per draw, and an `AddRef`/`Release` pair
-//! each time would be wasted on a context the engine owns for the process's life. Resolving it once
-//! and passing the handle is also what distinguishes it from a resolve-per-call helper -- the same
-//! reason the single-pass draw paths hold one across a whole re-issue.
+//! A borrowed handle to the engine's immediate D3D context, resolved once and passed along, as the
+//! single-pass draw paths hold one across a whole re-issue.
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 use windows::Win32::{
