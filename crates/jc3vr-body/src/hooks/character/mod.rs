@@ -1,29 +1,36 @@
-//! The character hooks: the pose-finalization pass (the weapon-agnostic body's decision, the rig's
-//! completion of the step's root movement, headset-driven body IK, and the controller hands' wrist
-//! targets before the HumanIK solve, the secondary hand targets switched off before the `SECONDARY`
-//! pass, and the head override, the hands' post-solve publish, the finger curls, and the rig's
-//! skeleton read after it, and the pose observer before the solves and after the pass), the act
-//! filter, the animation modifiers, and the animation-layer mask.
+//! The character hooks: the pose-finalization pass, the act filter, the animation modifiers, and
+//! the animation-layer mask.
 //!
-//! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets;
-//! - [`head`]: the post-solve head override and the render-block head-hide inputs;
+//! The pose-finalization pass is hooked at three seams that the engine runs in order on the thread
+//! finalizing the character: the pass's entry, before the HumanIK `MAIN` solve, where the hands are
+//! planned, the weapon-agnostic body decides, and the body IK and wrist targets are queued; the
+//! `SECONDARY` hand pass's entry, inside the pass, where the game's secondary hand targets are
+//! switched off ([`hands::ik::before_secondary`]); and the end of `UpdatePropEffects`, the pass's
+//! last step, where the head override and the post-solve readers run. The state the seams hand to
+//! each other (the hand plan, the deferred wrist targets, the `SECONDARY` plan, the placement plan,
+//! and the gate's pass context) is thread-local because the pass runs whole on one thread, is
+//! written at the entry, and is cleared after the trampoline returns, so a pass whose solve did not
+//! run (HumanIK switched off) leaves nothing for the next.
+//!
+//! - [`body_ik`]: the pre-solve anchor capture and the head, torso, and hand-pin targets.
+//! - [`head`]: the post-solve head override and the render-block head-hide inputs.
 //! - [`pose_observer`]: the observer of the local player's pose before the solves and after the
-//!   pass;
-//! - [`acts`]: the local player's act filter;
-//! - [`gate`]: the HumanIK solve gate, where the procedural body writes the pose;
+//!   pass.
+//! - [`pose`]: checked joint access during the pass.
+//! - [`gate`]: the HumanIK solve gate, where the procedural body writes the pose.
+//! - [`acts`]: the local player's act filter.
 //! - [`modifiers`]: the weapon-agnostic body, which keeps the weapon's animation modifiers off the
-//!   body's rule systems;
-//! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose;
+//!   body's rule systems.
+//! - [`layers`]: the weapon-agnostic body's layer mask, which leaves layers out of the pose.
 //! - [`wielded`]: the relaxed locomotion, which reads the graph's weapon-wielded condition false
-//!   for the local player's body;
+//!   for the local player's body.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, for the procedural body's
-//!   hand-over table;
-//! - the `SECONDARY` hand pass's entry, where the game's secondary hand targets are switched off
-//!   ([`hands::ik::before_secondary`]).
+//!   hand-over table.
 //! - [`magazine`]: the deferred magazine detachments at the serial post-physics entry, consumed by
-//!   the weapon handling's registered consumer;
+//!   the weapon handling's registered consumer.
 //! - `stunt`: the refusals of the automatic entry into a vehicle's stunt area below the player, and
 //!   the observer of a body destruction, which the subsystems register.
+//! - [`tuning`]: the character hooks' tuning.
 
 use detours_macro::detour;
 use jc3gi::{character::character::Character, game::GameObjectUpdateContext};
@@ -86,16 +93,14 @@ fn character_update_pass_finalize_pose_parallel(
     character: *mut Character,
     context: *mut std::ffi::c_void,
 ) {
-    // Queue targets and capture anchors BEFORE the trampoline: the solve and the anchor-consuming
-    // gate both run inside the real function, so entry-queued targets are solved this frame and the
+    // Queue targets and capture anchors before the trampoline: the solve and the anchor-consuming
+    // gate both run inside the real function, so entry-queued targets are solved this pass and the
     // pre-solve pose is the pure animation result.
     //
     // The controller hands are planned first so that the body IK's hand pins stand down for the
     // wrists the controllers drive, and queued after it because the hand targets compose through
-    // the head anchors the body IK publishes.
-    //
-    // The weapon-agnostic body's decision only publishes, for the next tick's modifier pass and
-    // pose job, so its place here is free.
+    // the head anchors the body IK publishes. The weapon-agnostic body's decision only publishes,
+    // for the next tick's modifier pass and pose job, so its place here is free.
     let timing = frame_timing::scope(Slot::CharacterPose);
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
     let pose_ready = local
@@ -184,6 +189,9 @@ fn character_update_prop_effects(character: *mut Character, dt: f32) {
         .call(character, dt);
 
     let _timing = frame_timing::scope(Slot::CharacterPose);
+    // The twist runs after the head override and the finger curls, whose joints it shares the turn
+    // over, and the mirror, the presentation record, and the pose observer run last, on the
+    // finished pose.
     unsafe {
         head::override_head(character);
         hands::ik::after_solve(character);

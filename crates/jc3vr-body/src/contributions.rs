@@ -5,9 +5,11 @@
 //! The composition starts from [`BodyContributions::default`], hands `&mut` to each crate's
 //! registration to fill its own fields, then calls [`register`] with the install's
 //! [`RegistrationCheck`]: every field still empty is reported to the check, which stops the startup
-//! naming it, and the record is stored whole. The ordered tables (the hand stages, the world weapon
-//! observers, the pre-weapon hooks, and the auto-attach refusals) run in the order of the slice
-//! they are given, so their order is declared once, by the table that fills them.
+//! naming it, and the record is stored whole. The tables whose order is behaviour (the hand stages,
+//! which pose over each other, the pre-weapon hooks, which nest around the call, and the grip
+//! sources, whose order is a precedence) run in the order of the slice they are given, so their
+//! order is declared once, by the table that fills them, with its reason. The world weapon
+//! observers and the auto-attach refusals are independent of each other, and their order is not.
 //!
 //! Every reader goes through [`get`]. Before the registration (and in a test that does not
 //! register) it is `None`, and each reader answers as if the contribution did nothing.
@@ -33,7 +35,7 @@ use crate::{
 };
 
 /// Everything the body reads from the crates above it. Each field names the subsystem that fills
-/// it today; the field's own type documents the calling context.
+/// it; the field's own type documents the calling context.
 #[derive(Default)]
 pub struct BodyContributions {
     /// The weapon handling's and the hand bodies' hooks into the aim update and the per-weapon
@@ -50,8 +52,7 @@ pub struct BodyContributions {
     /// The rest of the hand composition's stages, in the order they run, after the target stages
     /// (gameplay's stage table).
     pub hand_stages: &'static [HandStageFn],
-    /// The observers of each world weapon at its render update, in the order they run (gameplay's
-    /// observer table).
+    /// The observers of each world weapon at its render update (gameplay's observer table).
     pub weapon_observers: &'static [ObserveWeapon],
     /// The hand bodies' sample of their post-step presentation offsets, taken once per rendered
     /// frame before the hands are composed, on the game thread after the simulation and outside
@@ -72,8 +73,8 @@ pub struct BodyContributions {
     ///
     /// [`Contributor::PalmPush`]: crate::controllers::physics::wanted::Contributor::PalmPush
     pub palm_push: Option<fn() -> Option<Vec2>>,
-    /// The refusals of the automatic entry into a vehicle's stunt area below the player, in the
-    /// order they are asked (gameplay's refusal table).
+    /// The refusals of the automatic entry into a vehicle's stunt area below the player, any one of
+    /// which refuses it (gameplay's refusal table).
     pub auto_attach_blockers: &'static [BlocksAutoAttach],
     /// The observer of a body destruction, called with the world and the bodies' ids before the
     /// world destroys them, on the destroying thread; `ids` points at `count` ids, or is null or

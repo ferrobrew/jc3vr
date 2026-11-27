@@ -6,7 +6,7 @@
 //! [`Composition`], which applies them in the contributors' declared order: each contribution reads
 //! the wanted velocity as the previous one left it and returns the velocity to write, or `None` to
 //! leave it as it is. The read and the write go through the composition's [`WantedStore`], so the
-//! contributions themselves are pure, and the order and the sums are pinned by the tests below.
+//! contributions themselves are pure, and the order and the sums are pinned by the module's tests.
 //!
 //! The order, which is [`Contributor`]'s, within one frame:
 //!

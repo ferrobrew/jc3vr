@@ -3,8 +3,8 @@
 //!
 //! The subsystems contribute what they need at installation: the refusals of the automatic entry
 //! into a vehicle's stunt area below the player
-//! ([`crate::contributions::BodyContributions::auto_attach_blockers`]), asked in the table's order,
-//! and the observer of a body destruction
+//! ([`crate::contributions::BodyContributions::auto_attach_blockers`]), any one of which refuses
+//! it, and the observer of a body destruction
 //! ([`crate::contributions::BodyContributions::bodies_destroying`]), called before the world
 //! destroys them.
 

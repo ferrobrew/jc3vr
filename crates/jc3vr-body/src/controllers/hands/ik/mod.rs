@@ -1117,7 +1117,12 @@ struct SecondaryPlan {
     driven: [bool; 2],
 }
 
+// The pose-finalization pass runs whole on one thread, so its seams hand these to each other
+// through thread-locals, which `queue_or_defer` resets at the entry and `end_finalize` clears after
+// the trampoline.
 thread_local! {
+    /// The wrists [`queue_model_wrists`] queued this pass, which the controllers' queue then leaves
+    /// alone and the `SECONDARY` plan counts as driven.
     static MODEL_TARGETS: Cell<[Option<TickTarget>; 2]> = const { Cell::new([None; 2]) };
     static SECONDARY_PLAN: Cell<Option<SecondaryPlan>> = const { Cell::new(None) };
     /// The plan [`queue_or_defer`] keeps for the solve gate of the same pass, which runs on the

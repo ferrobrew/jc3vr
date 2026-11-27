@@ -3,8 +3,7 @@
 //!
 //! The weapon render update runs for every weapon in the world, so it is also where the systems
 //! that follow world weapons observe them: each [`ObserveWeapon`] is registered once at install
-//! ([`crate::contributions::BodyContributions::weapon_observers`]) and runs, in the table's order,
-//! before the correction.
+//! ([`crate::contributions::BodyContributions::weapon_observers`]) and runs before the correction.
 
 use std::ffi::c_void;
 
