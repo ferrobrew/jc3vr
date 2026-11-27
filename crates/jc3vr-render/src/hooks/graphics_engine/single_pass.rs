@@ -1,12 +1,14 @@
-//! Render-thread detours for single-pass stereo (experimental; see `docs/mod/stereo/single-pass-stereo.md`
-//! and [`crate::stereo::single_pass`]).
+//! Render-thread detours for single-pass stereo (see `docs/mod/stereo/single-pass-stereo.md` and
+//! [`crate::stereo::single_pass`]).
 //!
-//! When single-pass is active, the patched vertex shaders read their position from the mod-owned
-//! `cb13` instead of `cb0`. The cb13-sync detour keeps `cb13` in sync: after the engine refreshes and
-//! uploads the global VS constants (`m_VPGlobalConstData` → `cb0`), it mirrors the current view's
-//! per-eye rows into `cb13` and binds it at `b13`. It runs per pass (the same cadence as the engine's
-//! own `cb0` upload), so `cb13` always matches whatever view is current -- the G-buffer eye view, but
-//! also the shadow/reflection views that reuse the same model shaders.
+//! `SetAllGlobalShaderProgramConstants` is the per-pass seam. After the engine refreshes and uploads
+//! the global vertex constants (`m_VPGlobalConstData` to `cb0`), the detour uploads them again with
+//! the centre camera in the terrain patch prep passes ([`crate::stereo::terrain_prep`]), mirrors the
+//! current view's per-eye rows into the mod-owned `cb13` and binds it at `b13`, and rewrites the eye
+//! camera buffer from the rows the engine just staged. It runs at the cadence of the engine's own
+//! `cb0` upload, so `cb13` always matches whatever view is current: the G-buffer eye view, but also
+//! the shadow and reflection views that reuse the same model shaders. [`upload_global_constants`]
+//! repeats the engine's upload for a caller that changes staged rows mid-pass.
 //!
 //! The render-block detours below cover the blocks that bake their view-projection into a constant
 //! buffer inside their own `Draw` (bark, foliage, occluder), across draw kinds that can't be
@@ -21,6 +23,12 @@
 //! ([`baked_cb_block_owns_vs`](crate::stereo::single_pass::baked_cb_block_owns_vs)), because the remap
 //! would claim them on a `cb0[4]` reference that is not their position path and then leave both eyes
 //! on the collapsed centre view. The decline and the intercept only make sense together.
+//!
+//! Two per-pass setups stage a width from the render context that is double-wide under the collapse,
+//! and the detours hold it at one eye's for the call: the tree impostors' pixel size
+//! ([`EyeDisplayWidth`]) and the static light sprites' inverse screen width ([`EyeLightWidth`]). Both
+//! stay one instance-doubled draw. The water reflection plane's `Draw` runs inside a capture probe
+//! block scope.
 
 use std::sync::atomic::{AtomicPtr, Ordering};
 

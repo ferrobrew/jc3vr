@@ -1,25 +1,43 @@
-//! Detour on `Graphics::CreateFragmentProgram` to neutralise the per-eye sun-shadow PCF rotation hash.
+//! The shader-creation detours (`CreateVertexProgram`, `CreateFragmentProgram`, `CreateHullProgram`,
+//! and `CreateDomainProgram`), and the shader reload that re-creates the live shader set through
+//! them. Each detour points the engine's create parameters at a rewritten copy of the bytecode for
+//! the bytecode-copying D3D create call, moving the size with the pointer when a rewrite grows the
+//! blob, and puts the caller's pointer and size back afterwards.
 //!
-//! The opaque sun-shadow resolve rotates its 38-tap Poisson PCF disk by
-//! `frac(sin(dot(SV_Position, k)) * 43758.5)` -- a hash of the screen pixel. In stereo the same world
-//! point lands on a different pixel in each eye, so the two eyes average a different tap set: the
-//! shadow shimmers/grains differently between the eyes (and the alpha-tested foliage with it). The
-//! world-space shadow *lookup* uses the interpolated world position and is identical per eye, so the
-//! fix is to make the rotation eye-invariant -- zero the two seed constants in that `dp2`, so every
-//! pixel (and both eyes) uses the same unrotated 38-tap PCF. With 38 taps the look change is
-//! negligible. `12.9898` occurs only in this instruction (159 shaders per bundle), so the patch is
-//! exactly targeted.
+//! The vertex detour runs the single-pass `cb0` remap over every vertex shader for the census,
+//! decides which single-pass transform the shader gets from its engine name (the only place the name
+//! exists), and remembers that decision against the bytecode for the D3D-level re-create path; while
+//! single-pass is active it substitutes the transformed blob. The hull and domain detours carry the
+//! eye through the terrain's tessellation stages while terrain single-pass is active.
 //!
-//! The patch is applied to the DXBC in-flight, before `CreatePixelShader` (which copies the bytecode,
-//! so a patched copy only needs to outlive the call). Editing the bytecode invalidates the DXBC
-//! container checksum, and the D3D stack under Proton rejects a blob whose stored hash no longer
-//! matches -- so the patched copy's checksum is recomputed (`dxbc_stereo::refresh_checksum`) before
-//! the call.
-//! It therefore affects only shaders created after
-//! the hook installs: with launch-time injection that is every shader; with mid-session injection,
-//! trigger a shader reload (e.g. change the shadow-quality graphics setting) so the shadow shaders are
-//! recreated through the hook. [`patched_count`] (shown in the debug UI) makes it clear whether the
-//! hook is catching anything.
+//! The fragment detour applies its rewrites in a fixed order, each step over what the step before it
+//! produced:
+//!
+//! 1. A screen pass computed for each eye's half: the ambient-occlusion generation pass (or, under
+//!    exact sampling without that rewrite, its UV snap), the screen-space reflection ray march, or
+//!    the ambient-occlusion volumes, whichever claims the shader first. A claimed shader skips step 2.
+//! 2. The patches made on one copy: the sun-shadow PCF rotation seeds zeroed, the screen-space
+//!    decals' depth-UV bias, and the composite's vignette, lens dirt, and bloom lookups kept to each
+//!    eye's half.
+//! 3. The eye camera rewrite, then the two screen-door rewrites, which read the eye boundary from the
+//!    camera rewrite's buffer, then the velocity rewrite, which reads that buffer's declaration.
+//! 4. Once the engine has created the shader: the water's per-eye variants, built from the engine's
+//!    own bytecode only when steps 1 and 2 left it alone, and the glare chain filters' eye-half
+//!    variants.
+//!
+//! Every patched copy carries a recomputed DXBC checksum, since the D3D stack under Proton rejects a
+//! container whose stored hash no longer matches.
+//!
+//! The PCF seed patch makes the sun-shadow resolve's screen-pixel disk rotation the same in both
+//! eyes (`docs/mod/rendering/shader-patching.md`, "The sun-shadow PCF hash").
+//!
+//! The rewrites are baked into the bytecode when a shader is created, so they reach only shaders
+//! created after the hooks install, and are right only for the configuration they were built under.
+//! [`reconcile_single_pass`] requests a reload when single-pass turns on or off,
+//! [`process_reload_request`] performs it on the game thread by bouncing the shader bundle to its
+//! other shadow-quality variant and back, and [`restore_original_shaders_on_eject`] re-creates the
+//! pristine shaders at eject. [`patched_count`] (shown in the debug UI) says whether the hooks are
+//! catching the shadow shaders.
 
 use std::{
     ffi::c_void,
@@ -249,13 +267,13 @@ fn create_fragment_program(
     // The final composite's vignette and lens dirt, mapped over one eye instead of the whole
     // double-wide target. Baked into the bytecode, so it is only right while the collapse is live.
     let localize_overlays = jc3vr_view::stereo::layout::collapse_active();
-    // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
-    // like the overlays, and decided for every fragment program so the SSAO block knows whether the
-    // generation shader it will run carries it.
     // The composite's bloom lookups, kept to each eye's half. Baked into the bytecode like the
     // overlays.
     let localize_bloom = jc3vr_view::stereo::layout::collapse_active();
     let flags = config_flags();
+    // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
+    // like the overlays, and decided for every fragment program so the SSAO block knows whether the
+    // generation shader it will run carries it.
     let localize_ambient_occlusion =
         jc3vr_view::stereo::layout::collapse_active() && flags.has(SinglePassSwitch::SsaoPerEye);
     // The SSAO passes' sampling computed in the shader, in every mode: under the collapse as part of
