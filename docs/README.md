@@ -86,7 +86,11 @@
 
 ### stereo/
 
-- [single-pass-stereo.md](mod/stereo/single-pass-stereo.md): both eyes in one geometry walk, the shader rewrites, and the per-eye corrections.
+- [single-pass-stereo.md](mod/stereo/single-pass-stereo.md): both eyes in one geometry walk: the technique, the shader rewrites, the payload integration, the switches, and the known gaps.
+- [single-pass-collapse-defects.md](mod/stereo/single-pass-collapse-defects.md): what goes wrong when a pass runs once over the double-wide target, and the correction for each.
+- [single-pass-per-eye-inputs.md](mod/stereo/single-pass-per-eye-inputs.md): giving a draw that covers both eyes each eye's camera, lights, screen position, and motion, and the asymmetric and canted eyes.
+- [single-pass-draw-calls.md](mod/stereo/single-pass-draw-calls.md): the draw census, the accounting against multipass, and the draws converted to one submission.
+- [single-pass-validation.md](mod/stereo/single-pass-validation.md): comparing single-pass with the isolated eyes and multipass: the variants, the staged scenes, the rigs, and the expected residuals.
 - [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md): what single-pass stereo needs from each render block.
 - [foveation.md](mod/stereo/foveation.md): static foveated rendering.
 - [swapchain-ownership.md](mod/stereo/swapchain-ownership.md): the mod-owned back buffer in place of the engine's swapchain-derived setups.
@@ -144,7 +148,6 @@
 - [inventory-world-and-carry.md](mod/input/inventory-world-and-carry.md): the weapons let go of, their pins and markers, the lost-weapon return, and the carry set.
 - [inventory-persistence.md](mod/input/inventory-persistence.md): the loadout table across caches, resets, saves, and the scheme switch.
 - [inventory-debug-ui.md](mod/input/inventory-debug-ui.md): the inventory view, giving weapons, and the docked guns' view.
-- [weapon-acquisition.md](mod/input/weapon-acquisition.md): taking guns from characters' hands, racks, and lockers.
 - [controls-summary.md](mod/input/controls-summary.md): the controls summary on the off-hand wrist.
 - [haptics.md](mod/input/haptics.md): the controllers' vibration.
 - [slow-motion.md](mod/input/slow-motion.md): the game's slow motion against real time.
@@ -156,6 +159,8 @@
 - [grab-view.md](mod/input/grab-view.md): the grab view diagnostic.
 - [collider-view.md](mod/input/collider-view.md): the collider view diagnostic.
 - [physical-weapons.md](mod/input/physical-weapons.md): weapons as physical objects in either hand.
+- [weapon-sockets.md](mod/input/weapon-sockets.md): drawing, docking, and swapping weapons at the body's sockets.
+- [long-gun-poses.md](mod/input/long-gun-poses.md): aiming down the sights and keeping a held long gun out of walls.
 - [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body.
 - [pouch-models.md](mod/input/pouch-models.md): grenade, C4, and magazine models on Rico's pouches and the round in the hand.
 - [grenades.md](mod/input/grenades.md): grenades, the beacon, C4, and the detonator by hand.

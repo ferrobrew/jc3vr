@@ -89,7 +89,7 @@ With the placement on (run 326, the capital, single-pass, FSR off, unpaced, a me
 
 ## The per-eye submissions at the capital
 
-The census at the capital ([`coverage_capital_census_headset.toml`](../../../tools/rendering/experiments/coverage_capital_census_headset.toml), run 326, using the accounting in [single-pass-stereo.md](../stereo/single-pass-stereo.md#accounting-for-the-draw-calls)) counts 14,314 game calls, 14,978 single-pass submissions, and 20,094 multipass submissions. Single-pass submits 664 beyond one per game call:
+The census at the capital ([`coverage_capital_census_headset.toml`](../../../tools/rendering/experiments/coverage_capital_census_headset.toml), run 326, using the accounting in [single-pass-draw-calls.md](../stereo/single-pass-draw-calls.md#accounting-for-the-draw-calls)) counts 14,314 game calls, 14,978 single-pass submissions, and 20,094 multipass submissions. Single-pass submits 664 beyond one per game call:
 
 | Family | How | Extra submissions |
 |---|---|---|
@@ -186,7 +186,7 @@ The 99th percentile sits 4 to 9 ms above the median in every scene under the nul
 
 ## The motion blur and the depth of field
 
-Both are forced off in VR (see "The motion blur and the depth of field" in [single-pass-stereo.md](../stereo/single-pass-stereo.md)). Forcing them off takes 0.10 to 0.17 ms of post-effect GPU time per frame at the capital and the town in both modes, all of it the motion blur's pass, with no frame-time change outside the repeats' spread (run 302). The depth of field's own passes were already inactive in those views: the town's draw census shows the plain composite (`comp_pg_cc_ef`) and no motion blur, bokeh, or depth-of-field program in either mode.
+Both are forced off in VR (see "The motion blur and the depth of field" in [single-pass-collapse-defects.md](../stereo/single-pass-collapse-defects.md)). Forcing them off takes 0.10 to 0.17 ms of post-effect GPU time per frame at the capital and the town in both modes, all of it the motion blur's pass, with no frame-time change outside the repeats' spread (run 302). The depth of field's own passes were already inactive in those views: the town's draw census shows the plain composite (`comp_pg_cc_ef`) and no motion blur, bokeh, or depth-of-field program in either mode.
 
 ## Remaining costs
 
@@ -196,6 +196,6 @@ On this machine, at the headset's size, in single-pass with the shipped settings
 2. The SSAO, 0.9 to 1.4 ms, screen-space over the double-wide target, which cannot skip the foveation's dropped pixels.
 3. The engine's context lock, 1.3 to 1.4 ms of the draw task in Wine's critical-section fast paths, and the locked instructions generally. The engine takes the lock around nearly every call into Direct3D.
 4. The payload's per-draw work, about 1.2 ms of its own instructions and 0.5 ms of its calls into DXVK on the placed draw task, spread over many small sites (the `cb13` pins of the instanced re-issue, the viewport record's reads, the water and velocity probes, and the census). No one site is above 0.15 ms.
-5. The per-eye submissions, about 0.3 ms on the placed draw task ([above](#the-per-eye-submissions-at-the-capital)). Converting the decals, the terrain patches, the water, and the vegetation's hardware-instanced draws needs the work "What blocks the largest families" in [single-pass-stereo.md](../stereo/single-pass-stereo.md) describes.
+5. The per-eye submissions, about 0.3 ms on the placed draw task ([above](#the-per-eye-submissions-at-the-capital)). Converting the decals, the terrain patches, the water, and the vegetation's hardware-instanced draws needs the work "What is still drawn twice" in [single-pass-draw-calls.md](../stereo/single-pass-draw-calls.md) describes.
 
 On a processor with one size of L3 the placement does nothing, and the draw task's length depends on how much of its working set that cache holds. Where it limits the frame, items 3 to 5 are the levers.

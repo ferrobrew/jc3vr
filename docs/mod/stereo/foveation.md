@@ -53,7 +53,7 @@ With the fill-in before the water, the clouds, and the transparents, those rende
 
 ## Under single-pass stereo
 
-The single-pass collapse renders both eyes into one double-wide target in one dispatch, so the mask and the fill-in run once. Laid out as for one eye, they would put a single fovea on the seam with a radius sized for the double-wide target. `single_pass.foveation_per_eye` (on) hands both passes both eyes' centres, each as a UV of its own half, an eye-sized half-diagonal, and the first column of eye 1's half. Each pixel takes its eye from the half it lies in and measures its radius, its dither, and its fill-in neighbourhood in pixels from that half's left edge; a neighbour across the seam reads as zero, as one past the edge of an eye-sized target does. Each pass stays one draw. "The shipped settings under single-pass" in [single-pass-stereo.md](single-pass-stereo.md) has the measurement.
+The single-pass collapse renders both eyes into one double-wide target in one dispatch, so the mask and the fill-in run once. Laid out as for one eye, they would put a single fovea on the seam with a radius sized for the double-wide target. `single_pass.foveation_per_eye` (on) hands both passes both eyes' centres, each as a UV of its own half, an eye-sized half-diagonal, and the first column of eye 1's half. Each pixel takes its eye from the half it lies in and measures its radius, its dither, and its fill-in neighbourhood in pixels from that half's left edge; a neighbour across the seam reads as zero, as one past the edge of an eye-sized target does. Each pass stays one draw. "The shipped settings under single-pass" in [single-pass-collapse-defects.md](single-pass-collapse-defects.md) has the measurement.
 
 ## The fill-in's pipeline state
 
