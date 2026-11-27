@@ -96,9 +96,10 @@
 ### rendering/
 
 - [fsr.md](mod/rendering/fsr.md): FSR 2 in the stereo pipeline.
+- [fsr-measurements.md](mod/rendering/fsr-measurements.md): the harness's measurements of FSR's motion vectors, jitter, image quality, and cost.
 - [taa.md](mod/rendering/taa.md): the mod's own TAA resolve, an alternative to FSR.
 - [presentation-layer.md](mod/rendering/presentation-layer.md): what is re-posed at the render rate rather than the simulation's.
-- [render-trace.md](mod/rendering/render-trace.md): the render trace and its analyzer.
+- [render-trace.md](mod/rendering/render-trace.md): the render trace.
 - [render-time-anchoring.md](mod/rendering/render-time-anchoring.md): anchoring what is drawn relative to the player at render time.
 - [shader-patching.md](mod/rendering/shader-patching.md): patching the game's shaders in memory at creation.
 - [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md): XeSS assessed against FSR 2.
