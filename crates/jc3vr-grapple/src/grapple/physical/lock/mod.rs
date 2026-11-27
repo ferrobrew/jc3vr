@@ -60,7 +60,7 @@ use jc3gi::{
 use jc3vr_body::{
     controllers::{
         facts, haptics,
-        physics::{characters::character_position, local_player::LocalPlayer},
+        physics::{characters::character_position, local_player::LocalPlayer, rig::RigSample},
     },
     hooks::input::air,
 };
@@ -73,10 +73,7 @@ use jc3vr_input::{
     haptics::cues::{Event, Sustain},
 };
 use jc3vr_physical::controllers::physical_hands::remote;
-use jc3vr_view::{
-    headpose::xr,
-    vr::{VR_CONFIG, recenter_count},
-};
+use jc3vr_view::{headpose::xr, vr::VR_CONFIG};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -581,9 +578,8 @@ fn pump_sample(input: &LockTickInput) -> (Option<PumpSample>, SwingTuning) {
             .map(|(line, head)| PumpSample {
                 hand: line.grip,
                 head: head.position,
-                rotation: xr::body_rotation(),
+                rig: RigSample::now(),
                 world_scale: scale,
-                recenters: recenter_count(),
             })
     } else {
         None

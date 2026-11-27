@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use jc3vr_body::controllers::{held::pickup, physics::bodies::BodyError};
+use jc3vr_body::controllers::{held::pickup, physics::error::PhysicsError};
 use jc3vr_weapons::controllers::weapons::hold::source::SourceRefusal;
 
 /// Why a snatch did not happen, or ended before the target reached the hand.
@@ -33,7 +33,7 @@ pub enum Refusal {
     /// The line came away while it pulled.
     LineLost,
     /// The target's body could not be read or driven.
-    Body(BodyError),
+    Body(PhysicsError),
     /// The source would not give its weapon up: the character would not let go of its gun, or the
     /// rack or locker would not give its weapon up.
     Source(SourceRefusal),

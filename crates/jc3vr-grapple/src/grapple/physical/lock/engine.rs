@@ -22,7 +22,8 @@ use jc3vr_body::controllers::{
     physics::{
         bodies::{BodyState, game_object_of},
         characters::{character_position, proxy_body},
-        grapple_hook as hook,
+        grapple_hook as hook, wanted,
+        wanted::Contributor,
     },
 };
 
@@ -296,20 +297,16 @@ pub(super) unsafe fn let_go(hook: &mut GrapplingHook) {
 ///
 /// The game thread; `character` must be live.
 pub(super) unsafe fn wanted_velocity(character: &Character) -> Option<Vec3> {
-    let mut wanted = Vector3 { data: [0.0; 3] };
-    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
-    let velocity = Vec3::from_array(wanted.data);
+    let velocity = unsafe { wanted::read(character) };
     velocity.is_finite().then_some(velocity)
 }
 
-/// Give the character `velocity` as its wanted world velocity, as the reel task's motion does.
+/// Give the character `velocity` as its wanted world velocity, as the reel task's motion does: the
+/// lock's whole contribution ([`Contributor::GrappleLock`]).
 ///
 /// # Safety
 ///
-/// The character update; `character` must be live.
+/// The character update, or the game thread before the world update; `character` must be live.
 pub(super) unsafe fn set_wanted_velocity(character: &mut Character, velocity: Vec3) {
-    let velocity = Vector3 {
-        data: velocity.to_array(),
-    };
-    unsafe { character.SetWantedWorldVelocity(&velocity) };
+    unsafe { wanted::set(character, Contributor::GrappleLock, velocity) };
 }

@@ -1,5 +1,6 @@
 use body_rig::math::constants::GRAVITY_MPS2;
 use glam::{Quat, Vec3};
+use jc3vr_body::controllers::physics::rig::RigSample;
 
 use crate::{
     controllers::{grapple_button::LockButton, yank::HandLine},
@@ -17,9 +18,11 @@ fn pump_sample(hand: Vec3, head: Vec3) -> PumpSample {
     PumpSample {
         hand,
         head,
-        rotation: Quat::IDENTITY,
+        rig: RigSample {
+            rotation: Quat::IDENTITY,
+            recenters: 0,
+        },
         world_scale: 1.0,
-        recenters: 0,
     }
 }
 
@@ -87,8 +90,8 @@ fn pump_reseeds_after_recenter_tracking_gap_or_implausible_jump() {
         pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
         let mut next = pump_sample(Vec3::X * 0.1, Vec3::ZERO);
         match discontinuity {
-            0 => next.recenters += 1,
-            1 => next.rotation = Quat::from_rotation_y(0.5),
+            0 => next.rig.recenters += 1,
+            1 => next.rig.rotation = Quat::from_rotation_y(0.5),
             2 => next.hand = Vec3::X * 2.0,
             3 => next.world_scale = 2.0,
             _ => pump.sample(None, DT, &tuning),

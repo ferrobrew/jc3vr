@@ -13,14 +13,15 @@ use jc3vr_body::controllers::{
         bodies::game_object_of,
         grapple_hook::{BodyHit, local_hook},
         refs::Weak,
+        scan::Aabb,
+        vehicles::is_vehicle_part,
     },
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_physical::controllers::{
     physical_hands,
     physical_hands::{
-        collider_view::model::Aabb,
-        doors::engine::{broken_off, is_vehicle_part},
+        doors::engine::broken_off,
         remote,
         remote::{NearBody, NearKind, RagdollTarget},
     },

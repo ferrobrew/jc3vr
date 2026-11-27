@@ -1,6 +1,6 @@
 use body_rig::math::{constants::GRAVITY_MPS2, smooth::follow_factor};
-use glam::{Quat, Vec3};
-use jc3vr_physical::controllers::physical_hands::physics::drive::rig_jumped;
+use glam::Vec3;
+use jc3vr_body::controllers::physics::rig::{RigSample, RigWatch};
 
 use crate::{
     controllers::{
@@ -311,14 +311,16 @@ pub(crate) fn swing(
 pub(crate) struct PumpSample {
     pub hand: Vec3,
     pub head: Vec3,
-    pub rotation: Quat,
+    /// The rig the hand and the head are read in.
+    pub rig: RigSample,
     pub world_scale: f32,
-    pub recenters: u32,
 }
 
 #[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct Pump {
     previous: Option<PumpSample>,
+    /// The rig as `previous` was read in; it starts afresh with `previous`.
+    rig: RigWatch,
     velocity: Vec3,
     remaining_s: f32,
 }
@@ -329,8 +331,8 @@ impl Pump {
         let Some(sample) = sample.filter(|s| {
             s.hand.is_finite()
                 && s.head.is_finite()
-                && s.rotation.is_finite()
-                && s.rotation.is_normalized()
+                && s.rig.rotation.is_finite()
+                && s.rig.rotation.is_normalized()
                 && s.world_scale.is_finite()
                 && s.world_scale > 0.0
                 && dt.is_finite()
@@ -341,18 +343,14 @@ impl Pump {
             return;
         };
         let previous = self.previous.replace(sample);
+        let jumped = self.rig.observe(sample.rig);
         let Some(previous) = previous else { return };
-        if rig_jumped(
-            Some((previous.rotation, previous.recenters)),
-            sample.rotation,
-            sample.recenters,
-        ) || (previous.world_scale - sample.world_scale).abs() > 1e-4
-        {
+        if jumped || (previous.world_scale - sample.world_scale).abs() > 1e-4 {
             self.velocity = Vec3::ZERO;
             return;
         }
         let displacement = (sample.hand - sample.head) - (previous.hand - previous.head);
-        let velocity = sample.rotation * (displacement * sample.world_scale / dt);
+        let velocity = sample.rig.rotation * (displacement * sample.world_scale / dt);
         let pump = &GRAPPLE.get().lock.pump;
         if displacement.length() > pump.max_step_m
             || !velocity.is_finite()

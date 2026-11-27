@@ -5,11 +5,10 @@ use std::{cell::Cell, num::NonZeroUsize};
 use glam::Vec3;
 use jc3vr_body::controllers::{
     grab::world_reach::DoorTarget,
-    physics::{grapple_hook::BodyHit, refs::Strong},
+    physics::{grapple_hook::BodyHit, refs::Strong, vehicles::vehicle_frame},
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_frame;
 use jc3vr_weapons::controllers::{
     loadout::TakeSource,
     weapons::{

@@ -27,11 +27,11 @@ use jc3vr_body::controllers::{
         grapple_hook::{BodyHit, CustomOwner},
         local_player::LocalPlayer,
         refs::{Strong, null_weak},
+        vehicles::vehicle_body,
     },
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_body;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 
 use crate::grapple::{seat::Refusal, tuning::GRAPPLE};
