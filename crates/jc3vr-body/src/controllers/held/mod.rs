@@ -33,7 +33,9 @@
 //!   them, and what the bodies' step reports back;
 //! - [`native`]: the native weapon object's accessors both sides read;
 //! - [`pickup`]: the hand-off of a weapon a hand reaches in the world to the weapon handling's take,
-//!   through a sink the weapon handling registers apart from its source.
+//!   through a sink the weapon handling registers apart from its source;
+//! - [`handover`]: the hand-off of a loose object the grapple's snatch brought to a hand to the
+//!   physical hands' hold, through a function the physical hands register.
 
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -46,6 +48,7 @@ use jc3vr_input::frame::{Hand, Pose};
 use crate::contributions;
 
 pub mod guns;
+pub mod handover;
 pub mod native;
 pub mod pickup;
 pub mod placement;

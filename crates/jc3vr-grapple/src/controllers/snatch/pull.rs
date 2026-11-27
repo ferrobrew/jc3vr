@@ -12,13 +12,14 @@ use jc3vr_body::controllers::{
     aim::{grapple_origin_m, ray::Ray, raycast, raycast::CastOptions},
     grab::latch::GripLatch,
     hands::ik,
-    haptics, physics,
-    physics::{grapple_hook::BodyHit, refs::Weak, rigid::Velocities},
+    haptics,
+    held::{handover, handover::HandedProp},
+    physics,
+    physics::{grapple_hook::BodyHit, refs::Weak, rigid::Velocities, vehicles::vehicle_frame},
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::{frame::Hand, haptics::cues::Sustain};
 use jc3vr_physical::controllers::physical_hands::{
-    doors::engine::vehicle_frame,
     grasp::GripTarget as HoldPoint,
     hold,
     hold::{HandHold, HoldTuning},
@@ -845,7 +846,15 @@ fn arrive(
         | Pulled::Ragdoll { .. } => Err(Refusal::Gone),
         Pulled::Prop { mass_kg, .. } => {
             let point = unsafe { surface_toward(grabbed.object, centre, palm) };
-            remote::hold_remote(hand, grabbed.object, body, point, mass_kg);
+            handover::hand_over(
+                hand,
+                HandedProp {
+                    object: grabbed.object,
+                    body,
+                    point,
+                    mass_kg,
+                },
+            );
             Ok(Arrival::Prop)
         }
         Pulled::Grenade { body } => {

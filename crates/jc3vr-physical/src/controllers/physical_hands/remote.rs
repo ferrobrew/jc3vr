@@ -1,6 +1,7 @@
 //! The physical hands' side of the grapple snatch (`controllers::snatch`): what a thing out
 //! of reach under the grapple's aim is to a hand, by the same rules as the reach in reach, and the
-//! hand-over of a snatched prop to the hand's ordinary hold.
+//! hand-over of a snatched prop to the hand's ordinary hold, which the snatch reaches through the
+//! body's [`handover`](jc3vr_body::controllers::held::handover) seam.
 
 use std::num::NonZeroUsize;
 
@@ -9,6 +10,7 @@ use glam::Vec3;
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::{
     grab::world_reach::{DoorTarget, Reach, TargetKind},
+    held::handover::HandedProp,
     physics::{
         bodies,
         bodies::BodyError,
@@ -358,10 +360,19 @@ pub unsafe fn door_moving(door: &DoorTarget, max_speed_mps: f32) -> bool {
     })
 }
 
-/// Hand a snatched loose object, its body `body` arrived at the hand, over to the hand's ordinary
-/// hold, taken at `point`: the next palms' tick takes hold of it as of a grab in reach, and the
-/// grip's release lets go of it.
-pub fn hold_remote(hand: Hand, object: NonZeroUsize, body: u32, point: Vec3, mass_kg: f32) {
+/// Hand a snatched loose object arrived at the hand over to the hand's ordinary hold: the next
+/// palms' tick takes hold of it as of a grab in reach, and the grip's release lets go of it. The
+/// body's [`handover`](jc3vr_body::controllers::held::handover) calls it, as the physical hands
+/// register it.
+pub(crate) fn hold_remote(
+    hand: Hand,
+    HandedProp {
+        object,
+        body,
+        point,
+        mass_kg,
+    }: HandedProp,
+) {
     let mut state = STATE.lock();
     state.pickup.requests[hand.index()] = Some(Request::Grab(Reach {
         object,

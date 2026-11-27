@@ -1,16 +1,17 @@
 //! The physical hands' contributions to the body, the grip model, and the character hooks below
 //! them ([`BodyContributions`]): the climb's readers ([`jc3vr_body::controllers::facts::climb`]),
 //! the palms' push in the rig's simulation half, the observer of a body destruction, and the palm
-//! summary logged with each grip press, and the hand bodies' post-step sample taken before each
-//! rendered frame's hand composition. The climb's refusal of the automatic entry into a vehicle's
-//! stunt area below the player ([`blocks_auto_attach`]) rides in the gameplay crate's refusal
-//! table, which declares the refusals' order.
+//! summary logged with each grip press, the hand bodies' post-step sample taken before each
+//! rendered frame's hand composition, and the hold a snatched prop is handed to
+//! ([`jc3vr_body::controllers::held::handover`]). The climb's refusal of the automatic entry into
+//! a vehicle's stunt area below the player ([`blocks_auto_attach`]) rides in the gameplay crate's
+//! refusal table, which declares the refusals' order.
 
 use jc3gi::{character::character::Character, physics::hknpWorld};
 use jc3vr_body::{contributions::BodyContributions, controllers::facts::climb::ClimbReaders};
 
 use crate::controllers::physical_hands::{
-    carry_bodies_destroying, climb, palm_push, physics, press_summary,
+    carry_bodies_destroying, climb, palm_push, physics, press_summary, remote,
 };
 
 /// Fill the physical hands' fields of `body`.
@@ -24,6 +25,7 @@ pub fn register(body: &mut BodyContributions) {
     body.bodies_destroying = Some(bodies_destroying);
     body.palm_summary = Some(press_summary);
     body.post_step_sample = Some(post_step_sample);
+    body.prop_handover = Some(remote::hold_remote);
 }
 
 /// Whether a physical handhold the player climbs by refuses the automatic entry of `character`

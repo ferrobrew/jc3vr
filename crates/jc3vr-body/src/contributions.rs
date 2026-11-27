@@ -27,7 +27,7 @@ use crate::{
         facts::{climb::ClimbReaders, mounted::MountedSource},
         fingers::grip::{GripSource, MAX_SOURCES},
         hands::{anchor::HangPump, late::ObserveWeapon, stages::HandStageFn},
-        held::{HeldSource, guns::TargetsFn, pickup::PickupSink},
+        held::{HeldSource, guns::TargetsFn, handover::HandedProp, pickup::PickupSink},
     },
     hooks::character::{BlocksAutoAttach, PoseObserver},
 };
@@ -87,6 +87,9 @@ pub struct BodyContributions {
     pub take_off: Option<unsafe fn()>,
     /// The sink a pickup grab hands a reached weapon to (the weapon handling).
     pub pickup_sink: Option<PickupSink>,
+    /// The hold a loose object the grapple's snatch brought to a hand is handed to, on the input
+    /// tick (the physical hands).
+    pub prop_handover: Option<fn(Hand, HandedProp)>,
     /// The consumer of the deferred magazine detachments, called at the character's native serial
     /// post-physics entry with its native arguments, for every character (the weapon handling).
     pub serial_consumer: Option<unsafe fn(*mut Character, *mut GameObjectUpdateContext)>,
@@ -104,7 +107,7 @@ pub struct BodyContributions {
 impl BodyContributions {
     /// Report every field still empty to `check`, under the reader that reads it.
     pub fn report(&self, check: &mut RegistrationCheck) {
-        let fields: [(&'static str, &'static str, bool); 21] = [
+        let fields: [(&'static str, &'static str, bool); 22] = [
             ("aim", "the aim hooks", self.aim_hooks.is_some()),
             (
                 "aim",
@@ -150,6 +153,7 @@ impl BodyContributions {
                 self.take_off.is_some(),
             ),
             ("held", "the weapon pickup sink", self.pickup_sink.is_some()),
+            ("held", "the prop hand-over", self.prop_handover.is_some()),
             (
                 "character",
                 "the magazine serial consumer",
@@ -203,6 +207,6 @@ mod tests {
     fn an_empty_record_reports_every_contribution() {
         let mut check = RegistrationCheck::new();
         BodyContributions::default().report(&mut check);
-        assert_eq!(check.missing().len(), 21);
+        assert_eq!(check.missing().len(), 22);
     }
 }
