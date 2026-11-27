@@ -6,7 +6,7 @@ The game freezes itself whenever its desktop window loses the foreground ([engin
 
 ## While a session runs
 
-The session predicate is `vr::is_running_published`, an atomic the game thread writes after each `vr::update`. The focus functions run in the main loop outside `Game::Update`, where taking the VR runtime lock is not allowed ([threading.md](threading.md)).
+The session predicate is `vr::is_running_published`, an atomic the game thread writes after each `vr::update`. The focus functions run in the main loop outside `Game::Update`, where the lock rules do not allow taking the VR runtime lock ([threading.md](threading.md#lock-rules)).
 
 - A `LoseFocus` while a session runs and the game is not already suspended is skipped. [`SuspendGame`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/window::SuspendGame) stays clear, so the main loop keeps calling `Game::Update`, the audio keeps playing, and the window keeps its fullscreen mode. The first skipped loss of a background stretch logs a `window` line.
 - The keyboard and mouse still follow the desktop focus: the detour clears [`m_IsInFocus`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##field-m_IsInFocus) as the engine would. The mouse is a background DirectInput device, so leaving the flag set would let a mouse moved or clicked in another window turn the camera or fire. Gamepads and the OpenXR controllers do not read the flag, so head-tracked gamepad play and motion controls are unaffected.
