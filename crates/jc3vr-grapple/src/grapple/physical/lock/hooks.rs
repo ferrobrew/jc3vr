@@ -33,14 +33,12 @@ use jc3gi::{
     equipment::grappling_hook::{GrappleTuning, GrapplingHook},
     types::{math::Vector3, shared_ptr::SharedPtr},
 };
-use jc3vr_body::controllers::facts::airframe;
+use jc3vr_body::controllers::{facts, facts::airframe};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::grapple::{
-    physical::lock::{
-        engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
-    },
+    physical::lock::{engine, entering_helicopter, hang_takes_over, last_velocity, want_hang},
     tuning::GRAPPLE,
 };
 
@@ -83,7 +81,7 @@ fn update_motion(
         layer,
         dt,
     });
-    let level = holds()
+    let level = facts::lock::holds()
         .then(|| {
             // SAFETY: as above.
             let target = unsafe { target_dir.as_ref() }.map(|d| Vec3::from_array(d.data));
@@ -164,7 +162,7 @@ fn finish_reel(
     // SAFETY: the reel task's own arguments, on the character update that owns them.
     let local = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter);
     if let Some(character) = local {
-        if holds() {
+        if facts::lock::holds() {
             // The arrival skipped the reel's motion this tick; run it with the lock's velocity,
             // so the proxy still moves, or failing the reel task's instance, hand the velocity on.
             if let Some(velocity) = last_velocity() {
@@ -239,7 +237,7 @@ fn check_reel_collisions(hook: *mut GrapplingHook, holder: *const SharedPtr<Char
     let local = unsafe { holder.as_ref() }
         .and_then(|h| unsafe { h.px.as_ref() })
         .is_some_and(|c| c.m_IsLocalCharacter);
-    if local && holds() {
+    if local && facts::lock::holds() {
         return;
     }
     CHECK_REEL_COLLISIONS.get().unwrap().call(hook, holder, dt);

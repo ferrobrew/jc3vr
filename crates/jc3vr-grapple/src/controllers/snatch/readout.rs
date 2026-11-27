@@ -2,7 +2,7 @@
 
 use glam::Vec3;
 
-use crate::controllers::snatch::pull::Swinging;
+use crate::grapple::rope;
 
 /// The snatch's readout.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -39,7 +39,7 @@ pub struct TargetReadout {
     pub mass_kg: Option<f32>,
 }
 
-/// The held line, for the readout and the overlay.
+/// A tick of the held line, for the readout, the haptics, and the overlay.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SwingReadout {
     /// The line's held length, metres.
@@ -60,17 +60,8 @@ pub struct SwingReadout {
 }
 
 impl SwingReadout {
-    pub(super) fn new(swinging: Swinging, tethered: bool) -> Self {
-        Self {
-            length_m: swinging.length_m,
-            tension_n: swinging.tension_n,
-            max_tension_n: swinging.max_tension_n,
-            mass_kg: swinging.mass_kg,
-            braced: swinging.braced,
-            line_held: swinging.line_held,
-            tethered,
-            anchor: swinging.anchor,
-            centre: swinging.centre,
-        }
+    /// The line's tension as a share of its strength, `0..=1`.
+    pub(super) fn share(&self) -> f32 {
+        rope::tension_share(self.tension_n, self.max_tension_n)
     }
 }

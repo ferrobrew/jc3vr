@@ -40,7 +40,7 @@ pub(super) use crate::controllers::snatch::acquisition::{
 };
 use crate::{
     controllers::snatch::{
-        FinishInput, Refusal, SNATCH, arrival,
+        FinishInput, Refusal, SNATCH, SwingReadout, arrival,
         arrival::{Landing, LandingInput},
         brace,
         brace::{Brace, BraceInput, BraceReach, LineInput, Regrip},
@@ -52,7 +52,7 @@ use crate::{
         sling_hooks,
         target::weak_of,
     },
-    grapple::{line_grab, rope, rope::RopeFault},
+    grapple::{line_grab, rope::RopeFault},
 };
 
 /// Fire the hook at what `grabbed` holds.
@@ -647,31 +647,6 @@ pub(super) unsafe fn prepare_sling(
     Ok((anchor, wrist.position))
 }
 
-/// A tick of the held line, for the readout, the haptics, and the overlay.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(super) struct Swinging {
-    /// The line's held length, metres.
-    pub length_m: f32,
-    /// The line's tension, and the most it holds on this target with this brace, newtons.
-    pub tension_n: f32,
-    pub max_tension_n: f32,
-    pub mass_kg: f32,
-    /// Whether the other hand braces the grapple hand.
-    pub braced: bool,
-    /// Whether the other hand holds the line ahead of the grapple hand.
-    pub line_held: bool,
-    /// Where the line is anchored, and the target's centre, world space.
-    pub anchor: Vec3,
-    pub centre: Vec3,
-}
-
-impl Swinging {
-    /// The line's tension as a share of its strength, `0..=1`.
-    pub(super) fn share(&self) -> f32 {
-        rope::tension_share(self.tension_n, self.max_tension_n)
-    }
-}
-
 pub(super) struct SlingInput<'a> {
     pub flight: &'a mut Flight,
     pub(crate) rope: &'a mut Option<Sling>,
@@ -692,7 +667,7 @@ pub(super) unsafe fn sling(
     wire: NonZeroUsize,
     sling: SlingInput<'_>,
     input: &FinishInput,
-) -> Result<Swinging, Refusal> {
+) -> Result<SwingReadout, Refusal> {
     if !grabbed.live() {
         return Err(Refusal::Gone);
     }
@@ -814,13 +789,14 @@ pub(super) unsafe fn sling(
         _ => unsafe { physics::bodies::shove(body, owner, impulse, hook_point) },
     }
     .map_err(Refusal::Body)?;
-    let swinging = Swinging {
+    let swinging = SwingReadout {
         length_m: rope.length_m(),
         tension_n: out.tension_n,
         max_tension_n: line.max_tension_n,
         mass_kg,
         braced,
         line_held,
+        tethered: grabbed.kind.tethered(),
         anchor,
         centre: hook_point,
     };

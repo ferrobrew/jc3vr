@@ -109,7 +109,7 @@ use crate::controllers::{
         config::{SnatchSettings, snatch_yank},
         moment::Moment,
         prearm::Prearm,
-        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
+        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step},
         rules::PropHandling,
         target::{Offer, OfferKind},
     },
@@ -571,13 +571,13 @@ fn armed_yank(reach: Option<f32>, config: &YankConfig) -> YankDetector {
 }
 
 /// Log the held line taking its target.
-fn log_swing_start(swinging: &Swinging, tethered: bool) {
+fn log_swing_start(swinging: &SwingReadout) {
     tracing::info!(
         target: "controllers",
         length_m = swinging.length_m,
         mass_kg = swinging.mass_kg,
         max_tension_n = swinging.max_tension_n,
-        tethered,
+        tethered = swinging.tethered,
         "snatch: swinging on the held line"
     );
 }
@@ -728,9 +728,8 @@ impl State {
                                                 input,
                                             )
                                         }?;
-                                        self.status.swing =
-                                            Some(SwingReadout::new(swinging, tethered));
-                                        log_swing_start(&swinging, tethered);
+                                        self.status.swing = Some(swinging);
+                                        log_swing_start(&swinging);
                                     }
                                     Ok(flight)
                                 },
@@ -810,7 +809,7 @@ impl State {
                         }
                         .map(|swinging| {
                             if starting {
-                                log_swing_start(&swinging, tethered);
+                                log_swing_start(&swinging);
                             }
                             if swinging.braced != was_braced {
                                 tracing::info!(
@@ -821,7 +820,7 @@ impl State {
                                     if swinging.braced { "braced" } else { "let go of" }
                                 );
                             }
-                            self.status.swing = Some(SwingReadout::new(swinging, tethered));
+                            self.status.swing = Some(swinging);
                             Step::Flying
                         })
                     }

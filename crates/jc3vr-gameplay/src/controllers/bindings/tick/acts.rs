@@ -6,7 +6,7 @@ use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     aim::sights,
     body::{firm_ragdoll, rig::grounded::add_step_walk},
-    body_frame, grab,
+    body_frame, facts, grab,
     grab::{Consumer, GrabVolume, grabs_for, markers::MarkerFrame},
     hands::ActiveHands,
     intent::{
@@ -106,7 +106,7 @@ pub(super) fn evaluate(live: &mut Live<'_, '_>, routed: &Routed, hands: &Hands) 
             && detection.traversal != Some(Traversal::ReelingIn),
     );
     // The firm ragdoll for the line the lock holds and for the canopy.
-    let firm = if grapple::physical::lock::holds() {
+    let firm = if facts::lock::holds() {
         firm_ragdoll::Want::Line
     } else if detection.mode == Mode::Airborne(AirborneVariant::Parachute) {
         firm_ragdoll::Want::Canopy

@@ -33,6 +33,7 @@ pub mod tether;
 pub use config::PhysicalGrappleTuning;
 use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use jc3vr_body::controllers::{
+    facts,
     hands::anchor,
     haptics,
     mode::{Detection, Traversal},
@@ -235,7 +236,7 @@ pub fn input_tick(game: &GameTick<'_>, input: &TickInput) -> TickOutput {
         drive_reel,
         grapple_yank(),
     );
-    let locked = lock::holds();
+    let locked = facts::lock::holds();
     let lock_yank = locked && boost.is_some();
     if let Some(yank) = boost {
         state.boost_left_s = Some(config.reel.boost_s.max(0.0));

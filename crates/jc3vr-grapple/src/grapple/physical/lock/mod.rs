@@ -209,16 +209,10 @@ pub fn status() -> LockStatus {
     SHARED.lock().status
 }
 
-/// Whether the lock holds the line.
-#[inline]
-pub fn holds() -> bool {
-    facts::lock::holds()
-}
-
 /// Whether the lock hangs the character below a helicopter, where Y enters it.
 #[inline]
 pub fn hangs_under_helicopter() -> bool {
-    holds()
+    facts::lock::holds()
         && SHARED
             .lock()
             .active
@@ -350,7 +344,7 @@ pub fn lock_tick(game: &GameTick<'_>, input: &LockTickInput) {
             air::carry_speed(speed);
         }
     }
-    if !holds() {
+    if !facts::lock::holds() {
         if !input.carries {
             hooks::forget_motion();
         }
@@ -466,7 +460,7 @@ pub(crate) unsafe fn drive(
     dt: f32,
     is_simulating: bool,
 ) -> bool {
-    if !holds() {
+    if !facts::lock::holds() {
         return false;
     }
     let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);

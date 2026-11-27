@@ -15,6 +15,7 @@
 use glam::Vec3;
 use jc3vr_body::controllers::{
     aim::grapple_origin_m,
+    facts,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     hands,
     hands::ik,
@@ -149,7 +150,7 @@ pub(crate) fn holds_line(latch: GripLatch) -> bool {
 /// as its aim, while the lock holds the line and the free hand's grip `latch` holds it: the lock
 /// measures the hand's pull along it. `None` while the hand or the line is untracked.
 pub fn lock_hand(grapple_hand: Hand, latch: GripLatch) -> Option<HandLine> {
-    if !lock::holds() || !holds_line(latch) {
+    if !facts::lock::holds() || !holds_line(latch) {
         return None;
     }
     let free = grapple_hand.other();
@@ -185,7 +186,7 @@ pub(crate) fn free_and_empty(hand: Hand) -> bool {
 /// The far end of the held line from `grapple_hand`, world space: the lock's hook point, or the
 /// hook's point on the snatch's swinging target.
 fn far_end(grapple_hand: Hand) -> Option<Vec3> {
-    if lock::holds() {
+    if facts::lock::holds() {
         Some(lock::status().hook)
     } else {
         snatch::swinging_far_end(grapple_hand)
