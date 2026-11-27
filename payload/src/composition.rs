@@ -21,7 +21,7 @@ use jc3vr_core::{
 };
 use jc3vr_gameplay::{
     controllers,
-    hooks::{equipment, input, sim},
+    hooks::{input, sim},
 };
 use jc3vr_grapple::grapple;
 use jc3vr_hud::{controllers::map, egui_impl::register_desktop_overlay, hooks::ui, hud};
@@ -36,6 +36,7 @@ use jc3vr_render::{
 };
 use jc3vr_tooling::{diagnostics, director, recorder};
 use jc3vr_ui::pause_menu;
+use jc3vr_vehicles::hooks::equipment;
 use jc3vr_view::hooks::{camera, window_focus};
 use re_utilities::hook_library::HookLibrary;
 

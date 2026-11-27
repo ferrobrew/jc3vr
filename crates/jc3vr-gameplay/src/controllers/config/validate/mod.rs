@@ -6,15 +6,15 @@
 //! [`Invalid`](jc3vr_core::config::engine::Invalid), which the engine owns so that a subsystem's own
 //! checks need nothing from this module.
 //!
-//! The checks are split by config area, one module per subsystem, each returning the first
-//! out-of-range or inconsistent setting in `controllers`' order. They are built from the engine's
+//! The checks are split by config area, one module per subsystem (or the group's own `validate`,
+//! where the group's crate owns its checks), each returning the first out-of-range or inconsistent
+//! setting in `controllers`' order. They are built from the engine's
 //! range checks ([`jc3vr_core::config::engine::range`] and its specializations).
 
 mod aim;
 mod haptics;
 mod input;
 mod physical_hands;
-mod vehicles;
 mod weapons;
 
 use jc3vr_body::controllers::aim::sights::config::SightTable;
@@ -35,7 +35,7 @@ pub fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;
     weapons::weapons(&c.weapons)?;
-    vehicles::vehicles(&c.vehicles)?;
+    c.vehicles.validate()?;
     physical_hands::physical_hands(&c.physical_hands)?;
     haptics::haptics(&c.haptics)
 }

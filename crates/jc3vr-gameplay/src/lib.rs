@@ -32,7 +32,7 @@
 //!   to the body crate's registrations, and must run before the hooks are installed.
 //! - The hook libraries, which the payload enables in its own interleaved order with the other
 //!   layers' (the order is load-bearing): [`hooks::sim::hook_library`],
-//!   [`hooks::equipment::hook_library`], the body crate's
+//!   the vehicles crate's [`jc3vr_vehicles::hooks::equipment::hook_library`], the body crate's
 //!   [`jc3vr_body::hooks::character::hook_library`] and
 //!   [`jc3vr_body::hooks::animation::hook_library`], [`hooks::input::hook_library`] (which
 //!   composes the body crate's input detours around the look detour), [`controllers::hook_library`]

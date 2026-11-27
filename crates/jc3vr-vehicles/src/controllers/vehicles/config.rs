@@ -12,7 +12,7 @@ use jc3vr_body::{
     hooks::input::wingsuit::{WINGSUIT_EVADE_CONFIG, WingsuitEvadeConfig},
 };
 use jc3vr_core::{
-    config::engine::{ConfigSlot, SlotOptions},
+    config::engine::{ConfigSlot, Invalid, SlotOptions, range},
     slot_children,
 };
 use jc3vr_input::frame::Hand;
@@ -83,6 +83,23 @@ impl VehiclesConfig {
             parachute_handles: ParachuteHandlesConfig::new(),
             driving_view: DrivingViewConfig::new(),
         }
+    }
+
+    /// Check the settings whose types admit values the vehicle handling cannot use: the wheel's
+    /// lock and the wingsuit's neutral wrist tilt. Paths are relative to `controllers`.
+    pub fn validate(&self) -> Result<(), Invalid> {
+        range(
+            "vehicles.physical.wheel.lock_deg",
+            self.physical.wheel.lock_deg,
+            1.0,
+            1080.0,
+        )?;
+        range(
+            "vehicles.arm_steering.tilt_neutral_deg",
+            self.arm_steering.tilt_neutral_deg,
+            -90.0,
+            90.0,
+        )
     }
 }
 
