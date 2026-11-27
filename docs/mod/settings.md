@@ -16,7 +16,7 @@ The pause menu's VR pages ([pause-menu.md](pause-menu.md)) hold only what a play
 
 ## Where the files live
 
-The files live in the directory `JC3VR_CONFIG_DIR` names, or else the per-user configuration directory that the `directories` crate names for jc3vr (`jc3vr_core::config::paths`); under Proton that is inside the game's prefix, under `AppData/Roaming/philpax/jc3vr/config/`. Beside `settings.toml` the directory holds the debug UI's layout (`ui_layout_v2.json`), the session checklist's marks, the director's teleport bookmarks, and the VR inventory's save sidecar ([input/inventory-persistence.md](input/inventory-persistence.md)); none of them is a setting, and each is written on its own schedule.
+The files live in the directory `JC3VR_CONFIG_DIR` names, or else the per-user configuration directory that the `directories` crate names for jc3vr (`jc3vr_core::config::paths`); under Proton that is inside the game's prefix, under `AppData/Roaming/philpax/jc3vr/config/`. Beside `settings.toml` the directory holds the debug UI's layout (`ui_layout_v2.json`), the session checklist's marks, the director's teleport bookmarks, and the VR inventory's save sidecar ([input/two-handed-inventory.md](input/two-handed-inventory.md#saves-resets-and-loads)); none of them is a setting, and each is written on its own schedule.
 
 ## Loading
 

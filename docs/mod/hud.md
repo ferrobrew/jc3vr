@@ -40,7 +40,7 @@ The rule: an element tied to one world object gets depth (at the object, on the 
 - Ammunition: the mod's own counter over each gun in a hand (`hud::anchored::hand_ammo`), red while the magazine is empty or out; the game's readout is not drawn, so with the atlas or redirect off there is none.
 - Under the controller scheme: the tether readout above the off-hand's forearm, the [weapon wheel](weapon-selector.md)'s cross at the steering hand, and a health bar on the off-hand's inner wrist over the game's heat and grenade readouts (the game's health vignette is suppressed).
 - The reticles and hit marker: one cell at the aim depth. Under the controller scheme the hand-aimed reticles are hidden in favour of the world-space gun dot or laser, so the cell shows for the gamepad and for head-aimed driver and mounted weapons.
-- The grab hint ([grip.md](input/grip.md#the-grab-hint)) on the panel's plane below its centre, since its object is on the body, out of view; the markers on let-go weapons at their world points ([inventory-world-and-carry.md](input/inventory-world-and-carry.md#markers-on-the-weapons-let-go-of)).
+- The grab hint ([grip.md](input/grip.md#the-grab-hint)) on the panel's plane below its centre, since its object is on the body, out of view; the markers on let-go weapons at their world points ([two-handed-inventory.md](input/two-handed-inventory.md#markers-on-the-weapons-let-go-of)).
 - Everything else stays on the panel: centre notices, directional damage indicators (they carry only a direction), objectives, timers, notifications, the chaos feed, edge arrows, subtitles, and the skip prompt.
 
 The full-screen overlay clips (drowning tint, damage flash, low-health paint, sniper scope) are held invisible ahead of every capture (`hud::scaleform`).

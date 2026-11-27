@@ -140,10 +140,7 @@
 - [weapon-handling.md](mod/input/weapon-handling.md): the pouches, the foregrip, a held gun's weight, recoil, and grenades and C4 in outline.
 - [flight.md](mod/input/flight.md): the wingsuit's arm steering and barrel roll, the parachute's handles, and the ripcord.
 - [grip.md](mod/input/grip.md): the grip, how each hand picks a grab target, and the fingers wrapping what it holds.
-- [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands.
-- [inventory-world-and-carry.md](mod/input/inventory-world-and-carry.md): the weapons let go of, their pins and markers, the lost-weapon return, and the carry set.
-- [inventory-persistence.md](mod/input/inventory-persistence.md): the loadout table across caches, resets, saves, and the scheme switch.
-- [inventory-debug-ui.md](mod/input/inventory-debug-ui.md): the inventory view, giving weapons, and the docked guns' view.
+- [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands, the weapons in the world and beyond the slots, resets, caches, saves, and the debug view.
 - [haptics.md](mod/input/haptics.md): the controllers' vibration.
 - [slow-motion.md](mod/input/slow-motion.md): the game's slow motion against real time.
 - [physical-hands.md](mod/input/physical-hands.md): the hand bodies, the palm probes, pushing and shoving, and picking up and holding objects.
@@ -156,8 +153,7 @@
 - [weapon-sockets.md](mod/input/weapon-sockets.md): drawing, docking, and swapping weapons at the body's sockets.
 - [long-gun-poses.md](mod/input/long-gun-poses.md): aiming down the sights and keeping a held long gun out of walls.
 - [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body.
-- [pouch-models.md](mod/input/pouch-models.md): grenade, C4, and magazine models on Rico's pouches and the round in the hand.
-- [grenades.md](mod/input/grenades.md): grenades, the beacon, C4, and the detonator by hand.
+- [grenades.md](mod/input/grenades.md): grenades, the beacon, C4, and the detonator by hand, and the models on Rico's pouches.
 - [paired-rack-weapons.md](mod/input/paired-rack-weapons.md): rack weapons and their ammunition.
 - [reload.md](mod/input/reload.md): the hand-worked reload, and what each weapon loads.
 - [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand, and the grapple from a vehicle seat.
