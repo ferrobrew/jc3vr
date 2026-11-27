@@ -57,7 +57,7 @@ pub use pose::{
 };
 
 /// Whether the game is paused, `director.paused` in the settings file, which a capture pins. The
-/// payload binds the slot to its field in the directing settings at startup.
+/// directing settings in the tooling layer carry the slot as a child of theirs.
 pub static PAUSED: ConfigSlot<bool> = ConfigSlot::new("director.paused");
 pub(crate) type Mode = RenderMode;
 
@@ -1134,8 +1134,8 @@ fn apply_profile_with_overrides(
 /// The controlled capture profile: everything that varies with time, input, or the headset is
 /// pinned or off, and every scene effect the game ships with stays on, so a capture exercises the
 /// shaders a player sees. Bloom, the sun halo, ambient occlusion, screen-space reflections, and
-/// global illumination all run; a profile that skipped the bloom also left the composite reading
-/// bloom textures nothing refreshed, whose contents depended on the previous capture set.
+/// global illumination all run; skipping the bloom would leave the composite reading bloom textures
+/// nothing refreshes, whose contents depend on the previous capture set.
 fn apply_profile(config: &mut impl Parts, mode: Mode) {
     *config.part_mut(&PAUSED) = true;
     let clean_view = config.part_mut(&CLEAN_VIEW_CONFIG);

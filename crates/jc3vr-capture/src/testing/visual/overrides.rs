@@ -185,7 +185,8 @@ pub struct VisualOverrides {
     /// The temporal resolve's clip box at rest (`fsr.taa.clip_gamma_rest`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) taa_clip_gamma_rest: Option<TaaTuningOverride>,
-    /// The temporal resolve's unjitter kernel falloff (`fsr.taa.current_sharpness`), in tenths.
+    /// The temporal resolve's unjitter kernel falloff (`fsr.taa.current_sharpness`), given as a
+    /// tenth of its value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) taa_current_sharpness: Option<TaaTuningOverride>,
     /// The temporal resolve's history share in motion (`fsr.taa.motion_history_weight`).
@@ -232,7 +233,7 @@ pub struct VisualOverridesTable {
 
 /// Single-pass switches forced to a value, by [`SinglePassSwitch`]: a bit per switch for whether it
 /// is forced, and one for the value it is forced to. Packed, since a request carries one and the
-/// switch list keeps growing.
+/// switch list is long.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SinglePassOverrides {
     forced: u128,

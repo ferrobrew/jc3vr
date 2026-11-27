@@ -2,13 +2,14 @@
 //! every frame cost, for the harness's `benchmark` command (`tools/rendering/benchmark/`).
 //!
 //! A run applies its mode the way a player would (the debug UI's single-pass button, and FSR and
-//! the foveation at their shipped settings), holds the camera at a fixed pose or moves it along a gentle path while the
-//! clock and the world run on, waits for the shaders and the render size to apply, warms up, and
-//! then records each frame: the frame interval and the always-on frame breakdown's per-thread and
-//! per-slot times (`jc3vr_core::frame_timing`), the engine's draw calls and the stereo draw path's
-//! submissions, the draw detours' own cost when asked, and the GPU time of each dispatch from
-//! timestamp queries (`jc3vr_render::profiler::gpu`). The acknowledgement carries every frame, so the
-//! statistics are computed off line. See `docs/mod/testing/benchmark.md`.
+//! the foveation at their shipped settings), holds the camera at a fixed pose or moves it along a
+//! gentle path while the clock and the world run on, waits for the shaders and the render size to
+//! apply, warms up, and then records each frame: the frame interval and the always-on frame
+//! breakdown's per-thread and per-slot times (`jc3vr_core::frame_timing`), the engine's draw calls
+//! and the stereo draw path's submissions, the draw detours' own cost when asked, and the GPU time
+//! of each dispatch from timestamp queries (`jc3vr_render::profiler::gpu`). The acknowledgement
+//! carries every frame, so the statistics are computed off line. See
+//! `docs/mod/testing/benchmark.md`.
 //!
 //! Threading: [`request`] and [`tick`] run on the game thread, from the request poll and the top of
 //! the game's update. The GPU records arrive from the draw thread through [`record_gpu_dispatch`],

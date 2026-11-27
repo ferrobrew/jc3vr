@@ -1,6 +1,6 @@
 //! The visual diagnostic's environment override: a fixed hour with pinned weather (clear, rain, or
-//! snow) and a frozen day cycle. The first override saves the original world time once, and the saved values are restored
-//! when the visual control ends.
+//! snow) and a frozen day cycle. The first override saves the original world time once, and the
+//! saved values are restored when the visual control ends.
 
 use jc3gi::environment::{LandscapeManager, Weather, WeatherController, WorldTime};
 use jc3vr_core::hooks::in_gameplay;
