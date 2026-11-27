@@ -7,12 +7,10 @@
 //! constant rate, so every hand-over between the IK and a clip takes the blend's time, whichever
 //! way it goes and however far.
 //!
-//! A partial weight mixes local rotations, never model-space positions: mixing positions bone by
-//! bone shortens the segments and moves the chain's ends mid-blend. [`blend_chain`] mixes each
-//! bone's rotation relative to its parent and rebuilds the chain from the clip's own offsets, so
-//! every segment keeps its length at every weight.
+//! A partial weight mixes rotations ([`blend_rotation`]), never model-space positions: mixing
+//! positions bone by bone shortens the segments and moves the chain's ends mid-blend.
 
-use glam::{Quat, Vec3};
+use glam::Quat;
 
 use crate::math::rotation::shortest;
 
@@ -217,50 +215,8 @@ pub fn blend_rotation(animated: Quat, ik: Quat, weight: f32) -> Quat {
     animated.slerp(ik, weight).normalize()
 }
 
-/// A bone of a chain: its rotation and position in the chain's frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct ChainBone {
-    pub position: Vec3,
-    pub rotation: Quat,
-}
-
-/// The chain `animated` (each bone the child of the one before, the first the chain's root) with
-/// each bone's rotation relative to its parent turned toward `ik`'s by `weight`, rebuilt from the
-/// clip's own offsets: the root keeps its position, and every segment keeps its length. `ik` must
-/// be as long as `animated`; extra bones of either are ignored.
-pub fn blend_chain(animated: &[ChainBone], ik: &[ChainBone], weight: f32) -> Vec<ChainBone> {
-    let count = animated.len().min(ik.len());
-    let mut out: Vec<ChainBone> = Vec::with_capacity(count);
-    for i in 0..count {
-        let (local_animated, local_ik, offset) = match i {
-            0 => (animated[0].rotation, ik[0].rotation, Vec3::ZERO),
-            _ => (
-                animated[i - 1].rotation.inverse() * animated[i].rotation,
-                ik[i - 1].rotation.inverse() * ik[i].rotation,
-                animated[i - 1].rotation.inverse()
-                    * (animated[i].position - animated[i - 1].position),
-            ),
-        };
-        let local = blend_rotation(local_animated, local_ik, weight);
-        let bone = match out.last() {
-            None => ChainBone {
-                position: animated[0].position,
-                rotation: local,
-            },
-            Some(parent) => ChainBone {
-                position: parent.position + parent.rotation * offset,
-                rotation: (parent.rotation * local).normalize(),
-            },
-        };
-        out.push(bone);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-
     use super::*;
 
     const DT: f32 = 1.0 / 60.0;
@@ -326,41 +282,5 @@ mod tests {
         assert!(mid.angle_between(Quat::from_rotation_y(0.4)) < 1e-4);
         assert_eq!(blend_rotation(a, b, 0.0), a);
         assert!(blend_rotation(a, b, 1.0).angle_between(b) < 1e-4);
-    }
-
-    fn chain(bend: f32) -> Vec<ChainBone> {
-        // A spine of four bones of a quarter metre, each bent `bend` about +X from the last.
-        let mut bones = Vec::new();
-        let mut position = Vec3::new(0.0, 1.0, 0.0);
-        let mut rotation = Quat::IDENTITY;
-        for _ in 0..4 {
-            bones.push(ChainBone { position, rotation });
-            rotation = (rotation * Quat::from_rotation_x(bend)).normalize();
-            position += rotation * Vec3::Y * 0.25;
-        }
-        bones
-    }
-
-    proptest! {
-        #[test]
-        fn blending_local_rotations_keeps_every_segment(
-            a in -1.0f32..1.0, b in -1.0f32..1.0, weight in 0.0f32..1.0,
-        ) {
-            let animated = chain(a);
-            let mut ik = chain(b);
-            for bone in &mut ik {
-                bone.rotation = (Quat::from_rotation_y(0.8) * bone.rotation).normalize();
-            }
-            let blended = blend_chain(&animated, &ik, weight);
-            prop_assert_eq!(blended[0].position, animated[0].position);
-            for i in 1..blended.len() {
-                let length = |c: &[ChainBone]| c[i].position.distance(c[i - 1].position);
-                prop_assert!((length(&blended) - length(&animated)).abs() < 1e-4);
-            }
-            let ends = blend_chain(&animated, &ik, 0.0);
-            for (x, y) in ends.iter().zip(&animated) {
-                prop_assert!(x.position.distance(y.position) < 1e-4);
-            }
-        }
     }
 }
