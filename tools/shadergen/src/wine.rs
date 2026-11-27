@@ -22,7 +22,7 @@ pub struct WinePrefix {
 /// winetricks source for it. The DLL lives at `core/d3dcompiler_47.dll` inside the installer.
 const D3DCOMPILER_INSTALLER_URL: &str = "https://download-installer.cdn.mozilla.net/pub/firefox/releases/62.0.3/win64/en-US/Firefox%20Setup%2062.0.3.exe";
 const D3DCOMPILER_MEMBER: &str = "core/d3dcompiler_47.dll";
-/// 7z archive signature (`7z\xBC\xAF\x27\x1C`); the Firefox installer is a PE stub followed by the
+/// The 7z archive signature (`7z\xBC\xAF\x27\x1C`); the Firefox installer is a PE stub followed by the
 /// 7z archive, so we scan for this to find where the archive begins.
 const SEVENZ_MAGIC: &[u8] = &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C];
 

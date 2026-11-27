@@ -49,7 +49,6 @@ fn main() {
     println!("body_length: {} bytes (decompressed)", gfx.body.len());
     println!();
 
-    // Tag inventory
     println!("=== Tags ({}) ===", gfx.tags.len());
     let mut tag_counts: std::collections::HashMap<u16, (usize, usize)> =
         std::collections::HashMap::new();
@@ -69,12 +68,10 @@ fn main() {
     }
     println!();
 
-    // Detailed dump
     if let Err(e) = tags::dump(&gfx, &output_dir) {
         eprintln!("warning: error during tag dump: {e}");
     }
 
-    // Dump raw data if requested
     if let Some(ref out_dir) = output_dir {
         if let Err(e) = std::fs::create_dir_all(out_dir) {
             eprintln!("warning: could not create output dir: {e}");

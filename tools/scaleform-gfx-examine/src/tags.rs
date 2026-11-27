@@ -1,6 +1,6 @@
 use crate::gfx::{GfxFile, Tag, read_string, read_u16_le, read_u30, read_u32_le};
 
-/// Human-readable name for a SWF/GFX tag code
+/// The readable name of a SWF or GFX tag code.
 pub fn tag_name(code: u16) -> &'static str {
     match code {
         0 => "End",
@@ -47,7 +47,7 @@ pub fn tag_name(code: u16) -> &'static str {
     }
 }
 
-/// Dump all interesting tag contents
+/// Dump the contents of every tag the examiner understands.
 pub fn dump(gfx: &GfxFile, output_dir: &Option<std::path::PathBuf>) -> anyhow::Result<()> {
     for (i, tag) in gfx.tags.iter().enumerate() {
         match tag.code {
@@ -129,9 +129,9 @@ fn dump_scene_and_frame_labels(tag: &Tag) -> anyhow::Result<()> {
 }
 
 fn dump_place_object(tag: &Tag, code: u16) -> anyhow::Result<()> {
-    // PlaceObject2 (26) and PlaceObject3 (70) share the same core structure
+    // PlaceObject2 (26) and PlaceObject3 (70) share the same core structure.
     let (flags, mut pos) = if code == 70 {
-        // PlaceObject3 has 2 flag bytes
+        // PlaceObject3 has two flag bytes.
         (tag.data[0], 2)
     } else {
         (tag.data[0], 1)
@@ -154,13 +154,9 @@ fn dump_place_object(tag: &Tag, code: u16) -> anyhow::Result<()> {
         char_id_str = format!("char={char_id} ");
     }
 
-    // Skip matrix (if present): 6 floats as fixed-point — variable size, but
-    // we only need the name. Skip by reading until we find it.
-    // Matrix: nbits(5) + 6 fields of nbits each, plus optional scale/rotate
+    // The matrix and the colour transform precede the name; both are bit-packed records of
+    // variable length.
     if has_matrix {
-        // Read the matrix: scale + rotate + translate
-        // The matrix starts with a HasScale bit, then optional HasRotate
-        // For simplicity, skip by reading all fields we know the format of
         skip_matrix(&tag.data, &mut pos);
     }
 
@@ -188,49 +184,48 @@ fn dump_place_object(tag: &Tag, code: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Skip a SWF MATRIX record, advancing pos past it.
+/// Skip a SWF MATRIX record, advancing `pos` past it.
 fn skip_matrix(data: &[u8], pos: &mut usize) {
     if *pos >= data.len() {
         return;
     }
-    // HasScale (1 bit)
+    // HasScale (1 bit).
     let has_scale = (data[*pos] >> 7) & 1;
     let mut bit_pos = 1;
     if has_scale == 1 {
         let nbits = read_ubits(data, pos, &mut bit_pos, 5) as usize;
-        bit_pos += nbits * 2; // scaleX, scaleY
+        bit_pos += nbits * 2; // ScaleX and ScaleY.
     }
-    // HasRotate (1 bit)
+    // HasRotate (1 bit).
     let has_rotate = read_ubits(data, pos, &mut bit_pos, 1);
     if has_rotate == 1 {
         let nbits = read_ubits(data, pos, &mut bit_pos, 5) as usize;
-        bit_pos += nbits * 2; // rotateSkew0, rotateSkew1
+        bit_pos += nbits * 2; // RotateSkew0 and RotateSkew1.
     }
-    // Translate (always present): nbits(5) + translateX + translateY
+    // Translate, always present: NTranslateBits (5 bits), TranslateX, and TranslateY.
     let nbits = read_ubits(data, pos, &mut bit_pos, 5) as usize;
-    bit_pos += nbits * 2; // translateX, translateY
+    bit_pos += nbits * 2;
 
-    // Advance byte position past the consumed bits
     *pos += bit_pos.div_ceil(8);
 }
 
-/// Skip a SWF CXFORM record, advancing pos past it.
+/// Skip a SWF CXFORM record, advancing `pos` past it.
 fn skip_cxform(data: &[u8], pos: &mut usize) {
     if *pos >= data.len() {
         return;
     }
-    // HasAddTerms (1 bit) + HasMultTerms (1 bit) + Nbits (4 bits)
+    // HasAddTerms (1 bit), HasMultTerms (1 bit), and Nbits (4 bits).
     let has_add = (data[*pos] >> 7) & 1;
     let has_mult = (data[*pos] >> 6) & 1;
     let nbits = ((data[*pos] >> 2) & 0x0F) as usize;
     let bit_pos = 6;
-    let terms = (has_add as usize + has_mult as usize) * 3; // r, g, b per type
+    let terms = (has_add as usize + has_mult as usize) * 3; // Red, green, and blue for each kind of term.
     let total_bits = bit_pos + nbits * terms;
     *pos += total_bits.div_ceil(8);
 }
 
-/// Read `count` bits from data starting at byte `*pos`, bit offset `bit_pos`.
-/// Does NOT advance `pos`; the caller must update both.
+/// Read `count` bits from `data` starting at byte `*pos`, bit offset `bit_pos`, advancing
+/// `bit_pos` only; the caller moves `pos` past the consumed bits.
 fn read_ubits(data: &[u8], pos: &usize, bit_pos: &mut usize, count: usize) -> u32 {
     let mut result = 0u32;
     for i in 0..count {
@@ -251,14 +246,12 @@ fn dump_define_sprite(tag: &Tag) -> anyhow::Result<()> {
     let sprite_id = read_u16_le(&tag.data, &mut pos);
     let frame_count = read_u16_le(&tag.data, &mut pos);
 
-    // The rest of the data is a tag list (same format as the main body)
-    // Parse sub-tags to find PlaceObject entries with depth info
+    // The rest of the data is a tag list in the main body's format.
     let sub_tags = parse_sub_tags(&tag.data[pos..])?;
 
-    let mut placements: Vec<(u16, u16, Option<String>)> = Vec::new(); // (depth, char_id, name)
+    let mut placements: Vec<(u16, u16, Option<String>)> = Vec::new(); // Depth, character id, and name.
     for st in &sub_tags {
         if st.code == 26 || st.code == 70 {
-            // Parse PlaceObject depth + name from the sub-tag
             let (flags, mut sp) = if st.code == 70 {
                 (st.data[0], 2usize)
             } else {
@@ -282,7 +275,7 @@ fn dump_define_sprite(tag: &Tag) -> anyhow::Result<()> {
                 sp += 2;
             }
 
-            // Skip matrix and cxform to get to the name
+            // The matrix and the colour transform precede the name.
             if has_matrix {
                 skip_matrix(&st.data, &mut sp);
             }
@@ -301,7 +294,6 @@ fn dump_define_sprite(tag: &Tag) -> anyhow::Result<()> {
     }
 
     if !placements.is_empty() {
-        // Look up the sprite's class name from the SymbolClass
         println!("=== DefineSprite id={sprite_id} frames={frame_count} ===");
         for (depth, char_id, name) in &placements {
             let name_part = name
@@ -354,17 +346,15 @@ fn parse_sub_tags(data: &[u8]) -> anyhow::Result<Vec<crate::gfx::Tag>> {
     Ok(tags)
 }
 
-// ============================================================
-// DoABC — AS3 bytecode
-// ============================================================
+// DoABC: AS3 bytecode.
 
 fn dump_do_abc(
     tag: &Tag,
     index: usize,
     output_dir: &Option<std::path::PathBuf>,
 ) -> anyhow::Result<()> {
-    // DoABC (tag 82): flags (u32) + name (null-terminated string) + ABC data
-    // DoABC2/DoABCBeforeFrame (tag 78): same format
+    // DoABC (tag 82) and DoABCBeforeFrame (tag 78) share a format: flags (u32), a
+    // null-terminated name, and the ABC data.
     let mut pos = 0;
     let flags = read_u32_le(&tag.data, &mut pos);
     let name = read_string(&tag.data, &mut pos);
@@ -375,11 +365,9 @@ fn dump_do_abc(
         abc_data.len()
     );
 
-    // Parse the ABC file to extract interesting constant pool entries
     let abc = parse_abc(abc_data)?;
     dump_abc_summary(&abc);
 
-    // Dump the ABC block to a file if requested
     if let Some(out_dir) = output_dir {
         std::fs::create_dir_all(out_dir)?;
         let fname = format!("abc-{index:03}-{name}.abc");
@@ -400,25 +388,24 @@ struct AbcFile {
 fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
     let mut pos = 0;
 
-    // Header: minor_version (u16) + major_version (u16)
+    // The header's minor and major versions (u16 each), which are not validated.
     let minor = read_u16_le(data, &mut pos);
     let major = read_u16_le(data, &mut pos);
-    // We don't validate; just skip
     let _ = (minor, major);
 
-    // --- Constant pool: integers ---
+    // The constant pool's integers.
     let int_count = read_u30(data, &mut pos) as usize;
     for _ in 1..int_count {
-        read_u30(data, &mut pos); // skip variable-length s32
+        read_u30(data, &mut pos); // A variable-length s32, skipped.
     }
 
-    // --- Constant pool: unsigned integers ---
+    // The constant pool's unsigned integers.
     let uint_count = read_u30(data, &mut pos) as usize;
     for _ in 1..uint_count {
         read_u30(data, &mut pos);
     }
 
-    // --- Constant pool: doubles ---
+    // The constant pool's doubles.
     let double_count = read_u30(data, &mut pos) as usize;
     for _ in 1..double_count {
         if pos + 8 > data.len() {
@@ -427,10 +414,10 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
         pos += 8;
     }
 
-    // --- Constant pool: strings ---
+    // The constant pool's strings.
     let string_count = read_u30(data, &mut pos) as usize;
     let mut strings = Vec::with_capacity(string_count);
-    strings.push(String::new()); // index 0 is null/empty
+    strings.push(String::new()); // Index 0 is the empty string.
     for _ in 1..string_count {
         let str_len = read_u30(data, &mut pos) as usize;
         if pos + str_len > data.len() {
@@ -441,7 +428,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
         pos += str_len;
     }
 
-    // --- Constant pool: namespaces ---
+    // The constant pool's namespaces.
     let ns_count = read_u30(data, &mut pos) as usize;
     for _ in 1..ns_count {
         if pos >= data.len() {
@@ -451,7 +438,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
         read_u30(data, &mut pos); // Its name, which nothing here reads.
     }
 
-    // --- Constant pool: namespace sets ---
+    // The constant pool's namespace sets.
     let ns_set_count = read_u30(data, &mut pos) as usize;
     for _ in 1..ns_set_count {
         let count = read_u30(data, &mut pos) as usize;
@@ -460,10 +447,10 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
         }
     }
 
-    // --- Constant pool: multinames ---
+    // The constant pool's multinames.
     let multiname_count = read_u30(data, &mut pos) as usize;
     let mut multinames = Vec::with_capacity(multiname_count);
-    multinames.push(String::new()); // index 0
+    multinames.push(String::new()); // Index 0 is the empty name.
     for _ in 1..multiname_count {
         if pos >= data.len() {
             break;
@@ -472,7 +459,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
         pos += 1;
         let mn = match kind {
             0x07 | 0x0D => {
-                // QName / QNameA: ns_idx (u30) + name_idx (u30)
+                // QName and QNameA: ns_idx (u30) and name_idx (u30).
                 let _ns_idx = read_u30(data, &mut pos);
                 let name_idx = read_u30(data, &mut pos) as usize;
                 if name_idx < strings.len() {
@@ -482,7 +469,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
                 }
             }
             0x0F | 0x10 => {
-                // RTQName / RTQNameA: name_idx (u30)
+                // RTQName and RTQNameA: name_idx (u30).
                 let name_idx = read_u30(data, &mut pos) as usize;
                 if name_idx < strings.len() {
                     strings[name_idx].clone()
@@ -491,11 +478,11 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
                 }
             }
             0x11 | 0x12 => {
-                // RTQNameL / RTQNameLA: no data
+                // RTQNameL and RTQNameLA carry no data.
                 String::new()
             }
             0x09 | 0x0E => {
-                // Multiname / MultinameA: name_idx (u30) + ns_set_idx (u30)
+                // Multiname and MultinameA: name_idx (u30) and ns_set_idx (u30).
                 let name_idx = read_u30(data, &mut pos) as usize;
                 read_u30(data, &mut pos);
                 if name_idx < strings.len() {
@@ -505,7 +492,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
                 }
             }
             0x1B => {
-                // GenericName: name_idx (u30) + param_count (u30) + params
+                // GenericName: name_idx (u30), param_count (u30), and the params.
                 let _name_idx = read_u30(data, &mut pos);
                 let param_count = read_u30(data, &mut pos) as usize;
                 for _ in 0..param_count {
@@ -514,7 +501,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
                 String::new()
             }
             0x1C | 0x1D => {
-                // MultinameL / MultinameLA: ns_set_idx (u30)
+                // MultinameL and MultinameLA: ns_set_idx (u30).
                 read_u30(data, &mut pos);
                 String::new()
             }
@@ -523,14 +510,12 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
         multinames.push(mn);
     }
 
-    // --- Methods ---
-    // Skip the rest of the ABC body (methods, metadata, instances, classes,
-    // scripts, method bodies). Full parsing is complex due to non-standard
-    // GenericName encoding in Scaleform's GFX ABC variant. The string pool
-    // and multiname names we already have are the most useful data.
+    // The rest of the ABC body (methods, metadata, instances, classes, scripts, and method bodies)
+    // is not parsed: Scaleform's GFX variant encodes GenericName non-standardly, and the string
+    // pool and the multiname names are the useful data.
     let _method_count = read_u30(data, &mut pos);
 
-    // Collect class/method names from multinames (non-empty ones)
+    // The class and method names among the non-empty multinames.
     let mut method_names: Vec<String> = multinames
         .iter()
         .filter(|s| !s.is_empty())
@@ -546,7 +531,7 @@ fn parse_abc(data: &[u8]) -> anyhow::Result<AbcFile> {
 }
 
 fn dump_abc_summary(abc: &AbcFile) {
-    // Print interesting strings (filtering out noise)
+    // Strings with enough letters to be names rather than noise.
     let interesting: Vec<&String> = abc
         .strings
         .iter()

@@ -3,15 +3,16 @@
 //!
 //! The FidelityFX DX11 backend bakes its compute shaders in as DXBC bytecode: the shader compiler
 //! (`FidelityFX_SC.exe`, bundled in the vendored submodule) compiles each pass into a
-//! `<pass>_permutations.h` header of byte arrays, which `ffx_fsr2_shaders_dx11.cpp` `#include`s. Those
-//! generated headers land under `crates/fsr-sys/generated/` (git-ignored for now); `fsr-sys`'s
-//! `build.rs` errors if they're missing, pointing here. This is its own crate -- separate from `fsr-sys` -- so
-//! its HTTP / archive dependencies never reach a normal build of the `-sys` crate or the payload. It
-//! runs only on an FSR version bump or after a fresh checkout.
+//! `<pass>_permutations.h` header of byte arrays, which `ffx_fsr2_shaders_dx11.cpp` `#include`s.
+//! Those generated headers land under `crates/fsr-sys/generated/dx11/`, which is git-ignored; the
+//! committed `dx11.tar.gz` beside it carries them ([`archive_headers`]), and `fsr-sys`'s `build.rs`
+//! unpacks it when the headers are missing. This is its own crate, separate from `fsr-sys`, so its
+//! HTTP and archive dependencies never reach a normal build of the `-sys` crate or the payload. The
+//! FSR half needs rerunning only on an FSR version bump.
 //!
-//! In addition, the mod's own DX11 shaders (the layer crates', such as the HUD
-//! quad and the velocity decode) and `body-estimator`'s compute shaders are compiled by the same
-//! toolchain and committed as `.dxbc` blobs alongside their `.hlsl` sources.
+//! In addition, the mod's own DX11 shaders (the layer crates', such as the HUD quad and the
+//! velocity decode) and `body-estimator`'s compute shaders are compiled by the same toolchain and
+//! committed as `.dxbc` blobs alongside their `.hlsl` sources.
 //!
 //! `FidelityFX_SC.exe` is a Windows executable: on a Windows host it runs directly; elsewhere it runs
 //! under Wine. The Wine half -- provisioning a prefix with a native `d3dcompiler_47.dll`, since Wine's

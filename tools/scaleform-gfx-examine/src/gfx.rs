@@ -28,7 +28,7 @@ impl GfxFile {
         let version = data[3];
         let file_length = u32::from_le_bytes(data[4..8].try_into().unwrap());
 
-        // Validate magic: FWS (uncompressed), CWS (zlib), ZWS (LZMA), CFX/GFX (Scaleform)
+        // The magic: FWS (uncompressed), CWS (zlib), ZWS (LZMA), or CFX and GFX (Scaleform).
         let body = match magic.as_bytes() {
             b"FWS" | b"GFX" => data[8..].to_vec(),
             b"CWS" | b"CFX" => {
@@ -38,14 +38,13 @@ impl GfxFile {
                 out
             }
             b"ZWS" => {
-                // LZMA-compressed. The first 4 bytes after the header are the
-                // compressed size, then 5 bytes of LZMA properties, then the data.
+                // The first four bytes after the header are the compressed size, then five bytes
+                // of LZMA properties, then the data.
                 anyhow::bail!("LZMA-compressed SWF (ZWS) not supported yet");
             }
             _ => anyhow::bail!("unknown magic: {magic:?}"),
         };
 
-        // Skip the SWF frame header: RECT (variable length) + frame_rate (u16) + frame_count (u16)
         let frame_header_end = skip_frame_header(&body)?;
         let tags = Self::parse_tags(&body[frame_header_end..])?;
 
@@ -78,7 +77,7 @@ impl GfxFile {
             }
 
             if pos + length > body.len() {
-                // truncated tag; take what's left
+                // A truncated tag keeps what is left.
                 length = body.len().saturating_sub(pos);
             }
 
@@ -87,7 +86,7 @@ impl GfxFile {
 
             tags.push(Tag { code, data });
 
-            // End tag (code 0) marks the end of the tag list
+            // The End tag (code 0) ends the tag list.
             if code == 0 {
                 break;
             }
@@ -97,14 +96,14 @@ impl GfxFile {
     }
 }
 
-// Helper: read a u16 LE from a slice at the given offset
+/// Read a little-endian u16 at `pos`, advancing past it.
 pub fn read_u16_le(data: &[u8], pos: &mut usize) -> u16 {
     let v = u16::from_le_bytes(data[*pos..*pos + 2].try_into().unwrap());
     *pos += 2;
     v
 }
 
-/// Read a u32 LE from a slice at the given offset
+/// Read a little-endian u32 at `pos`, advancing past it.
 pub fn read_u32_le(data: &[u8], pos: &mut usize) -> u32 {
     let v = u32::from_le_bytes(data[*pos..*pos + 4].try_into().unwrap());
     *pos += 4;
@@ -129,14 +128,14 @@ pub fn read_u30(data: &[u8], pos: &mut usize) -> u32 {
     result
 }
 
-/// Read a null-terminated UTF-8 string from the slice
+/// Read a null-terminated UTF-8 string at `pos`, advancing past its terminator.
 pub fn read_string(data: &[u8], pos: &mut usize) -> String {
     let end = data[*pos..]
         .iter()
         .position(|&b| b == 0)
         .unwrap_or(data.len() - *pos);
     let s = String::from_utf8_lossy(&data[*pos..*pos + end]).to_string();
-    *pos += end + 1; // skip null terminator
+    *pos += end + 1;
     s
 }
 
@@ -147,12 +146,12 @@ fn skip_frame_header(body: &[u8]) -> anyhow::Result<usize> {
         anyhow::bail!("empty body, cannot read frame header");
     }
 
-    // RECT: first 5 bits = Nbits, then 4 fields of Nbits bits each
+    // The RECT: Nbits (5 bits), then four fields of Nbits bits each.
     let nbits = (body[0] >> 3) as usize;
     let total_bits = 5 + 4 * nbits;
     let rect_bytes = total_bits.div_ceil(8);
 
-    // After the RECT: frame_rate (u16) + frame_count (u16)
+    // After the RECT: frame_rate (u16) and frame_count (u16).
     let header_end = rect_bytes + 4;
     if header_end > body.len() {
         anyhow::bail!("frame header extends past body");

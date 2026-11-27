@@ -4,11 +4,9 @@
 //!
 //! This is a Windows binary (`x86_64-pc-windows-msvc`, the workspace default target) run under Wine
 //! against the native `d3dcompiler_47.dll` that `cargo run -p shadergen` provisions; see
-//! `scripts/dxbc.sh`. It replaces the earlier hand-written C harnesses (`compile.c` /
-//! `disasm.c`): the `windows` crate supplies the `D3DCompile` / `D3DDisassemble` bindings, so there
-//! is no manual `LoadLibrary` / `GetProcAddress`, and Rust's stdout writes bytes verbatim -- so the
-//! DXBC blob reaches a redirect intact, without the text-mode CR-LF corruption the C version had to
-//! guard against.
+//! `scripts/dxbc.sh`. The `windows` crate supplies the `D3DCompile` and `D3DDisassemble`
+//! bindings, and Rust's stdout writes bytes verbatim, so the DXBC blob reaches a redirect intact,
+//! with no text-mode CR-LF translation.
 //!
 //! Usage:
 //!   dxbc-tool compile <file.hlsl> <entry> <target>   # writes the DXBC blob to stdout
