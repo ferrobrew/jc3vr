@@ -62,9 +62,8 @@ pub struct Reload<S = bool> {
     pub(crate) retain_radius_scale: f32,
     /// The slowest push of the held magazine's tip into the well's mouth while the old magazine is
     /// still in, along the well into the gun and relative to it, that knocks the old one out,
-    /// metres per second at the player's scale; a slower push is refused. In the 10 November 2026
-    /// session the pushes that came to load were 0.3 to 0.5 m/s at the mouth and the strikes 1.9
-    /// to 3.2.
+    /// metres per second at the player's scale; a slower push is refused, since a loading push is
+    /// slower than a strike.
     pub(crate) push_knock_mps: f32,
     /// How close the top of a held round must come to a launcher's well to catch it, metres. A
     /// launcher's well (a rocket tube's front, the UPU-210's cartridge bay) is large and sits far
@@ -437,8 +436,7 @@ pub struct KnockTuning {
     /// brought to the gun to load moves at a few tenths of a metre per second, and a deliberate
     /// strike at one and a half to three, so a gentle touch does nothing. The speed is one tick's
     /// travel into the magazine, which reads 55 to 70 percent of the hand's peak as it slows into
-    /// the contact: on the 14 November 2026 take strikes whose hands peaked at 1.2 to 1.8 m/s read
-    /// 0.8 to 1.0 and were turned away at 1.0, while the seat attempts read 0.2 to 0.5.
+    /// the contact, so the threshold is set against that reading and not the hand's peak.
     pub min_speed_mps: f32,
     /// How far from the magazine's axis the held tip touches it: a magazine's half-width plus the
     /// held tip's own, and a little of the hand's tracking error.

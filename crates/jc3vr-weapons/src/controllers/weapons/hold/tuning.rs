@@ -438,8 +438,8 @@ impl PouchModelsTuning {
 #[serde(deny_unknown_fields)]
 pub(crate) struct PouchReturnTuning {
     /// A grenade's press. Its reach rises above the pouch: a hand bringing a grenade back stops
-    /// high, and in the 14 November 02:05 session the grenades at 2560 to 2580 s were let go at
-    /// shoulder height, above the pouch, and fell.
+    /// high, and a grenade let go at shoulder height, above the pouch, falls rather than
+    /// returning to it.
     pub grenade: PressTuning,
     /// A held charge's return, near the pouch's surface without a deep push into the chest. The
     /// larger leave margin keeps a draw or a hand resting in the return volume from returning

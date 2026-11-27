@@ -110,8 +110,8 @@ fn a_throw_is_never_attracted() {
 
 #[test]
 fn a_weapon_swung_back_over_the_shoulder_docks() {
-    // The 10 November 17:07 session's holsters over the shoulder let go at 3.6 and 3.9 m/s, behind
-    // the line through the shoulder joints.
+    // A holster over the shoulder is let go at 3.6 to 3.9 m/s, behind the line through the shoulder
+    // joints.
     let behind = Vec3::new(0.2, 1.6, 0.12);
     assert_eq!(attracted(behind, 3.9), Some(Socket::Shoulder(Hand::Right)));
 }

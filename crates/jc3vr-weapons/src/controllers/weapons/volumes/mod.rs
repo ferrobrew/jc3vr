@@ -55,9 +55,9 @@ pub struct VolumesTuning {
     pub(crate) pouches: PouchTuning,
     /// How far the back's sockets' reach is moved from where their weapons sit, in the chest's
     /// frame (+X right, mirrored for the left side; +Y up the spine; +Z back), metres: down by about
-    /// a hand's width and out from the spine. In the 10 November 17:07 session the releases over
-    /// the shoulder that dropped the weapon came lower and further out than the place; the draws,
-    /// which closed at eye height behind the head on the weapon, are left there
+    /// a hand's width and out from the spine. Releases over the shoulder that drop the weapon come
+    /// lower and further out than the place; the draws, which close at eye height behind the head
+    /// on the weapon, are left there
     /// ([`reach_back_sockets`]).
     pub(crate) back_reach_offset_m: Vec3,
     /// The look down below which the chest pouches ride the chest as it is, radians: about ten
@@ -171,8 +171,7 @@ impl VolumesTuning {
 #[serde(deny_unknown_fields)]
 pub struct SocketTuning {
     /// The sockets on both hips. A hand reaching for the pistol closes on the front of the hip
-    /// more often than on the pistol's grip behind it, and in the 10 November 17:07 session five
-    /// draws missed a reach of 0.18 m by 1 to 4 cm.
+    /// more often than on the pistol's grip behind it.
     pub(crate) hip_radius_m: f32,
     /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
     /// the left one where it docks the special slot.
@@ -188,21 +187,17 @@ pub struct SocketTuning {
 pub(crate) struct PouchTuning {
     /// The grenade pouch, offset from the chest's front on its side: at the chest's surface and a
     /// little below the landmark, and wider than the magazine pouch, so that both a hand laid flat
-    /// on the chest with the gaze level and a hand reaching out in front of it close inside it. In
-    /// the 2 November 2026 standing session a pouch centred a few centimetres out from the surface
-    /// missed hands laid on the chest by 4 to 10 cm, which sat about 13 cm behind and 4 cm below
-    /// its centre, while the takes came from hands pushed out in front of the chest. Of that
-    /// session's level-gaze presses at the chest, the shipped centre and radius take 22 of 48,
-    /// against 18 for the old pouch and 17 for one moved the whole 13 cm back. The pouch models sit
+    /// on the chest with the gaze level and a hand reaching out in front of it close inside it. A
+    /// pouch centred a few centimetres out from the surface misses hands laid on the chest, which
+    /// sit behind and below its centre, while the hands reaching out in front of the chest are the
+    /// ones it is meant to catch. The shipped centre and radius take more of those presses than the
+    /// old pouch or one moved back. The pouch models sit
     /// partly inside the character's chest until his chest is aligned with the player's.
     pub grenade: VolumeSpec,
     /// The C4 pouch, offset from the chest's front on its side: as the grenade pouch, but wider and
     /// nearer the midline. The charge is taken with the hand reaching across the body to the far
-    /// side of the chest, and that hand stops short of the far shoulder: in the 10 November 17:07
-    /// session every take and near miss closed 11 to 17 cm toward the midline from a pouch under
-    /// the shoulder joint, so that all seven takes came from the reach margin and five presses
-    /// missed it by up to 3 cm. Moved 10 cm in, the pouch takes eleven of those twelve presses
-    /// inside its own radius and the last within its margin.
+    /// side of the chest, and that hand stops short of the far shoulder, so the pouch sits nearer
+    /// the midline than a pouch under the shoulder joint would.
     pub c4: VolumeSpec,
     /// The universal reload pouch, offset from the belt's front, at its middle or on one side
     /// ([`centre_magazine_pouch`], [`magazine_pouch`]): its centre a few centimetres out from the

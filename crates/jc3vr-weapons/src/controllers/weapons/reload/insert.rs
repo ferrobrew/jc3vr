@@ -770,8 +770,7 @@ mod tests {
             occupied: true,
             ..inputs(false, top, Vec3::ZERO)
         };
-        // Below the threshold, as the 10 November loading pushes came (0.3 to 0.5 m/s), and above
-        // it, as its strikes did (1.9 to 3.2 m/s).
+        // Loading pushes sit below the threshold, and strikes above it.
         for (speed, knocks) in [(0.4, false), (0.6, false), (0.9, true), (2.5, true)] {
             let mut i = Insertion::new();
             take(&mut i);

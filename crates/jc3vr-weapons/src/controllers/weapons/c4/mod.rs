@@ -1090,8 +1090,8 @@ static ACT_DETONATOR: Mutex<Option<(usize, Hand)>> = Mutex::new(None);
 
 /// Place the detonator the game shows during its detonate act in the hand whose press asked for
 /// the detonation. The game shows the weapon's own model for as long as the act plays and puts it
-/// at the act's attach bone, taken raw, which on the hand the mod poses drew it upside down and
-/// out of the fist on the 14 November take. The model is held at the hand's grip as the owned
+/// at the act's attach bone, taken raw, which on the hand the mod poses draws upside down and
+/// out of the fist. The model is held at the hand's grip as the owned
 /// detonator is ([`C4Tuning::detonator_hold`]), its previous transform set too on the act's first
 /// update so it does not sweep in from the bone.
 ///
@@ -1177,8 +1177,8 @@ unsafe fn read_weapon(weapon: &mut PlantedExplosiveWeapon, user: &Character) -> 
     let may_detonate = unsafe { user.m_Inventory.GetAnimationAllowsTriggeringExplosives() };
     // The planting permission keeps the game's planting animation out of falls, landings,
     // ragdolls, and the like; a charge the hand takes and throws plays none, so only the live
-    // charges' cap refuses it. Refused for the permission, three thrown charges vanished from the
-    // open hand on the 14 November take.
+    // charges' cap refuses it. Refusing a thrown charge for the permission would make it vanish
+    // from the open hand.
     let refusal = (live >= max).then_some(Refusal::NoRoom);
     WeaponReading {
         view: WeaponView {

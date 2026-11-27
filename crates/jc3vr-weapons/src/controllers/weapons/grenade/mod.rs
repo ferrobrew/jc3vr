@@ -699,7 +699,7 @@ fn return_to_pouch(game: &GameTick<'_>, hand: Hand) {
     if let Err(error) = stock::may_give_back(game) {
         tracing::info!(target: "controllers", hand = hand.label(), %error, "grenade: the pouch refused the grenade");
         STATE.lock().status.returns_refused += 1;
-        // The brief refusal buzz went unnoticed on the 14 November take, and six grenades fell.
+        // A brief buzz alone goes unnoticed.
         haptics::play(hand, Event::PouchFull);
         // A click as well, the dry fire of the gun the other hand holds, or else of a gun carried
         // on the body, so the refusal is heard.

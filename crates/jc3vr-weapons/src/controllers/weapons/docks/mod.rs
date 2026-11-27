@@ -396,8 +396,8 @@ fn seated_waist(owner: &Character) -> Option<[Option<Mat4>; Socket::COUNT]> {
     let player = body::player();
     let dimensions = PlayerBody::from_heights(player.height, player.eye_height);
     // The waist hangs from the neck as it was when the player sat, not as it is: a player leaning
-    // to look at a thigh or reaching toward the knees does not move their hips, and on the
-    // 14 November take a lean of half a metre carried a docked SMG out through the cabin wall.
+    // to look at a thigh or reaching toward the knees does not move their hips, so a lean
+    // does not carry a docked SMG out through the cabin wall.
     // The neck is taken only once the player's posture reads seated, since the seat locks before a
     // standing player sits down, and afresh at every change of the cockpit frame (a recenter, a
     // bank, the seat lock's yaw re-base), which would otherwise turn a neck kept in it away from

@@ -2,8 +2,8 @@
 //!
 //! The belt's volumes ride the hip joints of Rico's drawn skeleton, and a gait clip swings his
 //! pelvis about ten degrees each way every stride and bobs the hips by about ten centimetres. A
-//! hand reaching for a pouch while running met a pouch that moved under it: on the 14 November take
-//! three sprinting grabs at 2043 to 2046 s missed by 2 to 10 cm, and the grab standing still took.
+//! hand reaching for a pouch while running meets a pouch that moves under it, so sprinting grabs
+//! miss where a grab standing still does not.
 //! While Rico moves, the hip joints the volumes are built on are low-passed over about a stride, so
 //! the belt keeps the stride's average place; standing still, they follow the skeleton at once.
 
