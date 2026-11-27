@@ -4,7 +4,7 @@
 
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, SeatAccess, TargetKind},
-    physics::{bodies, vehicles},
+    physics::{bodies, error::PhysicsError, vehicles},
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::Hand;
@@ -114,9 +114,7 @@ pub(super) unsafe fn keep_latch(
                     let opening_at = *latch.opening_at.get_or_insert(now);
                     if matches!(
                         e,
-                        bodies::BodyError::NoBody
-                            | bodies::BodyError::NotDynamic
-                            | bodies::BodyError::BadMotion
+                        PhysicsError::NoBody | PhysicsError::NotDynamic | PhysicsError::BadMotion
                     ) && now.saturating_duration_since(opening_at).as_secs_f32()
                         < config.unlatch_settle_s
                     {

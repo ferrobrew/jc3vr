@@ -13,7 +13,7 @@ use jc3vr_body::controllers::{
     held::handover::HandedProp,
     physics::{
         bodies,
-        bodies::BodyError,
+        error::PhysicsError,
         scan::{self, Aabb},
     },
 };
@@ -59,7 +59,7 @@ pub unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
 /// The main thread, outside the physics step; `object` must be held alive or come from a cast this
 /// tick.
 #[inline]
-pub unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyError> {
+pub unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, PhysicsError> {
     unsafe { bodies::position(body, object) }
 }
 
@@ -69,7 +69,7 @@ pub unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyErro
 /// # Safety
 ///
 /// The main thread, outside the physics step; `object` must be held alive.
-pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), BodyError> {
+pub unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), PhysicsError> {
     let loosened = unsafe { bodies::loosen(object, body) }?;
     if loosened {
         tracing::info!(target: "controllers", body, "physical hands: a placed object was turned loose for the snatch");
@@ -123,7 +123,7 @@ pub unsafe fn push(
     owner: NonZeroUsize,
     impulse: Vec3,
     at: Vec3,
-) -> Result<(), BodyError> {
+) -> Result<(), PhysicsError> {
     unsafe { bodies::shove(body, owner, impulse, at) }
 }
 
@@ -148,7 +148,7 @@ pub unsafe fn pull_ragdoll(
     owner: NonZeroUsize,
     impulse: Vec3,
     at: Vec3,
-) -> Result<(), BodyError> {
+) -> Result<(), PhysicsError> {
     let ragdoll = unsafe { engine::is_character(character) }
         .then(|| unsafe { Ragdoll::of(&*(character.get() as *const Character)) })
         .flatten();

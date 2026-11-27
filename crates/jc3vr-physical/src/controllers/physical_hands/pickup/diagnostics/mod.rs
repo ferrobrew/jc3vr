@@ -15,10 +15,7 @@ mod tests;
 use jc3vr_body::controllers::{
     grab::{GrabVolume, latch::GripLatch, resolve, resolve::Lost, tick::Tick, world_reach::Reach},
     intent::controls::ButtonControl,
-    physics::{
-        bodies::{BodyError, BodyState},
-        rigid::Velocities,
-    },
+    physics::{bodies::BodyState, error::PhysicsError, rigid::Velocities},
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_view::recorder::tracking::{
@@ -115,7 +112,7 @@ pub enum ConsumerResult {
     CharacterRefused,
     BodyAccepted { joined: bool },
     FixedOrTooHeavy,
-    BodyRefused(BodyError),
+    BodyRefused(PhysicsError),
 }
 
 /// The last observed carried-body write or joined-body report for an accepted request.
@@ -126,7 +123,7 @@ pub struct DriveRecord {
     pub before: BodyState,
     /// None for a joint-driven hold. This is the requested value, not a post-step observation.
     pub commanded: Option<Velocities>,
-    pub result: Option<Result<(), BodyError>>,
+    pub result: Option<Result<(), PhysicsError>>,
     pub report: Option<HeldReport>,
 }
 

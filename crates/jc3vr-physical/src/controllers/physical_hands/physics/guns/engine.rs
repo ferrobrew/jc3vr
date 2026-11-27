@@ -5,7 +5,11 @@ use std::{fmt, ptr::NonNull};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{equipment::weapon::WeaponData, havok::hknpShape, physics::PfxRigidBody};
-use jc3vr_body::controllers::{aim::gun, held::guns::HeldGun, physics::bodies};
+use jc3vr_body::controllers::{
+    aim::gun,
+    held::guns::HeldGun,
+    physics::{bodies, error::PhysicsError},
+};
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::{
@@ -29,8 +33,8 @@ pub(super) struct GunSource {
 /// Why a gun body could not be made.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GunError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
+    /// The physics world could not be reached.
+    Physics(PhysicsError),
     /// The gun's own body is gone, or is no longer the gun's: the weapon was destroyed or changed.
     GunGone,
     /// The gun's own body has no shape.
@@ -54,7 +58,7 @@ pub enum GunError {
 impl fmt::Display for GunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let what = match self {
-            GunError::NoPhysicsWorld => "the physics world does not exist",
+            GunError::Physics(e) => return write!(f, "held guns: {e}"),
             GunError::GunGone => "the gun's own body is gone or no longer the gun's",
             GunError::NoShape => "the gun's own body has no shape",
             GunError::BadPose => "the gun's placement is not finite",
@@ -79,7 +83,7 @@ impl std::error::Error for GunError {}
 /// The thread that steps the physics world, outside the step.
 pub(super) unsafe fn read_source(held: &HeldGun) -> Result<GunSource, GunError> {
     unsafe { check_own_body(held) }?;
-    let world = unsafe { World::get() }.ok_or(GunError::NoPhysicsWorld)?;
+    let world = unsafe { World::require() }.map_err(GunError::Physics)?;
     let world = world.world();
     let slot = unsafe { &*world.m_bodies.add(held.body as usize) };
     // SAFETY: the body's instance is the gun's wrapper, so the gun that owns it is alive.
@@ -121,7 +125,7 @@ pub(super) unsafe fn read_source(held: &HeldGun) -> Result<GunSource, GunError> 
 ///
 /// As [`read_source`].
 pub(super) unsafe fn check_own_body(held: &HeldGun) -> Result<(), GunError> {
-    let world = unsafe { World::get() }.ok_or(GunError::NoPhysicsWorld)?;
+    let world = unsafe { World::require() }.map_err(GunError::Physics)?;
     let world = world.world();
     if world.m_motions.is_null()
         || unsafe { bodies::slot(world, held.body) }.is_none()

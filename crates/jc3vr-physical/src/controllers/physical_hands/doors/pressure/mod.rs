@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{
         raycast,
         raycast::{CastOptions, RaycastError},
     },
-    physics::{bodies, vehicles},
+    physics::{bodies, error::PhysicsError, vehicles},
 };
 
 use crate::controllers::glass::bullets::names_hidden_pane;
@@ -157,7 +157,7 @@ impl Press {
         error
     }
 
-    fn body_failure(&mut self, error: bodies::BodyError, mapped: DoorError) -> DoorError {
+    fn body_failure(&mut self, error: PhysicsError, mapped: DoorError) -> DoorError {
         self.diagnostics.failed(mapped, Some(error));
         mapped
     }

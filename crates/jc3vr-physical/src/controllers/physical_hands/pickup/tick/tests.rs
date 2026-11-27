@@ -22,14 +22,14 @@ struct FakeBodies {
 }
 
 impl BodyEngine for FakeBodies {
-    fn read(&mut self, _: u32, _: NonZeroUsize) -> Result<bodies::BodyState, bodies::BodyError> {
+    fn read(&mut self, _: u32, _: NonZeroUsize) -> Result<bodies::BodyState, PhysicsError> {
         self.calls.push("read");
         Ok(self.body)
     }
     fn release_joints(&mut self, _: &Held) {
         self.calls.push("unjoin");
     }
-    fn drive(&mut self, _: &Held, velocities: Velocities) -> Result<(), bodies::BodyError> {
+    fn drive(&mut self, _: &Held, velocities: Velocities) -> Result<(), PhysicsError> {
         assert_eq!(self.calls.last(), Some(&"unjoin"));
         self.calls.push("drive");
         self.driven = Some(velocities);
@@ -104,20 +104,16 @@ fn run(state: &mut PickupState, join: bool, fake: &mut FakeBodies) -> TickOutcom
 fn a_fixture_activation_refusal_stops_before_reading_or_taking_the_body() {
     struct Fixture;
     impl BodyEngine for Fixture {
-        fn loosen(&mut self, _: u32, _: NonZeroUsize) -> Result<(), bodies::BodyError> {
-            Err(bodies::BodyError::Fixture)
+        fn loosen(&mut self, _: u32, _: NonZeroUsize) -> Result<(), PhysicsError> {
+            Err(PhysicsError::Fixture)
         }
-        fn read(
-            &mut self,
-            _: u32,
-            _: NonZeroUsize,
-        ) -> Result<bodies::BodyState, bodies::BodyError> {
+        fn read(&mut self, _: u32, _: NonZeroUsize) -> Result<bodies::BodyState, PhysicsError> {
             panic!("a refused fixture must not be read for acquisition");
         }
         fn release_joints(&mut self, _: &Held) {
             panic!("a refused fixture has no joint");
         }
-        fn drive(&mut self, _: &Held, _: Velocities) -> Result<(), bodies::BodyError> {
+        fn drive(&mut self, _: &Held, _: Velocities) -> Result<(), PhysicsError> {
             panic!("a refused fixture must not be driven");
         }
     }
@@ -135,7 +131,7 @@ fn a_fixture_activation_refusal_stops_before_reading_or_taking_the_body() {
     assert!(state.held.iter().all(Option::is_none));
     assert!(!outcome.taken[0]);
     assert!(outcome.refused[0].is_some());
-    assert_eq!(outcome.error, Some(bodies::BodyError::Fixture.to_string()));
+    assert_eq!(outcome.error, Some(PhysicsError::Fixture.to_string()));
 }
 
 #[test]

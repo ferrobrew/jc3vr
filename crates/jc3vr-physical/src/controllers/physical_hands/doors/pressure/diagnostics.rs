@@ -1,7 +1,7 @@
 use std::num::NonZeroUsize;
 
 use jc3gi::vehicle::vehicle::DoorSlot;
-use jc3vr_body::controllers::{grab::world_reach::DoorTarget, physics::bodies::BodyError};
+use jc3vr_body::controllers::{grab::world_reach::DoorTarget, physics::error::PhysicsError};
 
 use crate::controllers::physical_hands::doors::{engine::DoorError, slot_label, tuning::DOORS};
 
@@ -99,7 +99,7 @@ impl Diagnostics {
         }
     }
 
-    pub(super) fn failed(&mut self, error: DoorError, body_error: Option<BodyError>) {
+    pub(super) fn failed(&mut self, error: DoorError, body_error: Option<PhysicsError>) {
         if self.failure_changed(error, body_error) {
             tracing::warn!(target: "controllers",
                 vehicle = self.target.map(|(vehicle, _, _)| vehicle.get()),
@@ -110,7 +110,7 @@ impl Diagnostics {
         }
     }
 
-    fn failure_changed(&mut self, error: DoorError, body_error: Option<BodyError>) -> bool {
+    fn failure_changed(&mut self, error: DoorError, body_error: Option<PhysicsError>) -> bool {
         self.reason(Reason::NativeFailure(error));
         let failure = Failure {
             target: self.target,
@@ -133,7 +133,7 @@ impl Default for Diagnostics {
 struct Failure {
     target: Option<(NonZeroUsize, u32, DoorSlot)>,
     error: DoorError,
-    body_error: Option<BodyError>,
+    body_error: Option<PhysicsError>,
 }
 
 #[cfg(test)]
@@ -171,16 +171,16 @@ mod tests {
     fn failure_deduplication_preserves_native_body_context() {
         let mut diagnostics = Diagnostics::new();
         diagnostics.target(target());
-        assert!(diagnostics.failure_changed(DoorError::NoLooseBody, Some(BodyError::NoBody)));
-        assert!(!diagnostics.failure_changed(DoorError::NoLooseBody, Some(BodyError::NoBody)));
+        assert!(diagnostics.failure_changed(DoorError::NoLooseBody, Some(PhysicsError::NoBody)));
+        assert!(!diagnostics.failure_changed(DoorError::NoLooseBody, Some(PhysicsError::NoBody)));
         diagnostics.idle(Reason::NoContact);
         diagnostics.target(target());
-        assert!(!diagnostics.failure_changed(DoorError::NoLooseBody, Some(BodyError::NoBody)));
-        assert!(diagnostics.failure_changed(DoorError::NoLooseBody, Some(BodyError::Reowned)));
+        assert!(!diagnostics.failure_changed(DoorError::NoLooseBody, Some(PhysicsError::NoBody)));
+        assert!(diagnostics.failure_changed(DoorError::NoLooseBody, Some(PhysicsError::Reowned)));
         let mut other = target();
         other.part_index += 1;
         diagnostics.target(other);
-        assert!(diagnostics.failure_changed(DoorError::NoLooseBody, Some(BodyError::Reowned)));
+        assert!(diagnostics.failure_changed(DoorError::NoLooseBody, Some(PhysicsError::Reowned)));
         assert_eq!(
             diagnostics.readout.reason,
             Reason::NativeFailure(DoorError::NoLooseBody)

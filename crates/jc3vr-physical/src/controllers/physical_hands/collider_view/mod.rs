@@ -25,7 +25,10 @@ mod scan;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
-use jc3vr_body::controllers::{held::guns, physics::scan::MotionKind};
+use jc3vr_body::controllers::{
+    held::guns,
+    physics::{error::PhysicsError, scan::MotionKind},
+};
 use jc3vr_core::published::{Stamp, Step};
 use jc3vr_view::{
     controllers::overlay::{
@@ -36,7 +39,7 @@ use jc3vr_view::{
 };
 use parking_lot::Mutex;
 
-pub use self::{config::ColliderViewConfig, scan::ScanError};
+pub use self::config::ColliderViewConfig;
 use self::{
     draw::{DrawInputs, Drawn, Flash},
     model::{BodyKind, JointKind, Snapshot, gazed},
@@ -241,7 +244,7 @@ pub(crate) unsafe fn scan_moving(
     centre: Vec3,
     radius_m: f32,
     max_bodies: u32,
-) -> Result<Snapshot, ScanError> {
+) -> Result<Snapshot, PhysicsError> {
     // SAFETY: forwarded from the caller.
     unsafe { scan::scan(centre, radius_m, max_bodies as usize, false, &mod_ids()) }
 }

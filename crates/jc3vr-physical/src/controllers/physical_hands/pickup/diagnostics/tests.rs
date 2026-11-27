@@ -337,12 +337,12 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
         assert!(outcome.refused[0].is_some());
     }
     for error in [
-        BodyError::NoPhysicsWorld,
-        BodyError::NoBody,
-        BodyError::NotDynamic,
-        BodyError::Reowned,
-        BodyError::BadMotion,
-        BodyError::Fixture,
+        PhysicsError::NoPhysicsWorld,
+        PhysicsError::NoBody,
+        PhysicsError::NotDynamic,
+        PhysicsError::Reowned,
+        PhysicsError::BadMotion,
+        PhysicsError::Fixture,
     ] {
         let mut state = PickupState::new();
         let mut outcome = TickOutcome::default();

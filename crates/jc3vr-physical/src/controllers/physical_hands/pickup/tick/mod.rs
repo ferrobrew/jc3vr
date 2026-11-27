@@ -8,7 +8,7 @@ use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
-    physics::{bodies, rigid::Velocities},
+    physics::{bodies, error::PhysicsError, rigid::Velocities},
     telemetry::{Released, Thrown, note_release, note_throw},
 };
 use jc3vr_core::published::Stamp;
@@ -542,7 +542,7 @@ unsafe fn tick_with(
                         state, i, acquired,
                     ) {
                         outcome.taken[i] = false;
-                        result = ConsumerResult::BodyRefused(bodies::BodyError::Reowned);
+                        result = ConsumerResult::BodyRefused(PhysicsError::Reowned);
                         outcome.refuse(
                             hand,
                             reach.point,
@@ -871,20 +871,16 @@ unsafe fn tick_with(
 }
 
 trait BodyEngine {
-    fn read(
-        &mut self,
-        body: u32,
-        object: NonZeroUsize,
-    ) -> Result<bodies::BodyState, bodies::BodyError>;
+    fn read(&mut self, body: u32, object: NonZeroUsize) -> Result<bodies::BodyState, PhysicsError>;
     fn release_joints(&mut self, held: &Held);
-    fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError>;
+    fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), PhysicsError>;
     /// Whether the held body rests against the player's own drawn torso
     /// ([`drawn_body::rests_against`]).
     fn rests_against_player(&mut self, _body: u32) -> bool {
         false
     }
     /// Turn a placed object at rest loose ([`bodies::loosen`]); a dynamic body is left as it is.
-    fn loosen(&mut self, _body: u32, _object: NonZeroUsize) -> Result<(), bodies::BodyError> {
+    fn loosen(&mut self, _body: u32, _object: NonZeroUsize) -> Result<(), PhysicsError> {
         Ok(())
     }
 }
@@ -892,23 +888,19 @@ trait BodyEngine {
 struct NativeBodies;
 
 impl BodyEngine for NativeBodies {
-    fn read(
-        &mut self,
-        body: u32,
-        object: NonZeroUsize,
-    ) -> Result<bodies::BodyState, bodies::BodyError> {
+    fn read(&mut self, body: u32, object: NonZeroUsize) -> Result<bodies::BodyState, PhysicsError> {
         unsafe { bodies::read(body, object) }
     }
     fn release_joints(&mut self, held: &Held) {
         unsafe { physics::release_body_joints(held.object, held.body) };
     }
-    fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError> {
+    fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), PhysicsError> {
         unsafe { bodies::drive(held.body, held.object, velocity) }
     }
     fn rests_against_player(&mut self, body: u32) -> bool {
         unsafe { drawn_body::rests_against(body) }
     }
-    fn loosen(&mut self, body: u32, object: NonZeroUsize) -> Result<(), bodies::BodyError> {
+    fn loosen(&mut self, body: u32, object: NonZeroUsize) -> Result<(), PhysicsError> {
         let changed = unsafe { bodies::loosen(object, body) }?;
         if changed {
             tracing::info!(
@@ -933,7 +925,7 @@ pub(super) struct BodyGrab {
 pub(super) fn take_body(
     state: &mut PickupState,
     grab: BodyGrab,
-    body: Result<bodies::BodyState, bodies::BodyError>,
+    body: Result<bodies::BodyState, PhysicsError>,
     config: &PickupTuning,
     strength: HandStrength,
     outcome: &mut TickOutcome,
@@ -1227,7 +1219,7 @@ fn throw(
     palm: Option<PalmMotion>,
     config: &PickupTuning,
     strength: HandStrength,
-) -> Result<Option<(f32, Velocities)>, bodies::BodyError> {
+) -> Result<Option<(f32, Velocities)>, PhysicsError> {
     let body = engine.read(held.body, held.object)?;
     let Some(palm) = palm else {
         return Ok(None);

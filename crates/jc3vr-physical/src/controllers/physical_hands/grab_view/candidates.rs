@@ -8,14 +8,14 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 use jc3vr_body::controllers::{
     grab::world_reach::TargetKind,
-    physics::{bodies, vehicles},
+    physics::{bodies, error::PhysicsError, vehicles},
 };
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
     bodies::classify,
     collider_view,
-    collider_view::{ScanError, model::BodyKind},
+    collider_view::model::BodyKind,
     doors::engine::broken_off,
     grab_view::model::{Candidate, CandidateKind},
     grasp,
@@ -34,7 +34,7 @@ pub(super) unsafe fn scan(
     hands: [Option<Vec3>; 2],
     standing_on: Option<u32>,
     tuning: &GrabViewTuning,
-) -> Result<Vec<Candidate>, ScanError> {
+) -> Result<Vec<Candidate>, PhysicsError> {
     let tracked: Vec<(Hand, Vec3)> = Hand::BOTH
         .into_iter()
         .filter_map(|hand| hands[hand.index()].map(|p| (hand, p)))

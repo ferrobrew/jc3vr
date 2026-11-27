@@ -10,8 +10,6 @@
 //! kinds are read from their relative arrays ([`hknpConvexShape::m_vertices`],
 //! [`hknpConvexPolytopeShape::m_faces`]), and every other kind is drawn by its box.
 
-use std::fmt;
-
 use glam::{Vec3, Vec3A};
 use jc3gi::{
     character::character::Character,
@@ -48,39 +46,6 @@ pub(super) struct ModIds {
     pub(super) joints: Vec<(JointKind, u32)>,
 }
 
-/// Why the world could not be read.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ScanError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
-    /// The world has no body array.
-    NoBodies,
-}
-
-impl fmt::Display for ScanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ScanError::NoPhysicsWorld => {
-                write!(f, "collider view: the physics world does not exist")
-            }
-            ScanError::NoBodies => write!(f, "collider view: the world has no body array"),
-        }
-    }
-}
-
-impl std::error::Error for ScanError {}
-
-impl From<PhysicsError> for ScanError {
-    /// The scan's cause for a substrate scan's error: a missing world, or a world without its body
-    /// array, the only two the substrate's scans fail with.
-    fn from(error: PhysicsError) -> Self {
-        match error {
-            PhysicsError::NoPhysicsWorld => ScanError::NoPhysicsWorld,
-            _ => ScanError::NoBodies,
-        }
-    }
-}
-
 /// Read the bodies whose boxes come within `radius_m` of `centre` (game space), the nearest
 /// `max_bodies` of them; static bodies only with `static_bodies`, but for the player's ground.
 ///
@@ -93,12 +58,12 @@ pub(super) unsafe fn scan(
     max_bodies: usize,
     static_bodies: bool,
     mods: &ModIds,
-) -> Result<Snapshot, ScanError> {
-    let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
+) -> Result<Snapshot, PhysicsError> {
+    let world = unsafe { World::require() }?;
     let shift = world.shift;
     let w = world.world();
     if w.m_bodies.is_null() {
-        return Err(ScanError::NoBodies);
+        return Err(PhysicsError::NoBody);
     }
     let space = Space::of(w);
     let player = unsafe { player_proxy() };
@@ -181,11 +146,11 @@ pub(super) unsafe fn scan(
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(super) unsafe fn refresh(snapshot: &mut Snapshot, centre: Vec3) -> Result<(), ScanError> {
-    let world = unsafe { World::get() }.ok_or(ScanError::NoPhysicsWorld)?;
+pub(super) unsafe fn refresh(snapshot: &mut Snapshot, centre: Vec3) -> Result<(), PhysicsError> {
+    let world = unsafe { World::require() }?;
     let w = world.world();
     if w.m_bodies.is_null() {
-        return Err(ScanError::NoBodies);
+        return Err(PhysicsError::NoBody);
     }
     let space = Space::of(w);
     snapshot.bodies.retain_mut(|body| {

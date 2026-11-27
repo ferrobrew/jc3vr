@@ -16,7 +16,7 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     aim::grapple_weapons,
     grab::world_reach::TargetKind,
-    physics::{bodies::*, vehicles},
+    physics::{bodies::*, error::PhysicsError, vehicles},
 };
 
 use crate::controllers::physical_hands::doors::engine as door_engine;
@@ -72,15 +72,15 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
             .ok_or(Unclassified::NoMass),
         // A placed object at rest is as loose as a dynamic one: the game keeps its mass, and
         // [`loosen`] turns it dynamic when a hand or the snatch takes it.
-        Err(BodyError::NotDynamic) => unsafe { placed_mass(object, body) }
+        Err(PhysicsError::NotDynamic) => unsafe { placed_mass(object, body) }
             .map(|mass_kg| TargetKind::Prop { mass_kg })
-            .ok_or(Unclassified::Body(BodyError::NotDynamic)),
+            .ok_or(Unclassified::Body(PhysicsError::NotDynamic)),
         Err(e) => Err(Unclassified::Body(e)),
     }
 }
 
 fn vehicle_kind(
-    state: Result<BodyState, BodyError>,
+    state: Result<BodyState, PhysicsError>,
     occupied: bool,
 ) -> Result<TargetKind, Unclassified> {
     if occupied {
@@ -101,7 +101,7 @@ pub enum Unclassified {
     WeaponNotDropped(i32),
     WeaponOwned,
     /// The reached body cannot be read as a loose one: static, keyframed, or gone.
-    Body(BodyError),
+    Body(PhysicsError),
     /// The body's mass is infinite.
     NoMass,
     /// A fixed gameplay fixture is neither carried nor activated.
@@ -195,7 +195,11 @@ mod tests {
         ] {
             assert_eq!(vehicle_kind(state(mass), false), Err(Unclassified::NoMass));
         }
-        for why in [BodyError::NotDynamic, BodyError::NoBody, BodyError::Reowned] {
+        for why in [
+            PhysicsError::NotDynamic,
+            PhysicsError::NoBody,
+            PhysicsError::Reowned,
+        ] {
             assert_eq!(vehicle_kind(Err(why), false), Err(Unclassified::Body(why)));
         }
     }

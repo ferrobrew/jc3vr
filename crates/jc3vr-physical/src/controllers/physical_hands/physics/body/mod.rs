@@ -37,7 +37,7 @@ use jc3gi::{
     types::{math::Matrix4, vector_math::AlignedQuat},
 };
 use jc3vr_body::controllers::physics::{
-    bodies, characters::proxy_body, havok::vector as havok_vector,
+    bodies, characters::proxy_body, error::PhysicsError, havok::vector as havok_vector,
 };
 
 use crate::controllers::physical_hands::{
@@ -52,8 +52,9 @@ use crate::controllers::physical_hands::{
 /// Why a hand body could not be made, read, or driven.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BodyError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
+    /// The world could not be reached, or the body's state, or a value to drive it with, is not
+    /// finite.
+    Physics(PhysicsError),
     /// The engine allocator returned nothing for the wrapper.
     NoWrapperMemory,
     /// The Havok heap returned nothing for the shape.
@@ -64,19 +65,16 @@ pub enum BodyError {
     Lost,
     /// The body's contacts could not be listened for.
     Contacts(ContactError),
-    /// The body's state holds a value that is not finite.
-    BadMotion,
 }
 
 impl fmt::Display for BodyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let what = match self {
-            BodyError::NoPhysicsWorld => "the physics world does not exist",
+            BodyError::Physics(e) => return write!(f, "hand bodies: {e}"),
             BodyError::NoWrapperMemory => "the engine allocator gave no memory for the wrapper",
             BodyError::NoShape => "the Havok heap gave no capsule shape",
             BodyError::NoBodyId => "the world gave the new body no id",
             BodyError::Lost => "the body's slot no longer holds the hand's body",
-            BodyError::BadMotion => "the body's state is not finite",
             BodyError::Contacts(e) => return fmt::Display::fmt(e, f),
         };
         write!(f, "hand bodies: {what}")
@@ -84,6 +82,12 @@ impl fmt::Display for BodyError {
 }
 
 impl std::error::Error for BodyError {}
+
+impl From<PhysicsError> for BodyError {
+    fn from(error: PhysicsError) -> Self {
+        BodyError::Physics(error)
+    }
+}
 
 /// The capsule a hand body is: a segment along the hand's fingers, centred on the palm.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -145,7 +149,7 @@ impl HandBody {
         orientation: Quat,
     ) -> Result<Self, BodyError> {
         let source = source.into();
-        let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let mut world = unsafe { World::require() }?;
         // The wrapper's memory first: it is the one allocation a failure after the body is made
         // could not return without destroying the body. A failure before then frees it.
         let memory =
@@ -250,7 +254,7 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn filter_info(&self) -> Result<u32, BodyError> {
-        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let world = unsafe { World::require() }?;
         let slot = unsafe { self.slot(world.world()) }?;
         Ok(slot.m_collisionFilterInfo)
     }
@@ -261,7 +265,7 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn raises_contact_events(&self) -> Result<bool, BodyError> {
-        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let world = unsafe { World::require() }?;
         let slot = unsafe { self.slot(world.world()) }?;
         Ok(slot.m_flags & hknpBody::RAISE_CONTACT_IMPULSE_EVENTS != 0)
     }
@@ -300,12 +304,11 @@ impl HandBody {
     /// As [`HandBody::create`].
     pub unsafe fn motion(&self) -> Result<BodyMotion, BodyError> {
         let access = unsafe { self.checked() }?;
-        let world = access.world.world();
-        let slot = unsafe { self.slot(world) }?;
+        let slot = unsafe { self.slot(access.world.world()) }?;
         let mut transform = Matrix4::IDENTITY;
         unsafe { access.wrapper.as_ref().GetTransform(&mut transform) };
         let transform = Mat4::from(transform);
-        let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
+        let motion = access.world.motion(slot).ok_or(PhysicsError::BadMotion)?;
         let frame = Quat::from_array(motion.m_orientation.data);
         let linear = Vec3::from_array(motion.m_linearVelocity.data);
         let local_angular = Vec3::from_array(motion.m_angularVelocity.data);
@@ -321,7 +324,7 @@ impl HandBody {
             && iy.is_finite()
             && iz.is_finite())
         {
-            return Err(BodyError::BadMotion);
+            return Err(PhysicsError::BadMotion.into());
         }
         let frame = frame.normalize();
         let rotation = Mat3::from_quat(frame);
@@ -343,15 +346,14 @@ impl HandBody {
     ///
     /// As [`HandBody::create`].
     pub unsafe fn centre_of_mass(&self) -> Result<Vec3, BodyError> {
-        let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
-        let world = world.world();
-        let slot = unsafe { self.slot(world) }?;
-        let motion = unsafe { &*world.m_motions.add(slot.m_motionId as usize) };
+        let world = unsafe { World::require() }?;
+        let slot = unsafe { self.slot(world.world()) }?;
+        let motion = world.motion(slot).ok_or(PhysicsError::BadMotion)?;
         let centre = Vec3::from_array(motion.m_centerOfMass.data);
         centre
             .is_finite()
             .then_some(centre)
-            .ok_or(BodyError::BadMotion)
+            .ok_or(PhysicsError::BadMotion.into())
     }
 
     /// Give the body the velocities `linear` and `angular`, world space.
@@ -361,17 +363,12 @@ impl HandBody {
     /// As [`HandBody::create`].
     pub unsafe fn set_velocities(&mut self, linear: Vec3, angular: Vec3) -> Result<(), BodyError> {
         if !(linear.is_finite() && angular.is_finite()) {
-            return Err(BodyError::BadMotion);
+            return Err(PhysicsError::BadMotion.into());
         }
-        let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let mut world = unsafe { World::require() }?;
         unsafe { self.slot(world.world()) }?;
-        unsafe {
-            world.world_mut().setBodyVelocity(
-                self.body_id,
-                &havok_vector(linear),
-                &havok_vector(angular),
-            )
-        };
+        // SAFETY: the slot holds this body, checked above; both velocities are finite.
+        unsafe { world.set_velocities(self.body_id, linear, angular) };
         Ok(())
     }
 
@@ -395,7 +392,7 @@ impl HandBody {
     /// As [`HandBody::create`].
     pub unsafe fn place(&mut self, position: Vec3, orientation: Quat) -> Result<(), BodyError> {
         if !(position.is_finite() && orientation.is_finite()) {
-            return Err(BodyError::BadMotion);
+            return Err(PhysicsError::BadMotion.into());
         }
         let transform = Matrix4::from(Mat4::from_rotation_translation(
             orientation.normalize(),
@@ -404,11 +401,9 @@ impl HandBody {
         unsafe {
             self.with_checked(|access| {
                 access.wrapper.as_mut().SetTransform(&transform);
-                access.world.world_mut().setBodyVelocity(
-                    self.body_id,
-                    &havok_vector(Vec3::ZERO),
-                    &havok_vector(Vec3::ZERO),
-                );
+                access
+                    .world
+                    .set_velocities(self.body_id, Vec3::ZERO, Vec3::ZERO);
             })
         }
     }
@@ -444,16 +439,12 @@ impl HandBody {
     /// As [`HandBody::create`].
     pub unsafe fn apply_impulse(&mut self, impulse: Vec3, at: Vec3) -> Result<(), BodyError> {
         if !(impulse.is_finite() && at.is_finite()) {
-            return Err(BodyError::BadMotion);
+            return Err(PhysicsError::BadMotion.into());
         }
-        let mut world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
+        let mut world = unsafe { World::require() }?;
         unsafe { self.slot(world.world()) }?;
-        let at = havok_vector(at - world.shift);
-        unsafe {
-            world
-                .world_mut()
-                .applyBodyImpulseAt(self.body_id, &havok_vector(impulse), &at)
-        };
+        // SAFETY: the slot holds this body, checked above; the impulse and the point are finite.
+        unsafe { world.apply_impulse(self.body_id, impulse, at) };
         Ok(())
     }
 

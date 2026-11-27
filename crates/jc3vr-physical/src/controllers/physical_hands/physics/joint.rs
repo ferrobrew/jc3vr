@@ -31,7 +31,7 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::physics::{
     bodies,
-    bodies::BodyError as ObjectError,
+    error::PhysicsError,
     havok::{affine, transform},
 };
 use jc3vr_input::frame::Pose;
@@ -42,16 +42,13 @@ use crate::controllers::physical_hands::{physics::body::release, world::World};
 /// Why a joint could not be made.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum JointError {
-    /// The physics system or its world does not exist.
-    NoPhysicsWorld,
+    /// The world could not be reached, a body's slot is empty, or the object's body cannot be
+    /// held.
+    Physics(PhysicsError),
     /// The calling thread has no Havok memory router or heap.
     NoHeap,
     /// The Havok heap returned nothing for the constraint's data.
     NoMemory,
-    /// A body's slot does not hold a body.
-    NoBody,
-    /// The object's body cannot be held.
-    Object(ObjectError),
     /// The world made no constraint, or made it disabled.
     NoConstraint,
     /// The desired palm frame is not finite or has no rotation.
@@ -61,11 +58,9 @@ pub enum JointError {
 impl fmt::Display for JointError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let what = match self {
-            JointError::NoPhysicsWorld => "the physics world does not exist",
+            JointError::Physics(e) => return write!(f, "hand bodies: joint: {e}"),
             JointError::NoHeap => "the thread has no Havok heap",
             JointError::NoMemory => "the Havok heap gave no memory for the constraint's data",
-            JointError::NoBody => "a body's slot is empty",
-            JointError::Object(e) => return write!(f, "hand bodies: joint: {e}"),
             JointError::InvalidPalm => "the desired palm frame is invalid",
             JointError::NoConstraint => "the world made no enabled constraint",
         };
@@ -116,7 +111,7 @@ impl Joint {
         palm: Pose,
         kind: JointKind,
     ) -> Result<Self, JointError> {
-        unsafe { bodies::read(object_body, object) }.map_err(JointError::Object)?;
+        unsafe { bodies::read(object_body, object) }.map_err(JointError::Physics)?;
         unsafe { Self::join(hand, object_body, Some(object), Some(palm), kind) }
     }
 
@@ -137,8 +132,11 @@ impl Joint {
         palm: Option<Pose>,
         kind: JointKind,
     ) -> Result<Self, JointError> {
-        let mut world = unsafe { World::get() }.ok_or(JointError::NoPhysicsWorld)?;
-        let slot = |body| unsafe { bodies::slot(world.world(), body) }.ok_or(JointError::NoBody);
+        let mut world = unsafe { World::require() }.map_err(JointError::Physics)?;
+        let slot = |body| {
+            unsafe { bodies::slot(world.world(), body) }
+                .ok_or(JointError::Physics(PhysicsError::NoBody))
+        };
         let actual_hand_frame = affine(&slot(hand)?.m_transform);
         let hand_frame = match palm {
             Some(palm) => palm_frame(palm, world.shift).ok_or(JointError::InvalidPalm)?,
