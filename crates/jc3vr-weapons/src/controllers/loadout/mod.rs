@@ -17,11 +17,14 @@
 //! - [`event`]: what the hooks and the hands tell the table, folded into transitions;
 //! - [`grab`]: what a hand does at a socket, decided against the table's snapshot;
 //! - [`take`]: where a weapon taken from the world goes, decided against the table's snapshot;
+//! - [`contents`]: what each hand holds, from the table and every other source of the weapon
+//!   handling, published once per input tick;
 //! - [`live`]: the one live table of the local player's items, fed by the game and the hands and
 //!   published each input tick. It is the only writer of where the player's weapons are: the
 //!   game's slots, the placement, and the pins follow it.
 
 mod binding;
+pub mod contents;
 mod event;
 pub mod grab;
 mod item;

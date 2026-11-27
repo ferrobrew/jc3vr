@@ -33,10 +33,12 @@ use jc3vr_body::controllers::hands::CockpitHand;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::{
-    ads::solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
-    foregrip,
-    handling_tuning::HANDLING,
+use crate::controllers::{
+    loadout::contents,
+    weapons::{
+        ads::solve::{AdsInputs, AdsSolution, RigidMove, WristSight},
+        handling_tuning::HANDLING,
+    },
 };
 
 /// A long gun in a hand, as the input tick measured it.
@@ -110,12 +112,11 @@ pub fn apply(
         return;
     }
     let pocket_offset = HANDLING.get().ads.pocket_offset_m;
-    let brace = foregrip::status().hold.filter(|h| h.engaged);
+    let held = contents::hands();
     // The hand on the foregrip of the gun in `holder`.
     let support_hand = |holder: Hand| {
-        brace
-            .filter(|h| h.holder == holder)
-            .map(|h| h.holder.other())
+        let support = holder.other();
+        held[support.index()].braces.map(|_| support)
     };
     let solutions = Hand::BOTH.map(|hand| {
         let weapon = weapons[hand.index()]?;

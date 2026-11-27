@@ -40,9 +40,3 @@ pub(crate) fn stow_before_open(hand: Hand, socket: Option<Socket>) -> Option<boo
     };
     Some(grenade::safe::stow(hand, socket, world))
 }
-
-/// Transfer a safe grenade between hands without constructing a native object.
-pub(crate) fn transfer(from: Hand, to: Hand) -> Option<bool> {
-    grenade::safe::in_hand(from)?;
-    Some(grenade::safe::transfer(from, to))
-}

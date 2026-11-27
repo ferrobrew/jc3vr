@@ -31,11 +31,13 @@ use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use serde::Deserialize;
 
-use crate::controllers::weapons::{
-    ads::solve::RigidMove,
-    collide::solve::{Barrel, Wall},
-    foregrip,
-    handling_tuning::HANDLING,
+use crate::controllers::{
+    loadout::contents,
+    weapons::{
+        ads::solve::RigidMove,
+        collide::solve::{Barrel, Wall},
+        handling_tuning::HANDLING,
+    },
 };
 
 /// The push out of walls' tuning: the `collide` section of the handling tuning ([`HANDLING`]).
@@ -123,7 +125,7 @@ pub(crate) fn measured(hand: Hand) -> Option<CollideWeapon> {
 /// `world_scale` the VR world scale the cockpit composes with.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32) {
     let frame = CockpitTransform::current(head.position, world_scale);
-    let support = foregrip::status().hold.filter(|h| h.engaged);
+    let held = contents::hands();
     for hand in Hand::BOTH {
         let Some(push) = push_hand(hand, hands, &frame) else {
             continue;
@@ -133,7 +135,7 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Pose, world_scale: f32)
         }
         // The hand on this gun's foregrip rides with it.
         let off = hand.other();
-        if support.is_some_and(|h| h.holder == hand)
+        if held[off.index()].braces.is_some()
             && let Some(bracing) = hands[off.index()]
         {
             hands[off.index()] = Some(push.hand(bracing));

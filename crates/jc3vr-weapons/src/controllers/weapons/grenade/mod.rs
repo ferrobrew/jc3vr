@@ -64,7 +64,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
+    loadout::{ItemId, Place, TakeSource, contents::HeldGrenade, live, safe_items::SafeItemView},
     weapons::{
         docks, engine,
         grenade::{
@@ -312,11 +312,23 @@ pub fn pin_in_hand(hand: Hand) -> bool {
     safe::pin_in(hand)
 }
 
-/// Both hands can hold independent safe grenades.
+/// Whether `hand` holds a grenade of any kind. Both hands can hold independent safe grenades.
 pub fn holds(hand: Hand) -> bool {
-    safe::in_hand(hand).is_some()
-        || beacon::held().is_some_and(|(held, _)| held == hand)
-        || catch::caught().is_some_and(|caught| caught.hand == hand)
+    in_hand(hand).is_some()
+}
+
+/// The grenade `hand` holds: a safe grenade of the table's, else a beacon about to be thrown, else
+/// a caught live grenade.
+pub(crate) fn in_hand(hand: Hand) -> Option<HeldGrenade> {
+    if safe::in_hand(hand).is_some() {
+        Some(HeldGrenade::Safe)
+    } else if beacon::held().is_some_and(|(held, _)| held == hand) {
+        Some(HeldGrenade::Beacon)
+    } else if catch::caught().is_some_and(|caught| caught.hand == hand) {
+        Some(HeldGrenade::Caught)
+    } else {
+        None
+    }
 }
 
 pub(super) struct BeginInputs<'a> {

@@ -37,6 +37,18 @@ pub struct Wielded {
     pub hands: [bool; 2],
 }
 
+impl Wielded {
+    /// Which hands hold a gun of it, by [`Hand::index`]: none for the C4 the game's planting mode
+    /// wields, which is not a gun.
+    pub fn gun_hands(self) -> [bool; 2] {
+        if self.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
+            [false; 2]
+        } else {
+            self.hands
+        }
+    }
+}
+
 /// A weapon of the local player's in the hands: the wielded one, or one armed in a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HeldWeapon {

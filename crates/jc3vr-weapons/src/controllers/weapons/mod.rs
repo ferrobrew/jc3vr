@@ -70,6 +70,7 @@ mod camera_kick;
 pub mod capabilities;
 pub mod collide;
 pub mod config;
+mod contents;
 pub mod docks;
 pub mod dual_wield;
 pub mod empty;

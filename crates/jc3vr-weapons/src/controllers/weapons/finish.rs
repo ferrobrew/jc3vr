@@ -3,10 +3,7 @@
 
 use std::time::Instant;
 
-use jc3gi::{
-    character::inventory::WeaponSlot, equipment::weapon::WeaponBase,
-    input::input_action_map::Action,
-};
+use jc3gi::{equipment::weapon::WeaponBase, input::input_action_map::Action};
 use jc3vr_body::controllers::{
     fingers::{
         grip,
@@ -37,7 +34,9 @@ use jc3vr_input::{
 
 use crate::controllers::{
     loadout::{
-        Socket, grab,
+        Socket,
+        contents::{self, HandContents, Passed},
+        grab,
         grab::{Release, SocketMove, SocketRefusal},
         live,
     },
@@ -49,6 +48,7 @@ use crate::controllers::{
             Capabilities, GunHand, gun_hands_now, gun_owners_now, tracked_hands, trigger_claims,
         },
         config::WeaponSettings,
+        contents::sample,
         docks::attract,
         dual_wield::single,
         engine, foregrip,
@@ -56,7 +56,7 @@ use crate::controllers::{
         grenade,
         handling_tuning::HANDLING,
         hold,
-        hold::{armed, tick, tuning::HOLD},
+        hold::{tick, tuning::HOLD},
         regions,
         regions::GunRegion,
         reload,
@@ -187,18 +187,16 @@ pub fn finish_tick(
                 let from = gun
                     .and_then(|object| unsafe { (object as *const WeaponBase).as_ref() })
                     .and_then(|weapon| unsafe { engine::gun_pose(weapon) });
+                let giver = hand.other();
                 let mut gun_moved = false;
-                let moved =
-                    crate::controllers::weapons::grenade_moves::transfer(hand.other(), hand)
-                        .or_else(|| {
-                            c4::held()
-                                .filter(|&(holder, _)| holder == hand.other())
-                                .map(|_| c4::hand_over(hand))
-                        })
-                        .unwrap_or_else(|| {
-                            gun_moved = gun.is_some_and(|w| hold::hand_over(game, hand, w));
-                            gun_moved
-                        });
+                let moved = match sample(weapon.as_ref().map(|(w, _)| w))[giver.index()].passed() {
+                    Passed::Grenade => grenade::safe::transfer(giver, hand),
+                    Passed::Charge => c4::hand_over(hand),
+                    Passed::Gun => {
+                        gun_moved = gun.is_some_and(|w| hold::hand_over(game, hand, w));
+                        gun_moved
+                    }
+                };
                 if moved {
                     if let (Some(object), true, Some(from)) = (gun, gun_moved, from) {
                         hold::act::slide_in(object, hand, from, HOLD.get().hold.snap_s);
@@ -306,25 +304,7 @@ pub fn finish_tick(
         },
         desired,
     );
-    // A hand holds nothing when it holds no gun (the C4 the game's planting mode wields is not one),
-    // no weapon armed in it, nothing of the loadout table's, no grenade, and no round.
-    let gun_hands = weapon.map_or([false; 2], |(w, _)| {
-        if w.wielded.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
-            [false; 2]
-        } else {
-            w.wielded.hands
-        }
-    });
-    let armed_hands = Hand::BOTH.map(|h| armed::in_hand(h).is_some());
-    let detonator = c4::detonator_hand();
-    let free = Hand::BOTH.map(|h| {
-        !gun_hands[h.index()]
-            && !armed_hands[h.index()]
-            && live::held_kind(h).is_none()
-            && !grenade::holds(h)
-            && detonator != Some(h)
-            && reload::holding_hand() != Some(h)
-    });
+    let free = sample(weapon.as_ref().map(|(w, _)| w)).map(|hand| hand.free());
     c4::input_tick(
         game,
         &c4::TickInputs {
@@ -398,14 +378,8 @@ pub fn finish_tick(
     let current =
         unsafe { LocalPlayer::get(game).and_then(|owner| engine::held_weapon(owner.character())) }
             .map(|weapon| with_holder(weapon, hold::owned_holder(weapon.address)));
-    let gun_hands = current.map_or([false; 2], |weapon| {
-        if weapon.wielded.slot == WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE {
-            [false; 2]
-        } else {
-            weapon.wielded.hands
-        }
-    });
-    let armed_hands = Hand::BOTH.map(|hand| armed::in_hand(hand).is_some());
+    let held = sample(current.as_ref());
+    let gun_hands = held.map(|hand| hand.wielded);
     // A gun the reload holds cannot fire. The dual-wield split keeps a held pistol's trigger from
     // the game itself, so the fire input is held back only when no drawn gun may fire.
     let reload_blocks = gun_hands.contains(&true)
@@ -450,22 +424,17 @@ pub fn finish_tick(
             Some(refusal.label().to_owned())
         });
     }
-    let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
-        (grenade::holds(hand)
-            || c4::throwing_hand() == Some(hand)
-            || c4::detonator_hand() == Some(hand))
-            && explosive_holds_fire(Some(hand), gun_hands, armed_hands)
-    });
     let fire_blocked = reload_blocks
-        || explosive_blocked
+        || explosive_holds_fire(&held)
         || holder.is_some_and(|h| docking[h.index()])
         || primary_trigger_idle(current, &fire_presses)
         || primary_action_blocked(holder, Hand::BOTH.map(weapon_action_running));
     if fire_blocked {
         hold_fire_back(desired);
     }
-    declare_grips(Hand::BOTH.map(|h| gun_hands[h.index()] || armed_hands[h.index()]));
+    declare_grips(&held);
     record_hands();
+    contents::publish(sample(current.as_ref()));
 
     let mut state = STATE.lock();
     state.status.fire_blocked = fire_blocked;
@@ -485,18 +454,12 @@ fn docked_at(hand: Hand, fits: impl Fn(GrabVolume) -> bool) -> Option<GrabVolume
     dock_target(hand, &state.placed, state.points[hand.index()], fits)
 }
 
-/// Whether the fire input is held back for a grenade, a charge, or the detonator in the hand
-/// `explosive`: with no gun in the other hand (the wielded weapon's in `gun_hands`, or one armed
-/// there in `armed_hands`), the fire input would draw a gun into the hand that holds it.
-fn explosive_holds_fire(
-    explosive: Option<Hand>,
-    gun_hands: [bool; 2],
-    armed_hands: [bool; 2],
-) -> bool {
-    explosive.is_some_and(|hand| {
-        let other = hand.other();
-        !gun_hands[other.index()] && !armed_hands[other.index()]
-    })
+/// Whether the fire input is held back for a grenade, a charge, or the detonator in a hand: with no
+/// gun in the other hand, the fire input would draw a gun into the hand that holds it.
+fn explosive_holds_fire(hands: &[HandContents; 2]) -> bool {
+    Hand::BOTH
+        .into_iter()
+        .any(|hand| hands[hand.index()].explosive() && !hands[hand.other().index()].gun())
 }
 
 /// The fire inputs a weapon action holds back.
@@ -506,10 +469,15 @@ const FIRE_ACTIONS: [Action; 2] = [Action::FIRE_RIGHT, Action::R2];
 const MAX_EVENTS: usize = 6;
 
 /// Declare what each hand holds of the weapons, for its finger pose: a gun by its grip in each hand
-/// that holds one (`gun_hands`, the wielded weapon's and the armed ones'), the foregrip, a grenade
-/// or a charge, the detonator, which is held as a gun's grip is, and a round for the reload.
-fn declare_grips(gun_hands: [bool; 2]) {
-    for hand in Hand::BOTH.into_iter().filter(|h| gun_hands[h.index()]) {
+/// that holds one, the foregrip, a grenade or a charge, the detonator, which is held as a gun's
+/// grip is, and a round for the reload.
+fn declare_grips(hands: &[HandContents; 2]) {
+    let held = |pick: fn(&HandContents) -> bool| {
+        Hand::BOTH
+            .into_iter()
+            .filter(move |hand| pick(&hands[hand.index()]))
+    };
+    for hand in held(HandContents::gun) {
         grip::declare(hand, Grip::new(GripSource::Gun));
     }
     if let Some(two) = foregrip::two_hand_grip() {
@@ -520,16 +488,16 @@ fn declare_grips(gun_hands: [bool; 2]) {
                 .share(two.weight),
         );
     }
-    for hand in Hand::BOTH.into_iter().filter(|hand| grenade::holds(*hand)) {
+    for hand in held(|hand| hand.grenade.is_some()) {
         grip::declare(hand, Grip::new(GripSource::Grenade));
     }
-    if let Some(hand) = c4::throwing_hand() {
+    for hand in held(|hand| hand.charge.is_some()) {
         grip::declare(hand, Grip::new(GripSource::C4));
     }
-    if let Some(hand) = c4::detonator_hand() {
+    for hand in held(|hand| hand.detonator) {
         grip::declare(hand, Grip::new(GripSource::Gun));
     }
-    if let Some(hand) = reload::holding_hand() {
+    for hand in held(|hand| hand.round) {
         grip::declare(hand, Grip::new(GripSource::Magazine));
     }
 }
@@ -1025,7 +993,10 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::capabilities::NativePair;
+    use crate::controllers::{
+        loadout::contents::{HeldCharge, HeldGrenade},
+        weapons::capabilities::NativePair,
+    };
 
     #[test]
     fn a_pending_release_never_retargets_another_socket_or_redocks_after_timeout() {
@@ -1244,27 +1215,47 @@ mod tests {
 
     #[test]
     fn a_grenade_in_the_hand_holds_fire_back_unless_the_other_hand_has_a_gun() {
-        assert!(!explosive_holds_fire(None, [false; 2], [false; 2]));
-        assert!(explosive_holds_fire(
-            Some(Hand::Left),
-            [false; 2],
-            [false; 2]
-        ));
+        let empty = HandContents::default();
+        let grenade = HandContents {
+            grenade: Some(HeldGrenade::Safe),
+            ..empty
+        };
+        assert!(!explosive_holds_fire(&[empty; 2]));
+        assert!(explosive_holds_fire(&[grenade, empty]));
         // The gun in the hand that now holds the grenade does not count.
-        assert!(explosive_holds_fire(
-            Some(Hand::Left),
-            [true, false],
-            [false; 2]
-        ));
-        assert!(!explosive_holds_fire(
-            Some(Hand::Left),
-            [false, true],
-            [false; 2]
-        ));
-        assert!(!explosive_holds_fire(
-            Some(Hand::Left),
-            [false; 2],
-            [false, true]
-        ));
+        assert!(explosive_holds_fire(&[
+            HandContents {
+                wielded: true,
+                ..grenade
+            },
+            empty
+        ]));
+        assert!(!explosive_holds_fire(&[
+            grenade,
+            HandContents {
+                wielded: true,
+                ..empty
+            }
+        ]));
+        assert!(!explosive_holds_fire(&[
+            grenade,
+            HandContents {
+                armed: Some(1),
+                ..empty
+            }
+        ]));
+        // A charge or the detonator holds the fire back as a grenade does.
+        for explosive in [
+            HandContents {
+                charge: Some(HeldCharge::Asked),
+                ..empty
+            },
+            HandContents {
+                detonator: true,
+                ..empty
+            },
+        ] {
+            assert!(explosive_holds_fire(&[empty, explosive]));
+        }
     }
 }

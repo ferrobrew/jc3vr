@@ -118,6 +118,11 @@ pub fn publish_fire(fire: [bool; 2]) {
     }
 }
 
+/// Each hand's fire input as last published, by [`Hand::index`].
+pub(crate) fn fire() -> [bool; 2] {
+    Hand::BOTH.map(|h| FIRE[h.index()].load(Ordering::Relaxed))
+}
+
 /// Publish each hand's aim point, from its gun's sight line, at the aim update, by [`Hand::index`].
 pub fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2]) {
     let now = Stamp::now();

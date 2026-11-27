@@ -112,7 +112,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
-    loadout::{ObjectAddress, live},
+    loadout::{ObjectAddress, contents::HeldCharge, live},
     weapons::{
         c4::{
             detonator::{Detonator, DetonatorStep},
@@ -269,6 +269,18 @@ pub(crate) unsafe fn remove_placed(owner: &mut Character) -> Option<i32> {
 /// The hand a throw holds, from the grab at the pouch until the charge leaves it.
 pub fn throwing_hand() -> Option<Hand> {
     STATE.lock().stage.hand()
+}
+
+/// The C4 throw that belongs to `hand`: its primed charge when one is in the hand.
+pub(crate) fn charge_of(hand: Hand) -> Option<HeldCharge> {
+    let state = STATE.lock();
+    state.stage.hand().filter(|&owner| owner == hand)?;
+    Some(
+        match state.primed.filter(|_| state.stage.charge_in_hand()) {
+            Some(charge) => HeldCharge::Primed(charge),
+            None => HeldCharge::Asked,
+        },
+    )
 }
 
 /// The charge a hand holds, for the loadout table: the throw's primed charge in its hand.

@@ -11,22 +11,25 @@ use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::weapons::{
-    ads, c4, collide,
-    config::WeaponSettings,
-    docks::attract::{Attractor, ZoneWatch},
-    dual_wield, engine,
-    engine::HeldWeapon,
-    foregrip,
-    foregrip::GripGeometry,
-    grenade, grip_watch, heft, hold,
-    hold::armed,
-    opening::OpenWatch,
-    pouch_models, pouch_return, recoil, regions,
-    regions::{GunRegion, RegionHit},
-    reload,
-    types::WeaponsStatus,
-    wheel,
+use crate::controllers::{
+    loadout::contents,
+    weapons::{
+        ads, c4, collide,
+        config::WeaponSettings,
+        docks::attract::{Attractor, ZoneWatch},
+        dual_wield, engine,
+        engine::HeldWeapon,
+        foregrip,
+        foregrip::GripGeometry,
+        grenade, grip_watch, heft, hold,
+        hold::armed,
+        opening::OpenWatch,
+        pouch_models, pouch_return, recoil, regions,
+        regions::{GunRegion, RegionHit},
+        reload,
+        types::WeaponsStatus,
+        wheel,
+    },
 };
 
 /// The weapon handling's readout, for the debug UI.
@@ -48,6 +51,7 @@ pub fn pause() {
 /// do not inject.
 pub fn stand_down(game: &GameTick<'_>) {
     foregrip::clear();
+    contents::clear();
     jc3vr_body::controllers::held::guns::publish(
         jc3vr_body::controllers::held::guns::GunHolds::default(),
     );
