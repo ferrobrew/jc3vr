@@ -1,393 +1,148 @@
 # Single-pass stereo, per render block
 
-Single-pass stereo renders both eyes in one geometry walk into a double-wide render target, instead
-of re-driving the whole scene draw per eye. The general model path handles the bulk automatically;
-the render blocks that don't fit it each need a targeted intercept. This document classifies the
-remaining blocks and records the wiring for each.
-
-See [single-pass-stereo.md](single-pass-stereo.md) for the pipeline itself (the cb13 layout, the VS
-rewriter, the viewport routing, the collapse).
+Single-pass stereo renders both eyes in one geometry walk into a double-wide render target instead of driving the whole scene draw once per eye. The general model path handles most draws; the render blocks that do not fit it each need a targeted intercept. This page classifies those blocks and records the wiring for each. [single-pass-stereo.md](single-pass-stereo.md) covers the pipeline itself: the `cb13` layout, the vertex-shader rewriter, the viewport routing, and the collapse.
 
 ## The buckets
 
 Every scene draw falls into one of these:
 
-- (a) cb0-remap / instance-double. The vertex shader writes `SV_Position` from the global view-projection in `cb0` (registers `cb0[29..32]`, with the camera position at `cb0[4]`; the engine stages these registers in [`RenderEngine::m_VPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_VPGlobalConstData)), and the draw is a plain `DrawIndexed`/`DrawIndexedInstanced` whose instance count the CPU controls. The `CreateVertexProgram` hook rewrites such a VS to read `cb13[(SV_InstanceID & 1)*5 + k]` and emit `SV_ViewportArrayIndex`, and the draw detour doubles the instance count and viewport-splits L/R. The general path handles this bucket automatically once the VS is patched. An already-instanced block additionally needs its instance-id consumer rewritten to `SV_InstanceID >> 1` so the original instance survives the doubling.
-- **(b) reproject a baked matrix.** The VS reads a CPU-baked world-view-projection from a per-draw
-  constant buffer (not `cb0`). Single-pass reprojects that matrix by the per-eye `M_eye`
-  (`clip_eye = M_eye · clip_center`) and re-issues the draw once per eye into the eye's half-viewport.
-  The bark, foliage, and occluder intercepts. The TerrainDetail intercept re-issues the same way but
-  builds each eye's matrix from that eye's own `cb13` rows instead (see "Comparing at the headset's size" in [single-pass-stereo.md](single-pass-stereo.md)), since the
-  reprojection rounds its depth badly.
+- (a) `cb0` remap and instance doubling. The vertex shader writes `SV_Position` from the global view-projection in `cb0` (registers `cb0[29..32]`, with the camera position at `cb0[4]`; the engine stages these registers in [`RenderEngine::m_VPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_VPGlobalConstData)), and the draw is a plain `DrawIndexed` or `DrawIndexedInstanced` whose instance count the CPU controls. The `CreateVertexProgram` hook rewrites such a shader to read `cb13[(SV_InstanceID & 1)*5 + k]` and emit `SV_ViewportArrayIndex`, and the draw detour doubles the instance count and splits the viewport between the eyes. An already-instanced block also needs its instance-id consumer rewritten to `SV_InstanceID >> 1`, so the original instance survives the doubling.
+- (b) Reprojecting a baked matrix. The vertex shader reads a CPU-baked world-view-projection from a per-draw constant buffer, not `cb0`. Single-pass reprojects that matrix by the per-eye `M_eye` (`clip_eye = M_eye * clip_center`) and either draws once with reprojected shader variants or re-issues the draw once per eye into the eye's half-viewport. The bark, foliage, and occluder intercepts are in this bucket. The terrain detail intercept re-issues the same way but builds each eye's matrix from that eye's own `cb13` rows, because the reprojection rounds its depth badly.
+- (c) Hull and domain tessellation with the eye injected. The clip transform is built in the domain shader from an `m_OffsetViewProjection` constant. The domain shader is rewritten to read its eye's offset view-projection and camera position from `cb13`, bound on the domain stage, and the paired vertex shader forwards the eye index on a free interpolant. The patch system's domain shaders, which have no free interpolant, read the pinned eye's slot instead ("Pipelines that cannot carry the eye: the pinned-eye reprojection" in [single-pass-stereo.md](single-pass-stereo.md)).
+- (d) GPU-indirect per-eye re-issue. The draw is `DrawInstancedIndirect` or `DrawIndexedInstancedIndirect(NoMutex)`: the instance count is in a GPU buffer, so the CPU cannot double it and `SV_InstanceID` never selects an eye. The draw is re-issued once per eye with the eye's half-viewport bound, and the eye is selected by overriding the transform the shader reads: `cb13` with both slots set to one eye for a `cb0`-remapped shader, or a reprojected baked constant buffer for a bucket-(b) shader.
+- (e) Screen-space and NDC-direct draws. The vertex shader writes NDC with no view transform. The draw runs once, appears in both eyes, and is excluded from stereo.
 
-  **The baked matrix is stored column-wise.** Every bucket-(b) VS in the bundle consumes its four
-  registers as a multiply-add chain rather than four `dp4`s — for TerrainDetail (`sh_0224`), Bark
-  (`sh_0246`), Foliage (`sh_0249`) and Occluder (`sh_0138`) alike the body reads
+The baked matrices of bucket (b) are stored by column. Every bucket-(b) vertex shader in the bundle (terrain detail `sh_0224`, bark `sh_0246`, foliage `sh_0249`, and occluder `sh_0138`) consumes its four registers as a multiply-add chain rather than four `dp4`s:
 
-  ```
-  mul r1, p.yyyy, cb[k+1]
-  mad r1, p.xxxx, cb[k+0], r1
-  mad r1, p.zzzz, cb[k+2], r1
-  add o0, r1,     cb[k+3]          // or a fourth mad on p.wwww
-  ```
+```
+mul r1, p.yyyy, cb[k+1]
+mad r1, p.xxxx, cb[k+0], r1
+mad r1, p.zzzz, cb[k+2], r1
+add o0, r1,     cb[k+3]          // or a fourth mad on p.wwww
+```
 
-  so `clip = Σ_i p_i · cb[k+i]`: each register is a **column** of the transform acting on the position
-  as a column vector, not a row. The per-eye buffer is therefore `cb[k+i]_eye = M_eye · cb[k+i]_mono`,
-  one entry at a time — the same `mul_vec4` the mod applies. (`cb13`'s `M_eye` block is the other
-  convention: the rewriter's epilogue is a `dp4` chain, so those rows are rows.)
-- **(c) hull/domain tessellation eye-inject.** The clip transform is built in the domain shader from
-  an `m_OffsetViewProjection` constant. The DS is rewritten to read that eye's offset view-projection
-  and camera position from `cb13` (bound on the domain stage) in place of its own constants; the
-  paired VS forwards the
-  eye index on a free interpolant. This is the base VolumetricTerrain path. The patch system's domain
-  shaders, which have no free interpolant, read the pinned eye's slot the same way (see "Pipelines
-  that cannot carry the eye: the pinned-eye reprojection" in [single-pass-stereo.md](single-pass-stereo.md)).
+so `clip = sum_i p_i * cb[k+i]`: each register is a column of the transform acting on the position as a column vector. The per-eye buffer is therefore `cb[k+i]_eye = M_eye * cb[k+i]_mono`, one register at a time. `cb13`'s `M_eye` block uses the other convention: the rewriter's epilogue is a `dp4` chain, so those registers are rows.
 
-Whether a family reaches clip by `M_eye` or by its eye's own rows matters at the headset's size: the
-reprojection is exact only in real arithmetic. The `cb0`-remapped families, the terrain detail, the
-terrain domain shaders, and the full view-projection's readers (tree impostors, light sprites,
-ambient-occlusion volumes, terrain basemesh) use the eye's rows; the baked-matrix families in bucket
-(b), the foliage, the moon, the water planes, and the decals are reprojected, since their transform
-is a CPU product of a per-draw matrix and the centred camera that the shader cannot redo per eye. See
-"Each eye's own rows, not the centre's reprojected" in [single-pass-stereo.md](single-pass-stereo.md).
-- **(d) GPU-indirect per-eye re-issue.** The draw is `DrawInstancedIndirect` /
-  `DrawIndexedInstancedIndirect(NoMutex)` — the instance count lives in a GPU buffer, so the CPU can't
-  instance-double and `SV_InstanceID` stays 0 (never selects an eye). The block's `Draw` is detoured
-  and re-issued once per eye, with the eye selected by overriding the transform the VS reads (a
-  `cb13`-both-slots-set-to-one-eye override for a `cb0`-remapped VS, or a reprojected baked cb for a
-  bucket-(b)-shaped VS) and the eye's half-viewport bound.
-- **(e) screen-space / NDC-direct.** The VS writes NDC directly with no view transform. Drawn once,
-  present in both eyes, excluded from stereo.
+Whether a family reaches clip space through `M_eye` or through its eye's own rows matters at the headset's size, because the reprojection is exact only in real arithmetic. The `cb0`-remapped families, the terrain detail, the terrain domain shaders, and the readers of the full view-projection (tree impostors, light sprites, ambient-occlusion volumes, and the terrain base mesh) use the eye's rows. The bucket-(b) families, the moon, the water planes, and the decals are reprojected, since their transform is a CPU product of a per-draw matrix and the centred camera that the shader cannot redo per eye. "Each eye's own rows, not the centre's reprojected" in [single-pass-stereo.md](single-pass-stereo.md) has the detail.
 
 ## VolumetricTerrainPatch
 
-The retail world's terrain is the patch system, [`RenderBlockTerrainPatch`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch) (per-patch instances of the quadtree), driven by the [`RenderBlockTypeTerrainPatch`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch) singleton. The block's draw is [`RenderBlockTerrainPatch::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch##func-Draw), and the type-level setup is [`RenderBlockTypeTerrainPatch::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch##func-Setup) and [`RenderBlockTypeTerrainPatch::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch##func-SetupConstantBuffers).
+The world's terrain is the patch system, [`RenderBlockTerrainPatch`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch) (per-patch instances of the quadtree), driven by the [`RenderBlockTypeTerrainPatch`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch) singleton. The block's draw is [`RenderBlockTerrainPatch::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTerrainPatch##func-Draw), and the type-level setup is [`RenderBlockTypeTerrainPatch::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch##func-Setup) and [`RenderBlockTypeTerrainPatch::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch##func-SetupConstantBuffers).
 
-**Transform source.** `SetupConstantBuffers` binds the global [`RenderContext::m_VPGlobals`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_VPGlobals) at vertex `cb0` (the same
-rows the general rewriter targets) and the per-patch *streamed* constant buffer at vertex `cb1`
-(`SVertexInstanceConstsNoTess = { Matrix4 m_WorldViewProjection; Vector4 m_WorldPos; }`). The
-tessellating passes additionally bake `rc->m_OffsetViewProjection` into the hull/domain constants
-(`SHullDomainTypeConsts`, filled once per frame per LOD slot). So the base surface goes through cb0
-(bucket a/c). The non-tessellated permutations read the global constants too: the
-`volumetricterrain4notessellation*` vertex shaders project through the full view-projection in `cb0`
-rows 0 to 3 (not the `cb0[29..32]` the remap covers), and the `*instanced` ones among them, which the
-GPU-indirect near basemesh pass draws with, also read `SV_InstanceID`.
+`SetupConstantBuffers` binds the global [`RenderContext::m_VPGlobals`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_VPGlobals) at vertex `cb0` and the per-patch streamed constant buffer (`SVertexInstanceConstsNoTess`, a world-view-projection and a world position) at vertex `cb1`. The tessellating passes also bake `m_OffsetViewProjection` into the hull and domain constants (`SHullDomainTypeConsts`, filled once per frame per LOD slot). The base surface therefore goes through `cb0` (bucket a or c). The non-tessellated `volumetricterrain4notessellation*` vertex shaders project through the full view-projection in `cb0` rows 0 to 3, not the rows the remap covers, and the `*instanced` ones among them, which the GPU-indirect near base-mesh pass uses, also read `SV_InstanceID`.
 
-Draw pass-key routing, keyed on [`RenderContext::m_ActiveRenderPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ActiveRenderPass) (pass names from [`RenderPassId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId)):
+The draw routes by [`RenderContext::m_ActiveRenderPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ActiveRenderPass) (pass names from [`RenderPassId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId)):
 
 | Passes | Draw | Notes |
 |---|---|---|
 | `RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR`, `RP_TERRAINPATCH_BASEMESH_NEAR` | [`DrawInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawInstancedIndirect) | Near patches, GPU-indirect. Bucket d. |
-| `RP_TERRAINPATCH_BASEMESH_TESSELLATE_FAR`, `RP_TERRAINPATCH_BASEMESH_TESSELLATE_COLOR` | [`DrawIndexed`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexed) tail range `[split, end)` | Bucket a or c (whichever the VS is). |
-| `RP_TERRAINPATCH_BASEMESH_FAR`, `RP_TERRAINPATCH_BASEMESH_COLOR` | `DrawIndexed` head range `[0, split)` | Same. |
-| `PRE_RP_REFLECTION_MESH`, `PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR`, `PRE_RP_SHADOW_REFLECTIVE_SUN_FAR`, `PRE_RP_SHADOW_REFLECTIVE_CAMERA` | `DrawIndexed` full range | Depth/other. |
+| `RP_TERRAINPATCH_BASEMESH_TESSELLATE_FAR`, `RP_TERRAINPATCH_BASEMESH_TESSELLATE_COLOR` | [`DrawIndexed`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexed), tail range `[split, end)` | Bucket a or c, whichever the shader is. |
+| `RP_TERRAINPATCH_BASEMESH_FAR`, `RP_TERRAINPATCH_BASEMESH_COLOR` | `DrawIndexed`, head range `[0, split)` | The same. |
+| `PRE_RP_REFLECTION_MESH`, `PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR`, `PRE_RP_SHADOW_REFLECTIVE_SUN_FAR`, `PRE_RP_SHADOW_REFLECTIVE_CAMERA` | `DrawIndexed`, full range | Depth and other prepasses. |
 
-**Wiring: no block intercept; a draw-level re-issue with the eye pinned.** `single_pass.indirect_per_eye` (on by default) detours the two GPU-indirect D3D11 context methods wholesale and re-issues any such draw once per eye with both viewport slots pinned to that eye's half, and the far tessellated `DrawIndexed` passes, whose vertex shaders the eye-inject declines, take the unpatched `DrawIndexed` re-issue. Without the indirect detour the near patches inherit whatever viewport the previous draw left bound, usually the full double-wide one, which stretches them 2x horizontally and makes them appear to slide across the world. The re-issue alone gave both eyes the centred camera; `single_pass.terrain_patch_per_eye` (on by default) adds the parallax by rewriting the patch domain shaders and the instanced basemesh vertex shaders to read `cb13`'s first eye slot, and pinning `cb13` to each eye for each submission. That is the bucket-(d) "cb13 override" below, applied at the draw level rather than by a block intercept. See "Pipelines that cannot carry the eye" in [single-pass-stereo.md](single-pass-stereo.md).
+There is no block intercept; the terrain takes a draw-level re-issue with the eye pinned. `single_pass.indirect_per_eye` (on) detours the two GPU-indirect context methods and re-issues any such draw once per eye with both viewport slots pinned to that eye's half, and the far tessellated `DrawIndexed` passes, whose vertex shaders the eye injection declines, take the unpatched `DrawIndexed` re-issue. Without the indirect detour the near patches inherit whatever viewport the previous draw left bound, usually the full double-wide one, which stretches them twice as wide and makes them slide across the world. The re-issue alone draws both eyes from the centred camera; `single_pass.terrain_patch_per_eye` (on) adds the parallax by rewriting the patch domain shaders and the instanced base-mesh vertex shaders to read `cb13`'s first eye slot and pinning `cb13` to each eye per submission. This is the bucket-(d) `cb13` override applied at the draw level.
 
 ## VegetationBark
 
-Tree trunks and branches, [`RenderBlockBark`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark) (registered name `"VegetationBark"`). The colour draw is [`RenderBlockBark::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark##func-Draw) and the depth and velocity draw is [`RenderBlockBark::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark##func-DrawZ). The type's hooks are [`RenderBlockBarkType::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBarkType##func-SetupConstantBuffers) and [`RenderBlockBarkType::Create`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBarkType##func-Create).
+Tree trunks and branches are [`RenderBlockBark`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark) (registered as `"VegetationBark"`). The colour draw is [`RenderBlockBark::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark##func-Draw), the depth and velocity draw is [`RenderBlockBark::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark##func-DrawZ), and the type's hooks are [`RenderBlockBarkType::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBarkType##func-SetupConstantBuffers) and [`RenderBlockBarkType::Create`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBarkType##func-Create).
 
-**Transform source: baked WVP in cb1, bucket (b).** `Draw` and `DrawZ` stage the clip transform on vertex `cb1` registers 0 to 3 via [`SetVertexProgramConstants`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-SetVertexProgramConstants), unconditionally, before any draw-kind routing. For a non-instanced draw, `wvp = M_model(camera-relative) · m_OffsetViewProjection`. For an instanced or billboard draw, `cb1[0..3] = m_OffsetViewProjection` verbatim, and the shader applies the per-instance model matrix. `SetupConstantBuffers` binds `cb0 = m_VPGlobals` too, but only for globals (wind and time). Position does not come from cb0, so the general cb0-remap path does not correct this block. cb1 also carries the opacity and UV parameters, the raw model matrix, and the view matrix, and `DrawZ`'s velocity pass bakes the previous-frame WVP into cb1 as well; the register layout is documented on `RenderBlockBark::Draw` and `RenderBlockBark::DrawZ`.
+The transform is a baked world-view-projection in `cb1` (bucket b). `Draw` and `DrawZ` stage it on vertex `cb1` registers 0 to 3 through [`SetVertexProgramConstants`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-SetVertexProgramConstants), unconditionally, before any draw-kind routing. For a non-instanced draw it is the camera-relative model matrix times `m_OffsetViewProjection`; for an instanced or billboard draw it is `m_OffsetViewProjection` itself, and the shader applies the per-instance model matrix. `SetupConstantBuffers` binds `cb0` for the globals (wind and time) only, so the `cb0` remap does not correct this block. The register layout, including the previous-frame matrix `DrawZ`'s velocity pass bakes, is documented on `RenderBlockBark::Draw` and `RenderBlockBark::DrawZ`.
 
-**Draw-kind routing.** The draw kind comes from the instance data that the `RBIInfo` points at: with no instance data, a non-instanced [`DrawIndexedWithBoundState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedWithBoundState); otherwise a flag in the instance data's flags word selects a CPU-instanced [`DrawIndexedInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstanced) when set, or a GPU-indirect [`DrawIndexedInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirect) when clear. The flags word is not `RBIInfo::m_MetaFlags`. All three kinds read the same `cb1[0..3]`, so one reprojection corrects every kind.
+The draw kind comes from the instance data the `RBIInfo` points at: with none, a non-instanced [`DrawIndexedWithBoundState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedWithBoundState); otherwise a flag in the instance data's flags word (not `RBIInfo::m_MetaFlags`) selects a CPU-instanced [`DrawIndexedInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstanced) when set or a GPU-indirect [`DrawIndexedInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirect) when clear. All three read the same `cb1[0..3]`, so one reprojection corrects every kind.
 
-**Wiring: bark, built.** The block is drawn once for both eyes (`single_pass.vegetation_once`, see "Drawing the vegetation once" in [single-pass-stereo.md](single-pass-stereo.md)): `Draw` and `DrawZ` run once, each draw binds a reprojected variant of the vertex shader the block's setup bound, and the GPU-indirect draws read a copy of their arguments with the instance counts doubled. The fallback, taken when `single_pass.vegetation_once` is off or a precondition is missing, re-issues `Draw` and `DrawZ` once per eye into the eye's half-viewport, with `cb1[0..3]` reprojected as `cb1[k]_eye = M_eye · cb1[k]_mono`, one entry at a time. `M_eye` is the same matrix the mod builds for cb13. Because `Draw` itself bakes cb1, the re-issue reprojects the game's own `SetVertexProgramConstants` upload to cb1 during a wrapped original-`Draw` call rather than replicating the bake. This is the shared bucket-(b) mechanism described below, and it covers all three draw kinds uniformly.
+Under `single_pass.vegetation_once` (on) the block is drawn once for both eyes: `Draw` and `DrawZ` run once, each draw binds a reprojected variant of the vertex shader the block's setup bound, and the GPU-indirect draws read a copy of their arguments with the instance counts doubled. The fallback, taken when the switch is off or a precondition is missing, re-issues `Draw` and `DrawZ` once per eye into the eye's half-viewport with `cb1[0..3]` reprojected by `M_eye`, the matrix the mod builds for `cb13`. Because `Draw` bakes `cb1` itself, the re-issue reprojects the game's own `SetVertexProgramConstants` upload during a wrapped call to the original `Draw` rather than replicating the bake ("The shared bucket-(b) and (d) mechanism").
 
-The re-issue's velocity pass reprojects only the current-frame WVP; the previous-frame copy stays centred, so bark's motion vectors carry the centre view's parallax, which SMAA and FSR reproject slightly wrongly. The single draw reprojects only `SV_Position`, so its velocity texcoords are both the centre view's: the motion of the centre camera rather than of each eye, which differs from an isolated eye's by the change in parallax between frames.
+The re-issue's velocity pass reprojects only the current-frame matrix and leaves the previous-frame one centred, so bark's motion vectors carry the centre view's parallax. The single draw reprojects only `SV_Position`, so both of its velocity texcoords are the centre view's: the motion of the centre camera rather than of each eye, which differs from an isolated eye's by the change in parallax between frames.
 
 The engine's bark vertex shaders stay pristine: the shadow passes and the re-issue draw with them, and the `cb0` remap declines them. The variants exist beside them.
 
 ## VegetationFoliage
 
-Grass and ground cover, `RenderBlockFoliage` (registered `"VegetationFoliage"`), drawn in [`RenderPassId::RP_VEGETATION_OPAQUE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_VEGETATION_OPAQUE). The block's colour draw is [`RenderBlockFoliage::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-Draw), and the type-level setup is [`RenderBlockFoliageType::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliageType##func-SetupConstantBuffers) and [`RenderBlockFoliageType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliageType##func-Setup). IDA labels the foliage type's `Setup` as the window type's, and the reverse; the def's doc comment records the swap.
+Grass and ground cover are `RenderBlockFoliage` (registered as `"VegetationFoliage"`), drawn in [`RenderPassId::RP_VEGETATION_OPAQUE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_VEGETATION_OPAQUE). The colour draw is [`RenderBlockFoliage::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-Draw), and the type-level setup is [`RenderBlockFoliageType::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliageType##func-SetupConstantBuffers) and [`RenderBlockFoliageType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliageType##func-Setup). IDA labels the foliage type's `Setup` as the window type's and the reverse; the def's doc comment records the swap.
 
-**Transform source: baked OffsetVP in cb2, bucket (b).** `Draw` stages the transform on vertex `cb2`: register 0 holds the camera-relative world matrix, and registers 4 to 7 hold a per-draw copy of `m_OffsetViewProjection`. The VS composes `clip = world · OffsetVP` from cb2 and writes `SV_Position`, so the CB-agnostic reproject rewriter applies. cb0 is bound for globals only.
+The transform is a baked offset view-projection in `cb2` (bucket b). `Draw` stages vertex `cb2` with the camera-relative world matrix at register 0 and a per-draw copy of `m_OffsetViewProjection` at registers 4 to 7. The shader composes `clip = world * OffsetVP` from `cb2`, so the constant-buffer-agnostic reprojection rewriter applies. `cb0` is bound for globals only.
 
-**Draw-kind routing.** The instance-data flags select one of three paths: a CPU-instanced [`DrawIndexedInstancedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedNoMutex) with a u16 instance count; the dominant grass path, [`DrawIndexedInstancedIndirectNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirectNoMutex), whose instance count is in the GPU-only `m_InstDrawParams` args that the vegetation draw-indirect compute pass populates; and a non-instanced [`DrawIndexedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedNoMutex).
+The instance-data flags select one of three paths: a CPU-instanced [`DrawIndexedInstancedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedNoMutex) with a 16-bit instance count; the dominant grass path, [`DrawIndexedInstancedIndirectNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirectNoMutex), whose instance count is in the GPU-only `m_InstDrawParams` arguments the vegetation draw-indirect compute pass fills; and a non-instanced [`DrawIndexedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedNoMutex).
 
-**Wiring — foliage, built.** Drawn once for both eyes like Bark under `single_pass.vegetation_once`, with the same variants and argument copy. The fallback re-issues `Draw` (colour) and [`RenderBlockFoliage::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-DrawZ) (prez/shadow/velocity/RSM) per eye with `cb2[4..7]` reprojected, which covers every draw kind without touching the VS. Both entry points stage the same `cb2[4..7]` copy of `m_OffsetViewProjection`, and both have to be corrected the same way: a prepass left at the centre view primes depth for geometry neither eye draws there, and the per-eye colour fragments are rejected against it. `DrawZ`'s velocity permutation also stages the previous frame's offset VP at `cb2[11..14]`, which the re-issue leaves centred, the same deferral bark's velocity matrix takes.
+The block is drawn once for both eyes, as bark is, under `single_pass.vegetation_once`, with the same variants and argument copy. The fallback re-issues `Draw` and [`RenderBlockFoliage::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-DrawZ) (prepass, shadow, velocity, and RSM) per eye with `cb2[4..7]` reprojected, which covers every draw kind without touching the shader. Both entry points stage the same `cb2[4..7]` copy and must be corrected the same way: a prepass left at the centre view primes depth for geometry neither eye draws there, and the per-eye colour fragments are rejected against it. `DrawZ`'s velocity permutation also stages the previous frame's offset view-projection at `cb2[11..14]`, which the re-issue leaves centred, as bark's is.
 
-### Black-in-VR: the clustered grid is *not* the cause
+### Foliage lighting
 
-The black grass is not the clustered froxel grid, and `single_pass.clustered_per_eye` does not fix
-it. The shader bundle says so directly.
+The visible grass is deferred, not forward-lit. The block's four-target colour permutations (`vegetationfoliage` `sh_0794`, `...nodiscard`, `...objectspacenormalmap`, and `...transmission`) write the G-buffer and bind neither the froxel grid (`LightLookup`, t31) nor `LightingFrameConsts` (cb3). Only the one-target `vegetationfoliageblend` (`sh_0796`) and `...blendaoit` are forward-lit. The instanced foliage colour draws run inside the G-buffer range, from [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS) up to [`RenderPassId::RP_LAST_GBUFFER`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_LAST_GBUFFER), so the deferred resolve lights them, as it lights the terrain.
 
-**The visible grass is deferred, not forward-lit.** The block's colour permutations split cleanly:
+In the forward permutation, the clustered-light section is guarded and purely additive: the sun, sky, GI, and reflection terms are summed before the grid lookup, and the per-light loop only accumulates. A wrong or empty grid removes local point and spot lights but cannot darken the rest. `single_pass.clustered_per_eye` builds the grid per eye for the forward-lit families; the per-eye render width is rounded so the double-wide seam falls on a tile boundary ([`LightManager::LIGHT_GRID_TILE_SIZE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::light_manager::LightManager::LIGHT_GRID_TILE_SIZE), `EYE_WIDTH_ALIGNMENT` in `vr::eye_resolution`).
 
-| Permutation | Outputs | `LightLookup` (t31) / `LightingFrameConsts` (cb3) |
+The forward lighting resources come from [`RenderBlockTypeBase::SetupForwardLightingResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupForwardLightingResources), [`RenderBlockTypeBase::SetupLightingTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupLightingTextures), and the shader bundle's binding tables:
+
+| Slot | Resource | Source |
 |---|---|---|
-| `vegetationfoliage` (`sh_0794`), `…nodiscard`, `…objectspacenormalmap`, `…transmission` | 4 × `SV_Target` | **absent** |
-| `vegetationfoliageblend` (`sh_0796`), `…blendaoit` | 1 × `SV_Target` | present |
+| Pixel cb3 | `LightingFrameConsts` (the point and spot light arrays, `AOLightInfluence`, and `SkyAmbientSaturation`) | [`RenderContext::m_LightBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_LightBuffer) |
+| Pixel t15 | `GbufDiffuse`, the first entry of [`GraphicsEngine::m_GBufferTexture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_GBufferTexture) | the engine, not the context |
+| Pixel t31 | `LightLookup`, the froxel grid (`texture3d`, `uint4`) | [`RenderContext::m_LightLookup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_LightLookup) |
+| Pixel t14 | `ShadowMapTexture`, the sun-shadow cascade atlas (`texture2darray`) | the shadow manager; the binding site is not located |
+| Pixel t44 and t45 | `HorizonMap0` and `HorizonMap1`, world-space horizon maps sampled at the world XZ position | [`RenderContext::m_HorizonMap0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_HorizonMap0) and [`RenderContext::m_HorizonMap1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_HorizonMap1), falling back to [`ShadowManager::m_HorizonMapFallback`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::ShadowManager##field-m_HorizonMapFallback) |
 
-The four-target permutations are G-buffer writers; only the `blend` pair is forward-lit. The user's own session log shows which one runs. The foliage colour draws are counted inside the collapse's G-buffer pass range, from [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS) up to but excluding [`RenderPassId::RP_LAST_GBUFFER`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_LAST_GBUFFER) (`vegetationfoliagehwinstanced`, about 21k draws per frame in the instanced eye-parity census), and [`RenderPassId::RP_VEGETATION_TRANSPARENT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_VEGETATION_TRANSPARENT) is outside that range. The grass that renders black therefore writes the G-buffer and is lit by the deferred resolve, which is the same resolve that lights the terrain correctly.
-
-**Even for the forward permutation, an empty grid cannot produce black.** In `sh_0796` the whole
-clustered-light section is guarded and purely additive:
-
-```
-ishr r12.xy, r6.xyxx, l(6, 6, 0, 0)          // absolute tile from ftoi(SV_Position.xy)
-ld_aoffimmi_indexable(0,0,k)(texture3d) …, t31.xyzw   // four chunk bitmasks
-or r2.x, r1.y, r1.x
-if_nz r2.x
-  …                                           // per-light loop
-  mad r9.xyz, r21.xyzx, r17.xyzx, r9.xyzx     // accumulate only
-endif
-```
-
-`r9` (sun + sky SH + GI + reflection) is complete *before* the lookup. A wrong or empty grid removes
-local point/spot light; it cannot zero the sum. The grid is a real correctness problem for local
-lighting — it is not a black-maker.
-
-**And the per-eye split has never engaged at the mod's own render resolution.** `TileGrid::splittable`
-requires the double-wide width to be a multiple of twice the froxel tile size, [`LightManager::LIGHT_GRID_TILE_SIZE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::light_manager::LightManager::LIGHT_GRID_TILE_SIZE). The VR render size is `2015 × 2240` per eye, so the collapse target is `4030` wide, and every session logs
-
-```
-WARN single_pass: per-eye froxel grid declined: the 4030px double-wide render width is not a
-multiple of 128 …; the clustered light assignment ran whole-grid
-```
-
-That is why toggling `single_pass.clustered_per_eye` changed nothing. Making the split usable means
-rounding the per-eye render width up to a multiple of `LIGHT_GRID_TILE_SIZE` in `vr::engine_render_resolution`, so that the double-wide width is a multiple of twice the tile size. The change is worth making for the local-lighting correctness it provides, but it does not affect the black grass.
-
-**Resource map.** The map below comes from [`RenderBlockTypeBase::SetupForwardLightingResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupForwardLightingResources), [`RenderBlockTypeBase::SetupLightingTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupLightingTextures), and the shader bundle's own binding tables:
-
-| Slot | What it actually is | Source |
-|---|---|---|
-| FS cb3 | `LightingFrameConsts` (point/spot light arrays, `AOLightInfluence`, `SkyAmbientSaturation`) | [`RenderContext::m_LightBuffer`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_LightBuffer) |
-| FS t15 | `GbufDiffuse`, the first entry of [`GraphicsEngine::m_GBufferTexture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##field-m_GBufferTexture) (GBuffer0) | engine, not the context |
-| FS t31 | `LightLookup`, the froxel grid (`texture3d`, `uint4`) | [`RenderContext::m_LightLookup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_LightLookup) |
-| FS t14 | `ShadowMapTexture`, the sun-shadow cascade atlas (`texture2darray`) | shadow manager; the binding site is not yet located |
-| FS t44/t45 | `HorizonMap0`/`HorizonMap1`, world-space horizon maps sampled at `worldXZ * 3.05e-5 + 0.5` | [`RenderContext::m_HorizonMap0`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_HorizonMap0) and [`RenderContext::m_HorizonMap1`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_HorizonMap1), falling back to [`ShadowManager::m_HorizonMapFallback`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::shadow_manager::ShadowManager##field-m_HorizonMapFallback) |
-
-`SetupForwardLightingResources` binds the first `m_GBufferTexture` entry. The t44/t45 identification comes from the `HorizonMap0`/`HorizonMap1` binding names in `sh_0796`, whose sample is world-space, not screen-space. `docs/engine/rendering/lighting-shadow-pipeline.md` §4.2 calls t44/t45
-the sun-shadow cascades and should be corrected the same way.
-
-**What is still open.** The deferred permutation's G-buffer albedo is
-
-```
-o0.xyz = DiffuseMap.rgb · AmbientOcclusionMap.x(v1.zw) · cb1[3].xyz · v5.xyz
-```
-
-and its only screen-space input is the LOD-dissolve screen door
-(`dp2 v0.xy, l(0.467944, -0.703648)`, compared against `1 - v5.w`) — which is what produces the
-*speckle* in the screenshots, and which goes fully opaque at `v5.w = 1` and fully discarded at
-`v5.w = 0`. `v5` is `TEXCOORD4`: a constant `(1,1,1, cb2[8].x)` in the non-instanced VS (`sh_0249`),
-but a **per-instance colour + fade** in the instanced ones — a structured-buffer fetch indexed by
-`SV_InstanceID` in `sh_0253`, and the per-instance vertex attribute `v7` in `sh_0251` (the variant the
-log shows actually running). So "dark and speckled together" is the signature of `v5` reading wrong,
-and after that of the G-buffer *normal* (`o1`), which would leave the deferred resolve computing
-`N·L ≈ 0` on foliage while the terrain beside it lights correctly.
-
-The experiment that separated them was engaging the foliage block intercept, which can engage only
-because of the decline the next section describes.
+The deferred permutation's G-buffer albedo is the diffuse map times the ambient-occlusion map times a material colour times `TEXCOORD4.rgb`, and its only screen-space input is the LOD-dissolve screen door, compared against `1 - TEXCOORD4.w`. `TEXCOORD4` is a constant in the non-instanced shader (`sh_0249`) but a per-instance colour and fade in the instanced ones: a structured-buffer fetch indexed by `SV_InstanceID` in `sh_0253`, and a per-instance vertex attribute in `sh_0251`. Foliage that is both dark and speckled therefore points at that attribute reading wrong, and after it at the G-buffer normal.
 
 ## The vegetation `cb0[4]` misclassification
 
-The rewriter's per-eye set is `cb0[{4, 29..32}]`, and it patches any vertex shader that references one
-of them. But those five rows are not one thing. `cb0[29..32]` is `m_OffsetViewProjection` — it can only
-be a clip-space transform. `cb0[4]` is the camera world position: the translation row of [`RenderContext::m_CameraTransform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_CameraTransform) (the render camera's `m_TransformF`), which [`RenderEngine::SetGlobalShaderProgramCameraConstants`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-SetGlobalShaderProgramCameraConstants) copies into the global constants. Shaders read it for several unrelated reasons.
+The rewriter's per-eye set is `cb0[{4, 29..32}]`, and it patches any vertex shader that references one of those registers. `cb0[29..32]` is `m_OffsetViewProjection`, which can only be a clip-space transform. `cb0[4]` is the camera's world position, the translation row of [`RenderContext::m_CameraTransform`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_CameraTransform), which [`RenderEngine::SetGlobalShaderProgramCameraConstants`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-SetGlobalShaderProgramCameraConstants) copies into the global constants, and shaders read it for several unrelated reasons.
 
-Every `vegetation*` vertex shader that reads `cb0` reads **only** `cb0[4]`, and none of the 32 of them
-references `cb0[29..32]` — most declare `dcl_constantbuffer CB0[5]`, which cannot even address those
-rows. Their roles:
+Every `vegetation*` vertex shader that reads `cb0` reads only `cb0[4]`, and none of them references `cb0[29..32]`; most declare a `cb0` too small to address those registers.
 
 | Family | `cb0[4]` use | Clip position |
 |---|---|---|
-| `vegetationfoliage*` | `add r0.w, r1.y, cb0[4].y` — turns the camera-relative position back into a world one for the wind-noise texture lookup | `cb2[4..7]`, the baked `OffsetVP` |
-| `vegetationbark*instanced` | `add r1.xyz, r0.xyzx, -cb0[4].xyzx` — makes the per-instance world position camera-relative | `cb1[0..3]`, the baked `OffsetVP` |
+| `vegetationfoliage*` | turns the camera-relative position back into a world one for the wind-noise lookup | `cb2[4..7]`, the baked offset view-projection |
+| `vegetationbark*instanced` | makes the per-instance world position camera-relative | `cb1[0..3]`, the baked offset view-projection |
 
-Neither takes its clip position from `cb0`, so the remap buys them nothing when it claims them:
-instance-doubling and `SV_ViewportArrayIndex` routing put them in both eye halves, but both halves are
-drawn from the collapsed **centre** camera. A claim also *locks out the fix*: `baked_cb_intercept_ready`
-declines whenever `BOUND_VS_PATCHED` is set, so the foliage and bark intercepts cannot run
-on a claimed shader.
+Neither takes its clip position from `cb0`. When the remap claims them, instance doubling and viewport routing put them in both eye halves, but both halves are drawn from the centre camera. In the left half of the double-wide target, the terrain, props, and characters are drawn from the left eye while the vegetation is drawn from the centre, so within one image the vegetation sits at a rigid lateral offset of half the IPD from the ground it grows from. The defect is visible in the single-eye desktop mirror, not only in stereo. Two projections that share an optical centre differ by a function of ray direction alone, so a wrong projection displaces geometry by a fixed angle at every depth, while a wrong optical centre displaces it by `offset / distance`. The vegetation's error grows as the camera approaches, which identifies the viewpoint as the cause. Bark's remapped `cb0[4]` supplies the eye's viewpoint and leaves only a fixed projection difference, and foliage's affects only a wind-noise coordinate; the displacement comes from foliage's clip path, which never touches `cb0`.
 
-### What that looks like, and why it is a *mono* defect
+A claim also blocks the repair: `baked_cb_intercept_ready` declines whenever `BOUND_VS_PATCHED` is set, so the foliage and bark intercepts cannot run on a claimed shader.
 
-The symptom is vegetation that is roughly in the right place but does not stay put as the camera
-moves. It is **not** zero disparity between the eyes, and the distinction changes which mechanism to
-chase: it shows in the **left-eye desktop mirror, with the headset not being worn**. A single view
-cannot show a stereo-depth defect at all.
+`stereo::single_pass::baked_cb_block_owns_vs` fixes this. The `cb0` remap declines a family's vertex shaders at creation, so the block intercept owns them end to end: always for the bark and foliage families, and for `nvwater` while `single_pass.nvwater_per_eye` is on (`BAKED_CB_VS_NAME_PREFIXES`). The match is by name prefix but confirmed against the bytecode: a permutation that reads `cb0[29..32]` is left to the remap. The decline and the intercept go together, because declining without the intercept forwards an unpatched instanced draw once at whatever viewport is bound, which stretches it across both eyes.
 
-Under the collapse the render camera stays centred and each patched shader gets its eye's view from
-`cb13`; so in the left half of the double-wide target, terrain, props and characters are drawn from the
-**left eye's** viewpoint while the vegetation is drawn from the **centre**. Within that one image the
-vegetation therefore sits at a rigid world-space offset of `campos_centre − campos_eye0` — half the
-IPD, ~32 mm — from the ground it grows out of. `world_offset` is `eye_position − 0.5·(pos0 + pos1)`
-(`vr::frame`), so it is the eye-to-midpoint vector: lateral, in the camera's own basis, with no forward
-component for a symmetric headset.
+Reprojecting `cb2[4..7]` by `M_eye` is exact: the shader computes `clip = OffsetVP_c * (world - campos_c) = VP_centre * world`, and `M_eye * VP_centre = VP_eye`, so the eye's viewpoint and its projection both land, for every draw kind.
 
-The reason this only shows up when you walk up to a bush is a general property of projection, not a
-coincidence: **two pinhole projections that share an optical centre differ by a homography on the
-image**, i.e. by a function of ray *direction* only. So a wrong projection or a wrong view rotation
-displaces geometry by a fixed angle at every depth, and a wrong *optical centre* displaces it by
-`offset/distance`. Only the second can change as you approach. That is the discriminator, and it points
-at the viewpoint:
+### The other shaders claimed on `cb0[4]` alone
 
-| Candidate | Distance-dependent? | Magnitude |
-|---|---|---|
-| Vegetation drawn from the centre viewpoint instead of the eye's | **yes**, `32 mm / d` — 0.4° at 5 m, 3.7° at 0.5 m | half the IPD |
-| Bark's remapped `cb0[4]` against a centre-baked `OffsetVP` | no — same optical centre, different projection, so a fixed angular warp | — |
-| Foliage's remapped `cb0[4]` in the wind-noise UV | no | bounded by the *vertical* component of a 32 mm offset, against a world-scaled noise lookup |
+Fifty of the bundle's vertex shaders are claimed on a `cb0[4]` reference alone: 23 vegetation shaders and 27 others, pinned by `corpus_vegetation_reads_the_camera_position_but_never_the_view_projection` and classified from their disassembly in `corpus_camera_only_population_is_the_triaged_fifty` (`crates/dxbc-stereo/tests/corpus_patch.rs`). Declining the remap does not fix any of them on its own: the problem is a clip position taken from a centre-camera matrix, claimed or not, and un-patching without supplying a per-eye transform forwards an instanced draw once at whatever viewport is bound. The classification is by where each takes its clip position from:
 
-So of the two `cb0[4]` mis-substitutions, bark's actually *supplied* the correct eye viewpoint (it
-rebases by `cb0[4]`, which the remap makes per-eye) and leaves only the fixed projection difference, while
-foliage's is confined to a wind-noise coordinate and is negligible. The distance-dependent term belongs
-entirely to foliage, whose clip path never touches `cb0` and is therefore wholly centre-viewed. The
-`cb0[4]` misclassification is what *prevents the repair*, not what caused the displacement.
+- A baked world-view-projection in the shader's own constant buffer, which is exactly reprojectable. `generaljc3` (`sh_0065`), `landmark` (`sh_0085`), `layered` (`sh_0086`), and `layeredblend` (`sh_0087`) share one body: `clip = cb1[0..3] * objectPosition`, `cb0[4]` differenced for a LOD fade, and a post-projection depth bias. All four are on `REPROJECT_NAME_PREFIXES` and take the reprojection under `single_pass.reproject` at no extra draw cost. The vegetation families and `terrainshadowsimple` are also in this group but are owned by the block intercepts and the shadow atlas.
+- The global full view-projection, `cb0[0..3]`: [`RenderContext::m_ViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ViewProjectionF), which `SetGlobalShaderProgramCameraConstants` stages into `m_VPGlobalConstData`. These rows are per-view data but not among the five the remap makes per-eye, so these shaders are centre-viewed for a reason the remap cannot fix. The legacy water surfaces (`waterbelow`, `waterbox`, `waterboxbelow`, `waterboxsurface`, `waterhighend`, and `watershader_lod0` and `lod1`), the clouds (`cirrusclouds`, `cloudflythrough`, `clouds`, and `cloudsshadow`), and `weather` are here. They are reprojectable, and since they are already claimed their draws are already doubled and routed, but they are left alone: their name spaces contain NDC writers a prefix would match (`waterbumpcomposite` and `waterfoamsub`), the cloud distances make the parallax negligible, `cloudsshadow` is a shadow pass, and `weather`'s cull branch writes a constant position. `waterbox`, `waterboxbelow`, and `waterboxsurface` reconstruct their world position from `cb0[4]` before the multiply, so for them the remap shifts the position by the eye offset while the projection stays centred, adding error; `waterbelow`, `waterhighend`, and `watershader_lod0` and `lod1` read `cb0[4]` only for a view vector. Reprojecting the legacy water would also require moving the water's per-eye UV bias, which assumes the geometry lands at the centre view, and the water-box surface grid, drawn from `NWater::DrawWaterBoxSurface` rather than `WaterBoxRenderBlock::Draw`, would need its own intercept.
+- Direct NDC writes: `lpvinit` and `lpvinitbilinear` rasterize the light-propagation volume from a vertex id straight into device coordinates and must never be reprojected. Their only `cb0` reads are the scalars `cb0[4].w` and `cb0[5].w`, and `cb13` reproduces `cb0[4].w` unchanged, so the claim is inert.
+- No clip position: `terrainprezsimple`, `nvwaterbox_tess`, and the five `particleeffecttess*` shaders emit tessellation control points, and clip space is built in the domain shader. The reprojection refuses them with `NoPositionOutput`.
 
-What the arithmetic predicts precisely is a rigid ~32 mm lateral displacement that swings around with
-the camera heading and grows angularly as you close on it. Whether "recedes as I approach" is the right
-words for that is interpretation — separating a lateral offset from a depth one needs a frame capture,
-which has not been taken. The mechanism is pinned by the distance dependence regardless of the
-adjective.
+`nvwaterbox` (`sh_0163`) and `nvwaterbox_tess` (`sh_0290`) add the camera position to a model-space position before the baked `cb1[0..3]` multiply, so `cb0[4]` is on their position path. `single_pass.nvwater_per_eye` is a baked-constant-buffer intercept that restages that matrix from the eye's own camera, and while it is on the remap declines these two and the intercept owns them. Remapped instead, the patched shaders would read `cb13` during the re-issue's second invocation, when it is unbound, and reconstruct the wrong camera origin, which puts the water surface at the wrong depth. The prefix is gated on `BlockIntercept::NvWater` because the decline and the intercept's `draw_per_eye_half_ignoring_bound_vs` re-issue must apply together.
 
-The stereo consequence — both eyes seeing the identical centre image, so the vegetation also fuses at
-infinite depth in a headset — is real, and the same fix addresses it. It is simply not what the mirror
-shows.
-
-**The fix, in `stereo::single_pass::baked_cb_block_owns_vs`.** A family's vertex shaders are declined by the `cb0` remap at creation, so the block intercept owns them end to end: always for the bark and foliage families, and for `nvwater` while `single_pass.nvwater_per_eye` is on. It is name-prefixed (`vegetationbark`, `vegetationfoliage`, `nvwater`) but bytecode-confirmed: a permutation that really does read `cb0[29..32]` is left to the remap. The decline and the intercept go together because either alone is wrong — declining without the intercept forwards an unpatched instanced draw once at whatever viewport is bound, which is the 2× horizontal stretch.
-
-Reprojecting `cb2[4..7]` by `M_eye` is exactly the right correction, and not only approximately: the
-shader computes `clip = OffsetVP_c · (world − campos_c) = VP_centre · world`, and
-`M_eye · VP_centre = VP_eye · VP_centre⁻¹ · VP_centre = VP_eye`. The eye's viewpoint *and* its
-projection both land, for every draw kind the block issues.
-
-### The other 27 shaders claimed on `cb0[4]` alone (triaged)
-
-Fifty of the bundle's 455 vertex shaders are claimed on a `cb0[4]` reference alone — 23 vegetation, and
-27 others, pinned by `corpus_vegetation_reads_the_camera_position_but_never_the_view_projection`. Since
-the defect is mono-visible, they deserve a second look, but the conclusion is that *declining the remap
-is not what fixes them*. Being claimed is not the disease; taking clip from a centre-camera matrix is,
-and that is true whether or not the remap claims the shader. Un-patching without supplying a per-eye
-transform makes things worse, not better — an unpatched instanced draw is forwarded once at whatever
-viewport is bound.
-
-Each of the fifty is classified from its disassembly, and the classification is pinned by
-`corpus_camera_only_population_is_the_triaged_fifty`. The axis that matters is where each takes its
-clip from:
-
-- **A baked world-view-projection in the shader's own constant buffer.** Reprojectable:
-  `M_eye · VP_centre = VP_eye`, exactly. `generaljc3` (`sh_0065`), `landmark` (`sh_0085`), `layered`
-  (`sh_0086`), and `layeredblend` (`sh_0087`) are one shared body — `clip = cb1[0..3] · objectPosition`,
-  `cb0[4]` differenced into a `dp3` for a LOD fade (`mad_sat o3.w, r0.x, l(-0.0001), l(1.0)`), and a
-  post-projection depth bias `mad o0.z, cb2[0].x, r0.w, r0.z`. None of them is an NDC writer: each
-  multiplies an object-space position by a 4×4 matrix. All four are on `REPROJECT_NAME_PREFIXES`
-  and take the reprojection under `single_pass.reproject`, at no extra draw cost. The vegetation families and `terrainshadowsimple` are also in this group but are
-  owned elsewhere — the block intercepts and the shadow atlas respectively.
-- **The global full view-projection, `cb0[0..3]`.** [`RenderContext::m_ViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ViewProjectionF)
-  (translation-bearing, mapping *absolute* world to clip), staged into `m_VPGlobalConstData[0..3]` by
-  `SetGlobalShaderProgramCameraConstants` — verified in the IDB, not just read off the def. It is
-  per-view data, but it is **not** one of the five rows the remap makes per-eye, so these shaders are
-  centre-viewed for a reason the remap cannot fix. The legacy water surfaces (`waterbelow`,
-  `waterbox`, `waterboxbelow`, `waterboxsurface`, `waterhighend`, `watershader_lod0/1`), the clouds
-  (`cirrusclouds`, `cloudflythrough`, `clouds`, `cloudsshadow`), and `weather` are all here. They are
-  structurally reprojectable — the reprojection post-multiplies whatever clip the shader computed, so
-  the source buffer is irrelevant — and because they are already *claimed*, their draws are already
-  instance-doubled and viewport-routed, so switching them needs no new draw wiring. They are
-  deliberately left alone anyway: their name spaces contain outright NDC writers a prefix would sweep
-  up (`waterbumpcomposite` writes `mad o0.xy, v0.xyxx, l(2,-2), l(-1,1)`, `waterfoamsub` passes `v0`
-  straight to `o0`), the cloud distances make `32 mm / d` vanish, `cloudsshadow` is a shadow pass, and
-  `weather`'s cull branch writes a literal `o0 = (2,2,2,1)`.
-
-  Three of the legacy water permutations — `waterbox`, `waterboxbelow`, `waterboxsurface` — reconstruct
-  their world position from `cb0[4]` before that multiply (`add r1.xyz, r0.xyzx, cb0[4].xyzx` ahead of
-  the `cb0[0..3]` chain), so for them the remap is not merely inert: it shifts the reconstructed world
-  position by the eye offset while the projection stays centred, adding the error instead of correcting
-  it. (`waterbelow`, `waterhighend`, and `watershader_lod0/1` do *not* — they build an absolute grid
-  position from `cb2[0]` and read `cb0[4]` only for an output view vector. Worth separating, because it
-  is the difference between a wrong sign and a no-op.) Reprojecting them is still not a standalone
-  change: the water's per-eye UV bias biases their projective screen UVs on the premise that the
-  geometry lands at the *centre* view, so the two have to move together, with the staged UV rows
-  rebuilt from the eye's full view-projection. The water-box surface grid is drawn from
-  `NWater::DrawWaterBoxSurface` rather than `WaterBoxRenderBlock::Draw` and would need its own
-  intercept as well.
-- **Direct NDC writes.** `lpvinit` and `lpvinitbilinear` rasterize the light-propagation volume from a
-  vertex id straight into device coordinates (`mad r0.x, r0.x, l(2.0), l(-1.0)`, `o0.w = 1`). They must
-  never be reprojected. Their only `cb0` reads are the scalars `cb0[4].w` and `cb0[5].w`, so the remap
-  claims them on a lane that is not a position at all — and `cb13` reproduces `cb0[4].w` verbatim, so
-  the claim is inert.
-- **No clip position at all.** `terrainprezsimple`, `nvwaterbox_tess`, and the five
-  `particleeffecttess*` emit tessellation control points; clip is built downstream in the domain
-  shader, and the reprojection refuses them with `NoPositionOutput`. The particles read only
-  `cb0[4].w` / `cb0[5].w`.
-
-`nvwaterbox` (`sh_0163`) and `nvwaterbox_tess` (`sh_0290`) add the camera position to a model-space position before the baked `cb1[0..3]` multiply, so `cb0[4]` is on their position path.
-
-`single_pass.nvwater_per_eye` is a baked-cb block intercept that restages that matrix from the eye's own camera, and `nvwater*` is on `BAKED_CB_VS_NAME_PREFIXES`, so while the flag is on the remap declines these two and the intercept owns them end to end. Remapping them instead rewrites the selector to the stereo constant buffer, and `cb13` is unbound during the second invocation of the re-issue, so the patched box and tessellation shaders read an unbound constant buffer and reconstruct the wrong camera origin, which puts the water surface at the wrong depth.
-
-The prefix is gated on `BlockIntercept::NvWater` because the decline and the intercept's `draw_per_eye_half_ignoring_bound_vs` re-issue must land together: declining without the intercept forwards the draw once at whatever viewport is bound.
-
-**The bound-shader gate.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
-reads the shader bound by the *previous* draw, because these blocks bind their own inside the `Draw`
-being wrapped. Bark is drawn interleaved with patched model geometry, so the check would stand its
-intercept down on a neighbour's shader. `BoundVsGate::Owned` skips it for the two families whose
-shaders are declined at creation and therefore provably unpatched; every other caller keeps
-`BoundVsGate::Checked`.
+`baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check reads the shader bound by the previous draw, because these blocks bind their own inside the `Draw` being wrapped. Bark is drawn interleaved with patched model geometry, so the check would stand its intercept down on a neighbour's shader. `BoundVsGate::Owned` skips the check for the two families whose shaders are declined at creation and therefore unpatched; every other caller uses `BoundVsGate::Checked`.
 
 ## TreeImpostor
 
-Far-distance tree billboard cards, `TreeImpostorRB`. The block's draw is [`TreeImpostorRB::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRB##func-Draw), and [`TreeImpostorRBType::Create`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRBType##func-Create) builds the static quad index buffer and loads the permutations.
+Far-distance tree billboard cards are `TreeImpostorRB`. The draw is [`TreeImpostorRB::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRB##func-Draw), and [`TreeImpostorRBType::Create`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRBType##func-Create) builds the static quad index buffer and loads the permutations.
 
-**Transform source: global billboard VP CB, bucket (b).** The block issues a single non-instanced `DrawIndexed` over a static quad index buffer, six indices per card up to a fixed card cap (documented on `TreeImpostorRB::Draw`). The VS keys off `SV_VertexID` (`card = id >> 2`, `corner = id & 3`), pulls per-card world position, size, and atlas data from a texture buffer at vertex slot 0, and computes clip from the engine's global per-view billboard CB (the translation-bearing `m_ViewProjectionF`), not from cb0. It writes `SV_Position` directly, and no GPU-indirect path shares the VS.
+The block issues one non-instanced `DrawIndexed` over a static quad index buffer, six indices per card up to a fixed cap (documented on `TreeImpostorRB::Draw`). The vertex shader derives the card and corner from `SV_VertexID`, pulls each card's world position, size, and atlas data from a texture buffer at vertex slot 0, computes clip space from the global full view-projection (`m_ViewProjectionF`), and writes `SV_Position`. No GPU-indirect path shares the shader.
 
-**Wiring — the tree impostors, built.** The one clean allowlist win: `treeimpostor*` is a VS
-name prefix in the reproject set. The CB-agnostic reproject rewriter post-multiplies `SV_Position` by
-`M_eye` and emits `SV_ViewportArrayIndex`, and the plain `DrawIndexed` is then instance-doubled by the
-draw detour with the L/R viewport split. The card faces the centre camera rather than each eye, but at
-impostor range the per-eye facing difference is arcseconds — `M_eye` supplies the parallax, so shared
-facing is sufficient. No per-draw special-casing.
+`treeimpostor` is a reprojection name prefix (`VEGETATION_REPROJECT_NAME_PREFIXES`): the reprojection rewriter post-multiplies `SV_Position` by `M_eye` and emits `SV_ViewportArrayIndex`, and the draw detour instance-doubles the plain `DrawIndexed` with the viewport split. The card faces the centre camera rather than each eye, which at impostor range differs by a negligible angle, and `M_eye` supplies the parallax.
 
-**The pixel size.** [`TreeImpostorRBType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRBType##func-Setup) stages the vertex shader's `PixelSize` as one over the render context's [`m_DisplayWidth`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_DisplayWidth) and `m_DisplayHeight`. The vertex shader projects the card's centre and a point half its size away through the global view-projection, which under the collapse carries one eye's projection, and divides the clip-space difference by `PixelSize` to get the card's footprint in pixels; the pixel shader scales its atlas-coordinate derivatives by that footprint to offset the atlas lookup. Under the double-wide collapse `m_DisplayWidth` is both eyes' width, so the footprint came out twice as wide as in an eye-sized render and every card's alpha-tested silhouette moved: at the midday shore-lake view the impostors on the near ridge owned about 2,900 of the 3,000 pixels per eye whose depth differed from an isolated render, none of them a parallax shift. The collapse detours `Setup` and halves the display width for the length of the call (`stereo::single_pass::EyeDisplayWidth`), which brought those pixels to about 70 per eye. The impostors stay one instance-doubled draw.
+[`TreeImpostorRBType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRBType##func-Setup) stages the vertex shader's `PixelSize` as one over the render context's [`m_DisplayWidth`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_DisplayWidth) and `m_DisplayHeight`. The vertex shader projects the card's centre and a point half its size away and divides the clip-space difference by `PixelSize` to get the card's footprint in pixels, and the pixel shader scales its atlas-coordinate derivatives by that footprint. Under the double-wide collapse `m_DisplayWidth` is both eyes' width, so the footprint would come out twice as wide as in an eye-sized render and every card's alpha-tested silhouette would move. The collapse detours `Setup` and halves the display width for the duration of the call (`stereo::single_pass::EyeDisplayWidth`). At the midday shore-lake view this brought the impostor pixels whose depth differed from an isolated render from about 2,900 of 3,000 per eye to about 70.
 
 ## Occluder
 
-Depth-priming occluder proxies, `RenderBlockOccluder` (registered `"Occluder"`), injected once per frame into [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS) to prime the main camera depth buffer for early-Z. The block's draw is [`RenderBlockOccluder::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockOccluder##func-DrawZ); the block is depth-only (null fragment program).
+Depth-priming occluder proxies are `RenderBlockOccluder` (registered as `"Occluder"`), drawn once per frame in [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS) to prime the main depth buffer for early-Z. The draw is [`RenderBlockOccluder::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockOccluder##func-DrawZ), and the block is depth-only.
 
-**Transform source: baked WVP in cb1, bucket (b).** The non-instanced path bakes `WVP = (world − camera_offset) · m_OffsetViewProjection` (via [`CalculateOffsetWorldViewProjectionMatrix`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::render_pass##func-CalculateOffsetWorldViewProjectionMatrix)) into vertex `cb1` registers 0 to 3, with register 4 a depth bias, and issues one `DrawIndexed` per box. The
-instanced path (`gfx.occluders.use_instancing`) instead reads cb0 `m_VPGlobals` with per-instance world
-rows from a stream and issues one `DrawIndexedInstanced` — which collides with the `SV_InstanceID & 1`
-eye-doubling.
+The non-instanced path bakes `(world - camera_offset) * m_OffsetViewProjection` (through [`CalculateOffsetWorldViewProjectionMatrix`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::render_pass##func-CalculateOffsetWorldViewProjectionMatrix)) into vertex `cb1` registers 0 to 3, with register 4 a depth bias, and issues one `DrawIndexed` per box (bucket b). The instanced path, selected by the `gfx.occluders.use_instancing` cvar, reads `cb0`'s `m_VPGlobals` with per-instance world rows from a stream and issues one `DrawIndexedInstanced`.
 
-**Occlusion-culling concern — resolved.** This only primes the GPU depth buffer for the same-frame eye
-views; nothing reads it back on the CPU, and the CPU software-occlusion system (BFBC) is entirely
-separate. So forcing it per-eye is safe and correct — and necessary: a mono occluder pass primes the
-shared depth with one eye's projection, giving the other eye wrong early-Z (over-cull holes or lost
-priming).
+The pass only primes the GPU depth buffer for the same frame; nothing reads it back on the CPU, and the CPU software occlusion (BFBC) is separate. Drawing it per eye is therefore safe, and necessary: a mono occluder pass primes the shared depth with one projection and gives the other eye wrong early-Z.
 
-**Wiring — the occluder, built with an unenforced precondition.** `DrawZ` is detoured and
-re-issued per eye into the eye's half-viewport with `cb1[0..3]` reprojected by `M_eye` (row 4, the depth
-bias, unchanged). The box count is small and bounded.
+`DrawZ` is detoured and re-issued per eye into the eye's half-viewport with `cb1[0..3]` reprojected by `M_eye` and the depth bias unchanged. This assumes the non-instanced path. Nothing in the mod sets `gfx.occluders.use_instancing`; if the instanced path is selected, the block bakes no `cb1` matrix and both eyes are primed from the centre view. The intercept logs when its armed reprojection never fires (`REPROJECT_FIRED`), which surfaces that condition.
 
-This assumes the non-instanced path. Nothing in the mod writes `gfx.occluders.use_instancing`, so if
-the instanced path is selected the block bakes no `cb1` matrix and the re-issue reprojects nothing —
-both eyes are primed from the centre view. The intercept logs when its armed reprojection never fires,
-which is what surfaces the condition; forcing the cvar needs the cvar seam, which is not RE'd.
+## The shared bucket-(b) and (d) mechanism
 
-## The shared bucket-(b) / (d) mechanism
+Bark, the terrain patches, and the GPU-indirect foliage reduce to one primitive: re-issue a block's draw once per eye with the eye's transform and half-viewport. Two ways of selecting the eye cover every case:
 
-Several blocks (Bark, the terrain patches, and the GPU-indirect foliage) reduce to the same primitive:
-re-issue a block's `Draw` once per eye, with the eye's transform and half-viewport. Two eye-selection
-paths cover every case:
+- Reprojecting a baked constant buffer, for a shader that reads a CPU-baked world-view-projection: before each eye's re-issue, the baked registers are multiplied by `M_eye`, register by register, since they are the matrix's columns. Every built intercept bakes the buffer inside its own `Draw`, so a reprojection is armed on the game's `SetVertexProgramConstants` for the duration of the wrapped call to the original `Draw`, and the game's own upload is reprojected without replicating the bake. The arm is keyed to the block's graphics context, because the detour sees every vertex-constant upload in the process and the slot and offset alone do not identify a block.
+- The `cb13` override, for a shader that reads its eye from `cb13`: before each eye's re-issue, the mod's `cb13` is written with both eye slots set to that eye's rows, so a single indirect instance reads the right eye. No block intercept uses it; the draw-level re-issues do, for the terrain patch system's pinned-eye shaders and for the already-instanced draws.
 
-- **Reproject a baked cb** (bucket b, when the VS reads a CPU-baked WVP): before each eye's re-issue,
-  overwrite the baked matrix entries by `M_eye` (entry-wise `M_eye · cb[k]`, since the entries are the
-  matrix's columns). When the block bakes the cb inside its own `Draw` — all four built intercepts do —
-  a reproject-interception is armed on the game's `SetVertexProgramConstants` for the duration of a
-  wrapped original-`Draw` call, so the game's own upload is transparently reprojected and the bake need
-  not be replicated. The arm is keyed to the block's graphics context: the detour sees every
-  vertex-constant stage in the process, and `(slot, offset)` alone does not identify a block.
-- **cb13 override** (bucket d, when the shader reads its eye from `cb13`): before each eye's
-  re-issue, write the mod's `cb13` with both eye slots set to that eye's rows, so a single (indirect)
-  instance reads the correct eye. No block intercept uses it; the draw-level re-issues do, for the
-  terrain patch system's pinned-eye shaders and for the already-instanced draws.
+The terrain has its own switches (`single_pass.terrain`, with `single_pass.terrain_patch_per_eye` beneath it); the bark, foliage, occluder, and tree impostor intercepts apply whenever the collapse is active, with `single_pass.vegetation_once` choosing between the single draw and the per-eye re-issue for bark and foliage.
 
-The terrain keeps its own flags (`single_pass.terrain`, with `single_pass.terrain_patch_per_eye`
-beneath it); the bark, foliage, occluder, and tree impostor intercepts have none and apply whenever the
-collapse is active.
-
-A re-issue marks itself while it runs, so the draw and viewport detours leave the block's own calls
-alone rather than compounding the split, and the intercept declines outright if the bound vertex
-shader turns out to be one the rewriter patched — that block already renders both eyes from a single
-draw.
+A re-issue marks itself while it runs, so the draw and viewport detours leave the block's own calls alone rather than splitting them again, and the intercept declines if the bound vertex shader is one the rewriter patched, since such a block already renders both eyes from one draw.
