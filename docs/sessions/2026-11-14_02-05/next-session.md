@@ -185,6 +185,7 @@ The restructure of #77: the layer crates, the registration, the staged ticks, th
 143. Open and close the debug panel, the pause menu, and the map mid-hold; cancel a capture; switch to the gamepad; turn the controllers off; use a mounted gun; hang from a helicopter (the stunt row counts the hang); snatch with the grapple.
 144. Strike glass with a held prop and with a bullet: it breaks where it did.
 145. Spawn a few weapons and vehicles from the spawner: they spawn, and the weapons show their names.
+146. Acts, now decided in one place: starts and stops straighten and a standing turn plays the game's turn-in-place; in a vehicle Rico does not look back when reversing; no automatic holster, but a deliberate one works; a slide skips the wind-up starts; with the evade off the barrel roll is dropped; swapping the primary mid-draw aborts the clip.
 
 ## What was built for the deferred work
 
