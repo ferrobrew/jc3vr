@@ -49,12 +49,11 @@ use crate::{
     },
 };
 
-/// Register the VR runtime's shutdown cleanup. Call once at init (from [`crate::initialize_from_game`]
-/// via the module declaration wiring). The cleanup fully tears the runtime down so the OpenXR
+/// Register the VR runtime's shutdown cleanup. Called once at init by the payload. The cleanup fully tears the runtime down so the OpenXR
 /// instance never outlives the DLL on uninject → reinject.
 pub fn install() {
     // Register the native-resolution shutdown restore: the deferred resize back to the pre-VR display
-    // size is requested while the hooks are still live, so the delayed hook uninstall (lib.rs
+    // size is requested while the hooks are still live, so the delayed hook uninstall (the payload's
     // `shutdown_startup`) leaves the `Draw` prologue time to service it before teardown.
     resolution::install();
     jc3vr_core::lifecycle::on_cleanup(|_renderer| {
@@ -65,9 +64,9 @@ pub fn install() {
     });
 }
 
-/// The once-per-frame entry point, called from the game thread by `hooks::game::game_update_render`.
-/// Pumps OpenXR events, drives bring-up/retry/teardown per config, and
-/// returns whether a session is currently running (so the caller can decide whether to submit VR
+/// The once-per-frame entry point, called from the game thread by the payload's
+/// `game_update_render`. Pumps OpenXR events, drives bring-up/retry/teardown per config, and returns
+/// whether a session is currently running (so the caller can decide whether to submit VR
 /// frames). OpenXR failures degrade to flatscreen stereo and are retried; the one exception is a
 /// loader that will not load, which aborts the process (see [`LoaderUnavailable`]).
 pub fn update() -> bool {
@@ -179,8 +178,8 @@ pub fn published_status() -> PublishedStatus {
     }
 }
 
-/// Tear the runtime down and clear all state. Idempotent. Registered with [`jc3vr_core::lifecycle`], so it
-/// runs on uninject — where the instance and session are kept alive (their handles stashed in the
+/// Tear the runtime down and clear all state. Idempotent. Run by the cleanup [`install`] registers
+/// with [`jc3vr_core::lifecycle`], so it runs on uninject — where the instance and session are kept alive (their handles stashed in the
 /// game process environment, the wrappers leaked) for a reinject to reuse, sidestepping the
 /// runtime's per-process instance/session budget (see [`crate::vr::persist`]).
 pub fn uninstall() {
@@ -196,8 +195,8 @@ pub fn uninstall() {
 /// The game thread takes the state briefly at the top of the render update, and teardown takes the
 /// submit side under it ([`crate::vr::submit`]), which a frame holds while it waits on engine
 /// threads, so a blocking lock is safe only on the game thread at the top of a frame, holding no
-/// other lock ([`ThreadRole::may_block_on_vr_state`]). A lock from any other role is reported: debug builds
-/// panic, and release builds log the first one at error level and go on to lock. The check is one
+/// other lock ([`ThreadRole::may_block_on_vr_state`]). A lock from any other role is reported: debug
+/// builds panic, and release builds log the first one at error level and go on to lock. The check is one
 /// thread-local read. See `docs/mod/threading.md`.
 #[track_caller]
 pub(super) fn lock_state() -> MutexGuard<'static, VrState> {
@@ -296,12 +295,13 @@ pub(super) struct VrState {
     /// The recenter baseline (cockpit frame). `None` until first recenter.
     pub(super) baseline: Option<Baseline>,
     pub(super) origin_reference_space: ReferenceSpaceChanges,
-    /// The latest located head pose in LOCAL space, for [`crate::vr::recenter`]. `None` until a frame
+    /// The latest located head pose in LOCAL space, for [`crate::vr::recenter`](mod@crate::vr::recenter). `None` until a frame
     /// locates.
     pub(super) latest_head_pose: Option<xr::Posef>,
-    /// The runtime's recommended per-eye render resolution (raw, before [`VrConfig::resolution_scale`]),
-    /// cached at bring-up. Feeds [`crate::vr::native_eye_resolution`] so the engine can render each eye
-    /// at the same size the swapchain uses. `None` while torn down.
+    /// The runtime's recommended per-eye render resolution (raw, before
+    /// [`VrConfig::resolution_scale`]), cached at bring-up. Feeds
+    /// [`crate::vr::eye_resolution::native_eye_resolution`] so the engine can render each eye at the
+    /// same size the swapchain uses. `None` while torn down.
     recommended_view: Option<(u32, u32)>,
     /// The runtime name reported at bring-up, cached for the debug UI. `None` while torn down.
     runtime_name: Option<String>,
@@ -602,8 +602,6 @@ impl VrState {
         false
     }
 
-    /// Tear the runtime down in order: swapchain → session → instance. Ending a running session
-    /// first is best-effort (the runtime may already be stopping). Clears all derived state.
     /// Walk a running session through the OpenXR exit handshake before it is destroyed: request
     /// exit, then pump events to `end()` it on STOPPING and wait for EXITING, so the runtime
     /// releases the session and the instance slot it holds. Destroying a still-running session

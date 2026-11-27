@@ -1,8 +1,8 @@
 //! Mod-owned back buffer: substitute a mod-allocated render target for the engine's swapchain-derived
 //! one, so the render resolution and the swapchain size stop being the same number.
 //!
-//! See `docs/mod/stereo/swapchain-ownership.md` for the full design and the reverse-engineering behind it.
-//! The short version: the engine builds `m_BackBufferLinear` as a *format alias of DXGI back buffer
+//! See `docs/mod/stereo/swapchain-ownership.md` for the full design and the reverse-engineering
+//! behind it. The short version: the engine builds `m_BackBufferLinear` as a *format alias of DXGI back buffer
 //! 0*, so resizing the scene to the per-eye render resolution drags the swapchain along with it, and
 //! the desktop present then rescales the whole frame onto a window of a different size and shape.
 //! Substituting a mod-owned texture for the three swapchain-derived objects breaks that link.
@@ -29,8 +29,8 @@
 //!
 //! Substitution is live only while it buys something: [`crate::vr::resolution`] takes ownership only
 //! while it is driving a render size of its own -- an XR session with `vr.native_resolution` on --
-//! and only with `vr.own_back_buffer` set (`docs/mod/stereo/swapchain-ownership.md` §8). Outside that, every
-//! path here is inert and the engine's own objects stand untouched.
+//! and only with `vr.own_back_buffer` set (`docs/mod/stereo/swapchain-ownership.md` §8). Outside
+//! that, every path here is inert and the engine's own objects stand untouched.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -82,14 +82,14 @@ static BYPASS_RESIZE_SUBSTITUTE: AtomicBool = AtomicBool::new(false);
 const BACKING_NAME: &std::ffi::CStr = c"VrBackBuffer";
 
 /// The packed `CreateRenderSetupParams::m_Flags` the engine uses for both of its back-buffer
-/// setups: `m_AutoResolve = 1` (bit 0), `m_EDRAMLayout = 0` (bits 1-2), and `m_UAVStart = 15`
-/// (bits 3-6, the "immediately after the colour targets" sentinel).
+/// setups: `m_AutoResolve` on, `m_EDRAMLayout` at its default, and `m_UAVStart` at its
+/// "immediately after the colour targets" sentinel.
 const BACK_BUFFER_SETUP_FLAGS: u32 = 0x79;
 
 /// Whether the mod currently owns the engine's back-buffer objects.
 ///
 /// Read by both hook gates on the render thread and written by the session transitions on the game
-/// thread, so it is an atomic rather than living in [`STATE`]: the gates must never block, and a hook
+/// thread, so it is an atomic rather than living behind a lock like [`BACKING`]: the gates must never block, and a hook
 /// that took the state lock could deadlock against a transition holding it across an `ApplyResize`.
 static OWNED: AtomicBool = AtomicBool::new(false);
 
@@ -134,7 +134,7 @@ pub fn resize_substitute_bypassed() -> bool {
 /// A no-op unless ownership is live, the substitution is installed, and the sizes actually differ.
 ///
 /// **Must run with the draw thread drained**, from the frame top on the game thread — the sole call
-/// site is `hooks::game::game_update_render` at the frame top, before the eye loop. That is what
+/// site is the payload's `game_update_render` at the frame top, before the eye loop. That is what
 /// makes [`BYPASS_RESIZE_SUBSTITUTE`] sound: it is a process-global flag guarding a window in which
 /// no other thread may enter the `Graphics::ResizeBuffers` detour. If an `ApplyResize` on the render
 /// thread ever overlapped that window it would take the real resize and drag the swapchain to the
@@ -171,7 +171,7 @@ pub fn sync_swapchain_to_window() {
     crate::vr::mirror::teardown();
 
     // The real `ResizeBuffers` writes the device info as well as the DXGI buffers -- it is the same
-    // write Hook B stands in for. Here that is wrong: the device info must keep meaning "the render
+    // write the `Graphics::ResizeBuffers` substitute stands in for. Here that is wrong: the device info must keep meaning "the render
     // size", which is precisely what the substitution decoupled it from the swapchain to say. Left
     // clobbered, the render-size driver sees the size collapse to the window's, requests the per-eye
     // size again, and every sync sets off another resize-and-resubstitute round trip.
@@ -440,8 +440,8 @@ unsafe fn substitute(engine: &mut GraphicsEngine) -> anyhow::Result<()> {
     engine.m_BackBufferLinear = surface.cast::<Texture>();
     engine.m_PostEffectRenderSetup = post_effect;
     engine.m_BackBufferRenderSetup = composite;
-    // Not restored here: the next CreateRenderSetups cycle (driven by ApplyResize in on_shutdown)
-    // repopulates m_RenderContext.m_RenderSetup, the same cycle that clears INSTALLED.
+    // Not restored here: the next CreateRenderSetups cycle (driven by an ApplyResize, such as the
+    // shutdown restore's) repopulates m_RenderContext.m_RenderSetup, the same cycle that clears INSTALLED.
     engine.m_RenderContext.m_RenderSetup = composite;
 
     // Consumers before the thing they consume: the setups reference the surface.
@@ -454,7 +454,8 @@ unsafe fn substitute(engine: &mut GraphicsEngine) -> anyhow::Result<()> {
 }
 
 /// Create the mod-owned backing texture: a plain single-mip render target in the format the engine's
-/// own back buffer uses, so no alias is needed to bridge a format gap (`docs/mod/stereo/swapchain-ownership.md` §4.5).
+/// own back buffer uses, so no alias is needed to bridge a format gap
+/// (`docs/mod/stereo/swapchain-ownership.md` §4.5).
 ///
 /// # Safety
 /// `device` must be the live graphics device.

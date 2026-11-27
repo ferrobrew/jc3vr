@@ -8,10 +8,10 @@
 //! `_SRGB`) format. Sizes and formats generally differ, so this is a **shader blit** (fullscreen
 //! triangle sampling the eye SRV into the slice RTV), not a `CopyResource`. It runs on the engine's
 //! immediate context under `Context::m_Mutex`, serialized with the engine's own render work, the
-//! same model as the desktop mirror (`crate::vr::mirror`).
+//! same model as the desktop mirror ([`crate::vr::present_mirror`]).
 //!
-//! Each eye reaches its slice by one of two routes. The direct route ([`arm_direct`], on by default
-//! through `vr.direct_eye_blit`) acquires the swapchain image at the top of the render update and
+//! Each eye reaches its slice by one of two routes. The direct route ([`arm_direct`], taken for every
+//! frame that renders both eyes, until a failure turns it off for the session) acquires the swapchain image at the top of the render update and
 //! blits each eye from the engine's back buffer in that eye's own post-draw ([`blit_direct`]), so the
 //! full-size copy into the eye capture is made only when something else reads that capture (the
 //! desktop mirror's eyes, a screenshot, the recorder, the previews). Under the single-pass collapse
@@ -21,9 +21,10 @@
 //! for any eye the direct route did not reach. The submit blits exactly the eyes the direct route
 //! did not.
 //!
-//! The gamma bridge (linear source vs `_SRGB` target) is a runtime toggle; see
-//! [`crate::vr::config::BlitGamma`] and `vr_blit_ps.hlsl`. The blit also darkens the image by the
-//! comfort fade's level ([`set_fade_level`], from [`crate::controllers::roomscale::fade`]): the
+//! The gamma bridge (display-referred source vs `_SRGB` target): the blit always linearizes the
+//! sampled colour, so the target's hardware encode cancels it (`vr_blit_ps.hlsl`). The blit also
+//! darkens the image by the comfort fade's level ([`set_fade_level`], from the body crate's roomscale
+//! fade): the
 //! engine's own screen fade belongs to the game's fades (loading, teleports, cutscenes), so the
 //! mod's fade is applied here, at the last stage before the compositor.
 
@@ -129,8 +130,8 @@ pub fn fade_level() -> f32 {
 
 /// Start the direct route for this frame: acquire the swapchain image now and publish it, so each
 /// eye's post-draw can blit into its slice ([`blit_direct`]). Call on the game thread after
-/// [`crate::vr::WaitedFrame::begin`] and before the dispatches, only for a frame that renders and whose
-/// dispatches each carry one eye. Any other frame calls [`disarm_direct`] instead.
+/// [`crate::vr::WaitedFrame::begin`] and before the dispatches, only for a frame that renders both
+/// eyes. Any other frame calls [`disarm_direct`] instead.
 ///
 /// Acquiring here rather than at the submit moves the swapchain image wait onto the game thread,
 /// where it is measured as `vr_swapchain_wait`; the image is the runtime's oldest and is normally
@@ -227,8 +228,7 @@ pub fn direct_status() -> DirectStatus {
 
 /// Blit `src`, the engine's back buffer as eye `eye`'s post-draw leaves it, into that eye's
 /// swapchain slice, when the direct route is armed for this frame; under the collapse `source`
-/// picks the eye's half of it. Returns whether it did; on
-/// `false` the caller copies the eye into its capture, so the submit blits it from there. Restores
+/// picks the eye's half of it. Returns whether it did; on `false` the caller copies the eye into its capture, so the submit blits it from there. Restores
 /// the pipeline state the engine's following passes rely on.
 ///
 /// # Safety
@@ -812,7 +812,7 @@ impl VrBlit {
         Ok(())
     }
 
-    /// Get (creating and caching on first use) the render-target view over `image`'s swapchain slice.
+    /// The render-target view over `image`'s swapchain slice, created on first use.
     fn rtv_for(
         &mut self,
         device: &Device,
@@ -850,8 +850,8 @@ impl VrBlit {
         Ok(rtv)
     }
 
-    /// Get (creating and caching on first use, rebuilding on a texture change) the source
-    /// shader-resource view over the captured eye texture for `eye`.
+    /// The source shader-resource view over the captured eye texture for `eye`, created on first use
+    /// and rebuilt on a texture change.
     fn srv_for(
         &mut self,
         device: &Device,
@@ -877,7 +877,7 @@ impl VrBlit {
         Ok(srv)
     }
 
-    /// Get (creating on the frame's first use) a shader-resource view over the engine's back buffer
+    /// A shader-resource view over the engine's back buffer, created on the frame's first use,
     /// that samples it exactly as its copy into an eye capture does: the raw 8-bit values, through
     /// an `R8G8B8A8_UNORM` view. `None` when the texture cannot be read that way (no shader-resource
     /// binding, multisampled, or a format other than `R8G8B8A8_UNORM` or `R8G8B8A8_TYPELESS`); the

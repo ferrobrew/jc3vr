@@ -8,8 +8,8 @@ use crate::vr::{VR_CONFIG, state::lock_state};
 /// The per-eye render resolution the engine should target while a session is running: the runtime's
 /// recommended view size × [`VrConfig::resolution_scale`](crate::vr::VrConfig::resolution_scale),
 /// matching the stereo swapchain so the blit is a straight scale-1 pass. `None` when no session is up
-/// or the recommended size is unknown. Read by [`crate::vr::resolution`] once per frame, at the top of
-/// the frame: it locks the runtime state, which only the game thread may do there (see
+/// or the recommended size is unknown. Read through [`engine_render_resolution`] once per frame, at
+/// the top of the frame: it locks the runtime state, which only the game thread may do there (see
 /// `docs/mod/threading.md`).
 pub(crate) fn native_eye_resolution() -> Option<(u32, u32)> {
     let cfg = VR_CONFIG.lock().clone();
@@ -43,8 +43,8 @@ pub(crate) fn engine_render_resolution() -> Option<(u32, u32)> {
 /// applied only under the collapse. Rounding one of the two would make them disagree, and the collapse
 /// can be toggled at runtime while the swapchain keeps the size it was created at.
 ///
-/// The cost is at most 63 extra columns per eye (~1.6% more pixels at the width above), paid whether
-/// or not the collapse is on. That is cheap against a lighting fix that otherwise cannot run at all.
+/// The cost is less than one tile's width of extra columns per eye, paid whether or not the collapse
+/// is on. That is cheap against a lighting fix that otherwise cannot run at all.
 pub(super) fn scaled_eye_size(width: u32, height: u32, resolution_scale: f32) -> (u32, u32) {
     let scale = resolution_scale.max(0.1);
     let w = ((width as f32) * scale).round() as u32;
@@ -54,7 +54,7 @@ pub(super) fn scaled_eye_size(width: u32, height: u32, resolution_scale: f32) ->
 
 /// The alignment the per-eye render width is rounded up to.
 ///
-/// The clustered lighting grid is a 64-pixel tile lattice. Under the single-pass collapse the eye seam
+/// The clustered lighting grid is a lattice of square tiles this many pixels wide. Under the single-pass collapse the eye seam
 /// falls at the middle of a double-wide target, so it lands on a whole tile column only when each
 /// eye's width is a whole number of tiles -- otherwise a partial tile column straddles the seam, there
 /// is no correct way to split it between the eyes, and the per-eye grid build declines. A runtime's
@@ -76,7 +76,7 @@ mod tests {
 
     /// The whole point of the alignment: whatever the runtime recommends, the doubled width the
     /// collapse renders into must land on a whole froxel tile column, i.e. be a multiple of twice the
-    /// 64-pixel tile size. 2015 is the width that exposed this -- it produced a 4030 px target and the
+    /// tile size. 2015 is the width that exposed this -- it produced a 4030 px target and the
     /// per-eye light grid declined on every frame of every session.
     #[test]
     fn double_wide_width_lands_on_a_whole_tile_column() {

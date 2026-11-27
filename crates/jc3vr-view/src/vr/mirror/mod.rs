@@ -4,8 +4,8 @@
 //! ## Why a mirror is needed
 //!
 //! While a session runs the compositor owns the HMD present and the engine's own present is
-//! suppressed for both eyes (`BLOCK_FLIP`, `docs/engine/rendering/rendering.md` §7), so the game window would freeze
-//! on a stale frame. This module presents the game's own swapchain itself -- exactly once per frame,
+//! suppressed for both eyes (`BLOCK_FLIP`, `docs/engine/rendering/rendering.md` §7), so the game
+//! window would freeze on a stale frame. This module presents the game's own swapchain itself -- exactly once per frame,
 //! unsynced -- with the configured [`MirrorView`]'s eye captures drawn into the back buffer.
 //!
 //! ## Framing and the stretch pre-compensation
@@ -16,8 +16,8 @@
 //!
 //! The pre-compensation below exists for the paths where it is not: with `vr.own_back_buffer` off,
 //! the engine's swapchain buffers are resized to the per-eye render resolution
-//! (`vr.native_resolution`, `docs/engine/rendering/rendering.md` §9), which is near-square, while the Win32 window
-//! keeps its original (usually 16:9) client rect. DXGI's BitBlt present then stretches the whole back
+//! (`vr.native_resolution`, `docs/engine/rendering/rendering.md` §9), which is near-square, while the
+//! Win32 window keeps its original (usually 16:9) client rect. DXGI's BitBlt present then stretches the whole back
 //! buffer onto the window client rect, so a straight full-buffer draw would be distorted.
 //! [`mirror_viewport`] computes a viewport *in buffer space* such that, after the buffer→window
 //! stretch, the eye image lands at its own aspect, centered; with buffer == window that computation
@@ -47,10 +47,10 @@
 //!
 //! ## Threading
 //!
-//! Everything runs on the game's main thread, after both eyes have drawn and the draw worker has
-//! drained (the payload's `hooks::game`). The letterbox draw, egui composite, and present run under the engine's
-//! `Context::m_Mutex`, serialized with the engine's render work, the same discipline as
-//! [`crate::vr::blit`].
+//! Everything runs after both eyes have drawn and the draw worker has drained: on the game's main
+//! thread (the payload's `hooks::game`) or on the deferred frame tail ([`crate::vr::tail`]). The
+//! letterbox draw, egui composite, and present run under the engine's `Context::m_Mutex`,
+//! serialized with the engine's render work, the same discipline as [`crate::vr::blit`].
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -303,8 +303,8 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         window_size,
     );
 
-    // The engine wraps swapchain back buffer 0 (`docs/engine/rendering/rendering.md` §7); drawing into its resource and
-    // then presenting the swapchain is the engine's own present path, minus the vsync/bookkeeping.
+    // The engine wraps swapchain back buffer 0 (`docs/engine/rendering/rendering.md` §7); drawing
+    // into its resource and then presenting the swapchain is the engine's own present path, minus the vsync/bookkeeping.
     let back_texture = &back_buffer.m_Texture;
 
     let mut guard = MIRROR.lock();

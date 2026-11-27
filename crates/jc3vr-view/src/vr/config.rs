@@ -4,29 +4,21 @@ use jc3vr_core::config::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// Which depth convention the per-eye off-axis projection is written in, and where in the
-/// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7, `docs/mod/vr-runtime.md` blocker 1).
-/// The headset path always writes [`EnginePreReverseZ`](Self::EnginePreReverseZ); the other form
-/// describes per-eye parameters built outside the camera hook (the overlay's own views).
+/// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7). The headset
+/// path always writes [`EnginePreReverseZ`](Self::EnginePreReverseZ); only tests build parameters
+/// in the other form.
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ProjectionConvention {
-    /// **Preferred and verified-correct.** Write a standard (non-reverse-Z) off-axis projection into
+    /// The headset path. Write a standard (non-reverse-Z) off-axis projection into
     /// `m_Projection` *before* the engine's `SetupRenderCamera`, so the engine applies its reverse-Z
     /// remap and TAA jitter to it exactly once, matching every other camera. `SetupRenderCamera`
     /// consumes the pre-written `m_Projection` in place rather than rebuilding it from FOV/near/far
     /// (settled against the engine, `docs/engine/rendering/rendering.md` §2.9), so this write reaches the GPU.
     #[default]
     EnginePreReverseZ,
-    /// **Fallback / escape hatch.** Write an already-reverse-Z'd off-axis projection *after*
-    /// `SetupRenderCamera` (so the engine does not re-reverse it), then rebuild the view-projections
-    /// manually. TAA jitter is not applied on this path.
-    ///
-    /// The consume-vs-rebuild question this guards against is settled against the engine
-    /// (`docs/engine/rendering/rendering.md` §2.9): `Camera::SetupRenderCamera` *consumes* whatever is in
-    /// `m_Projection`, applying `z' = w - z` to it in place — it never rebuilds from FOV/near/far —
-    /// so the pre-call [`EnginePreReverseZ`](Self::EnginePreReverseZ) write flows through correctly
-    /// and is the verified-correct default. This variant exists only as a runtime escape hatch
-    /// for a headset playtest, in case the depth still reads wrong for a reason not visible from the
-    /// desktop.
+    /// An already-reverse-Z'd off-axis projection, as if written *after* `SetupRenderCamera` (so the
+    /// engine does not re-reverse it), with the view-projections rebuilt manually. TAA jitter is not
+    /// applied on this path.
     ManualReverseZ,
 }
 
@@ -104,8 +96,8 @@ pub static VR_CONFIG: ConfigSlot<VrConfig> = ConfigSlot::new("vr");
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VrConfig {
     /// Master switch: bring up the OpenXR session and render to the HMD. Off leaves the mod in
-    /// flatscreen stereo (and tears any live runtime down). While on, a failed bring-up is retried
-    /// every ten seconds until it succeeds.
+    /// flatscreen stereo (and tears any live runtime down). While on, a failed bring-up is retried on
+    /// the runtime tuning's retry interval until it succeeds.
     pub enabled: bool,
     /// Per-eye swapchain resolution scale, applied to the runtime's recommended width/height. `1.0`
     /// is the runtime's recommendation; lower trades sharpness for fill rate. Clamped to a small
@@ -117,7 +109,8 @@ pub struct VrConfig {
     /// `None`, the default, takes the runtime's.
     #[serde(default)]
     pub(crate) recommended_size_override: Option<[u32; 2]>,
-    /// World scale: metres of head/IPD motion per engine unit (`1.0` = 1:1). Kept here so the render wiring and the camera path share one knob.
+    /// World scale: metres of head/IPD motion per engine unit (`1.0` = 1:1). Kept here so the render
+    /// wiring and the camera path share one knob.
     pub world_scale: f32,
     /// Override path to the OpenXR loader DLL. `None` loads `openxr_loader.dll` next to the payload
     /// DLL, falling back to the platform default search path.
@@ -177,8 +170,8 @@ pub struct VrConfig {
     pub freeze_mode: FreezeMode,
 }
 
-/// The serde default for [`VrConfig::native_resolution`] (the manual [`Default`] via
-/// [`VrConfig::new`] is not consulted per-field when a field is absent from the serialized form).
+/// The serde default for the switches that ship on (the manual [`Default`] via [`VrConfig::new`] is
+/// not consulted per-field when a field is absent from the serialized form).
 fn default_true() -> bool {
     true
 }

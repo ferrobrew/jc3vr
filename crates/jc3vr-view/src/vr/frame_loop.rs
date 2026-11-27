@@ -55,7 +55,7 @@ use crate::{
 ///
 /// It may run while the previous frame's deferred tail still holds the submit side: OpenXR lets a
 /// frame's `xrWaitFrame` follow the previous frame's `xrBeginFrame` without waiting for its
-/// `xrEndFrame`. Called from `hooks::game::game_update_render`.
+/// `xrEndFrame`. Called from the payload's `game_update_render`.
 pub fn frame_wait() -> Option<WaitedFrame> {
     live_tracking::tracking_unavailable();
     let mut guard = lock_state();
@@ -210,9 +210,9 @@ pub struct EyeView {
     pub(crate) raw_pose: xr::Posef,
     /// The eye's field of view, as reported by `locate_views`.
     pub fov: xr::Fovf,
-    /// The off-axis projection for [`fov`](Self::fov). Write [`standard_depth`]
-    /// (`OffAxisProjection::standard_depth`) into `m_Projection` before `SetupRenderCamera`
-    /// (`docs/engine/rendering/rendering.md` §2.7 / blocker 1).
+    /// The off-axis projection for [`fov`](Self::fov). Write its
+    /// [`standard_depth`](OffAxisProjection::standard_depth) into `m_Projection` before
+    /// `SetupRenderCamera` (`docs/engine/rendering/rendering.md` §2.7).
     pub projection: OffAxisProjection,
 }
 
@@ -386,7 +386,7 @@ pub struct LocatedFrame {
 
 impl VrState {
     /// Wait for a frame and locate the per-eye views, re-based into the cockpit frame. Updates the
-    /// latest head pose (for [`crate::vr::recenter`]) from the mid-eye pose.
+    /// latest head pose (for [`crate::vr::recenter`](mod@crate::vr::recenter)) from the mid-eye pose.
     fn wait_frame(&mut self, cfg: &VrConfig) -> anyhow::Result<LocatedFrame> {
         flight_pose::unavailable();
         let _timing = frame_timing::scope(Slot::VrBeginFrame);
@@ -649,10 +649,6 @@ fn end_frame(
         .context("vr: end_frame failed")
 }
 
-/// Log the runtime's per-eye views the first time a frame locates them: each eye's field of view and
-/// its turn from the mid-eye head pose, and the distance between the eyes. The headset's own view
-/// geometry is otherwise recorded nowhere, and it is what a headset-like rig in the visual harness
-/// approximates.
 /// The frame loop's record of a frame, for the tracking recorder.
 fn capture_sample(
     display_time: xr::Time,
@@ -680,6 +676,10 @@ fn eye_sample(eye: &EyeView) -> EyeSample {
     }
 }
 
+/// Log the runtime's per-eye views the first time a frame locates them: each eye's field of view and
+/// its turn from the mid-eye head pose, and the distance between the eyes. The headset's own view
+/// geometry is otherwise recorded nowhere, and it is what a headset-like rig in the visual harness
+/// approximates.
 fn log_located_views_once(eyes: &[EyeView; 2]) {
     if VIEWS_LOGGED.swap(true, Ordering::Relaxed) {
         return;

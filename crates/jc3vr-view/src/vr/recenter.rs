@@ -32,12 +32,12 @@ use crate::{
 
 /// Recenter the cockpit: re-base the stored baseline from the latest located VIEW-space pose, taking
 /// its position and yaw only (the cockpit model). The frame loop consumes the baseline when
-/// mapping per-eye poses (see [`crate::vr::frame`]). No-op until a frame has located a head pose.
+/// mapping per-eye poses (see [`crate::vr::begin_render_frame`]). No-op until a frame has located a head pose.
 ///
-/// Out of a seat, only the yaw and the height are re-based
-/// ([`crate::controllers::roomscale::manual_recenter_kind`]), and the body rig then snaps the pelvis
-/// under the neck by re-basing the cockpit shift ([`crate::controllers::root::on_recenter`]):
-/// the view moves to the body, so the recenter never puts the body through a wall. The seat
+/// Out of a seat, only the yaw and the height are re-based (the kind the frame participants'
+/// [`manual_recenter_kind`](crate::vr::FrameParticipants::manual_recenter_kind) picks), and the body
+/// rig then snaps the pelvis under the neck by re-basing the cockpit shift (through
+/// [`on_recenter`](crate::vr::FrameParticipants::on_recenter)): the view moves to the body, so the recenter never puts the body through a wall. The seat
 /// transitions ask for their own re-base through [`request_seat_recenter`].
 ///
 /// The re-base runs at the start of the next frame ([`auto_recenter_tick`]), like
@@ -61,7 +61,7 @@ pub enum RecenterKind {
 }
 
 /// Who asked for a recenter, which decides whether it also re-bases the seated eye reference
-/// ([`crate::controllers::roomscale::on_recenter`]).
+/// (through [`on_recenter`](crate::vr::FrameParticipants::on_recenter)).
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum RecenterCause {
     /// The player: the F7 key, the debug UI's and the pause menu's buttons, the stick click chord,
@@ -369,17 +369,18 @@ const REQUEST_NONE: u8 = 0;
 const REQUEST_YAW_HEIGHT: u8 = 1 << 0;
 const REQUEST_FULL: u8 = 1 << 1;
 const REQUEST_MANUAL: u8 = 1 << 2;
-/// The kind [`crate::controllers::roomscale::manual_recenter_kind`] picks, chosen when the request
-/// is serviced.
+/// The kind the frame participants'
+/// [`manual_recenter_kind`](crate::vr::FrameParticipants::manual_recenter_kind) picks, chosen when
+/// the request is serviced.
 const REQUEST_POSTURE: u8 = 1 << 3;
 
 /// Drive the gameplay-resume auto-recenter and service the recenters asked for since the last frame.
 /// Call once per frame on the game thread, before `frame_wait` locates the views. Arms while the
 /// game is not in settled gameplay (frontend, loading, or no local player character), and fires a
-/// single manual recenter once gameplay is running and the player's head anchor has stopped moving (the
-/// entry animation has finished), so the neutral snaps to the player's real pose. In-session
-/// transitions such as exiting a vehicle keep a live character, so they never re-arm and never fire.
-/// See [`crate::vr::VrConfig::auto_recenter_on_gameplay`].
+/// single manual recenter once gameplay is running, the session has no baseline yet, and the
+/// player's head anchor has stopped moving (the entry animation has finished), so the neutral snaps
+/// to the player's real pose. A baseline already taken disarms it instead. In-session transitions
+/// such as exiting a vehicle keep a live character, so they never re-arm and never fire.
 pub fn auto_recenter_tick() {
     if !is_running() {
         PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
@@ -398,8 +399,8 @@ pub fn auto_recenter_tick() {
     let anchor = crate::headpose::anchor();
 
     let mut s = AUTO_RECENTER.lock();
-    // Arm whenever we are not in settled gameplay, so the next resume fires exactly one recenter while
-    // in-session transitions (which keep a live character) do not.
+    // Arm whenever we are not in settled gameplay, so the next resume fires at most one recenter
+    // while in-session transitions (which keep a live character) do not.
     if !in_gameplay || !has_character {
         s.armed = true;
         s.settled_since = None;

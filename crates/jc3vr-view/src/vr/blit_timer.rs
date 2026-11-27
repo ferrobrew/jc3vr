@@ -1,8 +1,8 @@
 //! GPU timing of the frame tail's swapchain blit, for a benchmark run that times passes.
 //!
 //! The submit's blit (`crate::vr::blit`) runs on the frame tail, outside every dispatch, so the
-//! dispatch timestamp layer (`jc3vr_render::profiler::gpu`) cannot bracket it. While a benchmark run asks
-//! for per-pass times, [`TailBlitTimer`] brackets it with a timestamp pair inside a disjoint query of
+//! dispatch timestamp layer (`jc3vr_render::profiler::gpu`) cannot bracket it. While a benchmark run
+//! asks for per-pass times, [`TailBlitTimer`] brackets it with a timestamp pair inside a disjoint query of
 //! its own, reads the result back a few frames later without waiting, and files it into the run's
 //! totals (`crate::gpu_passes`) as the detail `frame tail: swapchain blit` on
 //! lane [`TAIL_LANE`].
@@ -22,8 +22,7 @@ use windows::{
 
 use crate::gpu_passes::{self, GpuPassLabel};
 
-/// The lane the tail blit's time is filed under, past the dispatch lanes (the two eyes and the far
-/// field).
+/// The lane the tail blit's time is filed under, past the dispatch lanes.
 pub(super) const TAIL_LANE: u8 = 3;
 
 /// A small ring of query sets, so a frame's read-back can trail its submit by a few frames.

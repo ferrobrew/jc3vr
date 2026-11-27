@@ -26,7 +26,7 @@
 //!
 //! - [`OffAxisProjection::standard_depth`]: a standard (non-reversed) projection, NDC z in `[0, 1]`
 //!   with near → 0 and far → 1. **This is the one to write into `m_Projection` before
-//!   `SetupRenderCamera`** (blocker 1): the engine then applies its own reverse-Z remap (`z' = w - z`)
+//!   `SetupRenderCamera`**: the engine then applies its own reverse-Z remap (`z' = w - z`)
 //!   and TAA jitter to it exactly once, matching every other camera. `SetupRenderCamera` consumes the
 //!   pre-written `m_Projection` in place (it does not rebuild it from FOV/near/far, §2.9), so this
 //!   write reaches the GPU. Feeding an already-reversed matrix into that window double-applies the

@@ -71,17 +71,16 @@ pub static FORCE_STENCIL_TEST: AtomicBool = AtomicBool::new(false);
 pub static STENCIL_TEST_BITS: AtomicU64 = AtomicU64::new(0);
 
 /// The bits of a packed depth-stencil index that the stencil test occupies (`StencilEnable` through
-/// `StencilPassOp`, low-dword bits 6..31 and high-dword bits 32..39). Cleared before OR-ing in
-/// [`STENCIL_TEST_BITS`] so the injected test fully replaces any prior stencil config while leaving the
-/// depth bits (0..5) untouched.
+/// `StencilPassOp`). Cleared before OR-ing in [`STENCIL_TEST_BITS`] so the injected test fully replaces
+/// any prior stencil config while leaving the depth bits untouched.
 const STENCIL_INDEX_MASK: u64 = 0x0000_00FF_7FFF_FFC0;
 
-/// The `StencilEnable` bit (bit 6) of a packed depth-stencil index; a draw that already has it set uses
+/// The `StencilEnable` bit of a packed depth-stencil index; a draw that already has it set uses
 /// stencil for its own purpose and is left alone.
 const STENCIL_ENABLE_BIT: u64 = 1 << 6;
 
-/// The stencil bit the mask tags dropped pixels with: bit 7, which the engine's own stencil use
-/// leaves free.
+/// The stencil bit the mask tags dropped pixels with, which the engine's own stencil use leaves
+/// free.
 pub const MASK_BIT: u32 = 0x80;
 
 /// Parameters for the mask-write and fill-in passes, in surface-independent units; the passes
@@ -230,12 +229,12 @@ pub fn packed_stencil_test(mask_bit: u32) -> u64 {
     const STENCIL_OP_KEEP: u64 = 1; // D3D11_STENCIL_OP_KEEP
     let read_mask = u64::from(mask_bit) & 0xFF;
     STENCIL_ENABLE_BIT
-        | (COMPARISON_EQUAL << 7)        // StencilFunc (bits 7..10)
-        | (read_mask << 11)              // StencilReadMask (bits 11..18)
-        // StencilWriteMask (bits 19..26) left 0: the test must not write.
-        | (STENCIL_OP_KEEP << 27)        // StencilFailOp (bits 27..30)
-        | (STENCIL_OP_KEEP << 32)        // StencilDepthFailOp (high dword bits 0..3)
-        | (STENCIL_OP_KEEP << 36) // StencilPassOp (high dword bits 4..7)
+        | (COMPARISON_EQUAL << 7)        // StencilFunc.
+        | (read_mask << 11)              // StencilReadMask.
+        // StencilWriteMask left 0: the test must not write.
+        | (STENCIL_OP_KEEP << 27)        // StencilFailOp.
+        | (STENCIL_OP_KEEP << 32)        // StencilDepthFailOp.
+        | (STENCIL_OP_KEEP << 36) // StencilPassOp.
 }
 
 /// Inject the peripheral stencil test into `ctx`'s staged depth-stencil index, if foveation is forcing it

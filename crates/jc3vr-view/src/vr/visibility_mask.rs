@@ -1,5 +1,5 @@
 //! The runtime's hidden-area mesh per eye (`XR_KHR_visibility_mask`): queried, logged, and shown in
-//! the debug UI. Nothing is masked with it yet.
+//! the debug UI. Nothing masks with it.
 //!
 //! The extension is enabled whenever the runtime offers it (`crate::vr::state`). The hidden
 //! triangle mesh of each eye is fetched on the first located frame of a session and again after a

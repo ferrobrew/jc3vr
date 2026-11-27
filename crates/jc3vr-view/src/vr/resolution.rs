@@ -4,8 +4,8 @@
 //!
 //! The engine sizes every scene render target from `device->m_DeviceInfo.m_DisplayWidth`/
 //! `m_DisplayHeight` through `CreateRenderSetups`, re-run at runtime only by `ApplyResize`
-//! (`docs/engine/rendering/render-setups-reinit.md`). Rather than call `ApplyResize` directly, this drives the
-//! engine's **own deferred display-mode state**: it writes the pending dimensions into
+//! (`docs/engine/rendering/render-setups-reinit.md`). Rather than call `ApplyResize` directly, this
+//! drives the engine's **own deferred display-mode state**: it writes the pending dimensions into
 //! [`m_WindowWidth`](GraphicsEngine::m_WindowWidth)/[`m_WindowHeight`](GraphicsEngine::m_WindowHeight)
 //! and sets [`m_HasNewWindowSettings`](GraphicsEngine::m_HasNewWindowSettings), exactly as
 //! `GraphicsEngine::ResizeBuffers` does for a windowed/settings resize.
@@ -13,15 +13,15 @@
 //! prologue (which runs inside the first eye's `game.Draw`, see `payload/src/hooks/game.rs`), then
 //! calls `ApplyResize(m_WindowWidth, m_WindowHeight)` at the exact frame boundary the engine chose --
 //! previous dispatch drained, this frame not yet dispatched -- so the idle-context assumption
-//! `ApplyResize` needs holds by construction (`docs/engine/rendering/render-setups-reinit.md` §2/§6). We populate the
-//! request from the frame top ([`apply_native_resolution`], before the eye loop) so it is visible to
+//! `ApplyResize` needs holds by construction (`docs/engine/rendering/render-setups-reinit.md` §2/§6).
+//! We populate the request from the frame top ([`apply_native_resolution`], before the eye loop) so it is visible to
 //! that prologue.
 //!
 //! Driving the full `ApplyResize`, rather than a scene-only `CreateRenderSetups`, is what makes the
 //! *whole* pipeline follow: the pass-owned pools resize through the registered callbacks and the
 //! Scaleform view size through the UI reset, neither of which `CreateRenderSetups` touches
-//! (`docs/engine/rendering/render-setups-reinit.md` §3/§5). It also sets `CameraManager.m_AspectRatio` from the
-//! per-eye `width/height`, so flatscreen-built projections do not render squashed. It **never touches
+//! (`docs/engine/rendering/render-setups-reinit.md` §3/§5). It also sets `CameraManager.m_AspectRatio`
+//! from the per-eye `width/height`, so flatscreen-built projections do not render squashed. It **never touches
 //! the Win32 window** (§4: it never calls `SetWindowPos`).
 //!
 //! It would also resize the DXGI swapchain buffers to the same size (`Graphics::ResizeBuffers`).
@@ -36,7 +36,7 @@
 //! The pre-VR display size is captured before the first resize. When the session ends (loss,
 //! `vr.enabled` off) the per-frame tick requests a resize back to it; on uninject a registered
 //! lifecycle cleanup ([`on_shutdown`]) sets the same deferred restore while the hooks are still live,
-//! so the delayed hook uninstall (`lib.rs` `shutdown_startup`) leaves the `Draw` prologue time to
+//! so the delayed hook uninstall (the payload's `shutdown_startup`) leaves the `Draw` prologue time to
 //! service it and the game is left exactly as found.
 //!
 //! ## Failure handling
@@ -90,7 +90,7 @@ pub fn install() {
     jc3vr_core::lifecycle::on_cleanup(|_renderer| on_shutdown());
 }
 
-/// The once-per-frame driver, called from the frame top in `hooks::game::game_update_render` **before
+/// The once-per-frame driver, called from the frame top in the payload's `game_update_render` **before
 /// the eye loop**, so the request is visible to the first eye's `Draw` prologue that services it.
 ///
 /// Requests a deferred engine resize to the per-eye native size while a session is running and
@@ -209,10 +209,7 @@ pub fn apply_native_resolution() {
     } else {
         target
     };
-    // The size the engine should be at: the native target, or -- when restoring -- the window's live
-    // client size, falling back to the size captured at take-over. The live rect wins because the
-    // engine follows WM window resizes itself, so a window moved during the session makes the capture
-    // stale, and restoring it would leave the game rendering at the wrong size for its own window.
+    // The size the engine should be at: the native target, or the restore target ([`restore_target`]).
     // A `None` original with a `None` target means we never took over, so there is nothing to do.
     let desired = desired_size(&st, current, target, restore_target(&st));
     let Some(desired) = desired else {
@@ -349,9 +346,8 @@ fn on_shutdown() {
 ///
 /// The live rect wins because the engine follows WM window resizes itself, so a window moved during
 /// the session makes the capture stale, and restoring it would leave the game rendering at the wrong
-/// size for its own window. Shared by the per-frame restore and the synchronous shutdown restore --
-/// the two ran different expressions once, disagreed, and the later one dragged the game back to the
-/// stale size.
+/// size for its own window. Shared by the per-frame restore and the synchronous shutdown restore so
+/// the two cannot disagree and drag the game back to the stale size.
 fn restore_target(st: &ResolutionState) -> Option<(u32, u32)> {
     st.original
         .map(|original| crate::vr::window::client_size().unwrap_or(original))
@@ -366,9 +362,8 @@ fn restore_display_size() {
         return;
     };
     // Restore to the window's *current* client size rather than the size captured at bring-up (see
-    // the note in `apply_native_resolution`). Recorded back into `original` so that if a later frame
-    // still runs the per-frame restore, it agrees rather than dragging the game back to the stale
-    // size -- which is exactly what undid this restore before.
+    // [`restore_target`]). Recorded back into `original` so that if a later frame still runs the
+    // per-frame restore, it agrees rather than dragging the game back to the stale size.
     let original = restore_target(&st).unwrap_or(original);
     st.original = Some(original);
     st.pending = None; // supersede any in-flight deferred resize; we restore directly below

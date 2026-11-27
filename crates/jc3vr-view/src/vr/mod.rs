@@ -1,7 +1,7 @@
 //! The OpenXR runtime: session lifecycle, event pump, and the per-frame API surface the Draw wiring
 //! drives. This module owns the OpenXR instance, session, reference spaces, and stereo swapchain. The
 //! per-frame loop ([`update`] → [`frame_wait`] → [`WaitedFrame::begin`] → [`FrameContext`] →
-//! per-eye blit → [`present_and_submit`]) is driven from `hooks::game::game_update_render`; the
+//! per-eye blit → [`present_and_submit`]) is driven from the payload's `game_update_render`; the
 //! per-eye render parameters flow to the camera hook and the draw task through [`frame`]'s per-frame
 //! slots ([`render_params`]), not the runtime's locks. See `docs/mod/vr-runtime.md` for the loop end
 //! to end.
@@ -13,8 +13,8 @@
 //! toolchain) does not build in this environment -- cmake selects the Ninja generator, which the
 //! cross toolchain lacks -- so the portable choice is the runtime loader. The loader DLL defaults to
 //! `openxr_loader.dll` next to the payload DLL ([`jc3vr_core::module::get_path`]) and is overridable via
-//! [`crate::vr::VrConfig::loader_path`]. When the loader is absent the mod stays in flatscreen
-//! stereo and retries on the configured cadence.
+//! [`crate::vr::VrConfig::loader_path`]. A loader that will not load is a deployment fault, so the
+//! bring-up treats it as fatal rather than retrying (see the `loader` module).
 //!
 //! ## Threading
 //!
@@ -31,8 +31,8 @@
 //! ## Degradation and retry
 //!
 //! Bring-up failure at any stage logs on target `"vr"` and leaves the mod in flatscreen stereo;
-//! [`update`] retries the whole bring-up every [`crate::vr::VrConfig::retry_interval_secs`] while
-//! `vr.enabled`. Turning `vr.enabled` off, or [`jc3vr_core::lifecycle`] shutdown, tears the runtime down
+//! [`update`] retries the whole bring-up on the cadence of the runtime tuning's `retry_interval_s`
+//! while `vr.enabled`. Turning `vr.enabled` off, or [`jc3vr_core::lifecycle`] shutdown, tears the runtime down
 //! in order (swapchain → session → instance) so the OpenXR instance never outlives the DLL.
 
 pub mod projection;
