@@ -112,8 +112,8 @@ fn get_parachute_steering_values(
 /// `parachute.align_reversed_rad` from the facing. The game's alignment runs
 /// at full strength from the canopy's first update out of a reel, unlike an opening out of a fall,
 /// and the reel's speed falls through zero and overshoots backward as the canopy opens, which reads
-/// as a heading error of half a turn: on the 14 November take the canopy turned Rico 39 degrees
-/// left in a quarter of a second at 1459.4. The game turns the yaw through a spring whose speed
+/// as a heading error of half a turn, which the canopy turns Rico through. The game turns the
+/// yaw through a spring whose speed
 /// scales both its integration and the turn, so the call is made with that speed at zero.
 ///
 /// # Safety

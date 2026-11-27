@@ -218,8 +218,8 @@ pub unsafe fn seat_out(character: &mut Character) -> SeatOut {
 /// Ragdoll a character a topple left standing, as the hit reaction would have: the hit reaction's
 /// ragdoll act ([`EventIdSymbolTable::ACT_HITREACT_RAGDOLL`]) where the state takes it, else the
 /// full ragdoll ([`EventIdSymbolTable::ACT_FULL_RAGDOLL`]). The hit reaction returns without
-/// ragdolling in states the topple does not see (an ally holding her gun stayed standing through
-/// three topples on the 14 November take, and fell once disarmed). Returns whether an act was
+/// ragdolling in states the topple does not see, such as a character holding a gun, which stays
+/// standing until it is disarmed. Returns whether an act was
 /// queued; a protected, dead, or already ragdolling character, or one whose state keeps its
 /// footing, is left alone.
 ///

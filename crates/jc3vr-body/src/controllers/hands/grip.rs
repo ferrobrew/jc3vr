@@ -1029,7 +1029,7 @@ mod tests {
         ]
     }
 
-    /// A flipped-axes rig with a grip of the size and turn the session log showed.
+    /// A flipped-axes rig with a grip of the size and turn seen in play.
     fn logged_rig() -> [(Mat4, Mat4); 2] {
         let left_wrist = pose(
             Vec3::new(-0.4, 1.3, 0.05),

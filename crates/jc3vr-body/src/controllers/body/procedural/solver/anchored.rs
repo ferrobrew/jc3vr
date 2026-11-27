@@ -54,9 +54,8 @@ pub(crate) fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> R
         return animated;
     };
     // The clip's lean is taken out about the spine's base first, by the input's share, so the
-    // player's motion bends the spine from a torso square over the pelvis: on 14 November the walk
-    // clips' 20 to 27 degree forward lean left the chest kinked back toward the eyes, filling the
-    // view looking down.
+    // player's motion bends the spine from a torso square over the pelvis, since a clip's forward
+    // lean would otherwise kink the chest back toward the eyes and fill the view looking down.
     let delean = if input.delean.is_finite() {
         input.delean.clamp(0.0, 1.0)
     } else {

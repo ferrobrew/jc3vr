@@ -3,10 +3,10 @@
 //! The falls and the wingsuit move the character through the air physics
 //! ([`NAirMovement_UpdateAirPhysics`]), which caps the speed at its settings' `m_MaxVelocity`
 //! (and, without steering, the horizontal speed at `m_MaxVelocityXZ`) by rescaling the whole
-//! velocity. A reel out of the air ends in a fall whose cap is far below a reel's speed, so on the
-//! 14 November take every component of a reel's 30 to 36 m/s dropped to about 0.43 of itself in one
-//! tick, and the wingsuit opened from what was left. A velocity written before the update is capped
-//! again in it, and one written after is overwritten by the next tick's.
+//! velocity. A reel out of the air ends in a fall whose cap is far below a reel's speed, so the
+//! velocity is scaled down in one tick, and the wingsuit opens from what is left. A velocity
+//! written before the update is capped again in it, and one written after is overwritten by the
+//! next tick's.
 //!
 //! So when a reel or the grapple lock lets the local player go in the air with a speed above the
 //! fall's, the cap itself is raised to that speed and eased back to the game's over the input

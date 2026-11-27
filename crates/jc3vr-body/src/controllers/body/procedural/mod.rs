@@ -328,8 +328,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.hips.track(case, &animated, dt);
     // The square stance is for the standing idle only: a landing's or a get-up's clip that has
     // stopped the root still turns the hips and places the feet itself, and squared under it the
-    // feet slid across a slope at their old height (6 of 18 fast-fall landings on the 14 November
-    // take, which read as on foot once grounded).
+    // feet slid across a slope at their old height.
     // SAFETY: the live local character, at the pose gate on the game thread.
     let active_state = unsafe { active_state_type_id(character) };
     let idle = active_state.is_some_and(|state| STANCE_IDLES.contains(state));

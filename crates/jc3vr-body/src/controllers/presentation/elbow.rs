@@ -16,9 +16,9 @@
 //! and back), the pole's part across the reach vanishes, and a pole straight back fades in as it
 //! shrinks. The direction is then smoothed ([`smooth`]) with a time constant of a few frames.
 //!
-//! The rule and its weights come from an offline study of the 6 November 2026 session, where it
-//! halved the elbow's flips about the shoulder-wrist axis and the elbow's jumps the wrist did not
-//! share, against the elbow HumanIK drew; `docs/mod/rendering/presentation-layer.md` has the
+//! The rule and its weights come from an offline study of recorded tracking, where it halves the
+//! elbow's flips about the shoulder-wrist axis and the elbow's jumps the wrist does not share,
+//! measured against the elbow HumanIK draws; `docs/mod/rendering/presentation-layer.md` has the
 //! numbers.
 
 use body_rig::math::{Side, smooth::follow_factor};
@@ -126,7 +126,7 @@ fn across(v: Vec3, axis: Vec3) -> Vec3 {
 }
 
 /// The little-finger side of the left hand in its bone's frame, fitted to the tracked wrist
-/// joint's across the 6 November 2026 session with a median residual of about a degree.
+/// joint's across recorded sessions with a median residual of about a degree.
 const LEFT_LITTLE_FINGER: Vec3 = Vec3::new(0.265_185_6, 0.319_041_06, -0.909_884_3);
 
 #[cfg(test)]
