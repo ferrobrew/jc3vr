@@ -13,9 +13,9 @@ pub(super) struct AspectSize {
 /// How the desktop mirror frames an image (one eye, the stereo pair, or the UI panel) inside the
 /// game window.
 ///
-/// While a session runs the swapchain buffers are the per-eye render resolution, which is near-square
-/// (often taller than wide), while the Win32 client rect keeps its original widescreen aspect. The two
-/// aspects have to be reconciled, and the choice is the same one every VR game's companion view makes.
+/// The eye image is the per-eye render resolution, which is near-square (often taller than wide),
+/// while the Win32 client rect keeps its original widescreen aspect. The two aspects have to be
+/// reconciled, and the choice is the same one every VR game's companion view makes.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(super) enum MirrorFraming {
     /// Scale the eye image up until it covers the whole window, cropping whatever falls outside
@@ -119,8 +119,8 @@ pub(super) struct Viewport {
     pub(super) height: f32,
 }
 
-/// The range [`mirror_viewport`]'s `zoom` is clamped to. The upper bound keeps the (deliberately oversized) `Fill` viewport well inside D3D11's viewport bounds
-/// and the rasterizer guard band for any plausible buffer size; the lower bound keeps the image
+/// The range [`mirror_viewport`]'s `zoom` is clamped to. The upper bound keeps the (deliberately
+/// oversized) `Fill` viewport well inside D3D11's viewport bounds and the rasterizer guard band for any plausible buffer size; the lower bound keeps the image
 /// visible at all.
 const MIRROR_ZOOM_RANGE: std::ops::RangeInclusive<f32> = 0.25..=4.0;
 
@@ -459,7 +459,6 @@ mod tests {
 
     /// With the mod owning the back buffer the swapchain matches the window, and the buffer→window
     /// pre-compensation degenerates to the identity: the viewport is simply the window-space rect.
-    /// Pins that so the compensation can be removed once ownership is the only mode.
     #[test]
     fn equal_buffer_and_window_needs_no_compensation() {
         let source = AspectSize {

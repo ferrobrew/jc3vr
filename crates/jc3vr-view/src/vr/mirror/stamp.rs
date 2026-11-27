@@ -1,7 +1,7 @@
 //! The frame stamp: the mirror's present counter drawn as a strip of black and white blocks in the
 //! window's bottom-left corner, so that a screen recording shows which present each video frame
-//! holds. The sidecar logs the same counter for each present ([`crate::recorder::note_present`]),
-//! so a repeated video frame can be told apart: the same stamp twice is the recorder or the
+//! holds. The tooling recorder's sidecar logs the same counter for each present (through the
+//! mirror observer, [`crate::vr::MirrorObserver`]), so a repeated video frame can be told apart: the same stamp twice is the recorder or the
 //! compositor showing one present twice, and consecutive stamps on identical images are the mod
 //! presenting a repeated eye image.
 //!

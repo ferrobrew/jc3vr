@@ -22,8 +22,7 @@
 //! [`mirror_viewport`] computes a viewport *in buffer space* such that, after the buffer→window
 //! stretch, the eye image lands at its own aspect, centered; with buffer == window that computation
 //! degenerates to the identity on its own (unit-tested), so ownership needs no special case here.
-//! Once ownership is the only mode the compensation can be deleted outright. A window resize by the
-//! WM only changes the client rect, so the viewport recomputes next frame; the VR path is never
+//! A window resize by the WM only changes the client rect, so the viewport recomputes next frame; the VR path is never
 //! touched.
 //!
 //! Within that, [`MirrorFraming`] picks which way the two aspects are reconciled. `Fill` (what other
@@ -49,7 +48,7 @@
 //! ## Threading
 //!
 //! Everything runs on the game's main thread, after both eyes have drawn and the draw worker has
-//! drained (`hooks::game`). The letterbox draw, egui composite, and present run under the engine's
+//! drained (the payload's `hooks::game`). The letterbox draw, egui composite, and present run under the engine's
 //! `Context::m_Mutex`, serialized with the engine's render work, the same discipline as
 //! [`crate::vr::blit`].
 
@@ -116,8 +115,6 @@ const PIXEL_DXBC: &[u8] = include_bytes!(concat!(
     "/shaders/capture_ps.dxbc"
 ));
 
-/// The mirror pipeline singleton, built lazily on the first mirrored frame and torn down with the
-/// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
 /// The floating debug panel's settings, at `hud.egui_panel` in the settings file: the mirror shows
 /// the panel's texture instead of the flat overlay while it is up. The HUD settings bind the slot
 /// to their field.
@@ -128,7 +125,7 @@ pub static PANEL_CONFIG: ConfigSlot<EguiPanelConfig> = ConfigSlot::new("hud.egui
 /// The panel is an independent floating surface: it has its own offscreen render target and its own
 /// placement in the player's tracked space, so it never perturbs the gameplay HUD. It only takes
 /// effect while an OpenXR session is running; on the flat desktop the egui debug overlay stays on the
-/// back buffer as before. Its placement and click tuning are fixed in the HUD's `egui_panel` and
+/// back buffer. Its placement and click tuning are fixed in the HUD crate's `egui_panel` and
 /// `pointer` modules.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -168,11 +165,13 @@ impl Default for EguiPanelConfig {
     }
 }
 
+/// The mirror pipeline singleton, built lazily on the first mirrored frame and torn down with the
+/// runtime. Holds COM objects, which `windows` marks `Send`/`Sync`, so a `Mutex` static is sound.
 static MIRROR: Mutex<Option<Mirror>> = Mutex::new(None);
 
 /// Whether [`present_mirror`] is currently in a transient-failure streak, so repeated failures log a
-/// transition and a recovery instead of one line per frame. Mirrors the pattern in
-/// the frame loop's `FRAME_BEGIN_FAILING`.
+/// transition and a recovery instead of one line per frame, like the frame loop's
+/// `FRAME_BEGIN_FAILING`.
 static MIRROR_FAILING: AtomicBool = AtomicBool::new(false);
 /// Frames lost to the current (or just-ended) transient mirror-present failure streak. Paired with
 /// [`MIRROR_FAILING`].
@@ -184,7 +183,7 @@ static PRESENTS: AtomicU32 = AtomicU32::new(0);
 /// Draw `view`'s eye captures into the game swapchain's back buffer (laid out per
 /// [`mirror_layout`]), composite the egui overlay on top, and present the game swapchain unsynced.
 ///
-/// Called once per frame from the stereo Draw driver, after the eyes have drawn and drained and the
+/// Called once per frame from the payload's draw driver or the deferred frame tail, after the eyes have drawn and drained and the
 /// XR frame has been submitted, only while a session is running and `vr.mirror` is on. Any failure
 /// logs on target `"vr"`, disables `vr.mirror` at runtime (the game window then holds its last frame),
 /// and never crashes or wedges the frame loop.
@@ -327,8 +326,8 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
     let present_index;
     let stamped;
     // The eye draws, egui composite, and present run under one critical-section hold, serialized
-    // with the engine's render work. The section is recursive, so a re-entrant take inside egui (there
-    // is none today) would be safe.
+    // with the engine's render work. The section is recursive, so a re-entrant take inside egui would
+    // be safe.
     unsafe {
         EnterCriticalSection(context.m_Mutex);
         mirror.clear(&context.m_Context, &rtv);
@@ -346,7 +345,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         //
         // The egui frame is tessellated once per frame on eye 0 into an offscreen texture -- the
         // panel texture with the floating panel up (issue #24), else the flat mirror-overlay texture
-        // (`crate::hud::mirror_overlay`) -- so here we only composite that texture as an
+        // (the HUD crate's `mirror_overlay`) -- so here we only composite that texture as an
         // alpha-blended overlay. Never `EguiState::render` (a second egui pass that mutates shared
         // state), so this is safe from the deferred frame tail's thread as well as inline.
         if !jc3vr_core::clean_view::hides_everything() {
@@ -649,8 +648,8 @@ impl Mirror {
         }
     }
 
-    /// Get (creating and caching on first use, rebuilding on a back-buffer change) the RTV over the
-    /// game back buffer. Device methods are free-threaded.
+    /// The RTV over the game back buffer, created on first use and rebuilt on a back-buffer change.
+    /// Device methods are free-threaded.
     fn rtv_for(
         &mut self,
         device: &Device,
@@ -674,8 +673,8 @@ impl Mirror {
         Ok(rtv)
     }
 
-    /// Get (creating and caching on first use, rebuilding on a texture change) the SRV over eye
-    /// `eye`'s captured texture.
+    /// The SRV over eye `eye`'s captured texture, created on first use and rebuilt on a texture
+    /// change.
     fn srv_for(
         &mut self,
         device: &Device,
