@@ -18,8 +18,8 @@ use jc3gi::{
 use jc3vr_body::controllers::physics::{
     bodies::physics_object_of,
     refs::{Strong, Weak},
+    vehicles::vehicle_of,
 };
-use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_of;
 
 /// The vehicle that carries a mounted gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

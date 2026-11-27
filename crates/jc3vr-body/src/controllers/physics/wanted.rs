@@ -10,7 +10,7 @@
 //!
 //! The order, which is [`Contributor`]'s, within one frame:
 //!
-//! 1. Before the world update, on the game thread: the vehicle rail's entry
+//! 1. Before the world update, on the game thread: the vehicle rail's entry or step-off
 //!    ([`Contributor::Rail`]) and the grapple lock's release and its handback
 //!    ([`Contributor::GrappleLock`]). The character's movement task runs after them and writes the
 //!    velocity afresh, so these are the inputs the task carries into its tick.
@@ -35,8 +35,9 @@ use jc3gi::{character::character::Character, types::math::Vector3};
 /// A writer of the character's wanted velocity, in the order the writers apply within a frame.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Contributor {
-    /// The vehicle rail's entry: Rico leaves the helicopter's interaction graph moving with its
-    /// skid (the vehicle handling).
+    /// The vehicle rail taking Rico out of the helicopter's interaction graph: moving with its skid
+    /// at the rail's entry, or at his own velocity when the jump steps him off during the door-side
+    /// arrival (the vehicle handling).
     Rail,
     /// The grapple lock's release, its handback after the reel's cancel, and the velocity it hands
     /// on at the reel's arrival (the grapple).

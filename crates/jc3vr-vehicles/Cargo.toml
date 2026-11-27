@@ -16,7 +16,8 @@ jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-body = { path = "../jc3vr-body" }
 # The weapons layer below: the mounted guns' delivery to the hands and their recoil.
 jc3vr-weapons = { path = "../jc3vr-weapons" }
-# The physical layer below: the climb and the hand bodies the rail and the mounted handles use.
+# The physical layer below: the hand bodies the mounted handles use, and the hand bodies'
+# pre-simulation step the rail's carry registers into.
 jc3vr-physical = { path = "../jc3vr-physical" }
 # The vehicle handling's detours. The detour macro emits `::re_utilities` paths, so a crate that
 # defines detours depends on `re-utilities` directly.

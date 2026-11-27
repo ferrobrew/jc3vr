@@ -22,10 +22,9 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     held::native::weapon_at,
     intent::hold::{Desired, MapKind, Target, Want},
-    physics::{bodies::physics_object_of, refs::Weak},
+    physics::{bodies::physics_object_of, refs::Weak, vehicles::vehicle_of},
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_of;
 use parking_lot::Mutex;
 
 use crate::controllers::vehicles::{

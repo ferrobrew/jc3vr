@@ -14,7 +14,7 @@
 //! user's motion state back on, its graph state inactive, and the physics input's game-controlled
 //! velocity off), and stands him on foot on the skid. Each physics step then carries his proxy
 //! with the airframe's motion under his feet, as the hand climb carries it on a moving body
-//! ([`engine::hold`]), plus his own walk measured against the airframe, along the skid's line
+//! ([`proxy::hold`]), plus his own walk measured against the airframe, along the skid's line
 //! ([`solve`]): a sticky pull draws his feet back to the line, so a slow step outward holds and a
 //! brisk one past the step-off distance leaves him falling with the airframe's velocity, which the
 //! game takes into its fall and its skydive. The feet are held at the line's height. A hand climb
@@ -45,18 +45,22 @@ use glam::{Affine3A, Vec3};
 use jc3gi::{
     animation::rule_system::{StateMachineInstance, Transition, ValidateStuntPositionCondition},
     character::character::Character,
-    types::math::Vector3,
+    physics::PhysicsSystem,
 };
 use jc3vr_body::{
     controllers::{
-        facts::airframe,
-        physics::{characters::character_position, local_player::LocalPlayer},
+        facts::{airframe, climb},
+        physics::{
+            characters::character_position,
+            local_player::LocalPlayer,
+            proxy,
+            wanted::{self, Contributor},
+        },
         scheme,
     },
     hooks::animation::{active_state_type_id, body_rule_system},
 };
 use jc3vr_core::{game_tick::GameTick, hash::hashlittle};
-use jc3vr_physical::controllers::physical_hands::{climb, climb::engine};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -188,16 +192,16 @@ pub(crate) unsafe fn step_physics() {
     if climb::climbing() {
         return;
     }
-    let Some(frame) = (unsafe { engine::body_frame(active.body) }) else {
+    let Some(frame) = (unsafe { climb::body_frame(active.body) }) else {
         drop(state);
         release("the airframe went away");
         return;
     };
-    let Ok(place) = (unsafe { engine::player_place() }) else {
+    let Ok(place) = (unsafe { proxy::place() }) else {
         return;
     };
     let surface = frame.point_velocity(place.feet);
-    let game = unsafe { engine::proxy_velocity() }.unwrap_or(active.carried);
+    let game = unsafe { proxy::proxy_velocity() }.unwrap_or(active.carried);
     let (walk, update_carried) = walk_from(game, active.surface);
     let into_frame = frame.transform.inverse();
     let feet = into_frame.transform_point3(place.feet);
@@ -215,7 +219,9 @@ pub(crate) unsafe fn step_physics() {
     match decision {
         RailStep::Carry(relative) => {
             let velocity = surface + frame.transform.transform_vector3(relative);
-            if unsafe { engine::hold(velocity, active.body, surface) }.is_err() {
+            let held =
+                unsafe { proxy::hold(velocity, PhysicsSystem::STEP_SECONDS, active.body, surface) };
+            if held.is_err() {
                 drop(state);
                 release("the proxy could not be carried");
                 return;
@@ -282,7 +288,7 @@ unsafe fn enter(character: &mut Character, config: &RailTuning) {
         .filter(|(_, at)| at.elapsed() <= config.airframe_fresh())
         .map(|(body, _)| body);
     let Some((body, frame)) =
-        airframe.and_then(|body| unsafe { engine::body_frame(body) }.map(|f| (body, f)))
+        airframe.and_then(|body| unsafe { climb::body_frame(body) }.map(|f| (body, f)))
     else {
         tracing::warn!(
             target: "controllers",
@@ -349,10 +355,7 @@ unsafe fn leave_graph(character: &mut Character, velocity: Vec3) {
         if let Some(pfx) = character.m_PfxCharacter.px.as_mut() {
             pfx.m_Input.gameControledVelocity = false;
         }
-        let velocity = Vector3 {
-            data: velocity.to_array(),
-        };
-        character.SetWantedWorldVelocity(&velocity);
+        wanted::set(character, Contributor::Rail, velocity);
     }
 }
 

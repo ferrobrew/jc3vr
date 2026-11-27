@@ -22,15 +22,13 @@ use jc3vr_body::controllers::{
     },
     physics::{
         bodies::physics_object_of, characters::character_object, local_player::LocalPlayer,
-        refs::Weak,
+        refs::Weak, vehicles::vehicle_of as resolve_vehicle,
     },
     scheme,
 };
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::{
-    physical_hands, physical_hands::doors::engine::vehicle_of as resolve_vehicle,
-};
+use jc3vr_physical::controllers::physical_hands;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use jc3vr_weapons::controllers::{
     loadout::{Delivery, TakeSource},
