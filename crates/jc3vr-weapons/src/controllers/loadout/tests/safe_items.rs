@@ -1,4 +1,5 @@
-//! Production safe-item moves alongside the actual native loadout transitions.
+//! The actor-free grenades' checked admissions, moves, and retirements beside the native
+//! transitions: refusals leave the table unchanged, and a stale view moves nothing.
 
 use std::num::NonZeroU64;
 

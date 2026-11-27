@@ -2,9 +2,11 @@
 //! the table's items, the guns the game wields or the hold arms, the explosives, the reload's
 //! round, the brace, and the fire input each hold a part of.
 //!
-//! The weapon handling samples the record from its sources whenever it decides on the hands
-//! mid-tick, and publishes the tick's last sample once, at the end of its input tick
-//! ([`publish`]), for the readers outside the tick ([`hands`]). A stand-down publishes empty hands.
+//! The weapon handling samples the record from its sources
+//! ([`weapons::contents`](crate::controllers::weapons::contents)) whenever it decides on the hands
+//! mid-tick, and publishes the tick's last sample once, at the end of its finish half
+//! ([`publish`]), for the readers outside the tick ([`hands`]). A stand-down publishes empty hands
+//! ([`clear`]).
 
 use jc3vr_core::published::{Published, Stage};
 
@@ -106,15 +108,17 @@ impl HandContents {
     }
 }
 
-/// The hands as the weapon handling's last input tick left them, by [`Hand::index`](jc3vr_input::frame::Hand::index): empty before
-/// the first tick and after a stand-down.
+/// The hands as the weapon handling's last input tick left them, by
+/// [`Hand::index`](jc3vr_input::frame::Hand::index): empty before the first tick and after a
+/// stand-down.
 pub fn hands() -> [HandContents; 2] {
     HANDS
         .latest()
         .map_or([HandContents::default(); 2], |hands| hands.value)
 }
 
-/// Publish the tick's hands, by [`Hand::index`](jc3vr_input::frame::Hand::index). Called once, at the end of the input tick.
+/// Publish the tick's hands, by [`Hand::index`](jc3vr_input::frame::Hand::index). Called once, at
+/// the end of the weapon handling's finish half.
 pub fn publish(hands: [HandContents; 2]) {
     HANDS.publish(hands);
 }

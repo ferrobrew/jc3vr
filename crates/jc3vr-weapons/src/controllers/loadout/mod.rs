@@ -7,18 +7,19 @@
 //! - [`item`]: what an item is, and its identity for the session;
 //! - [`binding`]: the live object or actor-free model identity an item is bound to;
 //! - [`safe_items`]: checked actor-free grenade admission, movement, and retirement;
-//! - [`socket`]: the body's sockets, the size classes they take, and where an item goes when the
-//!   player does not choose;
+//! - [`socket`]: which of the body's sockets it has, and where a weapon goes when the player does
+//!   not choose;
 //! - [`table`]: the table, whose invariants are in its types, its snapshot, and the primary hand;
 //! - [`transition`]: the player's and the game's moves, each with its cause, refused whole with a
 //!   typed error;
 //! - [`reset`]: the spawn reset's re-keying, and the table's snapshots at the game's caches;
+//! - [`restore`]: the socket a restored weapon is admitted to, checked again at its commit;
 //! - [`projection`]: what the game's slots should hold, and what the sidecar records;
 //! - [`event`]: what the hooks and the hands tell the table, folded into transitions;
 //! - [`grab`]: what a hand does at a socket, decided against the table's snapshot;
 //! - [`take`]: where a weapon taken from the world goes, decided against the table's snapshot;
 //! - [`contents`]: what each hand holds, from the table and every other source of the weapon
-//!   handling, published once per input tick;
+//!   handling, published once per tick at the end of the weapon handling's finish half;
 //! - [`live`]: the one live table of the local player's items, fed by the game and the hands and
 //!   published each input tick. It is the only writer of where the player's weapons are: the
 //!   game's slots, the placement, and the pins follow it.

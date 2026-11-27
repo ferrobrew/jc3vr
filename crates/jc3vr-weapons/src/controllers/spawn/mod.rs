@@ -1,9 +1,10 @@
 //! The spawner: queue a spawn request for any tag set the spawn system knows, placed relative to
 //! the view.
 //!
-//! Requests go through `CSpawnSystem::Spawn` with the high-priority flags, which skip the
-//! line-of-sight, proximity, and spawn-block checks; those exist to keep spawns out of the player's
-//! view, and putting something in view is the point. The spawn is asynchronous: the object appears
+//! Requests go through [`SpawnSystem::Spawn`] with the high-priority flags
+//! ([`SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS`]), which skip the line-of-sight, proximity, and
+//! spawn-block checks; those exist to keep spawns out of the player's view, and putting something
+//! in view is the point. The spawn is asynchronous: the object appears
 //! once its entity streams in. The request state records submission, not entity completion.
 //!
 //! The picker's definitions come from the game's own spawn definition files, extracted once into
@@ -102,7 +103,8 @@ pub struct SpawnDefinition {
     pub pool: String,
     /// The `hashlittle` hash of the definition's entity name, which is a weapon's name hash
     /// ([`WeaponBase::m_WeaponNameHash`](jc3gi::equipment::weapon::WeaponBase::m_WeaponNameHash)).
-    /// Absent from a table extracted before the tool wrote it; see [`Self::name_hash`].
+    /// Absent from the embedded table, which was extracted before the tool wrote it; see
+    /// [`Self::name_hash`].
     #[serde(default)]
     pub(crate) entity_hash: Option<u32>,
 }

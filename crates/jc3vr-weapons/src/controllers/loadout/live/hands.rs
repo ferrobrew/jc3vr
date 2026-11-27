@@ -21,7 +21,7 @@ use crate::controllers::loadout::{
     transition::{Release, Removal, RemovalWhy, Take, TakeSource},
 };
 
-/// A weapon one of the old hand authorities holds.
+/// A weapon the game wields or gives, or the hands move: its object and its type.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Held {
     pub object: ObjectAddress,
@@ -59,8 +59,8 @@ pub(crate) fn departure(
         Whereabouts::Slot => {
             // The game's own holster (at a death, a cutscene, a vehicle entry) puts the weapon on
             // the hand's own hip where it fits there: by the body's order alone, a pistol the left
-            // hand held went to the right hip at a death on the 14 November take, and the left
-            // holster read as lost after the respawn.
+            // hand held goes to the right hip at a death, and the left holster reads as lost after
+            // the respawn.
             let socket = free_socket(table, held.kind.weapon()?, Some(Socket::Hip(hand)))?;
             Some(Event::Dock { hand, socket })
         }

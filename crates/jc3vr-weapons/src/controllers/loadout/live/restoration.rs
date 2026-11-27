@@ -1,4 +1,6 @@
-//! Complete native resets and cache restoration before accepting carried results.
+//! The start of the live table's input tick: the table starts from the slots on its first tick,
+//! and a spawn reset's or a load's completion and a give-back's cache restore fold once the slots
+//! settle, before a restored weapon is admitted.
 
 use std::time::{Duration, Instant};
 

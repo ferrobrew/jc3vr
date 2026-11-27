@@ -163,9 +163,9 @@ impl Loadout {
 
     /// The spawn reset is done, and the game's slots hold `slots`. World weapons and safe model
     /// identities leave the table; the resource owner reaps models after publication. Each slot's
-    /// new object re-binds the item that waits for that slot with the same type,
-    /// and a new object nothing waits for goes onto the body; an item whose slot the game emptied
-    /// or gave another type leaves the table. What the hands keep follows `kind`.
+    /// new object re-binds the item that waits for that slot with the same type, and a new object
+    /// nothing waits for goes onto the body; an item whose slot the game emptied or gave another
+    /// type leaves the table. What the hands keep follows `kind`.
     pub(crate) fn complete_reset(
         &mut self,
         kind: ResetKind,
@@ -234,19 +234,17 @@ impl Loadout {
     }
 
     /// The game restored its cache, and its slots hold `slots`. A checkpoint's restore returns the
-    /// table to its snapshot, which stays for the next restart: what the player gained since leaves
-    /// the table. A mission's or a challenge's restore uses its snapshot up. A mission's or a
-    /// challenge's brings the snapshot's weapons back beside what the player holds since. Either
-    /// way the hands come back empty: a weapon the snapshot had in a hand goes onto a socket, and a
-    /// snapshot's weapon whose object is gone waits to be spawned again.
+    /// table to its snapshot, which stays for every restart from it: what the player gained since
+    /// leaves the table. A mission's or a challenge's restore is the end of its hold, so it uses
+    /// its snapshot up, and brings the snapshot's weapons back beside what the player holds since.
+    /// Either way the hands come back empty: a weapon the snapshot had in a hand goes onto a
+    /// socket, and a snapshot's weapon whose object is gone waits to be spawned again.
     pub fn restore(
         &mut self,
         kind: CacheKind,
         slots: &[SlotObject],
     ) -> Result<Vec<Transition>, TransitionError> {
         check_slots(slots)?;
-        // A checkpoint's snapshot stands for every restart from it; a mission's or a challenge's
-        // give-back is the end of its hold, so its snapshot is used up.
         let held = &mut self.caches.0[kind.index()];
         let snapshot = match kind {
             CacheKind::Checkpoint => held.clone(),

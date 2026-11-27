@@ -14,17 +14,19 @@
 //!   (its fate, from the inventory's weak reference to it): a weapon the game dropped lies in the
 //!   world, and one gone or taken by another character leaves;
 //! - a weapon lying in the world the pins left to the game leaves;
-//! - the spawn reset's begin and end, the store of the save, the mission's weapon cache, its
-//!   removal and its give-back, and the weapons the sidecar restores or the split pistol pair adds.
+//! - the spawn reset's begin and end, the store of the save, the checkpoint's, the mission's, and
+//!   the challenge's weapon caches, their removals and their give-backs, and the weapons the
+//!   sidecar restores or the split pistol pair adds.
 //!
 //! The weapons lying in the world are the table's alone: the pins read them from it
 //! ([`crate::controllers::weapons::inventory::pins`]). The table takes the weapons of the slots the
 //! inventory tracks, and a heavy weapon while a hand holds it.
 //!
 //! The table is behind one lock. The input tick and the detours (the reset's, the store's, and the
-//! mission cache's, on whatever thread the game runs them) fold their events under it, and make no
-//! engine call and take no other lock while they hold it but the published places' and the
-//! status's, leaf locks of their own, which the placement and the readouts read.
+//! caches', on whatever thread the game runs them) fold their events under it, and make no engine
+//! call and take no other lock while they hold it but the published hands' and places'
+//! ([`published`]) and the take's grip placements' invalidation, leaf locks of their own. The
+//! readouts' status is written after the table's lock is released.
 
 mod expect;
 mod hands;
@@ -163,7 +165,8 @@ pub(crate) struct Arrival {
     pub expect: Option<Expect>,
 }
 
-/// Fold one input tick of the game into the table, and publish the table. Returns the wielded weapon's arrival in a hand, when it came into one.
+/// Fold one input tick of the game into the table, and publish the table. Returns the wielded
+/// weapon's arrival in a hand, when it came into one.
 pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
     let mut live = LIVE.lock();
     if !live.started {
@@ -296,8 +299,8 @@ pub(crate) fn hand_over(to: Hand, object: ObjectAddress) -> bool {
     moved
 }
 
-/// The hands put `held` into `hand` (a draw, or a take off the body): the table
-/// takes the move at once. Returns whether the table holds it there.
+/// The hands put `held` into `hand` (a draw, or a take off the body): the table takes the move at
+/// once. Returns whether the table holds it there.
 pub(crate) fn arrive(hand: Hand, held: Held) -> bool {
     let mut live = LIVE.lock();
     if !live.started {
@@ -441,9 +444,9 @@ pub(crate) fn forgotten(objects: &[ObjectAddress]) {
     }
 }
 
-/// Stop the table: the old inventory is off, so the game's slots are the player's weapons again.
-/// The caller retires the safe grenades first, outside the table's lock.
-/// The next tick with the inventory on starts it again from the slots.
+/// Stop the table, so the game's slots are the player's weapons again. The caller retires the safe
+/// grenades first, outside the table's lock. The next input tick the inventory runs starts it
+/// again from the slots.
 pub(crate) fn stop() {
     let mut live = LIVE.lock();
     if !live.started {
@@ -536,8 +539,8 @@ pub(crate) fn loaded() {
     live.reset.completed = true;
 }
 
-/// The game is about to store the player's save data.
-/// Returns the slots and the sidecar the store should be given.
+/// The game is about to store the player's save data. Returns the slots and the sidecar the store
+/// should be given.
 pub(crate) fn store_imminent() -> Option<StoreProjection> {
     let mut live = LIVE.lock();
     if !live.started {
@@ -648,7 +651,8 @@ pub(crate) fn admit_restore(restored: Restored) -> Result<RestoreAdmission, Rest
     live.table.admit_restore(restored)
 }
 
-/// Revalidate admission before the native carry operation without holding the table lock in native code.
+/// Revalidate admission before the native carry operation without holding the table lock in
+/// native code.
 pub(crate) fn restore_admission_current(admission: RestoreAdmission) -> bool {
     admit_restore(admission.restored) == Ok(admission)
 }
@@ -687,7 +691,7 @@ struct Live {
     started: bool,
     /// The hand expecting the next weapon the game wields: per-hand runtime state, not a place.
     pending: Option<Pending>,
-    /// What brought each hand's weapon there, by [`Hand::index`], for the readouts.
+    /// What brought each hand's weapon there, by [`Hand::index`] ([`origin`]).
     origins: [Option<Expect>; 2],
     /// Whether the player travels fast, as of the last input tick.
     fast: bool,
@@ -835,7 +839,6 @@ impl Live {
     fn hand_moves(&mut self, tick: &Tick) -> Option<Arrival> {
         let took = self.took.take();
         let wielded = tick.wielded.map(|h| h.object);
-        // The weapon a take displaced stays docked while the game still wields it from its socket.
         self.displaced = self.displaced.filter(|&object| {
             Some(object) == wielded && matches!(self.place_of(object), Some(Place::Socket(_)))
         });

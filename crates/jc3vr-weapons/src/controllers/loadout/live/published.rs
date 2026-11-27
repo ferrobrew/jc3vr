@@ -3,14 +3,11 @@
 //!
 //! The detours run on the simulation's worker threads for every character, so the hands' weapons
 //! are published as one object address per hand ([`hand_of`], [`in_hand`]), compared before any
-//! lock. What each hand holds of any kind ([`held_kind`]) is behind a leaf lock, for the hands that
-//! must not take anything else.
-//! The places on the body and the items there ([`place_of`], [`item_of`]) are behind a leaf lock
-//! of their own, which only the local
-//! player's placement takes. Both are written from the table under its lock, after every fold that
-//! can move an item: at the end of each input tick, and at once for the moves the hands make
-//! between ticks, so the next placement already follows them. A change of a hand's weapon drops
-//! the take's captured grip placements
+//! lock. What each hand holds of any kind ([`held_kind`]) is behind a leaf lock, and the places on
+//! the body and the items there ([`place_of`], [`item_of`]) behind another. All of them are written
+//! from the table under its lock, after every fold that can move an item: at the end of each input
+//! tick, and at once for the moves the hands make between ticks, so the next placement already
+//! follows them. A change of a hand's weapon drops the take's captured grip placements
 //! ([`crate::controllers::weapons::hold::take::invalidate_handle_placements`]) before the new
 //! hands are published.
 

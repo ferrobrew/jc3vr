@@ -2,8 +2,9 @@
 //!
 //! One decision covers every socket: a grab by an empty hand draws the item on the socket, a grab or
 //! a release of a held weapon at a free socket that fits it docks it there, and a release anywhere
-//! else lets it go. Nothing here selects a slot or asks the game to holster: the table takes the
-//! move, and the reconcile makes the game follow.
+//! else lets it go, or, for a weapon that cannot lie in the world, docks it on the body's preferred
+//! free socket or keeps it in the hand. Nothing here selects a slot or asks the game to holster:
+//! the table takes the move, and the reconcile makes the game follow.
 
 use std::fmt;
 
