@@ -1,187 +1,193 @@
 # Documentation index
 
-Three kinds of document live here. `engine/` is reverse-engineered ground truth about Just Cause 3 as it is — addresses, layouts, and lifecycles, independent of what the mod does with them. `mod/` is what we build: design decisions and shipped implementation. `issues/` holds issue-scoped investigations that closed a specific question. [`roadmap.md`](roadmap.md) tracks where the project is going.
+`engine/` is reverse-engineered ground truth about Just Cause 3 as it is, independent of the mod. `mod/` is the mod's design and shipped implementation. `issues/` holds investigations scoped to one issue. `sessions/` records each headset playtest and is not edited after the fact. Start with [architecture.md](architecture.md); [roadmap.md](roadmap.md) says where the project stands.
 
-One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md) documents both the engine's frame pipeline and the mod's stereo driver against it — its section numbers (`rendering §N`) are load-bearing anchors referenced throughout the code and docs, so it stays whole.
+[engine/rendering/rendering.md](engine/rendering/rendering.md) is the one page that covers both the engine's frame pipeline and the mod's stereo driver against it. Its section numbers (`rendering §N`) are referenced from code and docs, so it stays whole.
 
 ## engine/
 
-- [button-hints-and-localisation.md](engine/button-hints-and-localisation.md) — the localisation store and its string lookup, the button-mapping table's prompt keys, the HUD's button-hint pipeline and its two hint stages, and how a prompt picks its gamepad glyph.
-- [pause-menu.md](engine/pause-menu.md) — the pause and options menu: the Scaleform screen lifecycle and the ExternalInterface traffic, the `pause.gfx` movie's menus and folders and how the root menus' entries are ordered, settings screen, tab bar, and row widgets, the commands it sends, its input and navigation, and which parts code outside the movie can reach; reading movies with FFDec.
-- [scaleform.md](engine/scaleform.md) — the Scaleform runtime: version and language, the loader and its states, the file opener and the VFS mounts, standalone movies (`CRenderToTextureUI`), fonts, widgets, and localisation, the movie files, and building a movie the loader accepts.
-- [window-focus.md](engine/window-focus.md) — how the game notices its window losing the desktop foreground (a main-loop poll, not the activation messages), what the loss suspends (the whole frame during gameplay, the audio, the keyboard and mouse, fullscreen), and how the resume undoes it.
+- [button-hints-and-localisation.md](engine/button-hints-and-localisation.md): the localisation store, the button-mapping prompts, and the HUD's button hints.
+- [pause-menu.md](engine/pause-menu.md): the pause and options menu's Scaleform screens, `pause.gfx`, its commands, and its input.
+- [scaleform.md](engine/scaleform.md): the Scaleform runtime, its loader and VFS, standalone movies, fonts, and building a movie the loader accepts.
+- [window-focus.md](engine/window-focus.md): how the game detects and handles losing the desktop foreground.
 
 ### rendering/
 
-- [rendering.md](engine/rendering/rendering.md) — the frame pipeline: camera and projection (§2), buffers, the depth-reconstruction passes, the draw entry points and how shaders address the screen (§4), present and `BLOCK_FLIP` (§7), device and context (§8), resolution and render setups (§9), the stereo double-Draw machinery (§11–13).
-- [lighting-shadow-pipeline.md](engine/rendering/lighting-shadow-pipeline.md) — the per-frame sun-shadow and global-lighting state: the frame counters, cascade fit and amortization, the clustered froxel light grid and its consumers (§4), `SetGlobalShaderConstants`, and the table of which GlobalConstants are parity- or counter-indexed (the flicker ping-pong surface).
-- [shaders.md](engine/rendering/shaders.md) — extracting, naming, and disassembling the game's shaders, how the engine creates and reloads them, the DXBC container checksum, and the screen-pixel PCF rotation hash in the sun-shadow resolve; tooling in `tools/shaders/`.
-- [render-setups-reinit.md](engine/rendering/render-setups-reinit.md) — the runtime resize path: `CreateRenderSetups`, its callers, what `ApplyResize` and `DestroyRenderSetups` touch, and how far the swapchain is separable from the scene targets.
-- [window-glass.md](engine/rendering/window-glass.md) — window glass: the window metadata and its damage points, how a bullet cracks glass through its deferred call, what the window shader draws (cracks only, never an open pane), and hiding a pane's model instance.
-- [model-culling.md](engine/rendering/model-culling.md) — the two model visibility gates: the instance-level BFBC cull, and the per-render-block frustum cull against the active camera that pops buildings at a widened view's edge.
-- [ui-rendering.md](engine/rendering/ui-rendering.md) — how the UI renders: the `PreRender` update and capture on the game thread, the snapshot, the render worker, off-screen movies, display-info writes, blending and premultiplied alpha, the HUD movie's layout, and the weapon icons as standalone textures with the game's narrow pickup hints.
+- [rendering.md](engine/rendering/rendering.md): the frame pipeline, camera and projection, present, resolution and render setups, and the stereo double-draw.
+- [lighting-shadow-pipeline.md](engine/rendering/lighting-shadow-pipeline.md): the per-frame sun-shadow and global-lighting state, and which constants are parity- or counter-indexed.
+- [shaders.md](engine/rendering/shaders.md): extracting and disassembling the game's shaders, and how the engine creates and reloads them.
+- [render-setups-reinit.md](engine/rendering/render-setups-reinit.md): the runtime resize path and the render setups.
+- [window-glass.md](engine/rendering/window-glass.md): window glass, its damage, and how a pane is drawn and hidden.
+- [model-culling.md](engine/rendering/model-culling.md): the instance cull and the per-render-block frustum cull.
+- [ui-rendering.md](engine/rendering/ui-rendering.md): how the Scaleform UI is updated, captured, and rendered, and the HUD movie's layout.
 
 ### performance/
 
-- [profiling.md](engine/performance/profiling.md) — the engine's timing systems: which are live and which are compiled out on the CPU and GPU sides, and the per-pass structure of the frame.
+- [profiling.md](engine/performance/profiling.md): the engine's CPU and GPU timing systems and the per-pass structure of the frame.
 
 ### physics/
 
-- [havok-bodies.md](engine/physics/havok-bodies.md) — the physics step and where the world may change before it (the pre-simulation callbacks, world recentring), making and tearing down a free dynamic body with the engine's wrapper, and the collision filter's word, system groups, and layer table.
+- [havok-bodies.md](engine/physics/havok-bodies.md): the physics step, the pre-simulation callbacks, making dynamic bodies, and the collision filter.
 
 ### character/
 
-- [skeleton.md](engine/character/skeleton.md) — the pose producer's tick-spaced pose pair, the Havok pose and skeleton, the shipped skeleton's bone hierarchy, the model-space Joint API, frame ordering, what reads the pose before the last override point, and where to override bones.
-- [humanik.md](engine/character/humanik.md) — the HumanIK solver: layout, per-frame lifecycle, effector ids, and the external-target injection recipe.
-- [hands-locomotion-and-state.md](engine/character/hands-locomotion-and-state.md) — the weapon-to-hand attach chain, the per-arm aim IK, root motion and the collision proxy, scene queries, teleport signals, the vehicle seat attach, the proxy capsule and pause, the proxy's support and what reads it, and the per-tick character state signals.
-- [idle-stance.md](engine/character/idle-stance.md) — the on-foot idle's clip variants, the animation modifiers that choose them, and why every armed idle is a combat stance.
-- [animation-layers.md](engine/character/animation-layers.md) — the animation layers and their names, how the pose job stacks them, what keeps running when a layer's pose is left out (reload, holster, and draw events), and the state tasks inside the pose-finalization pass, the weapon off-hand grip among them.
-- [animation-graph.md](engine/character/animation-graph.md) — the decoded state machine format, and what Rico's graphs do with the weapon: conditions, state tasks, upper-body actions, recoil, hand poses, and playing clips from code; tooling in `tools/anim_graph/`.
-- [ragdoll.md](engine/character/ragdoll.md) — the ragdoll instance and its bodies, telling a ragdolling character, what puts a character into its ragdoll and gets it up again, and how the game marks mission-critical and scripted characters.
+- [skeleton.md](engine/character/skeleton.md): the pose producer, the skeleton and its bones, the Joint API, and where bones can be overridden.
+- [humanik.md](engine/character/humanik.md): the HumanIK solver, its lifecycle, effectors, and external targets.
+- [hands-locomotion-and-state.md](engine/character/hands-locomotion-and-state.md): the weapon-to-hand attach, aim IK, root motion, the collision proxy, seat attach, and the per-tick character state.
+- [idle-stance.md](engine/character/idle-stance.md): the on-foot idle variants and why every armed idle is a combat stance.
+- [animation-layers.md](engine/character/animation-layers.md): the animation layers, how the pose job stacks them, and the state tasks in pose finalization.
+- [animation-graph.md](engine/character/animation-graph.md): the decoded state-machine format and what Rico's graphs do with the weapon.
+- [ragdoll.md](engine/character/ragdoll.md): the ragdoll, entering and leaving it, and protected characters.
 
 ### gameplay/
 
-- [input.md](engine/gameplay/input.md) — the action effector system, the action enumeration, the write API, the semantic button-mapping layer, and the mouse/UI pipeline.
-- [aim-state.md](engine/gameplay/aim-state.md) — the player's aim state: its writers, every consumer, fire gating independent of it, the relaxed and aimed body families, the combat mental state, and the other on-foot stance switches.
-- [aim-pipeline.md](engine/gameplay/aim-pipeline.md) — how the player aims and fires: the per-consumer aim target cache, shot construction, dual-wield, auto-aim, and the camera getters.
-- [weapon-firing.md](engine/gameplay/weapon-firing.md) — what a shot needs and does, which parts key off the weapon's user rather than its state or slot, the shooting permission and the states that clear it, per-weapon aim mode and camera hints, and the deferred weapon operations.
-- [grapple-pipeline.md](engine/gameplay/grapple-pipeline.md) — grapple targeting, hook flight and attach, and the zip/tether/retract dispatch.
-- [swim-locomotion.md](engine/gameplay/swim-locomotion.md) — the swim state-task family: act-quantized turn dispatch (fixed-angle turn clips past a threshold angle), the two heading paths (animated-turn slerp vs continuous `DoRotate`), the swimming capsule offsets that make `SetOrientation` receive a pitched frame, and why none of the on-foot orientation machinery applies in water.
-- [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md) — the parachute state task and steering core, and how the camera input matrix is mixed into the chute's steering through the look-steer block, the grapple slingshot, and the openings out of a reel.
-- [weapon-data.md](engine/gameplay/weapon-data.md) — where a weapon entity's files live, the weapon object and its fire points in the entity property file, the model parts, and the name hash; tooling in `tools/sights/`.
-- [weapon-equip-and-drop.md](engine/gameplay/weapon-equip-and-drop.md) — one weapon object for its whole life: completing a pickup, the inventory's add, equip, unequip, stop using, and the drop and the velocity it gives the weapon.
-- [weapon-ownership-and-despawn.md](engine/gameplay/weapon-ownership-and-despawn.md) — what keeps a weapon object alive (strong references and the spawn system's despawn ranking), moving a weapon into and out of a slot without a drop, the spawn reset and the inventory's respawn table, and what the player's save stores.
-- [weapon-gives-and-restores.md](engine/gameplay/weapon-gives-and-restores.md) — every way into a slot, the game's give through the respawn table, the marked and immediate removals, and the three weapon caches (the mission checkpoint cache, the graph script's `SpawnWeapons` cache, and the challenges) and what their restores do to the slots.
-- [weapon-selection.md](engine/gameplay/weapon-selection.md) — the slot-select and cycle actions, the inventory's selection and commit logic, the automatic switch away from an empty weapon, the HUD's selection cross, and its placement.
-- [weapon-ammo-and-reload.md](engine/gameplay/weapon-ammo-and-reload.md) — the magazine and the inventory's per-kind reserve, the reload kinds, the single reload-start funnel and its callers, the refill arithmetic, the ammunition check's fire gating, the reload track messages, the magazine drop and its spare prop, unlimited ammunition, the HUD push, and the sniper bolt, shotgun pump, and slide lock-back.
-- [melee-and-damage.md](engine/gameplay/melee-and-damage.md) — the damage message every hit is made of, the player's melee from input to hit, the struck character's hit reaction, hit objects and their run-time types, and pushing a body.
-- [item-pickup.md](engine/gameplay/item-pickup.md) — what lies in the world to pick up, how the game picks up a weapon and its ammunition, a loose body's motion, owner, mass properties, and velocity setters in the Havok world, and the constraints that join bodies (placed constraints, vehicle part hinges).
-- [planted-explosives.md](engine/gameplay/planted-explosives.md) — the C4 weapon and its charges: the cap on placed charges, the planting mode, the drop under the parachute, the collision that sticks a charge, and the detonate input.
-- [wingsuit-stall.md](engine/gameplay/wingsuit-stall.md) — the wingsuit's stall and the flip that recovers from it: the blend state that decides both, the clips that replace the flight blend, the gates the stall closes, and why neither clip moves the physics body.
-- [wingsuit-evade.md](engine/gameplay/wingsuit-evade.md) — the wingsuit's evade, a barrel roll: the one act, how the air physics queues it on the animated model, the clip segments that give its directions, and what moves the body.
-- [wingsuit-opening.md](engine/gameplay/wingsuit-opening.md) — the wingsuit's and the parachute's opening from the air: the jump and fall states that take each act, the descent and fall-distance gates in the jumps and the plain fall, and the boost suit's take-off from the ground.
-- [wingsuit-landing.md](engine/gameplay/wingsuit-landing.md) — the wingsuit's landing: the close act a held brake queues, the speed, height, and gear-mod gates that turn it into a slide onto the feet, the air brake's drag and lift, the boost suit's brake landing, and the crash otherwise.
-- [vehicle-doors.md](engine/gameplay/vehicle-doors.md) — a vehicle's door controller and its door entries, how a door is asked to open and close, the hinge's motor, the latch that merges a door swung shut hard, the loose door's own body and part object, and entering through a door: the interaction graph in the entity, the entry clips and their open message, and the entry warp; tooling in `tools/door_handles/`.
-- [stunt-positions.md](engine/gameplay/stunt-positions.md) — stunt positions: the stunt areas a vehicle carries and the interaction-graph nodes that name them, the helicopter's hang, how the game attaches a character to one (a character landing on a vehicle, a graph script, a grapple), what the character's predicates read, and how the game holds the character there.
-- [vehicle-parts.md](engine/gameplay/vehicle-parts.md) — a vehicle's parts: the parts resource and its entries, the deform points, the live part instances on the physics body, how the render update draws them from their root-space transforms, which vehicles have a steering wheel part, the hinged parts the engine turns, and the vehicle type hash.
+- [input.md](engine/gameplay/input.md): the action effectors, the action enumeration, button mapping, and the mouse and UI input.
+- [aim-state.md](engine/gameplay/aim-state.md): the player's aim state, its writers and consumers, and the other stance switches.
+- [aim-pipeline.md](engine/gameplay/aim-pipeline.md): the aim target cache, shot construction, dual-wield, and auto-aim.
+- [weapon-firing.md](engine/gameplay/weapon-firing.md): what a shot needs and does, the shooting permission, and deferred weapon operations.
+- [grapple-pipeline.md](engine/gameplay/grapple-pipeline.md): grapple targeting, the hook's flight and attach, and zip, tether, and retract.
+- [swim-locomotion.md](engine/gameplay/swim-locomotion.md): the swim state tasks, their turn dispatch, and their heading paths.
+- [parachute-locomotion.md](engine/gameplay/parachute-locomotion.md): the parachute's steering and how the camera feeds it.
+- [weapon-data.md](engine/gameplay/weapon-data.md): a weapon entity's files, fire points, and model parts.
+- [weapon-equip-and-drop.md](engine/gameplay/weapon-equip-and-drop.md): a weapon object's pickup, equip, unequip, and drop.
+- [weapon-ownership-and-despawn.md](engine/gameplay/weapon-ownership-and-despawn.md): what keeps a weapon alive, slot moves, the respawn table, and the save.
+- [weapon-gives-and-restores.md](engine/gameplay/weapon-gives-and-restores.md): every way into a slot, removals, and the three weapon caches.
+- [weapon-selection.md](engine/gameplay/weapon-selection.md): slot selection and cycling, the automatic switch, and the HUD's selection cross.
+- [weapon-ammo-and-reload.md](engine/gameplay/weapon-ammo-and-reload.md): magazines, reserves, the reload funnel, and the per-weapon actions.
+- [melee-and-damage.md](engine/gameplay/melee-and-damage.md): damage messages, the player's melee, and hit reactions.
+- [item-pickup.md](engine/gameplay/item-pickup.md): world pickups, loose bodies in the Havok world, and constraints.
+- [planted-explosives.md](engine/gameplay/planted-explosives.md): C4 and its charges.
+- [wingsuit-stall.md](engine/gameplay/wingsuit-stall.md): the wingsuit's stall and recovery flip.
+- [wingsuit-evade.md](engine/gameplay/wingsuit-evade.md): the wingsuit's barrel-roll evade.
+- [wingsuit-opening.md](engine/gameplay/wingsuit-opening.md): opening the wingsuit and the parachute from the air.
+- [wingsuit-landing.md](engine/gameplay/wingsuit-landing.md): the wingsuit's landing, the air brake, and the crash.
+- [vehicle-doors.md](engine/gameplay/vehicle-doors.md): door controllers, hinges and latches, and entering through a door.
+- [stunt-positions.md](engine/gameplay/stunt-positions.md): stunt areas, the helicopter hang, and how a character is held there.
+- [vehicle-parts.md](engine/gameplay/vehicle-parts.md): vehicle parts, deform points, and how parts are drawn and turned.
 
 ## mod/
 
-- [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
-- [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime's two locks across a frame, how the next frame's render update overlaps the previous frame's draw and what keeps that safe, the lock rules, the thread-role guard that checks them, and the game tick token that proves game-object code runs at a serial point of the frame.
-- [lifecycle.md](mod/lifecycle.md): shutdown preparation, deferred retries, one-shot teardown, and the uninstalled magazine executor restriction.
-- [tuning.md](mod/tuning.md) — the tuning: the numbers that set the mod's feel and behaviour, kept in each crate's `tuning/*.toml`, staged beside the DLL by the build, loaded strictly at startup (the payload refuses to start without them), read lock-free, hot-reloaded on edit, and read from the source tree under the development launchers; what counts as tuning and what stays in code.
-- [settings.md](mod/settings.md) — the settings file: where it and the other kept files live, the tolerant load, the edit-guard rule and the debounced save, what is not saved, and the TOML representation of optional values and lists.
-- [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, cursor interaction, and the placement rule for HUD depth (elements tied to one world object receive depth, general elements stay on the panel) with where each element is placed.
-- [pause-menu.md](mod/pause-menu.md) — the VR menu inside the game's pause menu: one `VR` entry below the root menu's options entry, whose pages are tabs on the settings screen's own tab bar, section headers in the list title's style, the six hooks, command routing, the value wrappers, the page model and row encoding, step pages, live values, the `BODY`, `CONTROLS`, `COMFORT`, and `DISPLAY` pages, which hold only the settings a player reaches for in the headset, with the body calibration and saving, and the in-game status list.
-- [status.md](mod/status.md) — the status rows: each system's state word and detail, row by row, shown by the debug UI's Status tab, the logged summary, and what each module publishes for the rows to read on any thread.
-- [environment.md](mod/environment.md) — debug-UI control of time of day and weather.
-- [sessions.md](mod/sessions.md) — the session output folder: the sessions root and `JC3VR_SESSIONS_DIR`, the one place every log, capture, screenshot, trace, and recording lands, and the folder and file name of each.
-- [capture.md](mod/capture.md) — session capture: the in-process capture of both eyes side by side (the GPU pack, the staging ring, the pacing, and the stream), the control protocol between the payload and the capture hosts, the injector's host with its ffmpeg, encoder choice, and WASAPI loopback audio, the Linux relay and its fallback recording of the mirror window, the pose sidecar and how it lines up with the video, and the reframe tool.
-- [trailer-tooling.md](mod/trailer-tooling.md) — directing tools and the capture for the trailer: decisions and the working todo list.
-- [weapon-selector.md](mod/weapon-selector.md) — the weapon wheel (off by default, pending a redesign): the game's selection cross opened with the trackpad or the stick held up, steered by pointing the hand, its commit and cancel, its placement on the panel behind the hand, and the in-game unknowns.
-- [window-focus.md](mod/window-focus.md) — keeping the game running when the desktop window loses focus during a VR session: the skipped suspension and its paired resume, the keyboard and mouse that still follow the desktop focus, and lifting a suspension that predates the session.
-- [scaleform-movie.md](mod/scaleform-movie.md) — a mod-owned Scaleform movie (not built): why the VR settings use the pause menu instead, the hosting routes, binding and input, and the risks.
+- [vr-runtime.md](mod/vr-runtime.md): the OpenXR runtime, session lifecycle, frame loop, pose model, and mirror.
+- [threading.md](mod/threading.md): the threads mod code runs on, the VR runtime's locks, and the frame overlap.
+- [lifecycle.md](mod/lifecycle.md): shutdown preparation, deferred retries, and teardown.
+- [tuning.md](mod/tuning.md): the tuning TOML files, their loading and hot reload, and what counts as tuning.
+- [settings.md](mod/settings.md): the settings file, its load and save, and its representation.
+- [hud.md](mod/hud.md): the floating-panel HUD, its compositing, cursor, and HUD depth placement.
+- [pause-menu.md](mod/pause-menu.md): the VR pages inside the game's pause menu.
+- [status.md](mod/status.md): the status rows shown by the debug UI and logged.
+- [debug-ui.md](mod/debug-ui.md): the egui debug UI.
+- [environment.md](mod/environment.md): time of day and weather from the debug UI.
+- [sessions.md](mod/sessions.md): the session output folder and where each output lands.
+- [capture.md](mod/capture.md): capturing both eyes to video, the capture hosts, and the pose sidecar.
+- [trailer-tooling.md](mod/trailer-tooling.md): the directing tools for recording footage.
+- [weapon-selector.md](mod/weapon-selector.md): the weapon wheel on the game's selection cross.
+- [window-focus.md](mod/window-focus.md): keeping the game running when the desktop window loses focus.
+- [scaleform-movie.md](mod/scaleform-movie.md): a mod-owned Scaleform movie (not built) and why the pause menu is used instead.
 
 ### stereo/
 
-- [single-pass-stereo.md](mod/stereo/single-pass-stereo.md) — rendering both eyes in one geometry walk into a double-wide target: the shader rewrites, the routing, the four ways content goes wrong under the collapse and what fixes each, the configuration, and the capture harness's switch-off variants, draw census, and staged scenes, weather, and moving camera.
-- [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md) — the per-render-block record of what single-pass stereo needs from each, and what it took to get there.
-- [foveation.md](mod/stereo/foveation.md) — static foveated rendering (issue #29): the stencil radial-density-masking design, the depth-stencil-state seam, and the build plan.
-- [swapchain-ownership.md](mod/stereo/swapchain-ownership.md) — the mod-owned back buffer: substituting the engine's swapchain-derived render setups so the scene renders per-eye while the DXGI buffers stay at the window size.
-- [culling.md](mod/stereo/culling.md) — widening the engine's visibility culls to the binocular union: the union cull projection, the scene cull and its size and occlusion corrections, the spawn and character-occlusion frusta, the per-render-block frustum cull, and terrain.
-- [lighting-shadow-vr-interactions.md](mod/stereo/lighting-shadow-vr-interactions.md) — every default-on mod modification touching camera, frame counters, lighting, or shadows, how each interacts with the stereo double-draw, and the candidate per-frame globals behind the terrain-wide sun-shadow flicker.
+- [single-pass-stereo.md](mod/stereo/single-pass-stereo.md): both eyes in one geometry walk, the shader rewrites, and the per-eye corrections.
+- [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md): what single-pass stereo needs from each render block.
+- [foveation.md](mod/stereo/foveation.md): static foveated rendering.
+- [swapchain-ownership.md](mod/stereo/swapchain-ownership.md): the mod-owned back buffer in place of the engine's swapchain-derived setups.
+- [culling.md](mod/stereo/culling.md): widening the engine's culls to both eyes.
+- [lighting-shadow-vr-interactions.md](mod/stereo/lighting-shadow-vr-interactions.md): the mod's changes to camera, frame counters, lighting, and shadows, and how they meet stereo.
 
 ### rendering/
 
-- [fsr.md](mod/rendering/fsr.md) — FSR anti-aliasing and upscaling in the stereo pipeline.
-- [taa.md](mod/rendering/taa.md) — the mod's own single-pass temporal anti-aliasing resolve, an alternative to FSR at the same hook: its design, its cost, and its image against FSR and SMAA.
-- [presentation-layer.md](mod/rendering/presentation-layer.md) — the render-rate presentation layer: what is drawn at the render rate and what at the simulation's, the upper body re-posed on the palette copy every frame (the torso bent after the head, the arms solved again to the hands), the hand bodies' offset blended between physics steps, what rides the drawn hand, and the cost.
-- [render-trace.md](mod/rendering/render-trace.md) — the render trace: starting a capture, the output folder, the probes and their toggles, the stereo draw diff and coordinate-frame events, the end-of-trace log lines, and the analyzer.
-- [render-time-anchoring.md](mod/rendering/render-time-anchoring.md) — the rule that anything drawn relative to the player is anchored at render time, and where it applies: the overlay's head and hand anchors, the explosives re-pushed at the hand, and the carried weapons' interpolation.
-- [shader-patching.md](mod/rendering/shader-patching.md) — patching the game's shaders in memory at creation: the create hooks, the DXBC checksum refresh, the forced reload through `LoadShaderBundle`, the restore on eject, and the sun-shadow PCF hash patch (issue #10).
-- [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md) — Intel XeSS assessed against the shipped FSR2 as anti-aliasing and as a VR upscaler: the Arc-only D3D11 backend, the D3D11on12 route that does work and what it costs, XeSS's sub-rectangle API against the eye seam, and why the recommendation is still to finish FSR2 and validate foveation.
-- [ui-decoupling.md](mod/rendering/ui-decoupling.md) — splitting HUD parts out of the one texture: why the issue #14 depth-split mechanisms fail, the premultiplied alpha of the composite, the techniques, the world markers' crop prototype, and the atlas as built (marker cells, an ammunition counter at each gun hand, health, heat, and grenades on the wrist, the reticles at the aim point).
+- [fsr.md](mod/rendering/fsr.md): FSR 2 in the stereo pipeline.
+- [taa.md](mod/rendering/taa.md): the mod's own TAA resolve, an alternative to FSR.
+- [presentation-layer.md](mod/rendering/presentation-layer.md): what is re-posed at the render rate rather than the simulation's.
+- [render-trace.md](mod/rendering/render-trace.md): the render trace and its analyzer.
+- [render-time-anchoring.md](mod/rendering/render-time-anchoring.md): anchoring what is drawn relative to the player at render time.
+- [shader-patching.md](mod/rendering/shader-patching.md): patching the game's shaders in memory at creation.
+- [upscaling-evaluation.md](mod/rendering/upscaling-evaluation.md): XeSS assessed against FSR 2.
+- [ui-decoupling.md](mod/rendering/ui-decoupling.md): splitting HUD parts out of the panel texture, and the atlas.
 
 ### performance/
 
-- [performance.md](mod/performance/performance.md) — where the frame actually goes, measured: geometry bound by draw submission rather than fill, the post chain bound by pixels, and what single-pass stereo buys.
-- [profiler.md](mod/performance/profiler.md) — the in-game profiler (issue #34): puffin CPU scopes across the frame phases and render passes, the GPU timestamp lane, the flame graph, and the F9 trace capture.
-- [frame-budget.md](mod/performance/frame-budget.md) — the frame-time benchmark's results at the headset's size: multipass and single-pass per scene against 13.9 ms, the serial CPU chain and the GPU as the two limits, the resolution sweep and its knee, what the remaining per-eye families and the draw detours cost, the ranked opportunities, the frames under 72 Hz pacing, and what overlapping the render update with the draw gained.
-- [frame-timing.md](mod/performance/frame-timing.md) — the always-on frame breakdown: self time per frame region by kind (mod, OpenXR, engine, wait) and thread, the frames split by the sim ticks they ran and the tick's phases, logged every ten seconds and shown in the debug UI's Rendering > Previews and performance feature.
+- [performance.md](mod/performance/performance.md): where the frame goes, measured.
+- [profiler.md](mod/performance/profiler.md): the in-game CPU and GPU profiler.
+- [frame-budget.md](mod/performance/frame-budget.md): the frame-time benchmark's results at the headset's resolution.
+- [frame-timing.md](mod/performance/frame-timing.md): the always-on frame breakdown.
 
 ### body/
 
-- [runtime-testing.md](mod/body/runtime-testing.md) — active replacement paths, integrated gameplay checks, and known runtime limitations.
-- [human-hull-restoration.md](mod/body/human-hull-restoration.md) — live human settings discovery, native shape clearance, transactional restoration, and the bounded wait at eject.
-- [attachments.md](mod/body/attachments.md) — copied socket interaction targets, native placement observations, and exact render-phase pouch markers in the body mirror.
-- [head-and-body.md](mod/body/head-and-body.md) — how head and body yaw relate in VR: coupling schemes, the headpose abstraction, the head-bone override, head hiding, and body IK.
-- [grapple-comfort.md](mod/body/grapple-comfort.md) — the grapple body-frame filter (issue #36): the hold from fire to landing, the yaw handoff, the landing-snap absorber, and the telemetry capture.
-- [swim-yaw.md](mod/body/swim-yaw.md) — the right stick owns the swim heading: the `DoRotate` target override, the forward/back-only move direction, the accumulator seeding, the turn-act suppression, and the swim heading's telemetry.
-- [swim-strokes.md](mod/body/swim-strokes.md) — swimming with the arms: each hand a paddle whose palm-first push back through the water keeps up a swim speed with a glide, joined to the swim cores' velocity along the facing, and whose uneven push turns the heading the right stick owns.
-- [canopy-opening.md](mod/body/canopy-opening.md) — the canopy's opening out of a grapple reel skipped into its idle, so Rico does not roll into the harness.
-- [parachute-yaw.md](mod/body/parachute-yaw.md) — parachute head-yaw suppression (issue #48): removing the camera-relative look-steer from the chute's steering so the head does not turn it, and turning the canopy toward a reeling grapple line in its place.
-- [locomotion.md](mod/body/locomotion.md) — stick locomotion and the steady view: the stick's velocity at a fixed acceleration in place of the clips' root velocity, the act filter that keeps turning animations off the body and its watchdog, and the on-foot view anchored to Rico's root and a measured neutral head, with the stair smoothing and the handover.
-- [procedural-body.md](mod/body/procedural-body.md) — the procedural torso: the pose written at the HumanIK solve gate, the rig found by name in the skeleton, the hand-over table, the spine, the neck, and the clavicles posed on the hips the game's animation keeps, the arms, and the arms' twist.
-- [procedural-states.md](mod/body/procedural-states.md) — the procedural torso outside standing play: the torso posed on the animation's hips in a vehicle seat, Rico's arms carried over from the player's in the wingsuit, the torso on the harness's hips under the parachute, the torso and arms in the water over the swim's kick, the torso on a vehicle's roof over the on-foot clip's hips, and the body mirror diagnostic that draws the solved skeleton reflected ahead of the player.
-- [physics-substrate.md](mod/body/physics-substrate.md) — the physics layer the hands, weapons, grapple, and vehicles share: one error, the body, proxy, vehicle, and scan helpers, the rig's jump watch, the wanted velocity's contributors and their order, and the one shaping of a release's velocity.
-- [rig.md](mod/body/rig.md) — the body rig: the pelvis solver that tells a lean from a step, the step commit and the drive through the game's own movement, the yaw follow, the recenter that snaps the pelvis under the neck, the one owner of Rico's root per tick, the ledger and cockpit shift that keep the camera on the real head, the push-back and the head probe at walls, the postures, the body turning under the view, the holsters on Rico's skeleton, the in-world diagnostics, and the offline evaluation the defaults were tuned with.
-- [ik-body.md](mod/body/ik-body.md) — the IK-first on-foot body: the FK pelvis from the learned estimate, the clip's hips seeded onto it before the torso's solve, the feet planted by HumanIK and stepped by explicit rules with probed landings, the root following the pelvis, the per-state weights and the walk's share, the airborne legs, and the hand-overs to the game's walk.
-- [body-estimator.md](mod/body/body-estimator.md) — the learned body estimator (EgoPoser) in `body-estimator`: the weights loaded from a path and never committed, the network, the CPU reference and its last-layer trim, the Direct3D 11 executor with its kernels, asynchronous readback, and 32-bit or 16-bit weights, the tests against the CPU per kernel and per stage on wine's Direct3D or on DXVK, and the measured costs.
-- [unarmed-body.md](mod/body/unarmed-body.md) — the weapon-agnostic body: on foot under the controllers, the weapon's modifiers kept off all but the action layer, the partial and additive layers left out of the pose while they run, and the game's off-hand weapon grip released.
+- [runtime-testing.md](mod/body/runtime-testing.md): active replacement paths, gameplay checks, and known limitations.
+- [human-hull-restoration.md](mod/body/human-hull-restoration.md): restoring the human's native shape settings.
+- [attachments.md](mod/body/attachments.md): socket interaction targets and pouch markers in the body mirror.
+- [head-and-body.md](mod/body/head-and-body.md): how head and body yaw relate, the head pose, and the head bone.
+- [grapple-comfort.md](mod/body/grapple-comfort.md): the grapple's body-frame comfort filter.
+- [swim-yaw.md](mod/body/swim-yaw.md): the right stick owning the swim heading.
+- [swim-strokes.md](mod/body/swim-strokes.md): swimming with the arms.
+- [canopy-opening.md](mod/body/canopy-opening.md): skipping the canopy's opening roll out of a grapple reel.
+- [parachute-yaw.md](mod/body/parachute-yaw.md): keeping the head from steering the parachute.
+- [locomotion.md](mod/body/locomotion.md): stick locomotion and the steady on-foot view.
+- [procedural-body.md](mod/body/procedural-body.md): the procedural torso and arms.
+- [procedural-states.md](mod/body/procedural-states.md): the procedural torso in seats, the wingsuit, the parachute, and water.
+- [physics-substrate.md](mod/body/physics-substrate.md): the physics layer the hands, weapons, grapple, and vehicles share.
+- [rig.md](mod/body/rig.md): the body rig, its pelvis solver, step commit, and yaw follow.
+- [ik-body.md](mod/body/ik-body.md): the IK-first on-foot body.
+- [body-estimator.md](mod/body/body-estimator.md): the learned body estimator (EgoPoser).
+- [unarmed-body.md](mod/body/unarmed-body.md): the weapon-agnostic body.
 
 ### input/
 
-- [held-prop-impacts.md](mod/input/held-prop-impacts.md) — held-body solver-contact feedback, native damage ownership, and acceptance scenarios.
-- [input.md](mod/input/input.md) — how the mod taps, consumes, and injects the game's input.
-- [grip.md](mod/input/grip.md) — the grip: every grab target as one representation from the subsystem that provides it, the one rule that picks what each hand takes (the nearest grab point, with surfaces to climb and reach margins as fallbacks), the grip's press continuously looking while held, an empty grip as a fist, letting go and docking, the colour-coded markers anchored at render time, the grab hint showing the game's icon of what a hand near a body slot would take, the readouts and logs, and adding a grab target.
-- [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md) — the motion-controller and roomscale plan of record: the continuous-body principles, the aim-state pin, controller-owned hands and their tiers, per-hand aiming, weapon handling, per-mode bindings, roomscale, the milestones, the implementation status, and the headset test checklist.
-- [controls-summary.md](mod/input/controls-summary.md) — the controls summary on the off-hand wrist: hiding the game's button hints, the binding tables read by both the injection and a describer, labels from the game's localisation, the usable rows above each mode's fixed essentials, the panel and its glance, the glyph and font assets, and the in-game status list.
-- [controllers.md](mod/input/controllers.md) — the motion controllers as built: the OpenXR input foundation, scheme selection, mode detection, the bindings and their injection, the gamepad-semantics pin, the aim-state pin, controller-owned hands, per-hand aiming, the sight lines and their tuning tool, the world-space overlay layer, recoil, haptics, dual-wield, the anchored grapple hand, vehicles and flight, grenades, aim assist, and scopes.
-- [two-handed-inventory.md](mod/input/two-handed-inventory.md) — the two-handed inventory: one loadout table owned by the mod as the source of truth for the player's items, independent hands, the game's slots as a projection fed by the primary hand, the per-hand tick, every grab at the body decided against the table, the pistols as plain items, the props and explosives in the table, the weapons lying in the world kept from the despawn and marked with the game's icons, the weapons carried beyond the slots, the save sidecar, the missions' stash, and the phases still to build (the takes, traversal and persistence, the grapple snatch, and the finger poses).
-- [physical-weapons.md](mod/input/physical-weapons.md) — weapons as physical objects: any weapon held in either hand, the holding hand from the draw, the pickup, and the handover, the owned attach bones, only the holding hand's trigger firing, weapons taken off the ground straight into the hand, long guns drawn and holstered without the game's acts as one sliding object, guns let go of to fall with the hand's motion, and a second long gun in the free hand fired by its own trigger.
-- [physical-guns.md](mod/input/physical-guns.md) — a held gun as a body of its own, with the gun's own shape and mass, joined to the hand bodies that hold it and brace it: its weight dragging the hands, collision along its whole length, strikes as a melee object, shots as impulses, the drawn gun following its body, the teardown before the game can destroy the weapon, the kinematic fallbacks, a long gun braced anywhere along it and always held alone by its grip, and the headset checklist.
-- [pouch-models.md](mod/input/pouch-models.md) — the game's own grenade, C4 charge, and magazine models drawn on the pouches on Rico's body: instances of models the game already holds, placed on the tick in the character's model space, drawn with the body at render time, and released outside gameplay.
-- [paired-rack-weapons.md](mod/input/paired-rack-weapons.md) — independent finite and unlimited rack members, native copy staging, source consumption, and ammunition conservation.
-- [reload.md](mod/input/reload.md) — the true reload: the game's reloads stopped, the eject by button or flick, the universal belt pouch, loading into the gun's real well, the one-handed belt reload, the chamber and the hand-worked slide, charging handle, bolt, and pump, the dual-wielded pistols' split magazines, and what is unverified.
-- [weapon-reloads.md](mod/input/weapon-reloads.md) — every weapon in the game against the true reload: the game's reload clip and parts, what the mod loads, how each is reloaded by hand, the weapons that keep the game's reload, and a headset checklist per weapon.
-- [physical-hands.md](mod/input/physical-hands.md) — each empty hand's palm colliding with the world: the hand bodies in the physics world, their drive, lifecycle, and push on the player, the probes they replace, pushing off surfaces, holding the hand at them, passing through characters, shoving and knocking objects with a soft contact that heavy objects resist, picking up loose objects at the touched point and holding them with one or both hands within the hands' strength, throwing them, grabbing weapons, and the headset checklist.
-- [grab-view.md](mod/input/grab-view.md) — the grab view, a diagnostic on by default: around each hand, the reach's rays coloured by what they hit, lines to the grip targets near it by how the hand stands to them, the palms' state on the wrist, a flash at a refused grab, and the boxes of the weapons, objects, and vehicles near the hands; toggled from the debug UI.
-- [collider-view.md](mod/input/collider-view.md) — the collider view, a diagnostic: the physics world's bodies near the player drawn in the overlay with their boxes and shapes, coloured by kind, the mod's joints, the hand bodies' contacts, and the player's ground; read once per physics step and drawn between the last two reads at render time, within a body and primitive budget.
-- [slow-motion.md](mod/input/slow-motion.md) — the game's slow motion against the player's real time: which of the controllers' measures run on the real clock and which on the game's, the conversion between them, and how a throw leaves the hand in slow motion.
-- [physical-grapple.md](mod/input/physical-grapple.md) — the grapple hand working the line: the reel sped by the pull and boosted by a yank, the tethers tightened by pulling back, the hang swing pumped by the arm, the line's tension in the hand, and the headset checklist.
-- [grapple-lock.md](mod/input/grapple-lock.md) — the grapple lock: holding the grapple button during the reel holds the line's length to swing from, a spring measured against the hook's moving point, the hand taking line in, the target's reaction, the endings, and the rope shared with the snatch.
-- [seat-grapple.md](mod/input/seat-grapple.md) — the seat grapple: in a vehicle seat the grapple button fires the hook along the off-hand's aim and tethers what it hits to the vehicle, through the game's own unreachable vehicle grapple's steps; and the grapple's aim never freezing at a stale point.
-- [grapple-line-grab.md](mod/input/grapple-line-grab.md) — the free hand on a held lock's or a swinging snatch's line: a grab target ahead of the grapple hand, hand-over-hand take-in on the lock, and an anchor at the free hand on the snatch's line that pulls and swings the target through the same rope.
-- [grapple-snatch.md](mod/input/grapple-snatch.md) — the grapple snatch, built but for racks and lockers: the empty grapple hand's grip and a yank pull what the grapple aims at into the hand, weapons first (on the ground, in characters' hands, then racks, lockers, and holsters), props and car doors after, on the game's own aim, hook, and line, with the line yanking the target to a physical catch, the grapple's own sounds, and the game's pickup and steal rules at the end; objects too heavy to carry, such as explosive barrels, swing on the held line instead.
-- [hand-climbing.md](mod/input/hand-climbing.md) — gripping the static world or a moving body with an empty hand and climbing: the grip, the body moving against the gripping hands, a grip held in a moving body's frame that carries the player, keeping the game on foot by writing the proxy's support, the fling on release, the mantle over a ledge, and the headset checklist.
-- [breaking-glass.md](mod/input/breaking-glass.md) — breaking window glass with a palm or a held gun, from outside or inside a car: the sweeps cast as a bullet's ray, damage through the bullet's own call, bringing a pane down by hiding its model instance, the feedback, and the headset checklist.
-- [impact-sounds.md](mod/input/impact-sounds.md) — hands that meet something hard enough making the game's own melee impact sound for the struck material: the sources, the thresholds and cooldowns, what is not covered, and the headset checklist.
-- [haptics.md](mod/input/haptics.md) — the controllers' vibration: the vocabulary of primitives (tick, click, bump, buzz, thud, hum, and tension), the per-hand mixer (sustained levels summed under a ceiling, one-off cues over them, the game's rumble ducked), the category switches, the table of every source, and the headset checklist.
-- [stunt-positions.md](mod/input/stunt-positions.md) — stunt positions held by the grip: a helicopter gripped with the body hanging below it taking the player into its hang, a mantle onto a roof taking the player into its stunt area, letting go of every grip letting go of the hang, the climb's grips holding the hands while the game holds the player, the torso on a roof, the haptics and finger poses, and the headset checklist.
-- [vehicle-doors.md](mod/input/vehicle-doors.md) — vehicle doors, hoods, and trunks by hand: finding a door by its handle, from the embedded door handle table or the door's box, gripping a latched door's handle area, the pull that undoes the latch without the hinge's motor, swinging the door on its hinge, the shove that latches it, and the headset checklist.
-- [grip-poses.md](mod/input/grip-poses.md) — the fingers wrapping what the hand holds: the sources' declarations, the named poses per held thing with a trigger finger that follows the trigger and fingers left live under hand tracking, the blend from the measured curls by how firmly the grip holds, the contact fit that closes the fingers onto a held body by short casts, the readouts, and the headset checklist.
-- [character-grabs.md](mod/input/character-grabs.md) — taking hold of characters with an empty hand: the grip that throws a standing character into their ragdoll by its own hit reaction and holds them by the bone nearest the palm, the characters the game protects, bodies on the floor held with the whole ragdoll's weight, holding on at the grab point and the yank with the topple off, the shove on letting go, reaching a seated character through an open door and the yank that hijacks the seat through the game's vehicle entry, getting in by an opened door, and the headset checklist.
-- [cockpit-controls.md](mod/input/cockpit-controls.md) — the plane's flight stick and throttle and the helicopter's cyclic and collective: the relative grab, the deadzone, the centring spring, the flight stick's and cyclic's twist for the rudder and yaw, the parked throttle giving way to the trigger, the throttle's afterburner gate under the game's nitrous threshold, the haptic stops, detents, and gate, the horn on the wheel's hub, the nitrous button and twist grips, why there is no gear lever, and the headset checklist.
-- [vehicle-weapons.md](mod/input/vehicle-weapons.md) — weapons out of the driver's seat: the passenger's and stunt position's seated body turned toward the gun hand's aim through the aim control's weapon point, the mounted gun's handles taken with the grip and aimed by the holding hands, the gun held where the hands left it, its recoil kicking the handles and pulsing the hands, and the headset checklist.
-- [steering-wheel.md](mod/input/steering-wheel.md) — the physical wheel and handlebars placed from the driven vehicle's parts: the box fit, the override table, the fallback held in the vehicle's space, the handlebars for the ATV, jetski, and duck, the rendered wheel turned in the render update, and the headset checklist.
+- [input.md](mod/input/input.md): how the mod taps, consumes, and injects the game's input.
+- [controllers.md](mod/input/controllers.md): the motion controllers as built.
+- [controllers-and-roomscale.md](mod/input/controllers-and-roomscale.md): the motion-controller and roomscale design.
+- [grip.md](mod/input/grip.md): the grip and how each hand picks a grab target.
+- [grip-poses.md](mod/input/grip-poses.md): the fingers wrapping what the hand holds.
+- [two-handed-inventory.md](mod/input/two-handed-inventory.md): the mod's loadout table and independent hands.
+- [weapon-acquisition.md](mod/input/weapon-acquisition.md): taking guns from characters' hands, racks, and lockers.
+- [controls-summary.md](mod/input/controls-summary.md): the controls summary on the off-hand wrist.
+- [haptics.md](mod/input/haptics.md): the controllers' vibration.
+- [slow-motion.md](mod/input/slow-motion.md): the game's slow motion against real time.
+- [physical-hands.md](mod/input/physical-hands.md): each empty palm colliding with the world.
+- [hand-climbing.md](mod/input/hand-climbing.md): climbing with gripping hands.
+- [character-grabs.md](mod/input/character-grabs.md): grabbing characters with an empty hand.
+- [held-prop-impacts.md](mod/input/held-prop-impacts.md): held-body contact feedback and damage.
+- [impact-sounds.md](mod/input/impact-sounds.md): impact sounds from the hands.
+- [breaking-glass.md](mod/input/breaking-glass.md): breaking window glass by hand.
+- [grab-view.md](mod/input/grab-view.md): the grab view diagnostic.
+- [collider-view.md](mod/input/collider-view.md): the collider view diagnostic.
+- [physical-weapons.md](mod/input/physical-weapons.md): weapons as physical objects in either hand.
+- [physical-guns.md](mod/input/physical-guns.md): a held gun as a physics body.
+- [pouch-models.md](mod/input/pouch-models.md): grenade, C4, and magazine models on Rico's pouches.
+- [grenades.md](mod/input/grenades.md): grenades as independent loadout items.
+- [attachments.md](mod/input/attachments.md): the belt magazine and other body attachments.
+- [paired-rack-weapons.md](mod/input/paired-rack-weapons.md): rack weapons and their ammunition.
+- [reload.md](mod/input/reload.md): the hand-worked reload.
+- [weapon-reloads.md](mod/input/weapon-reloads.md): each weapon against the hand-worked reload.
+- [physical-grapple.md](mod/input/physical-grapple.md): working the grapple line with the hand.
+- [grapple-lock.md](mod/input/grapple-lock.md): the grapple lock.
+- [seat-grapple.md](mod/input/seat-grapple.md): the grapple from a vehicle seat.
+- [grapple-line-grab.md](mod/input/grapple-line-grab.md): the free hand on the grapple line.
+- [grapple-snatch.md](mod/input/grapple-snatch.md): pulling things into the hand with the grapple.
+- [stunt-positions.md](mod/input/stunt-positions.md): stunt positions held by the grip.
+- [vehicle-doors.md](mod/input/vehicle-doors.md): vehicle doors, hoods, and trunks by hand.
+- [cockpit-controls.md](mod/input/cockpit-controls.md): the flight stick, throttle, cyclic, and collective.
+- [wingsuit-gestures.md](mod/input/wingsuit-gestures.md): opening, braking, and closing the wingsuit by pose.
+- [canopy-target-contract.md](mod/input/canopy-target-contract.md): the parachute canopy's targets from the native rig.
+- [vehicle-weapons.md](mod/input/vehicle-weapons.md): passenger aim and mounted guns.
+- [steering-wheel.md](mod/input/steering-wheel.md): the physical wheel and handlebars.
 
 ### testing/
 
-- [recorder.md](mod/testing/recorder.md) — the tracking recorder: the ways to start it, what a frame and its events hold, the lookback, the file format and its input observations, the offline `tracking-synth` commands (`dump`, `rig-eval`, `export-rerun`, `estimate-body`, `scan-view`), and the synthetic recordings it writes from scripted head and controller paths.
-- [rerun.md](mod/testing/rerun.md) — `tracking-synth export-rerun`: a recording and its take's video as a Rerun recording, what it shows, how the cockpit is placed in the world, and what the format leaves out.
-- [fast-comparison.md](mod/testing/fast-comparison.md) — the capture harness's fast loop: GPU snapshots compared on the GPU per eye and plane with the Python comparison's rules, the noise floors and verdicts, the cropped compressed dumps, the still camera held as a fixed pose, the reused stage, re-injection under the harness and what pins a payload, the standing suite, the `iterate` command, and where the time went before.
-- [benchmark.md](mod/testing/benchmark.md) — the frame-time benchmark: the live game played forward per scene in each render mode with the camera held or moving, every frame's CPU time per thread, GPU time per dispatch and seam, and submissions recorded, the host's per-thread CPU time alongside, the resolution sweep, the result file format, the charts, and what a harness machine can and cannot say.
-- [view-scan.md](mod/testing/view-scan.md) — `tracking-synth scan-view`: a take's video scanned for flashes, each checked against the camera's place behind or ahead of Rico's head, run after each take's Rerun export.
+- [recorder.md](mod/testing/recorder.md): the tracking recorder and the offline `tracking-synth` commands.
+- [rerun.md](mod/testing/rerun.md): exporting a recording to Rerun.
+- [view-scan.md](mod/testing/view-scan.md): scanning a take's video for camera flashes.
+- [fast-comparison.md](mod/testing/fast-comparison.md): the capture harness's fast GPU comparison loop.
+- [benchmark.md](mod/testing/benchmark.md): the frame-time benchmark.
 
 ## issues/
 
-- [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md) — HUD overlays and depth (issues #8, #14).
-- [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md) — enclosed vehicles (issue #15).
-- [20-animation-judder.md](issues/20-animation-judder.md) — animation judder (issue #20).
-- [32-monoscopic-far-field.md](issues/32-monoscopic-far-field.md) — the render-pass sort/depth-bucket machinery as the distance-split mechanism for a shared far field (issue #32).
-- [40-terrain-black-tiles.md](issues/40-terrain-black-tiles.md) — terrain walls and cave ceilings rendering black at grazing angles (issue #40).
-- [far-field.md](issues/far-field.md) — the monoscopic far field (issue #32), removed: what it did, why it could not stay beside single-pass stereo, what a revival needs, and the commit that still holds it.
-- [periodic-sim-tick-hitches.md](issues/periodic-sim-tick-hitches.md) — 300 and 600 ms stalls on a 61-second wall-clock beat inside the sim tick but outside its timed phases, the candidates, and the slots that will name the cause.
-- [session-stalls-and-low-camera.md](issues/session-stalls-and-low-camera.md) — two 80-second game-thread stalls outside `Game::Update` and a camera at 0.85 m below the character's eyes, which was the floor remap following a low reported head height rather than a fallback.
-- [swim-yaw-endless-spin.md](issues/swim-yaw-endless-spin.md) — the swimming body flipping 180° the moment it moved: the crawl capsule offset's gimbal lock under the old `SetOrientation` yaw chase, and which `DoRotate` call actually turns the body.
+- [08-14-hud-overlays-and-depth.md](issues/08-14-hud-overlays-and-depth.md): HUD overlays and depth (#8, #14).
+- [15-enclosed-vehicles.md](issues/15-enclosed-vehicles.md): enclosed vehicles (#15).
+- [20-animation-judder.md](issues/20-animation-judder.md): animation judder (#20).
+- [32-monoscopic-far-field.md](issues/32-monoscopic-far-field.md): the render-pass sort as a distance split for a shared far field (#32).
+- [40-terrain-black-tiles.md](issues/40-terrain-black-tiles.md): terrain rendering black at grazing angles (#40).
+- [far-field.md](issues/far-field.md): the removed monoscopic far field (#32).
+- [periodic-sim-tick-hitches.md](issues/periodic-sim-tick-hitches.md): periodic stalls inside the sim tick.
+- [session-stalls-and-low-camera.md](issues/session-stalls-and-low-camera.md): long game-thread stalls and a low camera.
+- [swim-yaw-endless-spin.md](issues/swim-yaw-endless-spin.md): the swimming body flipping as it moved.
