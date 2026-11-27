@@ -1,6 +1,6 @@
 //! The gameplay layer's tuning, read from the shipped `tuning/gameplay.toml` ([`GAMEPLAY`]): the
 //! bindings' press thresholds, hysteresis, and holds, the controller pointer's aim hold, scroll,
-//! click slop, and laser, and the controls summary's layout.
+//! click slop, and laser, the controls summary's layout, and the online hooks' stall threshold.
 
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
@@ -21,13 +21,15 @@ pub struct GameplayTuning {
     pub bindings: BindingsTuning,
     pub pointer: PointerTuning,
     pub summary: SummaryTuning,
+    pub online: OnlineTuning,
 }
 
 impl Tuning for GameplayTuning {
     fn validate(&self) -> Result<(), Invalid> {
         self.bindings.validate()?;
         self.pointer.validate()?;
-        self.summary.validate()
+        self.summary.validate()?;
+        self.online.validate()
     }
 }
 
@@ -258,6 +260,27 @@ impl LaserTuning {
         if self.ttl_ms == 0 {
             return Err(Invalid(
                 "pointer.laser.ttl_ms must be positive, got 0".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// The online hooks' timing (`crate::hooks::online`).
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OnlineTuning {
+    /// How long the Steam platform system's update may take before it is logged on its own,
+    /// milliseconds. The call takes a fraction of a millisecond on an ordinary tick, and the stalls
+    /// it carries are hundreds.
+    pub slow_steam_callbacks_ms: u64,
+}
+
+impl OnlineTuning {
+    fn validate(&self) -> Result<(), Invalid> {
+        if self.slow_steam_callbacks_ms == 0 {
+            return Err(Invalid(
+                "online.slow_steam_callbacks_ms must be positive, got 0".to_owned(),
             ));
         }
         Ok(())

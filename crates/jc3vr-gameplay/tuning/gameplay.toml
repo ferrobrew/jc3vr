@@ -50,3 +50,6 @@ heading_rows = 1.5
 group_rows = 0.75
 glyph_rows = 0.85
 font_rows = 0.5
+
+[online]
+slow_steam_callbacks_ms = 50

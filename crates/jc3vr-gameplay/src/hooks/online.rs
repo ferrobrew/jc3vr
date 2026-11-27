@@ -56,6 +56,8 @@ use jc3vr_core::{
 use re_utilities::hook_library::HookLibrary;
 use serde::{Deserialize, Serialize};
 
+use crate::controllers::tuning::GAMEPLAY;
+
 /// The online-feature settings, at `online` in the settings file; the payload binds the slot at
 /// startup.
 pub static ONLINE_CONFIG: ConfigSlot<OnlineConfig> = ConfigSlot::new("online");
@@ -104,10 +106,6 @@ pub fn hook_library() -> HookLibrary {
         .with_static_binder(&FIRST_PARTY_CHECK_BINDER)
 }
 
-/// How long the Steam platform system's update may take before it is logged on its own. The call
-/// takes a fraction of a millisecond on an ordinary tick, and the stalls it carries are hundreds.
-const SLOW_STEAM_CALLBACKS: Duration = Duration::from_millis(50);
-
 thread_local! {
     /// Whether this thread is inside the online-suite manager's update and outside the online
     /// suite's own update: the stretch that holds the manager's queued login and its suite retry,
@@ -151,7 +149,7 @@ fn steam_platform_update(this: *mut OnlinePlatformSystemSteam, dt: f32) {
     // The breakdown's window maximum places a stall only to ten seconds; a line of its own carries
     // the log's timestamp, so the stall can be matched to the second against the Steam client's own
     // logs (`docs/issues/periodic-sim-tick-hitches.md`).
-    if elapsed >= SLOW_STEAM_CALLBACKS {
+    if elapsed >= Duration::from_millis(GAMEPLAY.get().online.slow_steam_callbacks_ms) {
         tracing::warn!(
             elapsed_ms = elapsed.as_secs_f64() * 1000.0,
             "online: the Steam callbacks blocked the game thread"
