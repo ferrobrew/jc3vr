@@ -5,7 +5,7 @@
 //! The readout is a leaf slot that any thread may read ([`status`]), as the status rows (`status`)
 //! do in the middle of a frame (`docs/mod/threading.md`).
 
-use std::{fmt::Write as _, sync::OnceLock};
+use std::fmt::Write as _;
 
 use glam::Vec3;
 use jc3vr_core::published::Stamp;
@@ -13,6 +13,7 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::{
+    contributions,
     controllers::{
         grab::{
             GrabVolume, GripTarget, Reach, Resolved, Tier,
@@ -75,19 +76,6 @@ pub fn resolve(
         slow,
         notes,
     }
-}
-
-/// Register the physical hands' summary of a hand's palm, logged with each grip press. One summary:
-/// a second registration is refused and logged. Called on the input tick.
-pub fn register_palm_summary(summary: fn(Hand) -> String) {
-    if PALM_SUMMARY.set(summary).is_err() {
-        tracing::error!("grip: a palm summary is already registered; keeping the first");
-    }
-}
-
-/// Whether the physical hands' palm summary is registered.
-pub fn palm_summary_registered() -> bool {
-    PALM_SUMMARY.get().is_some()
 }
 
 /// Note the body slots each hand is in reach of this tick, and let a hand in reach of nothing (or
@@ -286,7 +274,9 @@ fn log_press(hand: Hand, tick: &Tick, latch: GripLatch, acquired: bool) {
         others = if considered.is_empty() { "none" } else { considered.as_str() },
         nearest_miss = missed.as_deref().unwrap_or("none"),
         notes = if notes.is_empty() { "none" } else { notes.as_str() },
-        palms = PALM_SUMMARY.get().map_or_else(String::new, |summary| summary(hand)),
+        palms = contributions::get()
+            .and_then(|contributions| contributions.palm_summary)
+            .map_or_else(String::new, |summary| summary(hand)),
         slow = tick.slow[hand.index()],
         targets = tick.targets.len(),
         "{}",
@@ -331,8 +321,6 @@ fn slow_between(last: Option<(Vec3, Stamp)>, now: Option<(Vec3, Stamp)>) -> bool
     let speed = from.distance(to) / dt;
     !speed.is_finite() || speed <= GRAB.get().reach.slow_hand_mps
 }
-
-static PALM_SUMMARY: OnceLock<fn(Hand) -> String> = OnceLock::new();
 
 static SPEEDS: Mutex<[Option<(Vec3, Stamp)>; 2]> = Mutex::new([None; 2]);
 

@@ -2,17 +2,17 @@
 //! asks of them, and what the per-weapon update ([`crate::controllers::aim::gun`]) asks of the
 //! weapon handling before it hands a gun its hand's aim point.
 //!
-//! Those systems sit above the aim, so they register one [`AimHooks`] at install
-//! ([`register_aim_hooks`]), a table of their own functions, and the aim calls through it at the
-//! same points, in the same order, as it would call them directly. Calling before the table is
-//! registered is a programming error and panics; the controllers' install registers it before any
-//! hook is enabled.
-
-use std::sync::OnceLock;
+//! Those systems sit above the aim, so they fill one [`AimHooks`] in the body's contributions
+//! ([`crate::contributions::BodyContributions::aim_hooks`]), a table of their own functions, and
+//! the aim calls through it at the same points, in the same order, as it would call them directly.
+//! Calling before the table is registered is a programming error and panics; the install registers
+//! it before any hook is enabled.
 
 use glam::Vec3;
 use jc3gi::equipment::weapon::{WeaponBase, WeaponInputs};
 use jc3vr_input::frame::Pose;
+
+use crate::contributions;
 
 /// The functions the aim calls in the systems above it.
 #[derive(Clone, Copy)]
@@ -61,24 +61,10 @@ pub struct AimHooks {
 /// [`Hand::index`](jc3vr_input::frame::Hand::index): the weapon's address and the point.
 pub type ArmedTargets = [Option<(usize, Vec3)>; 2];
 
-/// Register the table; the first registration stands.
-pub fn register_aim_hooks(hooks: AimHooks) {
-    if HOOKS.set(hooks).is_err() {
-        tracing::warn!("aim: the aim hooks are already registered; the new ones are ignored");
-    }
-}
-
-/// Whether the aim hooks are registered.
-pub fn is_registered() -> bool {
-    HOOKS.get().is_some()
-}
-
 /// The registered table.
 #[inline]
 pub(crate) fn hooks() -> &'static AimHooks {
-    HOOKS
-        .get()
-        .expect("aim: no aim hooks are registered; the controllers' install registers them")
+    contributions::get()
+        .and_then(|contributions| contributions.aim_hooks.as_ref())
+        .expect("aim: no aim hooks are registered; the install registers them")
 }
-
-static HOOKS: OnceLock<AimHooks> = OnceLock::new();

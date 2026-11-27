@@ -3,8 +3,8 @@
 //! moves into the hand's grip. The weapon handling owns all of it; this module is the seam through
 //! which the systems below the weapon handling (the hands, and the aim) read it.
 //!
-//! The weapon handling registers one [`HeldSource`] at install ([`register_held_source`]), a table
-//! of its own query functions, and every read here calls through it. The reads are live: each one
+//! The weapon handling registers one [`HeldSource`] at install
+//! ([`crate::contributions::BodyContributions::held`]), a table of its own query functions, and every read here calls through it. The reads are live: each one
 //! reads the weapon handling's state at the moment of the call, exactly as a direct call into the
 //! weapon handling would, so a reader on the render thread or inside the inventory's placement
 //! pass sees the same values it always did. A per-tick copy would not do: the slide and snap
@@ -35,8 +35,6 @@
 //! - [`pickup`]: the hand-off of a weapon a hand reaches in the world to the weapon handling's take,
 //!   through a sink the weapon handling registers apart from its source.
 
-use std::sync::OnceLock;
-
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::Inventory},
@@ -44,6 +42,8 @@ use jc3gi::{
 };
 use jc3vr_core::published::Stamp;
 use jc3vr_input::frame::{Hand, Pose};
+
+use crate::contributions;
 
 pub mod guns;
 pub mod native;
@@ -155,18 +155,6 @@ pub struct PlacementSource {
     pub carried_for: for<'a> unsafe fn(&'a Inventory) -> Vec<&'a WeaponBase>,
 }
 
-/// Register the weapon handling's source; the first registration stands.
-pub fn register_held_source(source: HeldSource) {
-    if SOURCE.set(source).is_err() {
-        tracing::warn!("held: a held-item source is already registered; the new one is ignored");
-    }
-}
-
-/// Whether the weapon handling has registered its source.
-pub fn is_registered() -> bool {
-    SOURCE.get().is_some()
-}
-
 /// The hand the weapon at `address` is armed in.
 #[inline]
 pub fn armed_hand_of(address: usize) -> Option<Hand> {
@@ -266,9 +254,7 @@ pub fn adjust_part(
 }
 
 fn source() -> &'static HeldSource {
-    SOURCE
-        .get()
-        .expect("held: no held-item source is registered; the controllers' install registers it")
+    contributions::get()
+        .and_then(|contributions| contributions.held.as_ref())
+        .expect("held: no held-item source is registered; the install registers it")
 }
-
-static SOURCE: OnceLock<HeldSource> = OnceLock::new();

@@ -4,9 +4,9 @@
 //! reads.
 
 use glam::Vec3;
-use jc3vr_body::controllers::{
-    held,
-    held::{
+use jc3vr_body::{
+    contributions::BodyContributions,
+    controllers::held::{
         HeldContents, HeldItem, HeldSource, PlacementSource,
         zones::{GunZones, KnockZone, ReloadViews, ZoneAxis},
     },
@@ -27,9 +27,9 @@ use crate::controllers::{
     },
 };
 
-/// Register the source once; the controllers' install calls it before any hook is enabled.
-pub fn register() {
-    held::register_held_source(HeldSource {
+/// Fill the held-item source of `body`; the install registers it before any hook is enabled.
+pub fn register(body: &mut BodyContributions) {
+    body.held = Some(HeldSource {
         armed_hand_of: armed::hand_of,
         armed_weapon: armed::weapon_of,
         owned_holder: hold::owned_holder,

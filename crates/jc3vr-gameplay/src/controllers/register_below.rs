@@ -1,87 +1,38 @@
 //! Registers the physical hands, the vehicle handling, and the weapon handling with the systems
 //! below them: the body, the grip model, the roomscale, the hand bodies' step, the per-shot seam,
 //! the weapon take, the weapon pickup hand-off, and the character hooks. Each subsystem's own
-//! `register_body` names what it contributes, and the weapon handling's and the physical hands'
-//! registrations with each other ride along (`register_siblings`).
+//! `register_body` fills its fields of the body's contributions, the refusals of the automatic
+//! entry into a vehicle's stunt area below the player ride in [`AUTO_ATTACH_BLOCKERS`] in the order
+//! they are asked, and the weapon handling's and the physical hands' registrations with each other
+//! ride along (`register_siblings`).
 //!
-//! Each of these does real work every tick, and the body destruction observer keeps the climb and
-//! the carried bodies from holding a destroyed body, so the install refuses to finish with one
-//! missing: [`register`] panics naming it.
+//! Each of these does real work every tick. The body reports its own fields still empty
+//! ([`jc3vr_body::contributions::register`]), and [`register`] reports the weapon handling's
+//! contributions to the install's registration check, which stops the startup naming any still
+//! missing.
 
-use std::fmt::Write as _;
-
-use jc3vr_body::{
-    controllers::{
-        body::{mirror, rig::root},
-        facts::climb,
-        grab::tick as grab_tick,
-        held::pickup,
-        roomscale,
-    },
-    hooks::character::{
-        bodies_destroying_registered, missing_auto_attach_blockers, serial_consumer_registered,
-    },
-};
+use jc3vr_body::{contributions::BodyContributions, hooks::character::BlocksAutoAttach};
+use jc3vr_core::registration::RegistrationCheck;
 use jc3vr_physical::controllers::physical_hands;
-use jc3vr_vehicles::controllers::vehicles;
+use jc3vr_vehicles::controllers::{vehicles, vehicles::rail};
 use jc3vr_weapons::{contributions as weapons_contributions, controllers::weapons};
 
-pub(super) fn register() {
-    physical_hands::register_body::register();
-    vehicles::register_body::register();
-    weapons::register_body::register();
+pub(super) fn register(body: &mut BodyContributions, check: &mut RegistrationCheck) {
+    physical_hands::register_body::register(body);
+    vehicles::register_body::register(body);
+    weapons::register_body::register(body);
+    body.auto_attach_blockers = &AUTO_ATTACH_BLOCKERS;
     crate::controllers::register_siblings::register();
-    let missing = missing();
-    assert!(
-        missing.is_empty(),
-        "controllers: the install left contributions unregistered:{missing}"
+    check.require(
+        "weapons",
+        "the weapon handling's contributions",
+        weapons_contributions::registered(),
     );
 }
 
-/// Every contribution still unregistered, one per line, or empty.
-fn missing() -> String {
-    let mut missing = String::new();
-    if !climb::is_registered() {
-        missing.push_str("\n- the climb's readers");
-    }
-    if !root::palm_push_registered() {
-        missing.push_str("\n- the palms' push");
-    }
-    for blocker in missing_auto_attach_blockers() {
-        let _ = write!(missing, "\n- auto-attach blocker {blocker:?}");
-    }
-    if !bodies_destroying_registered() {
-        missing.push_str("\n- the body destruction observer");
-    }
-    if !grab_tick::palm_summary_registered() {
-        missing.push_str("\n- the palm summary");
-    }
-    if !roomscale::take_off_registered() {
-        missing.push_str("\n- the wingsuit's take-off");
-    }
-    if !weapons_contributions::registered() {
-        missing.push_str("\n- the weapon handling's contributions");
-    }
-    if !pickup::sink_registered() {
-        missing.push_str("\n- the weapon pickup sink");
-    }
-    if !serial_consumer_registered() {
-        missing.push_str("\n- the magazine serial consumer");
-    }
-    if !mirror::attachment_sampler_registered() {
-        missing.push_str("\n- the body mirror's attachment sampler");
-    }
-    missing
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_registration_leaves_nothing_missing() {
-        static REGISTERED: std::sync::Once = std::sync::Once::new();
-        REGISTERED.call_once(register);
-        assert_eq!(missing(), "");
-    }
-}
+/// The refusals of the automatic entry into a vehicle's stunt area below the player, in the order
+/// they are asked: a physical handhold the player climbs by, then the vehicle rail holding him.
+static AUTO_ATTACH_BLOCKERS: [BlocksAutoAttach; 2] = [
+    physical_hands::register_body::blocks_auto_attach,
+    rail::blocks_auto_attach,
+];

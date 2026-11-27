@@ -24,7 +24,8 @@
 //! - The mental-state cuts block the automatic draw on entering combat and swallow both automatic
 //!   holsters, letting a deliberate holster through.
 //! - The weapon handling above runs its own contributions around the local player's weapon
-//!   handling ([`PreWeaponHook`]), registered at install, in the enum's order.
+//!   handling ([`PreWeaponHookFn`]), registered at install
+//!   ([`crate::contributions::BodyContributions::pre_weapon_hooks`]), in the table's order.
 //!
 //! Every part acts only under the controller scheme, so the game behaves as before otherwise.
 
@@ -62,6 +63,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
+    contributions,
     controllers::{
         aim::{self, tuning_file::AIM},
         hands,
@@ -176,31 +178,6 @@ pub fn status() -> AimStateStatus {
     *STATUS.lock()
 }
 
-/// One contribution of the weapon handling to the local player's weapon-handling call, in the
-/// order they run. Each runs around the ones after it and the call.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum PreWeaponHook {
-    /// The fire and precision-aim inputs that would draw a weapon with nothing in the hands are
-    /// held back for the call.
-    UnarmedFire,
-    /// The use-item input that would pick a weapon up by button is held back for the call.
-    ButtonPickup,
-    /// A swimming pickup's slot is emptied before the call drops the slot's weapon.
-    UseItem,
-}
-
-impl PreWeaponHook {
-    /// Every hook, in the order they run.
-    pub const ALL: [PreWeaponHook; Self::COUNT] = [
-        PreWeaponHook::UnarmedFire,
-        PreWeaponHook::ButtonPickup,
-        PreWeaponHook::UseItem,
-    ];
-
-    /// The number of hooks; the last variant closes the count.
-    const COUNT: usize = Self::UseItem as usize + 1;
-}
-
 /// A pre-weapon hook's run around the rest of the weapon handling: the local player character,
 /// whether a holster is playing, and the rest (the later hooks, then the call), which the hook
 /// calls exactly once with the character.
@@ -210,25 +187,6 @@ impl PreWeaponHook {
 /// The character is the live local player, on the thread running its weapon handling.
 pub type PreWeaponHookFn =
     unsafe fn(&mut Character, holstering: bool, rest: &mut dyn FnMut(&mut Character));
-
-/// Register `hook`; the first registration of a hook stands.
-pub fn register_pre_weapon_hook(hook: PreWeaponHook, run: PreWeaponHookFn) {
-    if PRE_WEAPON_HOOKS[hook as usize].set(run).is_err() {
-        tracing::warn!(
-            ?hook,
-            "aim state: a pre-weapon hook is already registered; the new one is ignored"
-        );
-    }
-}
-
-/// The pre-weapon hooks nobody registered, in their order.
-pub fn missing_pre_weapon_hooks() -> impl Iterator<Item = PreWeaponHook> {
-    PRE_WEAPON_HOOKS
-        .iter()
-        .zip(PreWeaponHook::ALL)
-        .filter(|(slot, _)| slot.get().is_none())
-        .map(|(_, hook)| hook)
-}
 
 /// A state bit's position in the state words: the word index and the mask within it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -361,9 +319,6 @@ static STATUS: Mutex<AimStateStatus> = Mutex::new(AimStateStatus {
 /// Set by the `HolsterWeapon` detour for the local player, and cleared by the weapon-handling
 /// update once the holster has taken or lapsed (see [`deliberate_holster_holds`]).
 static DELIBERATE_HOLSTER: AtomicBool = AtomicBool::new(false);
-
-static PRE_WEAPON_HOOKS: [OnceLock<PreWeaponHookFn>; PreWeaponHook::COUNT] =
-    [const { OnceLock::new() }; PreWeaponHook::COUNT];
 
 thread_local! {
     /// Whether this thread is inside the local player's weapon-handling update with the cuts
@@ -642,7 +597,7 @@ fn wall_penetration_update(
 /// every tick), a lapsed deliberate holster is dropped, and the call is marked so that the
 /// `QueueAct` filter can tell the relaxed branch's holster apart.
 ///
-/// Around all of it run the registered [`PreWeaponHook`]s: the fire and precision-aim inputs that
+/// Around all of it run the registered pre-weapon hooks ([`PreWeaponHookFn`]): the fire and precision-aim inputs that
 /// would draw a weapon with nothing in the hands are held back, and so is the use-item input that
 /// would pick a weapon up by button.
 #[detour(address = jc3gi::character::inventory::Inventory::UpdateWeaponHandling_ADDRESS)]
@@ -654,10 +609,11 @@ fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
     };
     let words = unsafe { StateWords::of(c) };
     let holstering = words.is_some_and(|w| unsafe { w.has(StateBitFlag::SB_IS_HOLSTERING_WEAPON) });
-    let hooks = PRE_WEAPON_HOOKS.each_ref().map(|slot| slot.get().copied());
+    let hooks =
+        contributions::get().map_or(&[][..], |contributions| contributions.pre_weapon_hooks);
     // SAFETY: `c` is the live local player, on the thread running its weapon handling.
     unsafe {
-        run_around(&hooks, c, holstering, &mut |c| {
+        run_around(hooks, c, holstering, &mut |c| {
             update_local_weapon_handling(c, words, original)
         })
     };
@@ -666,22 +622,20 @@ fn update_weapon_handling(inventory: *mut Inventory, dt: f32) {
 /// A run around the rest, over any target: [`PreWeaponHookFn`] for the local player.
 type Around<T> = unsafe fn(&mut T, bool, &mut dyn FnMut(&mut T));
 
-/// Run `hooks` in order around `inner`, each around the ones after it; an unregistered hook is
-/// skipped.
+/// Run `hooks` in order around `inner`, each around the ones after it.
 ///
 /// # Safety
 ///
 /// As each hook requires of `target`.
 unsafe fn run_around<T>(
-    hooks: &[Option<Around<T>>],
+    hooks: &[Around<T>],
     target: &mut T,
     holstering: bool,
     inner: &mut dyn FnMut(&mut T),
 ) {
     match hooks.split_first() {
         None => inner(target),
-        Some((None, rest)) => unsafe { run_around(rest, target, holstering, inner) },
-        Some((Some(hook), rest)) => unsafe {
+        Some((hook, rest)) => unsafe {
             hook(target, holstering, &mut |target| {
                 run_around(rest, target, holstering, inner)
             })
@@ -771,7 +725,7 @@ mod tests {
 
     #[test]
     fn pre_weapon_hooks_nest_in_order_around_the_call() {
-        let hooks: [Option<Around<Vec<String>>>; 3] = [Some(outer), None, Some(inner)];
+        let hooks: [Around<Vec<String>>; 2] = [outer, inner];
         let mut log = Vec::new();
         unsafe { run_around(&hooks, &mut log, true, &mut |log| log.push("call".into())) };
         assert_eq!(

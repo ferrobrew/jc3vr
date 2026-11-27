@@ -14,11 +14,12 @@
 //! vehicle, the wingsuit) instead of trailing at the tick's rate.
 //!
 //! The weapon handling draws what it owns on the body: the sockets' interaction targets on each
-//! pass, through the sampler it registers ([`register_attachment_sampler`]), and the pouches'
+//! pass, through the sampler it registers
+//! ([`crate::contributions::BodyContributions::attachment_sampler`]), and the pouches'
 //! render placement after each render publication ([`submit_pouch_render`]), with the drawing
 //! helpers and colours here.
 
-use std::{sync::OnceLock, time::Instant};
+use std::time::Instant;
 
 use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AnimationController, Character, Joint};
@@ -35,6 +36,7 @@ use jc3vr_view::{
 use parking_lot::Mutex;
 
 use crate::{
+    contributions,
     controllers::{
         body::procedural::{head::head_bone_world, joints::from_joint, skeleton},
         hands::ik::tick_records,
@@ -72,25 +74,10 @@ pub struct AttachmentPass {
     pub head: Vec3,
 }
 
-/// A sampler of the attachments on the body ([`register_attachment_sampler`]).
+/// A sampler of the attachments on the body: called on each mirror pass, it adds the reflected
+/// attachments' primitives to `out`, or nothing without a current sample. It runs on the thread
+/// running the local player's pose finalization, and reads only copied observations.
 pub type AttachmentSampler = fn(&AttachmentPass, &mut Vec<Primitive>);
-
-/// Register the sampler of the attachments on the body: called on each mirror pass, it adds the
-/// reflected attachments' primitives to `out`, or nothing without a current sample. One sampler: a
-/// second registration is refused and logged.
-///
-/// The sampler runs on the thread running the local player's pose finalization, and reads only
-/// copied observations.
-pub fn register_attachment_sampler(sampler: AttachmentSampler) {
-    if ATTACHMENT_SAMPLER.set(sampler).is_err() {
-        tracing::error!("mirror: an attachment sampler is already registered; keeping the first");
-    }
-}
-
-/// Whether the sampler of the attachments on the body is registered.
-pub fn attachment_sampler_registered() -> bool {
-    ATTACHMENT_SAMPLER.get().is_some()
-}
 
 /// Submit the reflected pouches of a render publication, drawn by the weapon handling from the
 /// matrices it applied.
@@ -158,7 +145,9 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         &mut primitives,
     );
     let now = Stamp::now();
-    if let Some(sampler) = ATTACHMENT_SAMPLER.get() {
+    if let Some(sampler) =
+        contributions::get().and_then(|contributions| contributions.attachment_sampler)
+    {
         sampler(
             &AttachmentPass {
                 owner: character as *const Character as usize,
@@ -444,8 +433,6 @@ impl FigureCache {
 }
 
 static CACHE: Mutex<FigureCache> = Mutex::new(FigureCache { entry: None });
-
-static ATTACHMENT_SAMPLER: OnceLock<AttachmentSampler> = OnceLock::new();
 
 static STATUS: Mutex<MirrorStatus> = Mutex::new(MirrorStatus {
     at: None,

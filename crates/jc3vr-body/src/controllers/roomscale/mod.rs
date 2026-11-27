@@ -33,7 +33,7 @@ pub mod seated;
 pub mod teleport;
 pub mod tuning;
 
-use std::{collections::HashSet, sync::OnceLock, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
@@ -48,6 +48,7 @@ use re_utilities::hook_library::HookLibrary;
 pub use seat::SeatPhase;
 
 use crate::{
+    contributions,
     controllers::{
         body,
         body::{
@@ -84,21 +85,6 @@ use crate::{
 /// The roomscale hooks, aggregated by `controllers::hook_library`.
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_hook_library(teleport::hook_library())
-}
-
-/// Register the wingsuit's take-off from the ground, which the frame half ticks after the seat
-/// phase in gameplay. One take-off: a second registration is refused and logged.
-///
-/// The take-off is called on the game thread, outside the world update.
-pub fn register_take_off(tick: unsafe fn()) {
-    if TAKE_OFF.set(tick).is_err() {
-        tracing::error!("roomscale: a take-off is already registered; keeping the first");
-    }
-}
-
-/// Whether the wingsuit's take-off is registered.
-pub fn take_off_registered() -> bool {
-    TAKE_OFF.get().is_some()
 }
 
 /// The cockpit positions to compose the two sides of the pose pair with.
@@ -291,7 +277,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     if in_gameplay {
         // SAFETY: the game thread, outside the world update.
         unsafe { seat_tick(&mut frame, &config, now) };
-        if let Some(tick) = TAKE_OFF.get() {
+        if let Some(tick) = contributions::get().and_then(|contributions| contributions.take_off) {
             // SAFETY: as above.
             unsafe { tick() };
         }
@@ -611,8 +597,6 @@ struct FrameState {
     shared: Option<FrameShared>,
     status: FrameStatus,
 }
-
-static TAKE_OFF: OnceLock<unsafe fn()> = OnceLock::new();
 
 static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     last_at: None,

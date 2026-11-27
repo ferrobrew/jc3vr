@@ -57,12 +57,8 @@ pub use acts::resolve_act_id;
 pub use body_ik::body_ik_status;
 
 pub use crate::hooks::character::{
-    magazine::{register_serial_consumer, serial_consumer_registered},
-    pose_observer::{PoseObserver, register_pose_observer},
-    stunt::{
-        AutoAttachBlocker, bodies_destroying_registered, missing_auto_attach_blockers,
-        register_auto_attach_blocker, register_bodies_destroying,
-    },
+    pose_observer::{PoseObserver, pose_observer_registered, register_pose_observer},
+    stunt::BlocksAutoAttach,
 };
 
 pub fn hook_library() -> HookLibrary {

@@ -8,7 +8,7 @@
 //!   hands, the rigid grip, and the foregrip read ([`physical_hands`], [`deviation`],
 //!   [`take_support_break`], [`mass`], [`carried_mass`]), and the readout ([`status`]);
 //! - the support and weight targets the weapon handling composes for the held guns, registered
-//!   once at install ([`register_targets`]) and applied by the hand bodies' drive
+//!   once at install ([`crate::contributions::BodyContributions::gun_targets`]) and applied by the hand bodies' drive
 //!   ([`apply_targets`]);
 //! - [`HeftClass`]: the weight class a weapon's tuning comes from.
 //!
@@ -18,7 +18,7 @@
 
 mod class;
 
-use std::{num::NonZeroUsize, sync::OnceLock};
+use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3vr_core::published::{Stamp, Step};
@@ -27,6 +27,7 @@ use parking_lot::Mutex;
 
 pub use self::class::HeftClass;
 use crate::{
+    contributions,
     controllers::{hands::CockpitHand, physics::steps},
     tuning::FRESHNESS,
 };
@@ -288,25 +289,11 @@ pub fn take_support_break(hand: Hand) -> bool {
 /// with its own configuration.
 pub type TargetsFn = fn(&mut [Option<CockpitHand>; 2], Vec3);
 
-/// Register the held guns' support and weight targets. One registration: a second is refused and
-/// logged.
-pub fn register_targets(apply: TargetsFn) {
-    if TARGETS.set(apply).is_err() {
-        tracing::error!(
-            "held guns: the support and weight targets are already registered; keeping the first"
-        );
-    }
-}
-
-/// Whether the held guns' support and weight targets are registered.
-pub fn targets_registered() -> bool {
-    TARGETS.get().is_some()
-}
-
 /// Give `hands` the held guns' support and weight targets, as the registered targets pose them
-/// ([`register_targets`]); the install refuses to finish without them.
+/// ([`crate::contributions::BodyContributions::gun_targets`]); the install refuses to finish
+/// without them.
 pub fn apply_targets(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
-    if let Some(apply) = TARGETS.get() {
+    if let Some(apply) = contributions::get().and_then(|contributions| contributions.gun_targets) {
         apply(hands, head);
     }
 }
@@ -343,8 +330,6 @@ impl Shared {
             .holds(self.stepped, now)
     }
 }
-
-static TARGETS: OnceLock<TargetsFn> = OnceLock::new();
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     holds: GunHolds {

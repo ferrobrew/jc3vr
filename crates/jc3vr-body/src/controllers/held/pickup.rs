@@ -3,15 +3,17 @@
 //! weapon handling's side of the hand-off ([`PickupSink`]), which the physical hands call when a
 //! pickup grab lands on a weapon.
 //!
-//! The weapon handling registers its sink at install ([`register_pickup_sink`]); calling through
-//! it before then is a programming error and panics, and the controllers' install refuses to
-//! finish without it ([`sink_registered`]).
+//! The weapon handling registers its sink at install
+//! ([`crate::contributions::BodyContributions::pickup_sink`]); calling through it before then is a
+//! programming error and panics, and the install refuses to finish without it.
 
-use std::{fmt, sync::OnceLock};
+use std::fmt;
 
 use jc3gi::equipment::weapon::WeaponBase;
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
+
+use crate::contributions;
 
 /// Why a direct pickup did not take the weapon.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -114,18 +116,6 @@ pub struct PickupSink {
     pub grant: fn(),
 }
 
-/// Register the weapon handling's sink; the first registration stands.
-pub fn register_pickup_sink(sink: PickupSink) {
-    if SINK.set(sink).is_err() {
-        tracing::warn!("held: a pickup sink is already registered; the new one is ignored");
-    }
-}
-
-/// Whether the weapon handling has registered its sink.
-pub fn sink_registered() -> bool {
-    SINK.get().is_some()
-}
-
 /// Take `weapon`, lying in the world, straight into `hand`.
 ///
 /// # Safety
@@ -151,8 +141,7 @@ pub fn grant() {
 }
 
 fn sink() -> &'static PickupSink {
-    SINK.get()
-        .expect("held: no pickup sink is registered; the controllers' install registers it")
+    contributions::get()
+        .and_then(|contributions| contributions.pickup_sink.as_ref())
+        .expect("held: no pickup sink is registered; the install registers it")
 }
-
-static SINK: OnceLock<PickupSink> = OnceLock::new();

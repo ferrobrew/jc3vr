@@ -2,9 +2,9 @@
 //! hand bones, so the gun and the hand never separate.
 //!
 //! The weapon render update runs for every weapon in the world, so it is also where the systems
-//! that follow world weapons observe them: each [`WeaponObserver`] is registered once at install by
-//! the system that owns it ([`register_weapon_observer`]) and runs, in the enum's order, before the
-//! correction.
+//! that follow world weapons observe them: each [`ObserveWeapon`] is registered once at install
+//! ([`crate::contributions::BodyContributions::weapon_observers`]) and runs, in the table's order,
+//! before the correction.
 
 use std::ffi::c_void;
 
@@ -20,47 +20,26 @@ use jc3vr_core::{published::Stamp, render_frame::RenderFrameSlot};
 use jc3vr_input::frame::Hand;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::gun,
-    hands::{
-        ik,
-        late::{
-            frame,
-            math::{lerp_transform, pose_matrix},
+use crate::{
+    contributions,
+    controllers::{
+        aim::gun,
+        hands::{
+            ik,
+            late::{
+                frame,
+                math::{lerp_transform, pose_matrix},
+            },
         },
-        slots::Slots,
-    },
-    held::{
-        self,
-        native::{self, weapon_at},
+        held::{
+            self,
+            native::{self, weapon_at},
+        },
     },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WEAPON_UPDATE_RENDER_BINDER)
-}
-
-/// A system that observes each world weapon at its render update, in the order they run.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum WeaponObserver {
-    /// The grenade handling's world weapons.
-    Grenade,
-    /// The remote rack members.
-    RackRemote,
-    /// The mounted guns.
-    Mounted,
-}
-
-impl WeaponObserver {
-    /// Every observer, in the order they run.
-    pub const ALL: [WeaponObserver; Self::COUNT] = [
-        WeaponObserver::Grenade,
-        WeaponObserver::RackRemote,
-        WeaponObserver::Mounted,
-    ];
-
-    /// The number of observers; the last variant closes the count.
-    const COUNT: usize = Self::Mounted as usize + 1;
 }
 
 /// One observer's look at a world weapon in its render update.
@@ -70,18 +49,6 @@ impl WeaponObserver {
 /// The weapon is live for the call, on the thread running its render update; an observer retains
 /// only a weak reference to it.
 pub type ObserveWeapon = unsafe fn(&WeaponBase);
-
-/// Register `observer`; the first registration of an observer stands.
-pub fn register_weapon_observer(observer: WeaponObserver, observe: ObserveWeapon) {
-    OBSERVERS.set(observer as usize, observe, "weapon observer");
-}
-
-/// The observers nobody registered, in their order.
-pub fn missing_weapon_observers() -> impl Iterator<Item = WeaponObserver> {
-    OBSERVERS.missing().map(|index| WeaponObserver::ALL[index])
-}
-
-static OBSERVERS: Slots<ObserveWeapon, { WeaponObserver::COUNT }> = Slots::new();
 
 /// One gun mesh's submitted pose, for comparison with its identified current collision body.
 #[derive(Debug, Copy, Clone)]
@@ -171,7 +138,9 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
         return;
     };
     let weapon = unsafe { &*weapon_at(game_object.cast()) };
-    for observe in OBSERVERS.each() {
+    for observe in
+        contributions::get().map_or(&[][..], |contributions| contributions.weapon_observers)
+    {
         // SAFETY: this render invocation owns a live native weapon; the observer retains only a
         // weak reference.
         unsafe { observe(weapon) };

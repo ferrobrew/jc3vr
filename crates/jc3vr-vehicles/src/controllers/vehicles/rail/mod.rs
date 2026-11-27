@@ -103,7 +103,7 @@ pub(crate) fn stand_down() {
 
 /// Whether the rail holds `character`, so the game's automatic entry into a stunt area on the
 /// vehicle below is refused for him. Lock-free, for the detour on that entry.
-pub(crate) fn blocks_auto_attach(character: *const Character) -> bool {
+pub fn blocks_auto_attach(character: *const Character) -> bool {
     let held = HELD.load(Ordering::Relaxed);
     same_player(held, character as usize)
 }

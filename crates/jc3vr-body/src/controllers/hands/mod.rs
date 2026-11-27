@@ -53,7 +53,6 @@ pub mod pose;
 pub mod reach;
 pub mod rig;
 pub mod secondary;
-mod slots;
 pub mod stages;
 pub mod tiers;
 pub mod tuning;
@@ -106,7 +105,7 @@ impl HandSettings {
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
 /// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. The
 /// controllers' poses are composed with every stage of the hand composition
-/// ([`stages::HandStage`]): a hand on a physical vehicle control or a mounted gun's handle holds
+/// ([`stages`]): a hand on a physical vehicle control or a mounted gun's handle holds
 /// it; while the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed
 /// pose through the shared support and weight targets, and a long gun held in one hand sags,
 /// trails, and sways. Physical guns use the same weighted target before their residual body
@@ -130,9 +129,13 @@ pub(crate) fn active_hands_from_frame(
         active.torso,
         at,
     );
-    stages::run(&mut composition, |c| {
-        shoulder_joints(&active.config, c.head, c.world_scale, c.torso)
-    });
+    let shoulders = shoulder_joints(
+        &active.config,
+        active.head,
+        active.world_scale,
+        active.torso,
+    );
+    stages::run(&mut composition, shoulders);
     active.hands = composition.hands;
     Some(active)
 }

@@ -25,8 +25,9 @@ use crate::controllers::weapons::{
     pouch_models::attachments::RenderSample as PouchRenderSample,
 };
 
-/// The body mirror's attachment sampler ([`mirror::register_attachment_sampler`]): the sockets'
-/// copied interaction targets for this pass, reflected.
+/// The body mirror's attachment sampler
+/// ([`jc3vr_body::contributions::BodyContributions::attachment_sampler`]): the sockets' copied
+/// interaction targets for this pass, reflected.
 pub(crate) fn sample_attachments(pass: &AttachmentPass, out: &mut Vec<Primitive>) {
     if let Some(sample) = docks::attachment_sample(pass.owner, pass.character, pass.now) {
         attachment_markers(&sample, pass.plane, pass.head, out);

@@ -18,9 +18,9 @@ use crate::controllers::weapons::{foregrip, handling_tuning::HANDLING, heft};
 
 /// Compose support and weight once, before either driving a gun hand or drawing its body offset:
 /// the held guns' support and weight targets
-/// ([`jc3vr_body::controllers::held::guns::register_targets`]). The physical drive keeps only the hands of current gun holds; ordinary
-/// active-hand composition uses this same operation for every hand. The body supplies collisions
-/// and recoil afterward.
+/// ([`jc3vr_body::contributions::BodyContributions::gun_targets`]). The physical drive keeps only
+/// the hands of current gun holds; ordinary active-hand composition uses this same operation for
+/// every hand. The body supplies collisions and recoil afterward.
 pub fn apply(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
     let tuning = HANDLING.get();
     foregrip::apply(hands, &tuning.foregrip);

@@ -1,35 +1,38 @@
-//! Registers the physical hands with the body, the grip model, and the character hooks below them:
-//! the climb's readers ([`jc3vr_body::controllers::facts::climb`]), the palms' push in the rig's
-//! simulation half, the climb's refusal of the automatic entry into a vehicle's stunt area below
-//! the player, the observer of a body destruction, and the palm summary logged with each grip
-//! press.
+//! The physical hands' contributions to the body, the grip model, and the character hooks below
+//! them ([`BodyContributions`]): the climb's readers ([`jc3vr_body::controllers::facts::climb`]),
+//! the palms' push in the rig's simulation half, the observer of a body destruction, and the palm
+//! summary logged with each grip press. The climb's refusal of the automatic entry into a vehicle's
+//! stunt area below the player ([`blocks_auto_attach`]) rides in the gameplay crate's refusal
+//! table, which declares the refusals' order.
 
-use jc3gi::physics::hknpWorld;
-use jc3vr_body::{
-    controllers::{
-        body::rig::root::register_palm_push,
-        facts::{climb as climb_facts, climb::ClimbReaders},
-        grab::tick::register_palm_summary,
-    },
-    hooks::character::{
-        AutoAttachBlocker, register_auto_attach_blocker, register_bodies_destroying,
-    },
-};
+use jc3gi::{character::character::Character, physics::hknpWorld};
+use jc3vr_body::{contributions::BodyContributions, controllers::facts::climb::ClimbReaders};
 
 use crate::controllers::physical_hands::{
     carry_bodies_destroying, climb, press_summary, push_body,
 };
 
-pub fn register() {
-    climb_facts::register(ClimbReaders {
+/// Fill the physical hands' fields of `body`.
+pub fn register(body: &mut BodyContributions) {
+    body.climb = Some(ClimbReaders {
         climbing: climb::climbing,
         body_frame: climb::engine::body_frame,
         body_identity: climb::engine::body_identity,
     });
-    register_palm_push(push_body);
-    register_auto_attach_blocker(AutoAttachBlocker::PhysicalClimb, climb::native::blocks);
-    register_bodies_destroying(bodies_destroying);
-    register_palm_summary(press_summary);
+    body.palm_push = Some(push_body);
+    body.bodies_destroying = Some(bodies_destroying);
+    body.palm_summary = Some(press_summary);
+}
+
+/// Whether a physical handhold the player climbs by refuses the automatic entry of `character`
+/// into a vehicle's stunt area below him.
+///
+/// # Safety
+///
+/// The native caller keeps `character` and its proxy member alive for this call; only members of
+/// that character are read.
+pub unsafe fn blocks_auto_attach(character: *const Character) -> bool {
+    unsafe { climb::native::blocks(character) }
 }
 
 /// Before the world destroys bodies: the climb forgets each body's lifetime stamp, then the carried

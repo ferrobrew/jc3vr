@@ -16,14 +16,15 @@
 //! # The public surface
 //!
 //! The layers above reach these modules by path, so an item is `pub` exactly when a crate above
-//! names it. The subsystems above contribute to the body through registrations and facts rather
-//! than being named from here: the hands' stage table and late observers, the aim's weapon hooks,
-//! the climb's readers, the palms' push, the body mirror's attachment sampler, and the character
-//! hooks' blockers and consumers. The gameplay crate fills them at install and composes the hook
-//! libraries in their established order. The crate's own tests register a configuration root of
+//! names it. The subsystems above contribute to the body through one record and through facts
+//! rather than being named from here: [`contributions::BodyContributions`] holds the hands' stage
+//! table and late observers, the aim's weapon hooks, the climb's readers, the palms' push, the body
+//! mirror's attachment sampler, and the character hooks' refusals and consumers. The composition
+//! fills it at install and registers it once ([`contributions::register`]). The crate's own tests register a configuration root of
 //! their own (`test_config`) holding the groups the body-bound subsystems read, and share the
 //! fixtures in `test_support`.
 
+pub mod contributions;
 pub mod controllers;
 pub mod hooks;
 pub mod tuning;

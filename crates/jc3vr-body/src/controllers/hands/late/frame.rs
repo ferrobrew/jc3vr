@@ -1,8 +1,6 @@
 //! The frame's snapshot of the late update's inputs, the correction it derives from them, and the
 //! palette edit that carries the correction onto the skinning palette.
 
-use std::sync::OnceLock;
-
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
 use jc3vr_core::{published::Counter, render_frame::RenderFrameSlot};
@@ -13,21 +11,24 @@ use jc3vr_view::{
     hooks::{camera::eye_points, graphics_engine::palette_edit::PaletteLayout},
 };
 
-use crate::controllers::{
-    hands::{
-        self, ActiveHands, DrawTime, ik,
-        late::{
-            bones::{self, HandBones, Solved},
-            math::{
-                MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, keep_on_forearm,
-                lerp_transform, pose_matrix, relative_metrics,
+use crate::{
+    contributions,
+    controllers::{
+        hands::{
+            self, ActiveHands, DrawTime, ik,
+            late::{
+                bones::{self, HandBones, Solved},
+                math::{
+                    MAX_SHIFT_M, MAX_TURN_RAD, correction, interpolate_attached, keep_on_forearm,
+                    lerp_transform, pose_matrix, relative_metrics,
+                },
             },
+            palette, pose as hand_pose,
+            reach::{self, ReachTuning},
+            tuning::HANDS,
         },
-        palette, pose as hand_pose,
-        reach::{self, ReachTuning},
-        tuning::HANDS,
+        presentation,
     },
-    presentation,
 };
 
 /// A pose composed with both sides of the render-time head pose pair: `previous` with the
@@ -207,26 +208,14 @@ pub fn status() -> LateStatus {
     }
 }
 
-/// Register the hand bodies' sample of their post-step presentation offsets, which
-/// [`begin_frame`] takes once per rendered frame before it composes the hands, on the game thread
-/// after the simulation and outside its step; the first registration stands.
-pub fn register_post_step_sample(sample: fn()) {
-    if POST_STEP_SAMPLE.set(sample).is_err() {
-        tracing::warn!("hands: a post-step sample is already registered; the new one is ignored");
-    }
-}
-
-/// Whether the hand bodies' post-step sample is registered.
-pub fn post_step_sample_registered() -> bool {
-    POST_STEP_SAMPLE.get().is_some()
-}
-
 /// Snapshot the frame's late-update inputs. Called once per rendered frame from `Game::UpdateRender`
 /// after the VR head pose pair is published and before the engine's render update.
 pub fn begin_frame() {
     crate::controllers::hands::late::weapon::begin_frame();
     // All model and palette consumers share this post-step measurement for the rendered frame.
-    if let Some(sample) = POST_STEP_SAMPLE.get() {
+    if let Some(sample) =
+        contributions::get().and_then(|contributions| contributions.post_step_sample)
+    {
         sample();
     }
     let Some(source) = frame::latest() else {
@@ -721,7 +710,6 @@ fn render_views(
 }
 
 static FRAME: RenderFrameSlot<Option<LateFrame>> = RenderFrameSlot::new();
-static POST_STEP_SAMPLE: OnceLock<fn()> = OnceLock::new();
 static WEAPONS_UPDATED: Counter = Counter::new();
 static PALETTES_EDITED: Counter = Counter::new();
 

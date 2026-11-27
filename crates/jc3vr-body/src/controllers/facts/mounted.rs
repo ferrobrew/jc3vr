@@ -2,24 +2,21 @@
 //! mounted gun's handle, as the vehicle handling publishes them for the aim, the weapon handling,
 //! and the physical hands.
 //!
-//! The vehicle handling registers one [`MountedSource`] at install ([`register_mounted_source`]), a
-//! table of its own query functions, and every read here calls through it. The reads are live:
+//! The vehicle handling registers one [`MountedSource`] at install
+//! ([`crate::contributions::BodyContributions::mounted`]), a table of its own query functions, and every read here calls through it. The reads are live:
 //! the per-weapon update reads the mounted gun on the worker threads between the vehicle
 //! handling's writes, lock-free for every character's weapons, so a per-tick copy would add a
 //! hop the direct read never had.
 //!
-//! Reading before the source is registered is a programming error and panics; the controllers'
-//! install registers it before any hook is enabled. The handle holds are a plain published fact
+//! Reading before the source is registered is a programming error and panics; the install
+//! registers it before any hook is enabled. The handle holds are a plain published fact
 //! ([`holds`]), written as the vehicle handling's tick finishes and as it stands down.
 
-use std::sync::{
-    OnceLock,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use glam::Vec3;
 
-use crate::controllers::mode::VehicleSeat;
+use crate::{contributions, controllers::mode::VehicleSeat};
 
 /// The vehicle handling's query functions behind every read of this module. Weapons are named by
 /// the address of their native object.
@@ -40,20 +37,6 @@ pub struct MountedSource {
 
 /// The vehicle handling's seated body aim ([`seated_body_aim`]).
 pub type SeatedBodyAimFn = fn(Option<VehicleSeat>, bool, [Option<Vec3>; 2]) -> Option<Vec3>;
-
-/// Register the vehicle handling's source; the first registration stands.
-pub fn register_mounted_source(source: MountedSource) {
-    if SOURCE.set(source).is_err() {
-        tracing::warn!(
-            "mounted: a mounted-gun source is already registered; the new one is ignored"
-        );
-    }
-}
-
-/// Whether the vehicle handling has registered its source.
-pub fn is_registered() -> bool {
-    SOURCE.get().is_some()
-}
 
 /// Whether the weapon at `weapon` is the mounted gun the hands last aimed. Lock-free, for the
 /// per-weapon update of every character's weapons to rule a weapon out before taking any lock.
@@ -105,11 +88,9 @@ pub fn publish_holds(holds: [bool; 2]) {
 
 #[inline]
 fn source() -> &'static MountedSource {
-    SOURCE.get().expect(
-        "mounted: no mounted-gun source is registered; the controllers' install registers it",
-    )
+    contributions::get()
+        .and_then(|contributions| contributions.mounted.as_ref())
+        .expect("mounted: no mounted-gun source is registered; the install registers it")
 }
-
-static SOURCE: OnceLock<MountedSource> = OnceLock::new();
 
 static HOLDS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];

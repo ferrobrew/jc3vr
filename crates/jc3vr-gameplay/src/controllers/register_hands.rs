@@ -1,25 +1,25 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
-//! order, the observers of each world weapon at its render update, the hand bodies' post-step
-//! sample taken before each rendered frame's composition, the weapon handling's held-item source
-//! ([`jc3vr_body::controllers::held`]) and its held guns' support and weight targets, which the
-//! hand bodies' drive applies ([`jc3vr_body::controllers::held::guns`]), and the grapple's pump of
-//! the hang swing the anchor drives.
+//! order, the observers of each world weapon at its render update in theirs, the hand bodies'
+//! post-step sample taken before each rendered frame's composition, the weapon handling's held-item
+//! source ([`jc3vr_body::controllers::held`]) and its held guns' support and weight targets, which
+//! the hand bodies' drive applies ([`jc3vr_body::controllers::held::guns`]), and the grapple's pump
+//! of the hang swing the anchor drives.
 //!
-//! The hands do real work in each of these every frame, so the install refuses to finish with one
-//! missing: [`register`] panics naming it.
+//! Each fills a field of the body's contributions, which reports any still empty to the install's
+//! registration check ([`jc3vr_body::contributions::register`]). The tables here declare the
+//! stages' and the observers' order, once.
 
-use std::fmt::Write as _;
-
-use jc3vr_body::controllers::{
-    hands,
-    hands::{
-        anchor, late,
-        late::WeaponObserver,
-        stages,
-        stages::{HandComposition, HandStage, HandStageFn},
+use jc3vr_body::{
+    contributions::BodyContributions,
+    controllers::{
+        hands::{
+            anchor,
+            late::ObserveWeapon,
+            stages,
+            stages::{HandComposition, HandStageFn},
+        },
+        held::guns,
     },
-    held,
-    held::guns,
 };
 use jc3vr_grapple::grapple::physical::swing;
 use jc3vr_physical::controllers::{physical_hands, physical_hands::physics};
@@ -29,34 +29,45 @@ use jc3vr_weapons::controllers::{
     weapons::{ads, collide, grenade, gun_bodies, hold::rack, recoil},
 };
 
-pub(super) fn register() {
-    for (stage, run) in STAGES {
-        stages::register_hand_stage(stage, run);
-    }
-    late::register_weapon_observer(WeaponObserver::Grenade, grenade::observe_world_weapon);
-    late::register_weapon_observer(WeaponObserver::RackRemote, rack::remote::observe);
-    late::register_weapon_observer(WeaponObserver::Mounted, vehicles::mounted::observe);
-    late::register_post_step_sample(post_step_sample);
-    weapons::register_held::register();
-    guns::register_targets(gun_bodies::apply);
-    anchor::register_hang_pump(swing::HANG_PUMP);
-    let missing = missing();
-    assert!(
-        missing.is_empty(),
-        "hands: the install left contributions unregistered:{missing}"
-    );
+pub(super) fn register(body: &mut BodyContributions) {
+    body.target_stages = &TARGET_STAGES;
+    body.hand_stages = &HAND_STAGES;
+    body.weapon_observers = &WEAPON_OBSERVERS;
+    body.post_step_sample = Some(post_step_sample);
+    weapons::register_held::register(body);
+    body.gun_targets = Some(gun_bodies::apply);
+    body.hang_pump = Some(swing::HANG_PUMP);
 }
 
-/// The hand composition's stages, in the order they run.
-const STAGES: [(HandStage, HandStageFn); 8] = [
-    (HandStage::Vehicles, vehicle_controls),
-    (HandStage::GunTargets, gun_targets),
-    (HandStage::Ads, aim_down_sights),
-    (HandStage::Recoil, synthetic_recoil),
-    (HandStage::Collide, wall_probe),
-    (HandStage::KeepPhysical, stages::keep_physical),
-    (HandStage::PhysicalHands, hand_bodies),
-    (HandStage::Anchor, grapple_anchor),
+/// The hand composition's target stages, in the order they run: a hand on a physical vehicle
+/// control or a mounted gun's handle holds it, then the shared support and weight targets of a held
+/// gun pose it (the two-handed pose while the off-hand holds a foregrip, and the sag, trail, and
+/// sway of a long gun in one hand), recording which hands hold a gun body first. The hand bodies'
+/// drive applies the same ones.
+static TARGET_STAGES: [HandStageFn; 2] = [vehicle_controls, gun_targets];
+
+/// The rest of the hand composition's stages, in the order they run after the target stages:
+/// aiming down the sights lifts the gun to the eye and the hands as the sights leave them are
+/// recorded; the synthetic recoil and the wall probe displace a kinematic gun hand; a hand whose gun
+/// is a body gets its sighted pose back, since the poses between are the gun body's to give; the
+/// hand bodies hold a pressed palm at its surface and draw a body's hand at its body; and an
+/// anchored grapple hand holds the line, last, over all of them.
+static HAND_STAGES: [HandStageFn; 7] = [
+    aim_down_sights,
+    stages::record_sighted,
+    synthetic_recoil,
+    wall_probe,
+    stages::keep_physical,
+    hand_bodies,
+    grapple_anchor,
+];
+
+/// The observers of each world weapon at its render update, in the order they run: the grenade
+/// handling's world weapons, the remote rack members, and the mounted guns.
+static WEAPON_OBSERVERS: [ObserveWeapon; 3] = [
+    grenade::observe_world_weapon,
+    rack::remote::observe,
+    vehicles::mounted::observe,
 ];
 
 fn vehicle_controls(c: &mut HandComposition) {
@@ -92,59 +103,4 @@ fn post_step_sample() {
     // SAFETY: the late update's frame begins on the game thread from `Game::UpdateRender`, after
     // the simulation and outside its step.
     unsafe { physics::sample_render_offsets() };
-}
-
-/// Every contribution still unregistered, one per line, or empty.
-fn missing() -> String {
-    let mut missing = String::new();
-    for stage in stages::missing_hand_stages() {
-        let _ = write!(missing, "\n- hand stage {stage:?}");
-    }
-    for observer in late::missing_weapon_observers() {
-        let _ = write!(missing, "\n- weapon observer {observer:?}");
-    }
-    if !hands::late::post_step_sample_registered() {
-        missing.push_str("\n- the hand bodies' post-step sample");
-    }
-    if !held::is_registered() {
-        missing.push_str("\n- the held-item source");
-    }
-    if !guns::targets_registered() {
-        missing.push_str("\n- the held guns' support and weight targets");
-    }
-    if !anchor::hang_pump_registered() {
-        missing.push_str("\n- the grapple's hang pump");
-    }
-    missing
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_stage_table_keeps_the_composition_order() {
-        let order = STAGES.map(|(stage, _)| stage);
-        assert_eq!(order, HandStage::ALL);
-        assert_eq!(
-            order,
-            [
-                HandStage::Vehicles,
-                HandStage::GunTargets,
-                HandStage::Ads,
-                HandStage::Recoil,
-                HandStage::Collide,
-                HandStage::KeepPhysical,
-                HandStage::PhysicalHands,
-                HandStage::Anchor,
-            ]
-        );
-    }
-
-    #[test]
-    fn the_registration_leaves_nothing_missing() {
-        static REGISTERED: std::sync::Once = std::sync::Once::new();
-        REGISTERED.call_once(register);
-        assert_eq!(missing(), "");
-    }
 }

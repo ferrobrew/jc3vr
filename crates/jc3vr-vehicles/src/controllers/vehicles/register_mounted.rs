@@ -1,18 +1,18 @@
-//! Registers the vehicle handling's side of the mounted-gun fact
-//! ([`jc3vr_body::controllers::facts::mounted`]): the mounted gun the hands aim, its aim point, and the
-//! seated body's aim.
+//! The vehicle handling's side of the mounted-gun fact
+//! ([`jc3vr_body::controllers::facts::mounted`]): the mounted gun the hands aim, its aim point, and
+//! the seated body's aim.
 
 use glam::Vec3;
-use jc3vr_body::controllers::{
-    facts::{mounted, mounted::MountedSource},
-    mode::VehicleSeat,
+use jc3vr_body::{
+    contributions::BodyContributions,
+    controllers::{facts::mounted::MountedSource, mode::VehicleSeat},
 };
 
 use crate::controllers::{vehicles, vehicles::passenger};
 
-/// Register the source once; the controllers' install calls it before any hook is enabled.
-pub fn register() {
-    mounted::register_mounted_source(MountedSource {
+/// Fill the mounted-gun source of `body`; the install registers it before any hook is enabled.
+pub fn register(body: &mut BodyContributions) {
+    body.mounted = Some(MountedSource {
         is_mounted_weapon: vehicles::is_mounted_weapon,
         target: vehicles::mounted_target,
         aim_point: vehicles::mounted_aim_point,

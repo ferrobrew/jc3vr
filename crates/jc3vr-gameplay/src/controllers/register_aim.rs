@@ -1,20 +1,17 @@
 //! Registers the systems above the aim with the aim: the weapon handling's and the hand bodies'
-//! hooks into the aim update and the per-weapon update ([`jc3vr_body::controllers::aim::hooks`]), the
-//! weapon handling's contributions around the local player's weapon handling
-//! ([`jc3vr_body::controllers::aim_state::PreWeaponHook`]), and the vehicle handling's mounted-gun fact
+//! hooks into the aim update and the per-weapon update ([`jc3vr_body::controllers::aim::hooks`]),
+//! the weapon handling's contributions around the local player's weapon handling in their order
+//! ([`PRE_WEAPON_HOOKS`]), and the vehicle handling's mounted-gun fact
 //! ([`jc3vr_body::controllers::facts::mounted`]).
 //!
-//! The aim calls into each of these on every update, so [`register`] reports any of them still
-//! missing to the install's registration check, which stops the startup naming it.
+//! Each fills a field of the body's contributions, which reports any still empty to the install's
+//! registration check ([`jc3vr_body::contributions::register`]).
 
 use jc3gi::character::character::Character;
-use jc3vr_body::controllers::{
-    aim::{hooks, hooks::AimHooks},
-    aim_state,
-    aim_state::{PreWeaponHook, PreWeaponHookFn},
-    facts::mounted,
+use jc3vr_body::{
+    contributions::BodyContributions,
+    controllers::{aim::hooks::AimHooks, aim_state::PreWeaponHookFn},
 };
-use jc3vr_core::registration::RegistrationCheck;
 use jc3vr_physical::controllers::physical_hands;
 use jc3vr_vehicles::controllers::vehicles;
 use jc3vr_weapons::controllers::weapons::{
@@ -25,8 +22,8 @@ use jc3vr_weapons::controllers::weapons::{
     unarmed_fire,
 };
 
-pub(super) fn register(check: &mut RegistrationCheck) {
-    hooks::register_aim_hooks(AimHooks {
+pub(super) fn register(body: &mut BodyContributions) {
+    body.aim_hooks = Some(AimHooks {
         observe_grenade_hands: grenade::observe_hands,
         observe_c4_hands: c4::observe_hands,
         probe_c4_stick: c4::stick::probe,
@@ -37,25 +34,19 @@ pub(super) fn register(check: &mut RegistrationCheck) {
         before_update: hold::before_update,
         substitute_input: hold_tick::substitute,
     });
-    for (hook, run) in PRE_WEAPON_HOOKS {
-        aim_state::register_pre_weapon_hook(hook, run);
-    }
-    vehicles::register_mounted::register();
-    check.require("aim", "the aim hooks", hooks::is_registered());
-    check.require_keys(
-        "aim",
-        "pre-weapon hook",
-        aim_state::missing_pre_weapon_hooks(),
-    );
-    check.require("aim", "the mounted-gun source", mounted::is_registered());
+    body.pre_weapon_hooks = &PRE_WEAPON_HOOKS;
+    vehicles::register_mounted::register(body);
 }
 
 /// The weapon handling's contributions around the local player's weapon handling, in the order
-/// they run.
-const PRE_WEAPON_HOOKS: [(PreWeaponHook, PreWeaponHookFn); 3] = [
-    (PreWeaponHook::UnarmedFire, unarmed_fire_held_back),
-    (PreWeaponHook::ButtonPickup, button_pickup_held_back),
-    (PreWeaponHook::UseItem, use_item_before),
+/// they run, each around the ones after it and the call: the fire and precision-aim inputs that
+/// would draw a weapon with nothing in the hands are held back, then the use-item input that would
+/// pick a weapon up by button, then a swimming pickup's slot is emptied before the call drops the
+/// slot's weapon.
+static PRE_WEAPON_HOOKS: [PreWeaponHookFn; 3] = [
+    unarmed_fire_held_back,
+    button_pickup_held_back,
+    use_item_before,
 ];
 
 /// The fire and precision-aim inputs that would draw a weapon held back around the rest.
@@ -92,16 +83,4 @@ unsafe fn use_item_before(
 ) {
     unsafe { use_item::before_weapon_handling(c) };
     rest(c);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_registration_leaves_nothing_missing() {
-        let mut check = RegistrationCheck::new();
-        register(&mut check);
-        assert_eq!(check.missing(), []);
-    }
 }

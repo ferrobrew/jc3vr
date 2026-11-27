@@ -26,6 +26,11 @@ pub fn register_pose_observer(observer: PoseObserver) {
     }
 }
 
+/// Whether the pose-finalization observer is registered.
+pub fn pose_observer_registered() -> bool {
+    OBSERVER.get().is_some()
+}
+
 /// Call the observer's [`PoseObserver::before_solve`], when one is registered.
 ///
 /// # Safety

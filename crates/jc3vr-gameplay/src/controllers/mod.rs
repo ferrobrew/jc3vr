@@ -32,7 +32,10 @@
 //! controller scheme ([`jc3vr_body::controllers::scheme::is_controllers`]), so that the mod
 //! behaves as before whenever no controllers are in use.
 
-use jc3vr_body::controllers::{aim, aim_state, body, hands, haptics, roomscale};
+use jc3vr_body::{
+    contributions::BodyContributions,
+    controllers::{aim, aim_state, body, hands, haptics, roomscale},
+};
 use jc3vr_core::{lifecycle::RegistrationError, registration::RegistrationCheck};
 use jc3vr_grapple::controllers::snatch;
 use jc3vr_physical::controllers::{glass, physical_hands};
@@ -57,16 +60,19 @@ pub use config::ControllersConfig;
 
 /// Register the controller subsystems' shutdown participants and their hook installation and
 /// removal steps. Runs before the hooks are installed; an error refuses hook installation, and the
-/// refusal is already logged. The aim's registration reports the contributions it leaves missing to
-/// `check`; the others still panic naming them.
+/// refusal is already logged. The body's contributions are filled in one record and registered
+/// once ([`jc3vr_body::contributions::register`]); it and the other registrations report the
+/// contributions they leave missing to `check`.
 pub fn install(check: &mut RegistrationCheck) -> Result<(), RegistrationError> {
     jc3vr_grapple::register();
     register_head_pose::register(check);
     register_vr_frame::register();
     register_render::register();
-    register_hands::register();
-    register_aim::register(check);
-    register_below::register();
+    let mut body = BodyContributions::default();
+    register_hands::register(&mut body);
+    register_aim::register(&mut body);
+    register_below::register(&mut body, check);
+    jc3vr_body::contributions::register(body, check);
     register_lifecycle::register()
 }
 
@@ -90,4 +96,20 @@ pub fn hook_library(map: HookLibrary) -> HookLibrary {
         .with_hook_library(physical_hands::lifetime::hook_library())
         .with_hook_library(vehicles::hook_library())
         .with_hook_library(glass::hook_library())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_registrations_fill_every_body_contribution() {
+        let mut check = RegistrationCheck::new();
+        let mut body = BodyContributions::default();
+        register_hands::register(&mut body);
+        register_aim::register(&mut body);
+        register_below::register(&mut body, &mut check);
+        body.report(&mut check);
+        assert_eq!(check.missing(), []);
+    }
 }

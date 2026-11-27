@@ -21,7 +21,8 @@
 //!   from where it was when the hang began, relative to the head, and pushes the hang body at the
 //!   hips with an impulse against it ([`swing_impulse`]), scaled against the game's own continuous
 //!   swing so that the feel matches what the designers tuned. The hand's motion pumps the swing on
-//!   top, through the pump the grapple registers ([`register_hang_pump`]): while the hand moves
+//!   top, through the pump the grapple registers
+//!   ([`crate::contributions::BodyContributions::hang_pump`]): while the hand moves
 //!   relative to the head, the body is pushed against the motion, and the hold and the pump
 //!   together are capped per hang tick.
 //!
@@ -30,7 +31,7 @@
 //!
 //! [`NStateTask_GrapplingHangTask::Update`]: jc3gi::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update
 
-use std::{ffi::c_void, sync::OnceLock};
+use std::ffi::c_void;
 
 use detours_macro::detour;
 use glam::{Quat, Vec2, Vec3};
@@ -50,6 +51,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
+    contributions,
     controllers::{
         body_frame,
         fingers::grip::{self, Grip, GripSource},
@@ -63,7 +65,8 @@ use crate::{
 };
 
 /// The grapple's pump of the hang swing by the grapple hand's motion relative to the head, which
-/// the hang task's detour adds to the hold ([`register_hang_pump`]). Each function takes the
+/// the hang task's detour adds to the hold
+/// ([`crate::contributions::BodyContributions::hang_pump`]). Each function takes the
 /// game's own continuous stick swing at full deflection as `full_impulse`.
 #[derive(Clone, Copy)]
 pub struct HangPump {
@@ -74,19 +77,6 @@ pub struct HangPump {
     pub impulse: fn(velocity: Vec2, full_impulse: f32) -> Vec2,
     /// The hold's and the pump's impulses together, capped.
     pub combine: fn(hold: Vec2, pumped: Vec2, full_impulse: f32) -> Vec2,
-}
-
-/// Register the grapple's pump of the hang swing. One pump: a second registration is refused and
-/// logged. Called from the hang task's post-call detour, inside the character's serial pass.
-pub fn register_hang_pump(pump: HangPump) {
-    if HANG_PUMP.set(pump).is_err() {
-        tracing::error!("anchor: a hang pump is already registered; keeping the first");
-    }
-}
-
-/// Whether the grapple's pump of the hang swing is registered.
-pub fn hang_pump_registered() -> bool {
-    HANG_PUMP.get().is_some()
 }
 
 /// The anchor's hooks, aggregated by [`crate::controllers::hands::hook_library`].
@@ -242,8 +232,6 @@ struct State {
     hang_velocity: Vec2,
 }
 
-static HANG_PUMP: OnceLock<HangPump> = OnceLock::new();
-
 static STATE: Mutex<State> = Mutex::new(State {
     status: AnchorStatus {
         anchor: None,
@@ -300,7 +288,7 @@ fn hang_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
 
 /// Push the local player's hang body by the grapple hand's displacement and motion.
 unsafe fn swing(character: &mut Character) {
-    let pump_fns = HANG_PUMP.get();
+    let pump_fns = contributions::get().and_then(|contributions| contributions.hang_pump.as_ref());
     let hand = scheme::acting_hand().other();
     let now = Stamp::now();
     // Read before this module's state is locked, so that no other lock is taken while it is held.
