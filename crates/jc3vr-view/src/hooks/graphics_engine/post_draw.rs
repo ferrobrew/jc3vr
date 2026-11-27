@@ -1,12 +1,15 @@
 //! The post-draw composition seam: what the layers above the render hooks contribute to
 //! `RenderEngine::PostDraw`, to the draw task's UI redirect, and to the engine's flip.
 //!
-//! The post-draw (`jc3vr_render::hooks::graphics_engine::engine`) runs, per dispatch: the
-//! [`DispatchTick`]s, outside the engine's context lock; then, under it, the scene capture, the
-//! [`EyeLayer`]s in their order, and on the frame's last near dispatch the [`FramePass`]es; and
-//! after the eye copies, the [`EyeFrameRecorder`]. Each contribution is registered once at startup
-//! by the module that owns it, so the render hooks name none of them. The order is the enums'
-//! order, whatever order the registrations ran in, and a contribution nobody registered is skipped.
+//! The post-draw (`jc3vr_render::hooks::graphics_engine::engine`) runs, per dispatch: the dispatch
+//! ticks, outside the engine's context lock; then, under it, the render crate's own passes, the
+//! eye layers, and on the frame's last near dispatch the [`FramePass`]es; and after the eye copies,
+//! the [`EyeFrameRecorder`]. Each contribution is registered once at startup by the module that
+//! owns it, so the render hooks name none of them. The dispatch ticks and the eye layers run in
+//! the order their one registrant declares them in, and the frame passes in [`FramePass`] order,
+//! whatever order the registrations ran in. A registrant reports what it registers to the install's
+//! registration check through the `*_registered` probes here, so nothing this seam runs is missing
+//! by the time the hooks are installed.
 
 use std::sync::OnceLock;
 
@@ -16,7 +19,7 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID
 /// A draw over one eye of the dispatch's final back buffer: the context, the engine's device, the
 /// back buffer, and the eye. Under the collapse the caller has selected the eye with
 /// `set_collapse_ui_eye`.
-pub(crate) type EyeDraw = fn(&ID3D11DeviceContext, &Device, &Texture, usize);
+pub type EyeDraw = fn(&ID3D11DeviceContext, &Device, &Texture, usize);
 
 /// A draw over the frame's final back buffer, once per frame.
 pub(crate) type FrameDraw = fn(&ID3D11DeviceContext, &Device, &Texture);
@@ -24,41 +27,7 @@ pub(crate) type FrameDraw = fn(&ID3D11DeviceContext, &Device, &Texture);
 /// A tick run once per dispatch, with the dispatch's draw index, before the engine's context lock
 /// is taken. The ticks read the published state of the systems they draw under those systems' own
 /// locks.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum DispatchTick {
-    /// The world-space overlay's producers.
-    WorldOverlay,
-    /// The scope lens's plan.
-    ScopeLens,
-}
-
-impl DispatchTick {
-    /// The number of ticks; the last variant closes the count.
-    const COUNT: usize = Self::ScopeLens as usize + 1;
-}
-
-/// A layer drawn onto each eye's final back buffer, in draw order: the panels sit on top of the
-/// world-locked readouts.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum EyeLayer {
-    /// The world-space overlay.
-    WorldOverlay,
-    /// The scope lens, over the overlay.
-    ScopeLens,
-    /// The floating HUD panel.
-    HudPanel,
-    /// The egui debug panel.
-    DebugPanel,
-    /// The controls summary.
-    ControlsSummary,
-    /// The restart notice.
-    RestartNotice,
-}
-
-impl EyeLayer {
-    /// The number of layers; the last variant closes the count.
-    const COUNT: usize = Self::RestartNotice as usize + 1;
-}
+pub type DispatchTick = fn(usize);
 
 /// A pass run once per frame, on its last near dispatch, in this order.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -102,17 +71,14 @@ pub struct EyeFrameRecorder {
     pub release_capture: fn(),
 }
 
-pub fn register_dispatch_tick(tick: DispatchTick, run: fn(usize)) {
-    DISPATCH_TICKS.set(tick as usize, run, "dispatch tick");
+/// Register the dispatch ticks, in the order they run.
+pub fn register_dispatch_ticks(ticks: &'static [DispatchTick]) {
+    set_once(&DISPATCH_TICKS, ticks, "dispatch tick table");
 }
 
-/// Register the copy of the dispatch's eye images, taken before any [`EyeLayer`] draws.
-pub fn register_scene_capture(capture: EyeDraw) {
-    set_once(&SCENE_CAPTURE, capture, "scene capture");
-}
-
-pub fn register_eye_layer(layer: EyeLayer, draw: EyeDraw) {
-    EYE_LAYERS.set(layer as usize, draw, "eye layer");
+/// Register the layers drawn onto each eye over the render crate's own passes, in draw order.
+pub fn register_eye_layers(layers: &'static [EyeDraw]) {
+    set_once(&EYE_LAYERS, layers, "eye layer table");
 }
 
 pub fn register_frame_pass(pass: FramePass, draw: FrameDraw) {
@@ -133,9 +99,14 @@ pub fn register_desktop_overlay(draw: fn()) {
     set_once(&DESKTOP_OVERLAY, draw, "desktop overlay");
 }
 
-/// Whether `layer` is registered, for the install's registration check.
-pub fn eye_layer_registered(layer: EyeLayer) -> bool {
-    EYE_LAYERS.registered(layer as usize)
+/// Whether the dispatch ticks are registered, for the install's registration check.
+pub fn dispatch_ticks_registered() -> bool {
+    DISPATCH_TICKS.get().is_some()
+}
+
+/// Whether the eye layers are registered, for the install's registration check.
+pub fn eye_layers_registered() -> bool {
+    EYE_LAYERS.get().is_some()
 }
 
 /// Whether `pass` is registered, for the install's registration check.
@@ -160,14 +131,11 @@ pub fn desktop_overlay_registered() -> bool {
 
 #[inline]
 pub fn run_dispatch_ticks(index: usize) {
-    DISPATCH_TICKS.each().for_each(|tick| tick(index));
-}
-
-#[inline]
-pub fn capture_scene(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
-    if let Some(capture) = SCENE_CAPTURE.get() {
-        capture(context, device, target, eye);
-    }
+    DISPATCH_TICKS
+        .get()
+        .into_iter()
+        .flat_map(|ticks| ticks.iter())
+        .for_each(|tick| tick(index));
 }
 
 #[inline]
@@ -178,7 +146,9 @@ pub fn draw_eye_layers(
     eye: usize,
 ) {
     EYE_LAYERS
-        .each()
+        .get()
+        .into_iter()
+        .flat_map(|layers| layers.iter())
         .for_each(|draw| draw(context, device, target, eye));
 }
 
@@ -250,11 +220,9 @@ fn set_once<T>(slot: &OnceLock<T>, value: T, what: &str) {
     }
 }
 
-static DISPATCH_TICKS: Slots<fn(usize), { DispatchTick::COUNT }> = Slots::new();
+static DISPATCH_TICKS: OnceLock<&'static [DispatchTick]> = OnceLock::new();
 
-static SCENE_CAPTURE: OnceLock<EyeDraw> = OnceLock::new();
-
-static EYE_LAYERS: Slots<EyeDraw, { EyeLayer::COUNT }> = Slots::new();
+static EYE_LAYERS: OnceLock<&'static [EyeDraw]> = OnceLock::new();
 
 static FRAME_PASSES: Slots<FrameDraw, { FramePass::COUNT }> = Slots::new();
 

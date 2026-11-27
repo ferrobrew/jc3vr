@@ -9,6 +9,7 @@ use jc3gi::{
         device::{Context, Device, DeviceInfo},
         graphics_engine::{DrawThreadTaskParam, GraphicsEngine, HContext_t, HDevice_t},
         render_engine::RenderEngine,
+        texture::Texture,
     },
     ui::ui_manager::{GetIUIManager, UIManager},
 };
@@ -23,13 +24,14 @@ use jc3vr_view::{
 };
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
-    Graphics::Direct3D11::{D3D11_BOX, ID3D11Texture2D},
+    Graphics::Direct3D11::{D3D11_BOX, ID3D11DeviceContext, ID3D11Texture2D},
     System::Threading::{
         CRITICAL_SECTION, EnterCriticalSection, GetCurrentThreadId, LeaveCriticalSection,
     },
 };
 
 use crate::{
+    controllers::{overlay::pass as overlay_pass, weapons::scope::pass as scope_pass},
     debug::trace::{TraceEvent, TraceState},
     probes,
     probes::scoped,
@@ -461,23 +463,23 @@ fn mod_post_draw(context: *mut Context) {
             graphics_engine.m_BackBufferLinear.as_ref(),
         ) {
             // The scope lens reads the eyes' images as the scene left them, before the overlay.
-            post_draw::capture_scene(&context.m_Context, device, back_buffer, index);
-            // The eye layers, in `post_draw::EyeLayer` order: the world-space overlay, the scope
-            // lens over it, then the HUD panel, the egui debug panel (issue #24), the controls
-            // summary, and the restart notice on top. Under collapse the render camera is centered
-            // and the target is double-wide, so draw the world-locked layers once per eye into each
-            // half with that eye's own VP (see `single_pass::collapse_ui_eye_override`); otherwise
-            // the per-dispatch single draw carries the eye implicitly.
+            scope_pass::capture(&context.m_Context, device, back_buffer, index);
+            // The eye layers (`draw_eye`): the world-space overlay, the scope lens over it, then
+            // the layers registered above in their declared order (the HUD's panels). Under
+            // collapse the render camera is centered and the target is double-wide, so draw the
+            // world-locked layers once per eye into each half with that eye's own VP (see
+            // `single_pass::collapse_ui_eye_override`); otherwise the per-dispatch single draw
+            // carries the eye implicitly.
             #[cfg(feature = "profiler")]
             let overlays_gpu = crate::profiler::gpu::detail_interval("mod: HUD and overlays");
             if collapse_active() {
                 for eye in 0..2 {
                     set_collapse_ui_eye(Some(eye));
-                    post_draw::draw_eye_layers(&context.m_Context, device, back_buffer, eye);
+                    draw_eye(&context.m_Context, device, back_buffer, eye);
                 }
                 set_collapse_ui_eye(None);
             } else {
-                post_draw::draw_eye_layers(&context.m_Context, device, back_buffer, index);
+                draw_eye(&context.m_Context, device, back_buffer, index);
             }
             #[cfg(feature = "profiler")]
             drop(overlays_gpu);
@@ -651,6 +653,15 @@ fn mod_post_draw(context: *mut Context) {
 
         LeaveCriticalSection(context.m_Mutex);
     }
+}
+
+/// Draw the eye layers onto eye `eye` of the dispatch's final back buffer: the render crate's own
+/// world-space overlay and scope lens over it, then the layers registered in the post-draw (the
+/// HUD's panels) on top.
+fn draw_eye(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
+    overlay_pass::draw(context, device, target, eye);
+    scope_pass::draw(context, device, target, eye);
+    post_draw::draw_eye_layers(context, device, target, eye);
 }
 
 /// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must

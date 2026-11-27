@@ -66,7 +66,7 @@ pub use config::ControllersConfig;
 pub fn install(check: &mut RegistrationCheck) -> Result<(), RegistrationError> {
     register_head_pose::register(check);
     register_vr_frame::register();
-    register_render::register();
+    register_render::register(check);
     let mut body = BodyContributions::default();
     jc3vr_grapple::register(&mut body);
     register_hands::register(&mut body);

@@ -29,7 +29,6 @@ use jc3vr_physical::controllers::physical_hands::human_hull;
 #[cfg(feature = "profiler")]
 use jc3vr_render::hooks::profiler;
 use jc3vr_render::{
-    controllers::register_passes,
     debug,
     hooks::{clock, draw_count, graphics_engine},
     stereo,
@@ -48,8 +47,6 @@ pub(crate) fn install() -> Result<(), InstallError> {
     // Registered first, so hook removal attempts them whether or not installation got further.
     stereo::register_unpatch::register();
     debug::register_unpatch::register();
-    // The render layer's own passes in the post-draw.
-    register_passes::register();
     // What the HUD and the tooling contribute to the layers below them: the post-draw, the mirror,
     // the flip, the input capture, the pointers, the session, the sim, the character hooks, and the
     // tracking recorder. Each fills slots of its own.

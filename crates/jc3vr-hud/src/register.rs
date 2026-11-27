@@ -12,8 +12,8 @@ use jc3vr_gameplay::controllers::bindings::pointer::{hud_registered, register_hu
 use jc3vr_input::capture::{CaptureDriver, driver_registered, register_driver};
 use jc3vr_view::{
     hooks::graphics_engine::post_draw::{
-        EyeLayer, FramePass, UiRedirect, desktop_overlay_registered, eye_layer_registered,
-        frame_pass_registered, register_desktop_overlay, register_eye_layer, register_frame_pass,
+        EyeDraw, FramePass, UiRedirect, desktop_overlay_registered, eye_layers_registered,
+        frame_pass_registered, register_desktop_overlay, register_eye_layers, register_frame_pass,
         register_ui_redirect, ui_redirect_registered,
     },
     vr::{MirrorLayers, mirror_layers_registered, register_mirror_layers},
@@ -32,10 +32,7 @@ pub fn register(check: &mut RegistrationCheck) {
         maintain: hud::tick,
         applied: hud::redirect_applied,
     });
-    register_eye_layer(EyeLayer::HudPanel, hud::draw_quad);
-    register_eye_layer(EyeLayer::DebugPanel, egui_panel::draw_quad);
-    register_eye_layer(EyeLayer::ControlsSummary, summary_panel::draw);
-    register_eye_layer(EyeLayer::RestartNotice, restart_notice::draw);
+    register_eye_layers(&EYE_LAYERS);
     register_frame_pass(FramePass::MirrorOverlay, mirror_overlay::render);
     register_mirror_layers(MirrorLayers {
         panel_srv: egui_panel::panel_srv,
@@ -55,13 +52,7 @@ pub fn register(check: &mut RegistrationCheck) {
         "the game UI's redirect",
         ui_redirect_registered(),
     );
-    check.require_keys(
-        "post-draw",
-        "eye layer",
-        EYE_LAYERS
-            .into_iter()
-            .filter(|&layer| !eye_layer_registered(layer)),
-    );
+    check.require("post-draw", "the HUD's eye layers", eye_layers_registered());
     check.require(
         "post-draw",
         "the mirror overlay's frame pass",
@@ -89,12 +80,14 @@ pub fn register(check: &mut RegistrationCheck) {
     );
 }
 
-/// The layers the HUD draws over each eye.
-const EYE_LAYERS: [EyeLayer; 4] = [
-    EyeLayer::HudPanel,
-    EyeLayer::DebugPanel,
-    EyeLayer::ControlsSummary,
-    EyeLayer::RestartNotice,
+/// The layers the HUD draws over each eye, over the render crate's world-space overlay and scope
+/// lens, in draw order: the floating HUD panel, the egui debug panel, the controls summary, and the
+/// restart notice on top.
+static EYE_LAYERS: [EyeDraw; 4] = [
+    hud::draw_quad,
+    egui_panel::draw_quad,
+    summary_panel::draw,
+    restart_notice::draw,
 ];
 
 #[cfg(test)]

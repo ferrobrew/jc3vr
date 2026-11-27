@@ -1,19 +1,26 @@
 //! Registers the controller subsystems with the render layer: the world-space overlay's and the
-//! scope lens's ticks in the post-draw, the body estimator's GPU pass, what the overlay's draw
-//! reads, the presentation layer's edits of the body's palette, and the camera's participants (the
-//! grapple's aim matrix and the camera height readout). The overlay's and the lens's draws are the
-//! render layer's own, which it registers itself.
+//! scope lens's ticks in the post-draw ([`DISPATCH_TICKS`]), the body estimator's GPU pass, what the
+//! overlay's draw reads, the presentation layer's edits of the body's palette, and the camera's
+//! participants (the grapple's aim matrix and the camera height readout). The overlay's and the
+//! lens's draws are the render layer's own, which its post-draw runs itself. [`register`] reports
+//! a post-draw contribution still missing to the install's registration check.
 
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_body::controllers::{aim, body::estimator, overlay, presentation::PlayerBodyEdits};
-use jc3vr_core::frame_timing::{self, Slot};
+use jc3vr_core::{
+    frame_timing::{self, Slot},
+    registration::RegistrationCheck,
+};
 use jc3vr_view::{
     controllers::overlay::inputs::{OverlayInputs, register_overlay_inputs},
     hooks::{
         camera::{CameraParticipants, register_camera_participants},
         graphics_engine::{
             palette_edit::register_player_draw_edits,
-            post_draw::{DispatchTick, FramePass, register_dispatch_tick, register_frame_pass},
+            post_draw::{
+                DispatchTick, FramePass, dispatch_ticks_registered, frame_pass_registered,
+                register_dispatch_ticks, register_frame_pass,
+            },
         },
     },
 };
@@ -22,9 +29,8 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
 use crate::hooks::camera::height;
 
-pub(super) fn register() {
-    register_dispatch_tick(DispatchTick::WorldOverlay, overlay::tick);
-    register_dispatch_tick(DispatchTick::ScopeLens, scope::tick);
+pub(super) fn register(check: &mut RegistrationCheck) {
+    register_dispatch_ticks(&DISPATCH_TICKS);
     register_frame_pass(FramePass::BodyEstimator, body_estimator_pass);
     register_overlay_inputs(OverlayInputs {
         settings: overlay::draw_settings,
@@ -35,7 +41,22 @@ pub(super) fn register() {
         matrix_override: aim::camera_matrix_override,
         placed: height::record,
     });
+
+    check.require(
+        "post-draw",
+        "the overlay's and the scope lens's dispatch ticks",
+        dispatch_ticks_registered(),
+    );
+    check.require(
+        "post-draw",
+        "the body estimator's frame pass",
+        frame_pass_registered(FramePass::BodyEstimator),
+    );
 }
+
+/// The post-draw's dispatch ticks, in the order they run: the world-space overlay's producers, then
+/// the scope lens's plan.
+static DISPATCH_TICKS: [DispatchTick; 2] = [overlay::tick, scope::tick];
 
 /// The learned body estimator's GPU pass, once per frame: it takes the window the game thread
 /// posted and collects finished estimates without waiting.
