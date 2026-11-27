@@ -39,13 +39,15 @@ use jc3gi::{
     types::math::Matrix4,
     ui::locator::Locale,
 };
-use jc3vr_body::controllers::{intent, physics::refs::Strong, spawn, spawn::SpawnDefinition};
+use jc3vr_body::controllers::{intent, physics::refs::Strong};
 use jc3vr_core::{game_tick::GameTick, published::DetourQueue};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::{
     loadout::{ObjectAddress, Socket, live},
+    spawn,
+    spawn::SpawnDefinition,
     weapons::{
         c4,
         dual_wield::single,

@@ -28,7 +28,7 @@ python3 extract_sights.py \
 
 `--game` defaults to `$JC3_GAME_DIR`, then to the default Steam library path. `--gibbed-tools` defaults to `$JC3_GIBBED_TOOLS`. `--output` defaults to `sights.json` beside the script. `--dump DIR` writes every file embedded in each entity archive, plus the `.epe` in use, under `DIR/<weapon>/`. `--plots DIR` writes a side view and a top view per weapon: centreline vertices in red, the bore in blue, and the derived sight line and its two defining points in green. The run takes a couple of seconds and logs one line per weapon to stderr, including the reason for each doubtful or failed result.
 
-`sights.json` is generated but kept in the repository, like `crates/jc3vr-body/src/controllers/spawn/spawn_defs.json`: it is small, it is derived from game data that does not change, and regenerating it needs the game install. The payload embeds it at build time (`crates/jc3vr-body/src/controllers/aim/sights/table.rs`), so a change to it takes effect on the next payload build. The `--dump` and `--plots` outputs are game content and review material, so write them outside the repository.
+`sights.json` is generated but kept in the repository, like `crates/jc3vr-weapons/src/controllers/spawn/spawn_defs.json`: it is small, it is derived from game data that does not change, and regenerating it needs the game install. The payload embeds it at build time (`crates/jc3vr-body/src/controllers/aim/sights/table.rs`), so a change to it takes effect on the next payload build. The `--dump` and `--plots` outputs are game content and review material, so write them outside the repository.
 
 ## Output
 

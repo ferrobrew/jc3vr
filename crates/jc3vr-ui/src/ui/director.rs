@@ -4,16 +4,14 @@
 
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;
-use jc3vr_body::controllers::{
-    clock::{MAX_TIME_SCALE, MIN_TIME_SCALE},
-    spawn,
-};
+use jc3vr_body::controllers::clock::{MAX_TIME_SCALE, MIN_TIME_SCALE};
 use jc3vr_core::director::clean_view::CleanViewScope;
 use jc3vr_tooling::{
     director::{DIRECTOR_CONFIG, heat, keymap, markers, safety, teleport, teleport::TeleportMode},
     recorder,
     recorder::{Arrangement, HostState, RECORDER_CONFIG, VideoStatus, session_recording},
 };
+use jc3vr_weapons::controllers::spawn;
 use parking_lot::Mutex;
 
 use crate::ui::catalog::FeatureId;

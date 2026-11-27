@@ -6,7 +6,10 @@
 //!   dual-wield split;
 //! - [`loadout`]: the loadout, the one source of truth for the local player's items: the one place
 //!   each item is (a hand, a socket of the body, or the world near the player), and the moves
-//!   between them.
+//!   between them;
+//! - [`spawn`]: the spawn system's requests and the shipped spawn definition table, for the
+//!   inventory's gives and the director's spawner.
 
 pub mod loadout;
+pub mod spawn;
 pub mod weapons;

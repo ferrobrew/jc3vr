@@ -8,7 +8,7 @@
 //! the weapons the table keeps lying in the world, and the table's recent transitions.
 
 use egui::{Button, CollapsingHeader, ComboBox, Grid, Ui};
-use jc3vr_body::controllers::{fingers::grip::GripSource, spawn::SpawnDefinition};
+use jc3vr_body::controllers::fingers::grip::GripSource;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::PhysicalHandsStatus;
 use jc3vr_weapons::controllers::{
@@ -16,6 +16,7 @@ use jc3vr_weapons::controllers::{
         Binding, Departure, ItemKind, ItemView, LoadoutSnapshot, Place, Socket, live::LiveStatus,
         slot_label,
     },
+    spawn::SpawnDefinition,
     weapons::{
         c4,
         grenade::stock,

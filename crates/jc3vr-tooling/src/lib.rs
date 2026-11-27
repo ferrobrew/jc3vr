@@ -9,8 +9,8 @@
 //!   ([`jc3vr_view::recorder::tracking`]).
 //! - [`director`]: the directing tools: time control, actor safety, heat, the teleport bookmarks,
 //!   the take markers, and the key bindings that drive them. Its pass also drives the core crate's
-//!   clean view ([`jc3vr_core::director::clean_view`]) and the gameplay crate's spawner
-//!   ([`jc3vr_body::controllers::spawn`]), whose settings it holds.
+//!   clean view ([`jc3vr_core::director::clean_view`]) and the weapons crate's spawner
+//!   ([`jc3vr_weapons::controllers::spawn`]), whose settings it holds.
 //! - [`testing`]: the capture harness's request file, the staging of a scene, its text, and the
 //!   testing settings. It drives the render crate's visual stage and benchmark
 //!   ([`jc3vr_capture::testing`]).

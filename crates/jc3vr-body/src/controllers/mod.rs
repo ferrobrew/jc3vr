@@ -25,8 +25,6 @@
 //! - [`aim`]: per-hand aiming: the guns along the hands' sight lines and the grapple along the
 //!   off-hand's ray;
 //! - [`overlay`]: the world-space overlay layer: sprites and lines drawn into the scene per eye;
-//! - [`spawn`]: the spawn system's requests and the shipped spawn definition table, for the
-//!   inventory's gives and the director's spawner;
 //! - [`locomotion`] and [`roomscale`]: stick locomotion, and posture, the head-height remap, the
 //!   cockpit composition, the crouch capsule, the head-through-geometry fade, and seat transitions.
 //!   Roomscale needs the headset rather than the controllers, so it is gated on the VR source and
@@ -61,5 +59,4 @@ pub mod physics;
 pub mod presentation;
 pub mod roomscale;
 pub mod scheme;
-pub mod spawn;
 pub mod telemetry;

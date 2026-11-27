@@ -6,10 +6,10 @@
 //!
 //! - [`controllers`]: the body-bound controller subsystems: the body, the hands, fingers, and
 //!   presentation, the grip model, the aim and the aim-state pin, locomotion and roomscale, the mode
-//!   detector and the scheme, the clock, the haptics, the overlay producers, the spawn table, the
-//!   telemetry notes, and the shared modules the subsystems above meet in (the input vocabulary in
-//!   `intent`, the held-item facts in `held`, the physics substrate in `physics`, and the published
-//!   facts in `facts`). Each settings group these subsystems own has its slot beside its type.
+//!   detector and the scheme, the clock, the haptics, the overlay producers, the telemetry notes,
+//!   and the shared modules the subsystems above meet in (the input vocabulary in `intent`, the
+//!   held-item facts in `held`, the physics substrate in `physics`, and the published facts in
+//!   `facts`). Each settings group these subsystems own has its slot beside its type.
 //! - [`hooks`]: the character, animation, and input detours, without the look detour, which lands
 //!   the bindings' writes and stays in the gameplay crate.
 //!

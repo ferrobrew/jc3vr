@@ -2540,6 +2540,7 @@ dependencies = [
  "jc3vr-render",
  "jc3vr-vehicles",
  "jc3vr-view",
+ "jc3vr-weapons",
  "jiff",
  "parking_lot",
  "pretty_assertions",

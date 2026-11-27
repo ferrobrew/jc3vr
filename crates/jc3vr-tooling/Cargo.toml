@@ -15,6 +15,7 @@ jc3vr-input = { path = "../jc3vr-input" }
 jc3vr-render = { path = "../jc3vr-render" }
 jc3vr-view = { path = "../jc3vr-view" }
 jc3vr-body = { path = "../jc3vr-body" }
+jc3vr-weapons = { path = "../jc3vr-weapons" }
 jc3vr-physical = { path = "../jc3vr-physical" }
 jc3vr-vehicles = { path = "../jc3vr-vehicles" }
 jc3vr-grapple = { path = "../jc3vr-grapple" }

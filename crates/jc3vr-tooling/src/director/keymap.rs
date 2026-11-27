@@ -16,7 +16,7 @@
 
 use std::borrow::Cow;
 
-use jc3vr_body::controllers::spawn;
+use jc3vr_weapons::controllers::spawn;
 use serde::{Deserialize, Serialize};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, VK_ADD, VK_CONTROL, VK_DECIMAL, VK_DIVIDE, VK_F3, VK_MENU, VK_MULTIPLY,
