@@ -76,7 +76,7 @@ pub(super) fn hands_readout(
                     ""
                 }
             ));
-            ui.label(match late.deltas[i] {
+            ui.label(match late.hands[i].applied_delta() {
                 Some((shift, turn)) => {
                     format!("late update: {:.1} mm · {:.1}°", shift * 1000.0, turn)
                 }

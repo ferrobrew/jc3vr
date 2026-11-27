@@ -168,14 +168,28 @@ pub struct HandLateStatus {
     pub detach_m: Option<f32>,
 }
 
+impl HandLateStatus {
+    /// The applied physical displacement in metres and relative rotation in degrees, or `None`
+    /// when the hand was not corrected.
+    pub fn applied_delta(&self) -> Option<(f32, f32)> {
+        match (
+            self.reason,
+            self.physical_displacement_m,
+            self.relative_rotation_deg,
+        ) {
+            (LateReason::Applied, Some(displacement), Some(rotation)) => {
+                Some((displacement, rotation))
+            }
+            _ => None,
+        }
+    }
+}
+
 /// The late update's per-hand readout and cumulative counters.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LateStatus {
     /// Structured status for each hand, indexed by [`Hand::index`].
     pub hands: [HandLateStatus; 2],
-    /// Each hand's applied physical displacement in metres and relative rotation in degrees.
-    /// `None` when the hand was not corrected. Kept for the existing debug UI callers.
-    pub deltas: [Option<(f32, f32)>; 2],
     /// Gun model matrices re-pushed since the payload loaded.
     pub weapons_updated: u64,
     /// Palette uploads edited since the payload loaded.
@@ -191,18 +205,6 @@ pub fn status() -> LateStatus {
     });
     LateStatus {
         hands,
-        deltas: hands.map(|hand| {
-            match (
-                hand.reason,
-                hand.physical_displacement_m,
-                hand.relative_rotation_deg,
-            ) {
-                (LateReason::Applied, Some(displacement), Some(rotation)) => {
-                    Some((displacement, rotation))
-                }
-                _ => None,
-            }
-        }),
         weapons_updated: WEAPONS_UPDATED.get(),
         palettes_edited: PALETTES_EDITED.get(),
     }
