@@ -26,10 +26,11 @@
 //!
 //! - [`contributions`]: what the crate reads from the crates above it, one record the vehicle
 //!   handling registers, which the install's registration check requires.
-//! - [`controllers::physical_hands::register_body::register`] fills the body crate's
-//!   registrations the physical hands contribute to, and the gameplay crate's install calls it.
+//! - [`controllers::physical_hands::register_body::register`] fills the physical hands' fields of
+//!   the body's contributions record, and the gameplay crate's install calls it; the hand stage
+//!   and the aim hook the physical hands provide sit in the gameplay crate's ordered tables.
 //! - The hook libraries, which the gameplay crate and the payload enable in their established
-//!   order with the other layers' (the order is load-bearing):
+//!   order with the other layers':
 //!   [`controllers::physical_hands::impacts::hook_library`],
 //!   [`controllers::physical_hands::lifetime::hook_library`], and
 //!   [`controllers::glass::hook_library`] inside the gameplay crate's controllers library, and
